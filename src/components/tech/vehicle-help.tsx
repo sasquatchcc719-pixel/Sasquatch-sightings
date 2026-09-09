@@ -16,9 +16,10 @@ import {
 } from 'lucide-react'
 import {
   BOX_TRUCK,
+  DRIVER_INTRODUCTION,
   VEHICLE_CONTACTS,
   REPAIR_ADDRESS,
-  REPAIR_MAP,
+  REPAIR_APPLE_MAP,
   buildVehicleHelpMessage,
   formatCaptureTime,
   pickupMapUrl,
@@ -64,20 +65,23 @@ function ContactCard({ kind }: { kind: VehicleHelpKind }) {
         {contact.relationship}
       </p>
       {kind === 'repair' ? (
-        <a
-          href={REPAIR_MAP}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 flex items-start gap-2 text-sm text-emerald-200 underline underline-offset-4"
-        >
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0" /> {REPAIR_ADDRESS}
-        </a>
+        <div className="mt-4">
+          <p className="text-sm text-slate-300">{REPAIR_ADDRESS}</p>
+          <a
+            href={REPAIR_APPLE_MAP}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${button} mt-3 w-full border-emerald-300/30 text-emerald-200`}
+          >
+            <MapPin className="h-4 w-4 shrink-0" /> Navigate in Apple Maps
+          </a>
+        </div>
       ) : null}
     </div>
   )
 }
 
-export function VehicleHelp({ driverName }: { driverName: string }) {
+export function VehicleHelp() {
   const [kind, setKind] = useState<VehicleHelpKind>('roadside')
   const [vehicle, setVehicle] = useState<VehicleKind>('box-truck')
   const [otherVehicle, setOtherVehicle] = useState('')
@@ -105,17 +109,19 @@ export function VehicleHelp({ driverName }: { driverName: string }) {
   const canShare = manual
     ? !!manualLocation.trim()
     : !!activeLocation && !stale && !locating
-  const message = buildVehicleHelpMessage({
-    kind,
-    vehicle,
-    otherVehicle,
-    driverName,
-    callback,
-    issue,
-    location: activeLocation,
-    manualLocation: manual ? manualLocation : '',
-    landmarks,
-  })
+  const message =
+    kind === 'repair'
+      ? ''
+      : buildVehicleHelpMessage({
+          kind,
+          vehicle,
+          otherVehicle,
+          callback,
+          issue,
+          location: activeLocation,
+          manualLocation: manual ? manualLocation : '',
+          landmarks,
+        })
 
   function getLocation() {
     const currentRequest = ++requestId.current
@@ -289,15 +295,16 @@ export function VehicleHelp({ driverName }: { driverName: string }) {
         <div className="mt-4">
           <ContactCard kind={kind} />
         </div>
-        {kind !== 'tow' ? (
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">
+          Introduce yourself: “{DRIVER_INTRODUCTION}”
+        </p>
+        {kind === 'roadside' ? (
           <p className="mt-3 text-sm leading-relaxed text-slate-300">
-            Introduce yourself: “I’m {driverName || 'a driver'} with Charles at
-            Sasquatch Carpet Cleaning.”{' '}
-            {kind === 'roadside'
-              ? 'Tell Jeff what happened and which truck you have. If it needs towing, switch to Need a tow.'
-              : 'Tell Matt what happened and arrange repairs. If the truck cannot be driven safely, switch to Need a tow.'}
+            Tell Jeff what happened and which truck you have. If it needs
+            towing, switch to Need a tow.
           </p>
-        ) : (
+        ) : null}
+        {kind === 'tow' ? (
           <div className="mt-4 space-y-4">
             <div className="rounded-xl border border-amber-300/25 bg-amber-300/5 p-4 text-sm leading-relaxed text-amber-100">
               <p className="font-bold">
@@ -307,239 +314,309 @@ export function VehicleHelp({ driverName }: { driverName: string }) {
               </p>
               <p className="mt-2">
                 {vehicle === 'box-truck'
-                  ? `Tell Randy’s: “It’s Charles’s ${BOX_TRUCK}. You’ve towed it before.” Confirm they can handle its size and loaded weight. Height and weight are not saved here; check the vehicle labels/specifications if asked. Do not guess.`
+                  ? `Tell Randy’s: “It’s Charles Sewell’s ${BOX_TRUCK}. You’ve towed it before.” Confirm they can handle its size and loaded weight. Height and weight are not saved here; check the vehicle labels/specifications if asked. Do not guess.`
                   : 'Describe the vehicle and ask dispatch to confirm the tow equipment they will send.'}
               </p>
             </div>
-            <ContactCard kind="repair" />
-            <p className="text-sm leading-relaxed text-slate-300">
-              Call Matt before sending the truck. Confirm he can receive it,
-              where to park, and how to leave the keys if the shop is closed.
-              Give Randy’s the repair address above as the{' '}
-              <strong>destination</strong>; your GPS pin below is the{' '}
-              <strong>pickup</strong>.
-            </p>
+            <div className="rounded-xl border border-white/10 p-4 text-sm leading-relaxed text-slate-300">
+              <p className="font-semibold text-slate-100">
+                Tow destination: Mountain Motorsport
+              </p>
+              <p className="mt-1">{REPAIR_ADDRESS}</p>
+              <p className="mt-2">
+                Confirm drop-off with Matt before dispatch. This is the
+                destination; the GPS pin below is where Randy’s picks you up.
+              </p>
+              <button
+                type="button"
+                className={`${button} mt-3`}
+                onClick={() => {
+                  setKind('repair')
+                  setShareStatus('')
+                }}
+              >
+                Repair shop details & directions
+              </button>
+            </div>
           </div>
-        )}
+        ) : null}
       </section>
 
-      <section className={panel} aria-labelledby="location-heading">
-        <h2 id="location-heading" className="text-lg font-semibold">
-          2. Pin down your pickup location
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Capture your phone’s location while you are at the stopped truck.
-          Check the map pin before sharing it. Location is requested only when
-          you tap the button.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+      {kind === 'repair' ? (
+        <section className={panel} aria-labelledby="repair-heading">
+          <h2 id="repair-heading" className="text-lg font-semibold">
+            2. Arrange repairs and drop-off
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+            Call Matt and explain what happened to Charles’s truck. Mountain
+            Motorsport handles repairs at the shop; bring or tow the truck
+            there.
+          </p>
+          <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-relaxed text-slate-200">
+            <li>
+              Confirm Matt can receive the truck and tell him whether it will
+              arrive by tow.
+            </li>
+            <li>
+              Confirm the entrance, where to park, and how to leave the keys if
+              the shop is closed.
+            </li>
+            <li>
+              Use Navigate in Apple Maps above for driving directions to the
+              shop. If the truck cannot be driven safely, arrange a tow with
+              Randy’s.
+            </li>
+          </ol>
           <button
             type="button"
-            onClick={getLocation}
-            disabled={locating}
-            className={`${button} border-emerald-300/30 text-emerald-200`}
+            className={`${button} mt-4`}
+            onClick={() => {
+              setKind('tow')
+              setShareStatus('')
+            }}
           >
-            <LocateFixed
-              className={`h-4 w-4 ${locating ? 'animate-pulse' : ''}`}
-            />
-            {locating
-              ? 'Getting GPS…'
-              : location
-                ? 'Refresh GPS location'
-                : 'Get my GPS location'}
+            Arrange a tow with Randy’s
           </button>
-          <button type="button" onClick={enterManually} className={button}>
-            Enter location manually
-          </button>
-        </div>
-        {locationError ? (
-          <p role="alert" className="mt-3 text-sm text-amber-200">
-            {locationError}
-          </p>
-        ) : null}
-        {activeLocation ? (
-          <div className="mt-4 rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
-            <p className="font-mono text-base text-cyan-100">
-              {activeLocation.latitude.toFixed(6)},{' '}
-              {activeLocation.longitude.toFixed(6)}
-            </p>
-            <p className="mt-2 text-xs text-slate-300">
-              Captured {formatCaptureTime(activeLocation.capturedAt)} · accuracy
-              ±{Math.ceil(activeLocation.accuracy)} m
-            </p>
-            {stale ? (
-              <p role="alert" className="mt-2 text-sm text-amber-200">
-                This location is over 5 minutes old. Refresh GPS before sharing.
-              </p>
-            ) : null}
-            {activeLocation.accuracy > 100 ? (
-              <p className="mt-2 text-sm text-amber-200">
-                GPS accuracy is low. Check the map carefully; add a precise
-                landmark or enter a corrected map pin manually.
-              </p>
-            ) : null}
-            <a
-              href={pickupMapUrl(activeLocation)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-cyan-200 underline underline-offset-4"
+          <p className="mt-4 text-sm leading-relaxed text-slate-300">
+            Update Charles and the office with the repair plan and any jobs
+            affected. Keep repair receipts in{' '}
+            <Link
+              href="/tech/receipts"
+              className="text-emerald-200 underline underline-offset-4"
             >
-              Check pickup pin in Maps <ArrowUpRight className="h-4 w-4" />
-            </a>
-          </div>
-        ) : null}
-        {manual ? (
-          <label className="mt-4 block text-sm font-medium">
-            Map pin, GPS coordinates, or pickup address
-            <textarea
-              rows={3}
-              className={field}
-              value={manualLocation}
-              onChange={(event) => setManualLocation(event.target.value)}
-              placeholder="Paste a dropped-pin link, coordinates, or an exact pickup location"
-              maxLength={1000}
-            />
-          </label>
-        ) : null}
-        <label className="mt-4 block text-sm font-medium">
-          Road, direction of travel, and nearest exit or landmark
-          <textarea
-            rows={2}
-            className={field}
-            value={landmarks}
-            onChange={(event) => setLandmarks(event.target.value)}
-            placeholder="For example: I-25 northbound, right shoulder, just past exit …"
-            maxLength={500}
-          />
-        </label>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-medium">
-            What happened?
-            <input
-              className={field}
-              value={issue}
-              onChange={(event) => setIssue(event.target.value)}
-              placeholder="Flat rear tire, engine won’t start…"
-              maxLength={500}
-            />
-          </label>
-          <label className="block text-sm font-medium">
-            Your callback number
-            <input
-              type="tel"
-              autoComplete="tel"
-              className={field}
-              value={callback}
-              onChange={(event) => setCallback(event.target.value)}
-              placeholder="Number dispatch can reach you on"
-              maxLength={40}
-            />
-          </label>
-        </div>
-        <details className="mt-4 rounded-xl border border-white/10 p-3 text-sm text-slate-300">
-          <summary className="cursor-pointer font-semibold text-slate-100">
-            Need to send a map screenshot instead?
-          </summary>
-          <p className="mt-3 leading-relaxed">
-            Open your phone’s Maps app and center it on your current location.
-            Include the blue dot or dropped pin and nearby road names in a
-            screenshot. Ask dispatch which mobile number can receive it, attach
-            the screenshot in your texting app, and confirm they received it. If
-            they cannot receive texts, read the coordinates, road, direction,
-            and landmark aloud.
+              Receipts
+            </Link>
+            .
           </p>
-        </details>
-      </section>
+        </section>
+      ) : (
+        <>
+          <section className={panel} aria-labelledby="location-heading">
+            <h2 id="location-heading" className="text-lg font-semibold">
+              2. Pin down your pickup location
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              Give {kind === 'tow' ? 'Randy’s' : 'Jeff'} your exact pickup
+              location. Capture your phone’s location while you are at the
+              stopped truck. Check the map pin before sharing it. Location is
+              requested only when you tap the button.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={getLocation}
+                disabled={locating}
+                className={`${button} border-emerald-300/30 text-emerald-200`}
+              >
+                <LocateFixed
+                  className={`h-4 w-4 ${locating ? 'animate-pulse' : ''}`}
+                />
+                {locating
+                  ? 'Getting GPS…'
+                  : location
+                    ? 'Refresh GPS location'
+                    : 'Get my GPS location'}
+              </button>
+              <button type="button" onClick={enterManually} className={button}>
+                Enter location manually
+              </button>
+            </div>
+            {locationError ? (
+              <p role="alert" className="mt-3 text-sm text-amber-200">
+                {locationError}
+              </p>
+            ) : null}
+            {activeLocation ? (
+              <div className="mt-4 rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-4">
+                <p className="font-mono text-base text-cyan-100">
+                  {activeLocation.latitude.toFixed(6)},{' '}
+                  {activeLocation.longitude.toFixed(6)}
+                </p>
+                <p className="mt-2 text-xs text-slate-300">
+                  Captured {formatCaptureTime(activeLocation.capturedAt)} ·
+                  accuracy ±{Math.ceil(activeLocation.accuracy)} m
+                </p>
+                {stale ? (
+                  <p role="alert" className="mt-2 text-sm text-amber-200">
+                    This location is over 5 minutes old. Refresh GPS before
+                    sharing.
+                  </p>
+                ) : null}
+                {activeLocation.accuracy > 100 ? (
+                  <p className="mt-2 text-sm text-amber-200">
+                    GPS accuracy is low. Check the map carefully; add a precise
+                    landmark or enter a corrected map pin manually.
+                  </p>
+                ) : null}
+                <a
+                  href={pickupMapUrl(activeLocation)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-cyan-200 underline underline-offset-4"
+                >
+                  Check pickup pin in Maps <ArrowUpRight className="h-4 w-4" />
+                </a>
+              </div>
+            ) : null}
+            {manual ? (
+              <label className="mt-4 block text-sm font-medium">
+                Map pin, GPS coordinates, or pickup address
+                <textarea
+                  rows={3}
+                  className={field}
+                  value={manualLocation}
+                  onChange={(event) => setManualLocation(event.target.value)}
+                  placeholder="Paste a dropped-pin link, coordinates, or an exact pickup location"
+                  maxLength={1000}
+                />
+              </label>
+            ) : null}
+            <label className="mt-4 block text-sm font-medium">
+              Road, direction of travel, and nearest exit or landmark
+              <textarea
+                rows={2}
+                className={field}
+                value={landmarks}
+                onChange={(event) => setLandmarks(event.target.value)}
+                placeholder="For example: I-25 northbound, right shoulder, just past exit …"
+                maxLength={500}
+              />
+            </label>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium">
+                What happened?
+                <input
+                  className={field}
+                  value={issue}
+                  onChange={(event) => setIssue(event.target.value)}
+                  placeholder="Flat rear tire, engine won’t start…"
+                  maxLength={500}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Your callback number
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  className={field}
+                  value={callback}
+                  onChange={(event) => setCallback(event.target.value)}
+                  placeholder="Number dispatch can reach you on"
+                  maxLength={40}
+                />
+              </label>
+            </div>
+            <details className="mt-4 rounded-xl border border-white/10 p-3 text-sm text-slate-300">
+              <summary className="cursor-pointer font-semibold text-slate-100">
+                Need to send a map screenshot instead?
+              </summary>
+              <p className="mt-3 leading-relaxed">
+                Open your phone’s Maps app and center it on your current
+                location. Include the blue dot or dropped pin and nearby road
+                names in a screenshot. Ask dispatch which mobile number can
+                receive it, attach the screenshot in your texting app, and
+                confirm they received it. If they cannot receive texts, read the
+                coordinates, road, direction, and landmark aloud.
+              </p>
+            </details>
+          </section>
 
-      <section className={panel} aria-labelledby="share-heading">
-        <h2 id="share-heading" className="text-lg font-semibold">
-          3. Share, then confirm with dispatch
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          <strong className="text-slate-100">
-            Call first and ask which number accepts texts.
-          </strong>{' '}
-          Randy’s office number may not receive them. Sharing opens your phone’s
-          sharing options; you choose the recipient and send.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={shareMessage}
-            disabled={!canShare}
-            className={`${button} border-emerald-300/30 text-emerald-200`}
-          >
-            <Share2 className="h-4 w-4" />
-            Share location message
-          </button>
-          <button
-            type="button"
-            onClick={copyMessage}
-            disabled={!canShare}
-            className={button}
-          >
-            <Copy className="h-4 w-4" />
-            Copy message
-          </button>
-        </div>
-        {!canShare ? (
-          <p className="mt-3 text-sm text-amber-200">
-            {stale
-              ? 'Refresh the old GPS fix above to enable sharing.'
-              : 'Get GPS or enter a pickup location above to enable sharing.'}
-          </p>
-        ) : null}
-        <p
-          role="status"
-          aria-live="polite"
-          className="mt-3 text-sm text-emerald-200"
-        >
-          {shareStatus}
-        </p>
-        <label className="mt-2 block text-sm font-medium">
-          Message to share or read by phone
-          <textarea
-            ref={preview}
-            readOnly
-            rows={9}
-            value={message}
-            className={`${field} text-sm leading-relaxed`}
-          />
-        </label>
-        <div className="mt-5 space-y-3 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
-          <h3 className="font-semibold text-amber-100">Before you hang up</h3>
-          {[
-            'Have dispatch repeat the exact pickup location, road direction, and side of the road back to you. Do not settle for a guessed location.',
-            ...(kind === 'tow'
-              ? [
-                  'Confirm the dispatched truck can handle this vehicle and that Mountain Motorsport has given drop-off instructions.',
-                ]
-              : []),
-            'Confirm they received your map link or screenshot, or understood the coordinates you read aloud.',
-            'Get an ETA and callback number. If help does not arrive, call back with the same exact location.',
-          ].map((item) => (
+          <section className={panel} aria-labelledby="share-heading">
+            <h2 id="share-heading" className="text-lg font-semibold">
+              3. Share, then confirm with {kind === 'tow' ? 'Randy’s' : 'Jeff'}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              <strong className="text-slate-100">
+                Call first and ask which number accepts texts.
+              </strong>{' '}
+              {kind === 'tow'
+                ? 'Randy’s office number may not receive them.'
+                : 'Ask Jeff where to send your pickup location.'}{' '}
+              Sharing opens your phone’s sharing options; you choose the
+              recipient and send.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={shareMessage}
+                disabled={!canShare}
+                className={`${button} border-emerald-300/30 text-emerald-200`}
+              >
+                <Share2 className="h-4 w-4" />
+                Share location message
+              </button>
+              <button
+                type="button"
+                onClick={copyMessage}
+                disabled={!canShare}
+                className={button}
+              >
+                <Copy className="h-4 w-4" />
+                Copy message
+              </button>
+            </div>
+            {!canShare ? (
+              <p className="mt-3 text-sm text-amber-200">
+                {stale
+                  ? 'Refresh the old GPS fix above to enable sharing.'
+                  : 'Get GPS or enter a pickup location above to enable sharing.'}
+              </p>
+            ) : null}
             <p
-              key={item}
-              className="flex items-start gap-2 text-sm leading-relaxed text-slate-200"
+              role="status"
+              aria-live="polite"
+              className="mt-3 text-sm text-emerald-200"
             >
-              <Check className="mt-1 h-4 w-4 shrink-0 text-amber-200" />
-              {item}
+              {shareStatus}
             </p>
-          ))}
-        </div>
-        <p className="mt-4 text-sm leading-relaxed text-slate-300">
-          Once help is arranged, update Charles and the office with what
-          happened, your location, the ETA, and any jobs affected. Keep repair
-          and towing receipts in{' '}
-          <Link
-            href="/tech/receipts"
-            className="text-emerald-200 underline underline-offset-4"
-          >
-            Receipts
-          </Link>
-          .
-        </p>
-      </section>
+            <label className="mt-2 block text-sm font-medium">
+              Message to share or read by phone
+              <textarea
+                ref={preview}
+                readOnly
+                rows={9}
+                value={message}
+                className={`${field} text-sm leading-relaxed`}
+              />
+            </label>
+            <div className="mt-5 space-y-3 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
+              <h3 className="font-semibold text-amber-100">
+                Before you hang up
+              </h3>
+              {[
+                'Have dispatch repeat the exact pickup location, road direction, and side of the road back to you. Do not settle for a guessed location.',
+                ...(kind === 'tow'
+                  ? [
+                      'Confirm the dispatched truck can handle this vehicle and that Mountain Motorsport has given drop-off instructions.',
+                    ]
+                  : []),
+                'Confirm they received your map link or screenshot, or understood the coordinates you read aloud.',
+                'Get an ETA and callback number. If help does not arrive, call back with the same exact location.',
+              ].map((item) => (
+                <p
+                  key={item}
+                  className="flex items-start gap-2 text-sm leading-relaxed text-slate-200"
+                >
+                  <Check className="mt-1 h-4 w-4 shrink-0 text-amber-200" />
+                  {item}
+                </p>
+              ))}
+            </div>
+            <p className="mt-4 text-sm leading-relaxed text-slate-300">
+              Once help is arranged, update Charles and the office with what
+              happened, your location, the ETA, and any jobs affected. Keep
+              repair and towing receipts in{' '}
+              <Link
+                href="/tech/receipts"
+                className="text-emerald-200 underline underline-offset-4"
+              >
+                Receipts
+              </Link>
+              .
+            </p>
+          </section>
+        </>
+      )}
 
       <details className={`${panel} text-sm`}>
         <summary className="cursor-pointer font-semibold">

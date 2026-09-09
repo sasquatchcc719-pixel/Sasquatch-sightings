@@ -11,6 +11,10 @@ export type PickupLocation = {
 export const BOX_TRUCK =
   '2007 Ford E-350 box truck (former Penske moving truck)'
 
+// This is David's runbook, including when Charles opens it from his account.
+export const DRIVER_INTRODUCTION =
+  'I’m David. I work for Charles Sewell at Sasquatch Carpet Cleaning. The account may be under Charles Sewell. Please bill and issue all paperwork to Sasquatch Carpet Cleaning. This is a business expense.'
+
 // Contacts supplied by Charles; phone numbers verified against provider sites.
 // The repair address is from Charles's Google Maps listing, September 9, 2026.
 export const VEHICLE_CONTACTS = {
@@ -46,7 +50,7 @@ export const VEHICLE_CONTACTS = {
 } as const
 
 export const REPAIR_ADDRESS = '2522 E Platte Ave, Colorado Springs, CO 80909'
-export const REPAIR_MAP = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`Mountain Motorsport, ${REPAIR_ADDRESS}`)}`
+export const REPAIR_APPLE_MAP = `https://maps.apple.com/?daddr=${encodeURIComponent(REPAIR_ADDRESS)}&dirflg=d`
 
 export function pickupMapUrl(location: PickupLocation): string {
   return `https://www.google.com/maps/search/?api=1&query=${location.latitude.toFixed(6)},${location.longitude.toFixed(6)}`
@@ -64,10 +68,9 @@ export function formatCaptureTime(timestamp: number): string {
 }
 
 export function buildVehicleHelpMessage(input: {
-  kind: VehicleHelpKind
+  kind: Exclude<VehicleHelpKind, 'repair'>
   vehicle: VehicleKind
   otherVehicle: string
-  driverName: string
   callback: string
   issue: string
   location: PickupLocation | null
@@ -75,16 +78,10 @@ export function buildVehicleHelpMessage(input: {
   landmarks: string
 }): string {
   const { kind, vehicle, location } = input
-  const greeting =
-    kind === 'roadside' ? 'Hi Jeff,' : kind === 'repair' ? 'Hi Matt,' : 'Hello,'
-  const need =
-    kind === 'roadside'
-      ? 'roadside assistance'
-      : kind === 'tow'
-        ? 'a tow'
-        : 'repair help'
+  const greeting = kind === 'roadside' ? 'Hi Jeff,' : 'Hello,'
+  const need = kind === 'roadside' ? 'roadside assistance' : 'a tow'
   const lines = [
-    `${greeting} this is ${input.driverName.trim() || 'a driver'} with Charles at Sasquatch Carpet Cleaning. We need ${need}.`,
+    `${greeting} ${DRIVER_INTRODUCTION} We need ${need}.`,
     `Vehicle: ${vehicle === 'box-truck' ? BOX_TRUCK : input.otherVehicle.trim() || 'Other company vehicle — confirm details by phone'}.`,
     `Problem: ${input.issue.trim() || 'I will describe the problem by phone.'}`,
     `Callback: ${input.callback.trim() || 'Confirm my callback number by phone.'}`,

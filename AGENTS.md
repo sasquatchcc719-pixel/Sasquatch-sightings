@@ -196,6 +196,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**
 
+- David’s vehicle-help scripts must identify David as the caller even when Charles views the portal; the account may be under Charles Sewell, but bill and issue all paperwork to Sasquatch Carpet Cleaning. Keep pickup GPS for roadside/towing and shop directions/drop-off instructions for repairs.
+
 - Call-log repairs include backfilling existing affected records from Twilio child-call and recording evidence; verify the repaired production history before declaring completion. Parent-call duration alone does not prove an answered call or a voicemail.
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
