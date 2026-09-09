@@ -23,6 +23,7 @@ import {
 import { DayTimePicker } from './day-time-picker'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
+import { ResidentialEstimatePanel } from './residential-estimate-panel'
 
 type ServiceItem = {
   id: string
@@ -301,6 +302,10 @@ export function NewJobWorkspace() {
   const hasAppliedConcernPrefillRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [estimateRequested, setEstimateRequested] = useState(
+    () => searchParams.get('mode') === 'estimate',
+  )
+  const [estimateBusy, setEstimateBusy] = useState(false)
   const [warrantyPrefillLoading, setWarrantyPrefillLoading] = useState(false)
   const [warrantyConcern, setWarrantyConcern] =
     useState<WarrantyConcernPrefill | null>(null)
@@ -382,6 +387,7 @@ export function NewJobWorkspace() {
   const [leadSource, setLeadSource] = useState('')
   const [leadSourceDetail, setLeadSourceDetail] = useState('')
   const [isCommercial, setIsCommercial] = useState(false)
+  const estimateMode = estimateRequested && !serviceConcernId && !isCommercial
   const [leadSourceOptions, setLeadSourceOptions] = useState<
     PublicLeadSourceOption[]
   >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
@@ -576,6 +582,7 @@ export function NewJobWorkspace() {
   }, [])
 
   const loadSchedulePreview = useCallback(async () => {
+    if (estimateMode) return
     try {
       const weekStart = startOfWeek(appointmentForm.appointment_date)
       const weekEnd = addDays(weekStart, 6)
@@ -599,7 +606,7 @@ export function NewJobWorkspace() {
           : 'Failed to load week preview',
       )
     }
-  }, [appointmentForm.appointment_date])
+  }, [appointmentForm.appointment_date, estimateMode])
 
   useEffect(() => {
     void loadSchedulePreview()
@@ -1170,6 +1177,7 @@ export function NewJobWorkspace() {
   }
 
   const submitBooking = async (allowConflict: boolean) => {
+    if (estimateMode || estimateBusy || saving) return
     setSaving(true)
     setError(null)
     setConflictOverride(null)
@@ -1267,12 +1275,14 @@ export function NewJobWorkspace() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (estimateMode) return
     await submitBooking(false)
   }
 
   useEffect(() => {
     async function loadAvailableTimes() {
       if (
+        estimateMode ||
         !appointmentForm.appointment_date ||
         requiredMinutesForCurrentSelection <= 0
       ) {
@@ -1342,6 +1352,7 @@ export function NewJobWorkspace() {
 
     void loadAvailableTimes()
   }, [
+    estimateMode,
     appointmentForm.appointment_date,
     appointmentForm.assigned_staff_user_id,
     requiredMinutesForCurrentSelection,
@@ -1378,7 +1389,7 @@ export function NewJobWorkspace() {
         </Card>
       ) : null}
 
-      {conflictOverride ? (
+      {conflictOverride && !estimateMode ? (
         <Card className="border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
           <p>{conflictOverride}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1410,7 +1421,10 @@ export function NewJobWorkspace() {
       ) : null}
 
       <form className="grid gap-6" onSubmit={handleSubmit}>
-        <div className="mx-auto w-full max-w-4xl min-w-0 space-y-6">
+        <fieldset
+          disabled={estimateBusy}
+          className="mx-auto w-full max-w-4xl min-w-0 space-y-6"
+        >
           <Card
             className={`border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur ${
               serviceConcernId ? 'hidden' : ''
@@ -1892,184 +1906,233 @@ export function NewJobWorkspace() {
             </div>
           </Card>
 
-          {/* Schedule — sits right under pricing: pick the day, then the time. */}
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-            <h3 className="text-lg font-semibold">Schedule</h3>
+          {!serviceConcernId && !isCommercial ? (
+            <ResidentialEstimatePanel
+              estimateMode={estimateMode}
+              onModeChange={(value) => {
+                setEstimateRequested(value)
+                setError(null)
+                setConflictOverride(null)
+              }}
+              input={{
+                customer_id:
+                  selectedCustomer &&
+                  customerFormStillMatchesSelection(
+                    customerForm,
+                    selectedCustomer,
+                  )
+                    ? selectedCustomer.id
+                    : null,
+                customer: customerForm,
+                address:
+                  addressSelection !== 'new'
+                    ? { id: addressSelection }
+                    : addressForm,
+                promo_code: selectedPromoCode || null,
+                discount_amount: selectedPromoCode ? 0 : discountAmount,
+                line_items: lineItems
+                  .filter((item) => Number(item.quantity) > 0)
+                  .map((item) => ({
+                    service_catalog_item_id:
+                      item.service_catalog_item_id || null,
+                    name_snapshot: item.name_snapshot,
+                    quantity: Number(item.quantity),
+                    unit_price: Number(item.unit_price || 0),
+                  })),
+              }}
+              onEmailChange={(email) =>
+                setCustomerForm((current) => ({ ...current, email }))
+              }
+              onNameChange={(first_name) =>
+                setCustomerForm((current) => ({ ...current, first_name }))
+              }
+              disabled={saving || loading || promoPreviewLoading}
+              onBusyChange={setEstimateBusy}
+            />
+          ) : null}
 
-            {serviceConcernId ? (
-              <div className="mt-4">
-                <Label htmlFor="warranty-duration">On-site work time</Label>
-                <select
-                  id="warranty-duration"
-                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-                  value={warrantyDurationMinutes}
-                  onChange={(event) =>
-                    setWarrantyDurationMinutes(Number(event.target.value))
-                  }
-                >
-                  <option value={60}>1 hour</option>
-                  <option value={90}>1½ hours</option>
-                  <option value={120}>2 hours</option>
-                  <option value={180}>3 hours</option>
-                  <option value={240}>4 hours</option>
-                </select>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  The calendar also reserves the normal 1-hour travel/setup
-                  buffer.
-                </p>
-              </div>
-            ) : null}
+          {!estimateMode ? (
+            <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+              <h3 className="text-lg font-semibold">Schedule</h3>
 
-            <div className="mt-4">
-              <Label htmlFor="appointment-tech">Assigned Technician</Label>
-              <select
-                id="appointment-tech"
-                className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-                value={appointmentForm.assigned_staff_user_id}
-                onChange={(event) =>
-                  setAppointmentForm((current) => ({
-                    ...current,
-                    assigned_staff_user_id: event.target.value,
-                  }))
-                }
-              >
-                {staffMembers.map((staff) => (
-                  <option key={staff.id} value={staff.id}>
-                    {staff.display_name}
-                  </option>
-                ))}
-                {staffMembers.length === 0 && (
-                  <option value="">Loading...</option>
-                )}
-              </select>
-            </div>
-
-            {slotWarning && (
-              <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
-                {slotWarning}
-              </p>
-            )}
-
-            <div className="mt-4">
-              <DayTimePicker
-                selectedDate={appointmentForm.appointment_date}
-                onSelectDate={(dateKey) =>
-                  setAppointmentForm((current) => ({
-                    ...current,
-                    appointment_date: dateKey,
-                  }))
-                }
-                selectedTime={appointmentForm.start_time}
-                onSelectTime={(time) =>
-                  setAppointmentForm((current) => ({
-                    ...current,
-                    start_time: time,
-                  }))
-                }
-                appointments={selectedDayAppointments}
-                availableSlots={availableSlots}
-                requiredMinutes={requiredMinutesForCurrentSelection}
-                serviceMinutes={serviceMinutesForCurrentSelection}
-                bufferMinutes={bufferMinutesForCurrentSelection}
-                loadingSlots={loadingSlots}
-                useCustomTime={useCustomTime}
-                onToggleCustomTime={() => setUseCustomTime((v) => !v)}
-                staffClosed={selectedStaffClosedForDay}
-                staffUserId={appointmentForm.assigned_staff_user_id}
-              />
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="lead-source">
-                  Lead Source {serviceConcernId ? '(from original job)' : '*'}
-                </Label>
-                <select
-                  id="lead-source"
-                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-                  value={leadSource}
-                  disabled={Boolean(serviceConcernId)}
-                  onChange={(event) => {
-                    setLeadSource(event.target.value)
-                    setLeadSourceDetail('')
-                  }}
-                >
-                  <option value="">— Select source —</option>
-                  {leadSourceOptions.map((option) => (
-                    <option key={option.key} value={option.value}>
-                      {option.customer_label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isCommercial}
-                  onClick={() => setIsCommercial((v) => !v)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                    isCommercial
-                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
-                      : 'border-input bg-background'
-                  }`}
-                >
-                  <span>
-                    <span className="font-medium">Commercial account</span>
-                    <span className="text-muted-foreground mt-0.5 block text-xs">
-                      Not a marketing lead — rolls into Commercial revenue
-                    </span>
-                  </span>
-                  <span
-                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-                      isCommercial ? 'bg-amber-500' : 'bg-muted'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                        isCommercial ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </span>
-                </button>
-              </div>
-              {!serviceConcernId && selectedLeadSource?.requires_detail ? (
-                <div>
-                  <Label htmlFor="lead-source-detail">
-                    {selectedLeadSource.detail_label || 'Lead Source Detail'} *
-                  </Label>
-                  <Input
-                    id="lead-source-detail"
-                    className="mt-1"
-                    value={leadSourceDetail}
+              {serviceConcernId ? (
+                <div className="mt-4">
+                  <Label htmlFor="warranty-duration">On-site work time</Label>
+                  <select
+                    id="warranty-duration"
+                    className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                    value={warrantyDurationMinutes}
                     onChange={(event) =>
-                      setLeadSourceDetail(event.target.value)
+                      setWarrantyDurationMinutes(Number(event.target.value))
                     }
-                  />
+                  >
+                    <option value={60}>1 hour</option>
+                    <option value={90}>1½ hours</option>
+                    <option value={120}>2 hours</option>
+                    <option value={180}>3 hours</option>
+                    <option value={240}>4 hours</option>
+                  </select>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    The calendar also reserves the normal 1-hour travel/setup
+                    buffer.
+                  </p>
                 </div>
               ) : null}
-              <div className="md:col-span-2">
-                <Label htmlFor="internal-notes">Internal Notes</Label>
-                <Textarea
-                  id="internal-notes"
-                  className="mt-1"
-                  value={appointmentForm.internal_notes}
+
+              <div className="mt-4">
+                <Label htmlFor="appointment-tech">Assigned Technician</Label>
+                <select
+                  id="appointment-tech"
+                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                  value={appointmentForm.assigned_staff_user_id}
                   onChange={(event) =>
                     setAppointmentForm((current) => ({
                       ...current,
-                      internal_notes: event.target.value,
+                      assigned_staff_user_id: event.target.value,
                     }))
                   }
-                  placeholder="Crew notes, quoting details, access reminders"
+                >
+                  {staffMembers.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.display_name}
+                    </option>
+                  ))}
+                  {staffMembers.length === 0 && (
+                    <option value="">Loading...</option>
+                  )}
+                </select>
+              </div>
+
+              {slotWarning && (
+                <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+                  {slotWarning}
+                </p>
+              )}
+
+              <div className="mt-4">
+                <DayTimePicker
+                  selectedDate={appointmentForm.appointment_date}
+                  onSelectDate={(dateKey) =>
+                    setAppointmentForm((current) => ({
+                      ...current,
+                      appointment_date: dateKey,
+                    }))
+                  }
+                  selectedTime={appointmentForm.start_time}
+                  onSelectTime={(time) =>
+                    setAppointmentForm((current) => ({
+                      ...current,
+                      start_time: time,
+                    }))
+                  }
+                  appointments={selectedDayAppointments}
+                  availableSlots={availableSlots}
+                  requiredMinutes={requiredMinutesForCurrentSelection}
+                  serviceMinutes={serviceMinutesForCurrentSelection}
+                  bufferMinutes={bufferMinutesForCurrentSelection}
+                  loadingSlots={loadingSlots}
+                  useCustomTime={useCustomTime}
+                  onToggleCustomTime={() => setUseCustomTime((v) => !v)}
+                  staffClosed={selectedStaffClosedForDay}
+                  staffUserId={appointmentForm.assigned_staff_user_id}
                 />
               </div>
-            </div>
-          </Card>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="lead-source">
+                    Lead Source {serviceConcernId ? '(from original job)' : '*'}
+                  </Label>
+                  <select
+                    id="lead-source"
+                    className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                    value={leadSource}
+                    disabled={Boolean(serviceConcernId)}
+                    onChange={(event) => {
+                      setLeadSource(event.target.value)
+                      setLeadSourceDetail('')
+                    }}
+                  >
+                    <option value="">— Select source —</option>
+                    {leadSourceOptions.map((option) => (
+                      <option key={option.key} value={option.value}>
+                        {option.customer_label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isCommercial}
+                    onClick={() => setIsCommercial((v) => !v)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      isCommercial
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                        : 'border-input bg-background'
+                    }`}
+                  >
+                    <span>
+                      <span className="font-medium">Commercial account</span>
+                      <span className="text-muted-foreground mt-0.5 block text-xs">
+                        Not a marketing lead — rolls into Commercial revenue
+                      </span>
+                    </span>
+                    <span
+                      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                        isCommercial ? 'bg-amber-500' : 'bg-muted'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                          isCommercial ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </span>
+                  </button>
+                </div>
+                {!serviceConcernId && selectedLeadSource?.requires_detail ? (
+                  <div>
+                    <Label htmlFor="lead-source-detail">
+                      {selectedLeadSource.detail_label || 'Lead Source Detail'}{' '}
+                      *
+                    </Label>
+                    <Input
+                      id="lead-source-detail"
+                      className="mt-1"
+                      value={leadSourceDetail}
+                      onChange={(event) =>
+                        setLeadSourceDetail(event.target.value)
+                      }
+                    />
+                  </div>
+                ) : null}
+                <div className="md:col-span-2">
+                  <Label htmlFor="internal-notes">Internal Notes</Label>
+                  <Textarea
+                    id="internal-notes"
+                    className="mt-1"
+                    value={appointmentForm.internal_notes}
+                    onChange={(event) =>
+                      setAppointmentForm((current) => ({
+                        ...current,
+                        internal_notes: event.target.value,
+                      }))
+                    }
+                    placeholder="Crew notes, quoting details, access reminders"
+                  />
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Customer</h3>
+                <h3 className="text-lg font-semibold">
+                  Customer{estimateMode ? ' (optional)' : ''}
+                </h3>
                 <p className="text-muted-foreground mt-1 text-sm">
                   Auto-filled from the lookup above — or enter a new customer
                   here.
@@ -2080,7 +2143,9 @@ export function NewJobWorkspace() {
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="first-name">First Name *</Label>
+                  <Label htmlFor="first-name">
+                    First Name{estimateMode ? '' : ' *'}
+                  </Label>
                   <Input
                     id="first-name"
                     value={customerForm.first_name}
@@ -2093,7 +2158,9 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="last-name">Last Name *</Label>
+                  <Label htmlFor="last-name">
+                    Last Name{estimateMode ? '' : ' *'}
+                  </Label>
                   <Input
                     id="last-name"
                     value={customerForm.last_name}
@@ -2121,7 +2188,9 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="customer-phone">Phone *</Label>
+                  <Label htmlFor="customer-phone">
+                    Phone{estimateMode ? '' : ' *'}
+                  </Label>
                   <Input
                     id="customer-phone"
                     value={customerForm.phone}
@@ -2167,7 +2236,9 @@ export function NewJobWorkspace() {
 
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div>
-              <h3 className="text-lg font-semibold">Service Address</h3>
+              <h3 className="text-lg font-semibold">
+                Service Address{estimateMode ? ' (optional)' : ''}
+              </h3>
               <p className="text-muted-foreground mt-1 text-sm">
                 Select an existing property or add another address for this
                 customer.
@@ -2343,7 +2414,9 @@ export function NewJobWorkspace() {
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <Label htmlFor="street-1">Street *</Label>
+                      <Label htmlFor="street-1">
+                        Street{estimateMode ? '' : ' *'}
+                      </Label>
                       <Input
                         id="street-1"
                         autoComplete="street-address"
@@ -2384,7 +2457,9 @@ export function NewJobWorkspace() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="city">City *</Label>
+                      <Label htmlFor="city">
+                        City{estimateMode ? '' : ' *'}
+                      </Label>
                       <CityQuickPick
                         className="mt-1.5 mb-2"
                         value={addressForm.city}
@@ -2420,7 +2495,9 @@ export function NewJobWorkspace() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="state">State *</Label>
+                      <Label htmlFor="state">
+                        State{estimateMode ? '' : ' *'}
+                      </Label>
                       <Input
                         id="state"
                         value={addressForm.state}
@@ -2433,7 +2510,9 @@ export function NewJobWorkspace() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="zip-code">Zip *</Label>
+                      <Label htmlFor="zip-code">
+                        Zip{estimateMode ? '' : ' *'}
+                      </Label>
                       <Input
                         id="zip-code"
                         value={addressForm.zip_code}
@@ -2466,15 +2545,29 @@ export function NewJobWorkspace() {
           </Card>
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              disabled={saving || loading || warrantyPrefillLoading}
-            >
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              {serviceConcernId ? 'Schedule Warranty Return' : 'Save Job'}
-            </Button>
+            {!estimateMode ? (
+              <Button
+                type="submit"
+                disabled={saving || loading || warrantyPrefillLoading}
+              >
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                {serviceConcernId ? 'Schedule Warranty Return' : 'Save Job'}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  document
+                    .getElementById('email-estimate')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              >
+                Back to estimate email
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -2516,7 +2609,7 @@ export function NewJobWorkspace() {
               </div>
             </div>
           </Card>
-        </div>
+        </fieldset>
       </form>
     </div>
   )

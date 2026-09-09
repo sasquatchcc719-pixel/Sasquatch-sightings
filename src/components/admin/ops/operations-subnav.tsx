@@ -71,12 +71,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: Clock,
   },
   {
-    href: '/admin/operations/estimates',
-    label: 'Estimates',
-    description: 'Measuring visits, quotes, and conversions to jobs',
-    icon: FileText,
-  },
-  {
     href: '/admin/operations/queue',
     label: 'Work Queue',
     description: 'Approved estimates and maintenance awaiting a slot',
@@ -166,6 +160,7 @@ function getSectionLabel(pathname: string): string {
     return 'Job Detail'
   if (pathname.startsWith('/admin/operations/invoices/'))
     return 'Invoice Detail'
+  if (pathname === '/admin/operations/estimates') return 'Estimate history'
   if (pathname.startsWith('/admin/operations/estimates/')) return 'Estimate'
   if (pathname.startsWith('/admin/operations/recurring/visit/'))
     return 'Recurring Visit'

@@ -12,7 +12,6 @@ import {
   Bot,
   Eye,
   Calendar,
-  Ruler,
   Briefcase,
   BarChart3,
   Target,
@@ -73,12 +72,6 @@ const navSections: NavSection[] = [
         href: '/admin/operations',
         icon: Calendar,
         description: 'Calendar & bookings',
-      },
-      {
-        name: 'Estimates',
-        href: '/admin/operations/estimates',
-        icon: Ruler,
-        description: 'Line-item estimates',
       },
       {
         name: 'Service Concerns',

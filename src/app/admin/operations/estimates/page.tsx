@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Plus, Ruler } from 'lucide-react'
+import { Mail, Ruler } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -98,16 +98,16 @@ export default async function EstimatesListPage() {
         <div>
           <div className="flex items-center gap-2">
             <Ruler className="text-muted-foreground h-5 w-5" />
-            <h1 className="text-2xl font-bold">Estimates</h1>
+            <h1 className="text-2xl font-bold">Estimate history</h1>
           </div>
           <p className="text-muted-foreground text-sm">
-            Measuring visits and outstanding quotes. {openCount} open.
+            Existing estimates and commercial quotes. {openCount} open.
           </p>
         </div>
         <Button asChild className="gap-2">
-          <Link href="/admin/operations/estimates/new">
-            <Plus className="h-4 w-4" />
-            New estimate
+          <Link href="/admin/operations/new-job?mode=estimate">
+            <Mail className="h-4 w-4" />
+            Email estimate in Book Job
           </Link>
         </Button>
       </div>
@@ -115,14 +115,15 @@ export default async function EstimatesListPage() {
       {estimates.length === 0 ? (
         <Card className="p-10 text-center">
           <Ruler className="text-muted-foreground mx-auto h-8 w-8" />
-          <p className="mt-3 font-medium">No estimates yet</p>
+          <p className="mt-3 font-medium">No estimate history</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Book a measuring visit and track it here.
+            Create and email residential estimates from Book Job, without
+            scheduling a visit.
           </p>
           <Button asChild className="mt-4 gap-2">
-            <Link href="/admin/operations/estimates/new">
-              <Plus className="h-4 w-4" />
-              Create your first estimate
+            <Link href="/admin/operations/new-job?mode=estimate">
+              <Mail className="h-4 w-4" />
+              Email estimate in Book Job
             </Link>
           </Button>
         </Card>

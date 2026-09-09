@@ -27,7 +27,6 @@ import {
   ImagePlay,
   Mail,
   ClipboardList,
-  Ruler,
   Tag,
   UserRoundSearch,
   Ban,
@@ -153,13 +152,6 @@ export function AdminNavigation() {
       icon: Calendar,
       active: pathname === '/admin/operations',
       description: 'Internal booking, calendar, invoices, and sync queue',
-    },
-    {
-      name: 'Estimates',
-      href: '/admin/operations/estimates',
-      icon: Ruler,
-      active: pathname.startsWith('/admin/operations/estimates'),
-      description: 'Measure visits with line items, convert to scheduled jobs',
     },
     {
       name: 'Service Concerns',

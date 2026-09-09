@@ -1598,11 +1598,6 @@ export function OperationsSchedule() {
     router.push(`/admin/operations/new-job?date=${dateKey}&time=${hh}:00`)
   }
 
-  const openNewEstimateAt = (dateKey: string, hour: number) => {
-    const hh = String(hour).padStart(2, '0')
-    router.push(`/admin/operations/estimates/new?date=${dateKey}&time=${hh}:00`)
-  }
-
   const openBlockAt = (
     dateKey: string,
     hour: number,
@@ -2862,18 +2857,6 @@ export function OperationsSchedule() {
               >
                 <Plus className="h-3.5 w-3.5" />
                 New job at this time
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-start gap-2 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
-                onClick={() => {
-                  openNewEstimateAt(cellMenu.dateKey, cellMenu.hour)
-                  setCellMenu(null)
-                }}
-              >
-                <Ruler className="h-3.5 w-3.5" />
-                New estimate at this time
               </Button>
               <Button
                 size="sm"
