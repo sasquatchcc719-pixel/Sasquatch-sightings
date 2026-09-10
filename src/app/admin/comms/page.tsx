@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/supabase/server'
 import Link from 'next/link'
-import { Inbox, MessageSquare, ChevronRight } from 'lucide-react'
+import { Inbox, MessageSquare, ChevronRight, PhoneCall } from 'lucide-react'
 import { countUnreadInboundMessages } from '@/lib/conversations-unread'
 
 type ConversationRow = {
@@ -37,6 +37,7 @@ export default async function CommsHubPage() {
   // Per-channel stats
   type ChannelStats = { unread: number; lastActive: string | null }
   const channels: Record<string, ChannelStats> = {
+    'call-log': { unread: 0, lastActive: null },
     phone: { unread: 0, lastActive: null },
     lsa: { unread: 0, lastActive: null },
     yelp: { unread: 0, lastActive: null },
@@ -65,6 +66,18 @@ export default async function CommsHubPage() {
   }
 
   const channelConfig = [
+    {
+      key: 'call-log',
+      label: 'Call Log',
+      description: "Today's answered, missed, and voicemail calls",
+      href: '/admin/call-logs',
+      icon: (
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+          <PhoneCall className="h-5 w-5" />
+        </div>
+      ),
+      active: true,
+    },
     {
       key: 'phone',
       label: 'Direct Texts',

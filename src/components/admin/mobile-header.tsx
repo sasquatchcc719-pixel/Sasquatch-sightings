@@ -9,6 +9,7 @@ import {
   Truck,
   Megaphone,
   Phone,
+  PhoneCall,
   Bot,
   Eye,
   Calendar,
@@ -174,6 +175,12 @@ const navSections: NavSection[] = [
         href: '/admin/phone',
         icon: Phone,
         description: 'Outbound calls',
+      },
+      {
+        name: 'Call Log',
+        href: '/admin/call-logs',
+        icon: PhoneCall,
+        description: "Today's answered, missed & voicemail calls",
       },
       {
         name: 'Direct Texts',
