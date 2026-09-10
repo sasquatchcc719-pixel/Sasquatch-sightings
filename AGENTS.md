@@ -198,7 +198,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 - David’s vehicle-help scripts must identify David as the caller even when Charles views the portal; the account may be under Charles Sewell, but bill and issue all paperwork to Sasquatch Carpet Cleaning. Keep pickup GPS for roadside/towing and shop directions/drop-off instructions for repairs.
 
-- For the Sapphire Scientific 370 guide, preserve Charles’s specified NAPA Gold 3054 filter and vice grips terminology; add handling precautions without silently substituting tools.
+- For the Sapphire Scientific 370 guide, preserve Charles’s NAPA Gold 3054 and familiar tool names. List the socket set, adjustable wrench, and vice grips under “Tools needed”; keep the repair action in the heading and do not silently substitute tools.
 
 - Call-log repairs include backfilling existing affected records from Twilio child-call and recording evidence; verify the repaired production history before declaring completion. Parent-call duration alone does not prove an answered call or a voicemail.
 

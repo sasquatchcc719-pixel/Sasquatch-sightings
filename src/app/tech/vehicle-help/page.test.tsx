@@ -27,7 +27,7 @@ describe('David’s vehicle help viewed from Charles’s account', () => {
     ).toBeVisible()
     expect(
       screen.getByRole('heading', {
-        name: '3. Replace the filter with vice grips',
+        name: '3. Replace the fuel filter',
       }),
     ).toBeVisible()
     expect(

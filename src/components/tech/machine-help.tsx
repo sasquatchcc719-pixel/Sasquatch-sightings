@@ -122,9 +122,18 @@ export function MachineHelp({
       </div>
 
       <div className={panel}>
-        <h3 className="text-lg font-semibold">
-          3. Replace the filter with vice grips
-        </h3>
+        <h3 className="text-lg font-semibold">3. Replace the fuel filter</h3>
+        <div className="mt-3 rounded-xl border border-white/10 p-3 text-sm text-slate-200">
+          <h4 className="font-semibold">Tools needed</h4>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>Socket set</li>
+            <li>Adjustable wrench</li>
+            <li>A pair of vice grips</li>
+          </ul>
+          <p className="mt-2 text-slate-300">
+            Check the truck for these before starting.
+          </p>
+        </div>
         <p className="mt-2 text-sm leading-relaxed text-amber-100">
           Turn the machine off, remove the key, and let the engine and exhaust
           cool. Work in ventilation, away from smoking, flames, or sparks. Only
