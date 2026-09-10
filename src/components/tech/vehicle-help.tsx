@@ -7,6 +7,7 @@ import {
   CalendarClock,
   Check,
   Copy,
+  Fuel,
   LocateFixed,
   MapPin,
   Phone,
@@ -28,6 +29,7 @@ import {
   type VehicleHelpKind,
   type VehicleKind,
 } from '@/lib/tech/vehicle-help'
+import { MachineHelp } from './machine-help'
 
 const panel = 'rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:p-5'
 const field =
@@ -38,6 +40,7 @@ const choices = [
   { value: 'roadside', label: 'Roadside help', icon: Wrench },
   { value: 'tow', label: 'Need a tow', icon: Truck },
   { value: 'repair', label: 'Repair shop', icon: MapPin },
+  { value: 'machine', label: 'Machine stopped', icon: Fuel },
   { value: 'schedule', label: 'Schedule changes', icon: CalendarClock },
 ] as const
 
@@ -84,7 +87,9 @@ function ContactCard({ kind }: { kind: VehicleHelpKind }) {
 }
 
 export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
-  const [kind, setKind] = useState<VehicleHelpKind | 'schedule'>('roadside')
+  const [kind, setKind] = useState<VehicleHelpKind | 'schedule' | 'machine'>(
+    'roadside',
+  )
   const [vehicle, setVehicle] = useState<VehicleKind>('box-truck')
   const [otherVehicle, setOtherVehicle] = useState('')
   const [issue, setIssue] = useState('')
@@ -112,7 +117,7 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
     ? !!manualLocation.trim()
     : !!activeLocation && !stale && !locating
   const message =
-    kind === 'repair' || kind === 'schedule'
+    kind === 'repair' || kind === 'schedule' || kind === 'machine'
       ? ''
       : buildVehicleHelpMessage({
           kind,
@@ -124,6 +129,14 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
           manualLocation: manual ? manualLocation : '',
           landmarks,
         })
+
+  function openHelpTab(next: 'repair' | 'schedule') {
+    setKind(next)
+    setShareStatus('')
+    document
+      .getElementById('help-heading')
+      ?.scrollIntoView?.({ block: 'start' })
+  }
 
   function getLocation() {
     const currentRequest = ++requestId.current
@@ -232,7 +245,8 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
       <section className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 p-5">
         <h1 className="text-3xl font-bold tracking-tight">Vehicle help</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Roadside help, towing, repairs, and schedule changes.
+          Roadside help, towing, truckmount troubleshooting, repairs, and
+          schedule changes.
         </p>
         <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/5 p-3 text-sm leading-relaxed text-amber-100">
           <ShieldAlert className="mr-2 inline h-4 w-4" />
@@ -246,13 +260,13 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
       </section>
 
       <section className={panel} aria-labelledby="help-heading">
-        <h2 id="help-heading" className="text-lg font-semibold">
-          {kind === 'schedule'
+        <h2 id="help-heading" className="scroll-mt-36 text-lg font-semibold">
+          {kind === 'schedule' || kind === 'machine'
             ? 'Choose the help you need'
             : '1. Choose the help you need'}
         </h2>
         <div
-          className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"
+          className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5"
           aria-label="Type of vehicle help"
         >
           {choices.map(({ value, label, icon: Icon }) => (
@@ -264,14 +278,14 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
                 setKind(value)
                 setShareStatus('')
               }}
-              className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center text-xs font-semibold sm:text-sm ${kind === value ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 bg-slate-950/60 text-slate-300 hover:bg-white/10'}`}
+              className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center text-xs font-semibold sm:text-sm ${value === 'schedule' ? 'col-span-2 sm:col-span-1' : ''} ${kind === value ? 'border-emerald-300/60 bg-emerald-300/15 text-emerald-100' : 'border-white/10 bg-slate-950/60 text-slate-300 hover:bg-white/10'}`}
             >
               <Icon className="h-5 w-5" />
               {label}
             </button>
           ))}
         </div>
-        {kind !== 'schedule' ? (
+        {kind !== 'schedule' && kind !== 'machine' ? (
           <>
             <label className="mt-4 block text-sm font-medium">
               Vehicle
@@ -353,7 +367,12 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
         ) : null}
       </section>
 
-      {kind === 'schedule' ? (
+      {kind === 'machine' ? (
+        <MachineHelp
+          onSchedule={() => openHelpTab('schedule')}
+          onRepair={() => openHelpTab('repair')}
+        />
+      ) : kind === 'schedule' ? (
         scheduleHelp
       ) : kind === 'repair' ? (
         <section className={panel} aria-labelledby="repair-heading">
@@ -637,7 +656,10 @@ export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
         </summary>
         <div className="mt-4 space-y-4">
           {choices
-            .filter((choice) => choice.value !== 'schedule')
+            .filter(
+              (choice) =>
+                choice.value !== 'schedule' && choice.value !== 'machine',
+            )
             .map(({ value }) => (
               <div key={value}>
                 <a

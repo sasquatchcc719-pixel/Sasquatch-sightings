@@ -12,6 +12,60 @@ vi.mock('@/lib/auth', () => ({
 afterEach(cleanup)
 
 describe('David’s vehicle help viewed from Charles’s account', () => {
+  it('offers the 370 checks without dispatch controls and connects to repair and schedule help', async () => {
+    render(await VehicleHelpPage())
+    fireEvent.click(screen.getByRole('button', { name: 'Machine stopped' }))
+    expect(
+      screen.getByRole('heading', {
+        name: 'Sapphire Scientific 370 stopped running',
+      }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('heading', {
+        name: '1. Check the dump tank first',
+      }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('heading', {
+        name: '3. Replace the filter with vice grips',
+      }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'NAPA part listing' }),
+    ).toHaveAttribute('href', 'https://www.napaonline.com/en/p/FIL3054')
+    expect(screen.getByRole('link', { name: /Call NAPA/ })).toHaveAttribute(
+      'href',
+      'tel:+17195741650',
+    )
+    expect(
+      screen.getByRole('img', { name: /fuel filter box labeled 3054/ }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Get my GPS location' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('textbox', {
+        name: 'Message to share or read by phone',
+      }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'Vehicle' }),
+    ).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Call Matt / repair shop details' }),
+    )
+    expect(screen.getByRole('link', { name: /Call.*Matt/ })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Machine stopped' }))
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Switch trucks & manage the schedule',
+      }),
+    )
+    expect(
+      screen.getByRole('link', { name: 'Call 719-367-4806' }),
+    ).toBeVisible()
+  })
+
   it('separates emergency schedule coordination from GPS and vendor dispatch', async () => {
     render(await VehicleHelpPage())
     fireEvent.click(screen.getByRole('button', { name: 'Schedule changes' }))
