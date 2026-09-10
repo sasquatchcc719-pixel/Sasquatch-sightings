@@ -1579,28 +1579,11 @@ function OwnerComparison({
 }) {
   const ownerTotals = owner.totals
   const techTotals = tech.totals
-  const jobTimeMetrics = (totals: TechPerformance['totals']) => {
-    const hourlyWage =
-      totals.paidHours > 0 ? totals.grossWages / totals.paidHours : 0
-    const jobWages = hourlyWage * totals.jobHours
-    const revenuePerJobHour =
-      totals.jobHours > 0 ? totals.revenue / totals.jobHours : 0
-    const laborPercent =
-      totals.revenue > 0 ? (jobWages / totals.revenue) * 100 : 0
-    const profitPerJobHour =
-      totals.jobHours > 0 ? (totals.revenue - jobWages) / totals.jobHours : 0
-
-    return {
-      hourlyWage,
-      revenuePerJobHour,
-      laborPercent,
-      profitPerJobHour,
-    }
-  }
-  const ownerJobTime = jobTimeMetrics(ownerTotals)
-  const techJobTime = jobTimeMetrics(techTotals)
-  const revenueDifference =
-    ownerJobTime.revenuePerJobHour - techJobTime.revenuePerJobHour
+  const revenuePerJobHour = (totals: TechPerformance['totals']) =>
+    totals.jobHours > 0 ? totals.revenue / totals.jobHours : 0
+  const ownerRevenuePerJobHour = revenuePerJobHour(ownerTotals)
+  const techRevenuePerJobHour = revenuePerJobHour(techTotals)
+  const revenueDifference = ownerRevenuePerJobHour - techRevenuePerJobHour
   const comparisonLabel =
     Math.abs(revenueDifference) < 1
       ? 'Nearly even revenue per job hour'
@@ -1611,23 +1594,8 @@ function OwnerComparison({
   const rows = [
     {
       label: 'Revenue / Job Hour',
-      tech: usd(techJobTime.revenuePerJobHour),
-      owner: usd(ownerJobTime.revenuePerJobHour),
-    },
-    {
-      label: 'Hourly Wage',
-      tech: techTotals.paidHours > 0 ? usd(techJobTime.hourlyWage) : '—',
-      owner: ownerTotals.paidHours > 0 ? usd(ownerJobTime.hourlyWage) : '—',
-    },
-    {
-      label: 'Job Labor % of Revenue',
-      tech: `${techJobTime.laborPercent.toFixed(1)}%`,
-      owner: `${ownerJobTime.laborPercent.toFixed(1)}%`,
-    },
-    {
-      label: 'Profit / Job Hour After Wage',
-      tech: usd(techJobTime.profitPerJobHour),
-      owner: usd(ownerJobTime.profitPerJobHour),
+      tech: usd(techRevenuePerJobHour),
+      owner: usd(ownerRevenuePerJobHour),
     },
     {
       label: 'Hours Counted',
@@ -1644,10 +1612,9 @@ function OwnerComparison({
             {tech.displayName} vs {owner.displayName}
           </h4>
           <p className="text-muted-foreground mt-1 max-w-2xl text-xs leading-relaxed">
-            Same completed-job window. Both columns use recorded on-job hours.
-            {` ${tech.displayName}'s`} actual hourly wage is applied only to
-            those hours; {owner.displayName} uses the estimated $25/hr owner
-            wage.
+            Same completed-job window. Both columns use recorded on-job hours,
+            so this is a revenue-efficiency comparison without wage or labor
+            assumptions.
           </p>
         </div>
         <span className="w-fit rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
@@ -3409,10 +3376,12 @@ export default function StatsPage() {
           {ownerPerf && techPerf.length > 0 && (
             <div className="mt-6">
               <div className="mb-3">
-                <h3 className="text-lg font-semibold">Owner Comparison</h3>
+                <h3 className="text-lg font-semibold">
+                  Field Revenue Comparison
+                </h3>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  Apples-to-apples completed-job efficiency. The monthly history
-                  above remains based on paid clock hours.
+                  Apples-to-apples completed-job revenue efficiency. The monthly
+                  history above remains based on paid clock hours.
                 </p>
               </div>
               <OwnerComparison
