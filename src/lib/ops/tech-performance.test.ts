@@ -73,7 +73,8 @@ describe('buildTechDayRows', () => {
       '2026-07-16',
     ])
     expect(days[0].jobs).toBe(2)
-    expect(days[0].profitAfterWages).toBe(400)
+    expect(days[0].laborCost).toBe(100)
+    expect(days[0].profitAfterLaborCost).toBe(400)
     expect(days[0].profitPerHour).toBe(100)
     expect(days[1].profitPerHour).toBe(-25)
     expect(days[1].isLive).toBe(true)
@@ -103,15 +104,35 @@ describe('buildTechMonthRows', () => {
     expect(june.revenue).toBe(1000)
     expect(june.paidHours).toBe(14)
     expect(june.grossWages).toBe(308)
+    expect(june.laborCost).toBe(308)
+    expect(june.laborCostPerPaidHour).toBe(22)
     expect(june.revenuePerPaidHour).toBeCloseTo(1000 / 14, 1)
     expect(june.laborPercent).toBeCloseTo(30.8, 1)
     expect(june.billableEfficiency).toBe(50) // 7 job hrs / 14 paid hrs
-    expect(june.profitAfterWages).toBe(692)
+    expect(june.profitAfterLaborCost).toBe(692)
 
     expect(totals.jobs).toBe(3)
     expect(totals.revenue).toBe(1500)
     expect(totals.grossWages).toBe(396)
-    expect(totals.profitAfterWages).toBe(1104)
+    expect(totals.laborCost).toBe(396)
+    expect(totals.profitAfterLaborCost).toBe(1104)
+  })
+
+  it('backfills a fully loaded hourly cost without changing payroll records', () => {
+    const { months, totals } = buildTechMonthRows(
+      [{ appointment_date: '2026-06-12', revenue: 600, hours: 3 }],
+      [{ work_date: '2026-06-12', payable_minutes: 240, gross_pay: 92 }],
+      31,
+    )
+
+    expect(months[0]).toMatchObject({
+      grossWages: 92,
+      laborCost: 124,
+      laborCostPerPaidHour: 31,
+      laborPercent: 20.7,
+      profitAfterLaborCost: 476,
+    })
+    expect(totals.laborCost).toBe(124)
   })
 
   it('falls back to job hours for revenue-per-hour when no timesheets exist', () => {
@@ -133,6 +154,7 @@ describe('buildTechMonthRows', () => {
     expect(months).toHaveLength(1)
     expect(months[0].revenue).toBe(0)
     expect(months[0].grossWages).toBe(176)
-    expect(months[0].profitAfterWages).toBe(-176)
+    expect(months[0].laborCost).toBe(176)
+    expect(months[0].profitAfterLaborCost).toBe(-176)
   })
 })

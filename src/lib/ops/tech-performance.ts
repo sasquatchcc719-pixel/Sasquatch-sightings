@@ -6,9 +6,9 @@ import {
 
 /**
  * Per-tech profitability: what a tech generates (completed-job revenue and
- * on-the-job hours) against what they cost (timesheet paid hours and gross
- * wages). Wages are gross only — employer taxes and workers comp are not in
- * the DB and are NOT estimated here.
+ * on-the-job hours) against what they cost (timesheet paid hours and labor
+ * cost). Gross payroll stays available for reference; configured fully loaded
+ * rates include employer payroll burden such as taxes and insurance.
  */
 
 export type TechMonthRow = {
@@ -17,20 +17,25 @@ export type TechMonthRow = {
   revenue: number
   jobHours: number
   paidHours: number
+  /** Payroll recorded on the timesheet, before employer burden. */
   grossWages: number
+  /** Fully loaded cost of paid time. Falls back to gross payroll. */
+  laborCost: number
+  /** laborCost / paidHours (falls back to jobHours when no timesheets) */
+  laborCostPerPaidHour: number
   /** revenue / paidHours (falls back to jobHours when no timesheets) */
   revenuePerPaidHour: number
-  /** grossWages / revenue, as percent 0–100 */
+  /** laborCost / revenue, as percent 0–100 */
   laborPercent: number
   /** jobHours / paidHours, as percent 0–100 */
   billableEfficiency: number
-  /** revenue - grossWages */
-  profitAfterWages: number
+  /** revenue - laborCost */
+  profitAfterLaborCost: number
 }
 
 export type TechDayRow = Omit<TechMonthRow, 'month'> & {
   date: string // YYYY-MM-DD
-  /** (revenue - grossWages) / paidHours (falls back to jobHours) */
+  /** (revenue - laborCost) / paidHours (falls back to jobHours) */
   profitPerHour: number
   isLive: boolean
 }
@@ -66,6 +71,15 @@ type StoredTimesheetInput = TimesheetInput & {
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * Fully loaded field-labor cost, including employer taxes, insurance, and
+ * similar employment costs. Keeping this separate from timesheet gross pay
+ * lets historical reports be recalculated without rewriting payroll records.
+ */
+const FULLY_LOADED_HOURLY_COST_BY_STAFF_ID: Record<string, number> = {
+  '01d0d46b-29ac-4a27-b953-f5fbc30cf2cd': 31, // David Gonzalez
+}
 
 export function buildOwnerTimesheets(
   appointments: ApptInput[],
@@ -130,25 +144,33 @@ function summarize(
   jobHours: number,
   paidHours: number,
   grossWages: number,
+  fullyLoadedHourlyCost?: number,
 ): Omit<TechMonthRow, 'month'> {
   const hourBase = paidHours > 0 ? paidHours : jobHours
+  const laborCost =
+    fullyLoadedHourlyCost != null && paidHours > 0
+      ? paidHours * fullyLoadedHourlyCost
+      : grossWages
   return {
     jobs,
     revenue: round2(revenue),
     jobHours: round1(jobHours),
     paidHours: round1(paidHours),
     grossWages: round2(grossWages),
+    laborCost: round2(laborCost),
+    laborCostPerPaidHour: hourBase > 0 ? round2(laborCost / hourBase) : 0,
     revenuePerPaidHour: hourBase > 0 ? round2(revenue / hourBase) : 0,
-    laborPercent: revenue > 0 ? round1((grossWages / revenue) * 100) : 0,
+    laborPercent: revenue > 0 ? round1((laborCost / revenue) * 100) : 0,
     billableEfficiency:
       paidHours > 0 ? round1((jobHours / paidHours) * 100) : 0,
-    profitAfterWages: round2(revenue - grossWages),
+    profitAfterLaborCost: round2(revenue - laborCost),
   }
 }
 
 export function buildTechDayRows(
   appointments: ApptInput[],
   timesheets: TimesheetInput[],
+  fullyLoadedHourlyCost?: number,
 ): TechDayRow[] {
   type Acc = {
     jobs: number
@@ -197,6 +219,7 @@ export function buildTechDayRows(
         a.jobHours,
         a.paidHours,
         a.grossWages,
+        fullyLoadedHourlyCost,
       )
       const hourBase = a.paidHours > 0 ? a.paidHours : a.jobHours
       return {
@@ -204,7 +227,7 @@ export function buildTechDayRows(
         ...summary,
         profitPerHour:
           hourBase > 0
-            ? round2((summary.revenue - summary.grossWages) / hourBase)
+            ? round2((summary.revenue - summary.laborCost) / hourBase)
             : 0,
         isLive: a.isLive,
       }
@@ -214,6 +237,7 @@ export function buildTechDayRows(
 export function buildTechMonthRows(
   appointments: ApptInput[],
   timesheets: TimesheetInput[],
+  fullyLoadedHourlyCost?: number,
 ): { months: TechMonthRow[]; totals: Omit<TechMonthRow, 'month'> } {
   type Acc = {
     jobs: number
@@ -248,7 +272,14 @@ export function buildTechMonthRows(
     .sort((x, y) => (x[0] < y[0] ? -1 : 1))
     .map(([month, a]) => ({
       month,
-      ...summarize(a.jobs, a.revenue, a.jobHours, a.paidHours, a.grossWages),
+      ...summarize(
+        a.jobs,
+        a.revenue,
+        a.jobHours,
+        a.paidHours,
+        a.grossWages,
+        fullyLoadedHourlyCost,
+      ),
     }))
 
   const t = [...byMonth.values()].reduce(
@@ -264,7 +295,14 @@ export function buildTechMonthRows(
 
   return {
     months,
-    totals: summarize(t.jobs, t.revenue, t.jobHours, t.paidHours, t.grossWages),
+    totals: summarize(
+      t.jobs,
+      t.revenue,
+      t.jobHours,
+      t.paidHours,
+      t.grossWages,
+      fullyLoadedHourlyCost,
+    ),
   }
 }
 
@@ -369,8 +407,17 @@ async function loadStaffPerformance(
           timesheetInputAt(timesheet, new Date()),
         )
       : buildOwnerTimesheets(apptInputs, hourlyRateOverride)
-  const { months, totals } = buildTechMonthRows(apptInputs, timesheetInputs)
-  const days = buildTechDayRows(apptInputs, timesheetInputs)
+  const fullyLoadedHourlyCost = FULLY_LOADED_HOURLY_COST_BY_STAFF_ID[staff.id]
+  const { months, totals } = buildTechMonthRows(
+    apptInputs,
+    timesheetInputs,
+    fullyLoadedHourlyCost,
+  )
+  const days = buildTechDayRows(
+    apptInputs,
+    timesheetInputs,
+    fullyLoadedHourlyCost,
+  )
 
   if (months.length === 0) return null
 

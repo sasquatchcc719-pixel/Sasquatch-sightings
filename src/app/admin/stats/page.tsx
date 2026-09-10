@@ -140,10 +140,12 @@ type TechMonthRow = {
   jobHours: number
   paidHours: number
   grossWages: number
+  laborCost: number
+  laborCostPerPaidHour: number
   revenuePerPaidHour: number
   laborPercent: number
   billableEfficiency: number
-  profitAfterWages: number
+  profitAfterLaborCost: number
 }
 
 type TechDayRow = Omit<TechMonthRow, 'month'> & {
@@ -781,9 +783,9 @@ function ProfitabilityTooltip({ active, payload }: ProfitabilityTooltipProps) {
           </span>
         </div>
         <div className="flex justify-between gap-5">
-          <span>Gross wages</span>
+          <span>Labor cost</span>
           <span className="text-foreground font-medium">
-            {usd(day.grossWages)}
+            {usd(day.laborCost)}
           </span>
         </div>
         <div className="flex justify-between gap-5">
@@ -3237,11 +3239,12 @@ export default function StatsPage() {
             </h2>
           </div>
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
-            What each tech generates (completed-job revenue) vs what they cost
-            (timesheet paid hours × wage). Wages are <strong>gross pay</strong>{' '}
-            from timesheets — employer payroll taxes and workers comp typically
-            add roughly 10–15% on top. Field-service rule of thumb: keep tech
-            labor under <strong>30–35%</strong> of the revenue they produce.
+            What each tech generates (completed-job revenue) vs their true labor
+            cost (timesheet paid hours × fully loaded hourly cost). David&apos;s
+            labor cost is set to <strong>$31/hr</strong>, including employer
+            taxes, insurance, and related employment costs. Field-service rule
+            of thumb: keep tech labor under <strong>30–35%</strong> of the
+            revenue they produce.
           </p>
 
           {techPerf.map((tech) => {
@@ -3269,9 +3272,9 @@ export default function StatsPage() {
                     <p className="text-muted-foreground mt-0.5 text-xs">
                       vs ~
                       {t.paidHours > 0
-                        ? formatCurrency(t.grossWages / t.paidHours)
+                        ? formatCurrency(t.laborCostPerPaidHour)
                         : '—'}
-                      /hr wage
+                      /hr labor cost
                     </p>
                   </Card>
 
@@ -3308,14 +3311,14 @@ export default function StatsPage() {
                   <Card className="card-interactive animate-slide-up-delay-3 border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
                     <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
                       <TrendingUp className="h-4 w-4" />
-                      <p className="text-sm font-medium">Profit After Wages</p>
+                      <p className="text-sm font-medium">Profit After Labor</p>
                     </div>
                     <p className="stat-value text-2xl font-bold text-green-700 dark:text-green-400">
-                      {formatCurrency(t.profitAfterWages)}
+                      {formatCurrency(t.profitAfterLaborCost)}
                     </p>
                     <p className="text-muted-foreground mt-0.5 text-xs">
                       {formatCurrency(t.revenue)} revenue −{' '}
-                      {formatCurrency(t.grossWages)} wages
+                      {formatCurrency(t.laborCost)} labor cost
                     </p>
                   </Card>
                 </div>
@@ -3340,7 +3343,7 @@ export default function StatsPage() {
                             Paid Hrs
                           </th>
                           <th className="pr-3 pb-2 text-right font-medium">
-                            Wages
+                            Labor Cost
                           </th>
                           <th className="pr-3 pb-2 text-right font-medium">
                             $/Paid Hr
@@ -3377,7 +3380,7 @@ export default function StatsPage() {
                                 {m.paidHours.toFixed(1)}
                               </td>
                               <td className="py-2 pr-3 text-right">
-                                {formatCurrency(m.grossWages)}
+                                {formatCurrency(m.laborCost)}
                               </td>
                               <td className="py-2 pr-3 text-right">
                                 {formatCurrency(m.revenuePerPaidHour)}
@@ -3390,7 +3393,7 @@ export default function StatsPage() {
                                   : '—'}
                               </td>
                               <td className="py-2 text-right font-semibold">
-                                {formatCurrency(m.profitAfterWages)}
+                                {formatCurrency(m.profitAfterLaborCost)}
                               </td>
                             </tr>
                           )

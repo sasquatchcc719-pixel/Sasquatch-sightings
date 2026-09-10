@@ -8,7 +8,8 @@ import {
 
 /**
  * Per-tech profitability: completed-job revenue and hours vs timesheet paid
- * hours and gross wages, grouped by day and month. Owner/admin only — wage data.
+ * hours and fully loaded labor cost, grouped by day and month. Owner/admin
+ * only — payroll and labor-cost data.
  */
 export async function GET() {
   try {
