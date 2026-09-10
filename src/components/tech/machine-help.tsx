@@ -135,11 +135,18 @@ export function MachineHelp({
           </p>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-amber-100">
-          Turn the machine off, remove the key, and let the engine and exhaust
-          cool. Work in ventilation, away from smoking, flames, or sparks. Only
-          do this if you know this fuel-line setup; otherwise call Matt.
+          Park on level ground and set the parking brake. Turn the van and
+          machine off, remove the keys, and let the engine and exhaust cool
+          before crawling underneath. Work in ventilation, away from smoking,
+          flames, or sparks. Only do this if you know this fuel-line setup;
+          otherwise call Matt.
         </p>
         <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-relaxed text-slate-200">
+          <li>
+            <strong>Find the fuel filter.</strong> Crawl underneath the van and
+            look directly below the truckmount. The fuel filter is mounted there
+            in plain sight.
+          </li>
           <li>
             Take a photo of the old filter’s hose connections and direction. Use
             vice grips to gently pinch the flexible fuel lines just enough to
