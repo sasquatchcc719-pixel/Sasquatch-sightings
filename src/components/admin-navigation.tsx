@@ -470,6 +470,18 @@ export function AdminNavigation() {
             tabs={callsTabs}
           />
 
+          <Link
+            href="/admin/call-logs"
+            className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
+              pathname.startsWith('/admin/call-logs')
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                : 'bg-white/10 text-slate-100 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <PhoneCall className="h-4 w-4" />
+            Call Log
+          </Link>
+
           {/* AI Controls Dropdown */}
           <NavDropdown
             label="AI"

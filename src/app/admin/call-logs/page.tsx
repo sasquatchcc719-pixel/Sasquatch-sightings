@@ -198,7 +198,7 @@ function VoicemailCell({
   )
 }
 
-const DAYS_OPTIONS = [7, 30, 90] as const
+const DAYS_OPTIONS = [1, 7, 30, 90] as const
 
 export default function CallLogsPage() {
   const [calls, setCalls] = useState<CallLog[]>([])
@@ -286,7 +286,7 @@ export default function CallLogsPage() {
                 onClick={() => setDays(d)}
                 className={`px-3 py-1.5 transition-colors ${days === d ? 'bg-emerald-500/20 text-emerald-400' : 'text-muted-foreground hover:bg-white/5'}`}
               >
-                {d}d
+                {d === 1 ? 'Today' : `${d}d`}
               </button>
             ))}
           </div>
