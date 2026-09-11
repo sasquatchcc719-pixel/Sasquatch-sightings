@@ -20,6 +20,13 @@ describe('tech day schedule', () => {
     })
   })
 
+  it('keeps a 9pm appointment on the grid', () => {
+    expect(getTechAppointmentPlacement('21:00:00', '22:00:00')).toEqual({
+      top: 1176,
+      height: 84,
+    })
+  })
+
   it('returns null for jobs without a scheduled start time', () => {
     expect(getTechAppointmentPlacement(null, null)).toBeNull()
   })

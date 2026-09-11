@@ -1,5 +1,5 @@
 const GRID_START_HOUR = 7
-const GRID_END_HOUR = 20
+const GRID_END_HOUR = 24
 
 export const TECH_DAY_HOURS = Array.from(
   { length: GRID_END_HOUR - GRID_START_HOUR },
