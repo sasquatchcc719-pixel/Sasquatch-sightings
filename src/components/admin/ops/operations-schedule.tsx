@@ -194,13 +194,13 @@ const STAFF_LANE_COLORS = [
 ]
 const DEFAULT_SLOT_INTERVAL_MINUTES = 30
 const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
-  { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 1, is_active: true, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 2, is_active: true, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 3, is_active: true, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 4, is_active: true, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 5, is_active: true, start_time: '09:00', end_time: '17:00' },
-  { day_of_week: 6, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 1, is_active: true, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 2, is_active: true, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 3, is_active: true, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 4, is_active: true, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 5, is_active: true, start_time: '09:00', end_time: '18:00' },
+  { day_of_week: 6, is_active: true, start_time: '09:00', end_time: '18:00' },
 ]
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -3575,7 +3575,7 @@ export function OperationsSchedule() {
                   )
                 }
               >
-                Reset to Mon-Sat 9:00-17:00
+                Reset to Mon-Sat 9:00-18:00
               </Button>
             </div>
           </form>

@@ -224,7 +224,7 @@ export function OperationsDashboard({
   const [templateForm, setTemplateForm] = useState({
     day_of_week: '1',
     start_time: '09:00',
-    end_time: '17:00',
+    end_time: '18:00',
     slot_interval_minutes: '30',
   })
 
@@ -632,7 +632,7 @@ export function OperationsDashboard({
         setTemplateForm({
           day_of_week: '1',
           start_time: '09:00',
-          end_time: '17:00',
+          end_time: '18:00',
           slot_interval_minutes: '30',
         })
       } else {

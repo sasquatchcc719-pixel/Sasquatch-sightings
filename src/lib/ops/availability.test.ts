@@ -10,6 +10,21 @@ import {
 } from './availability'
 
 describe('availability gap fill', () => {
+  it('keeps the default booking window open through 6 PM', () => {
+    const slots = getAvailableSlots({
+      date: '2026-05-04',
+      requiredMinutes: 180,
+      templates: DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+      overrides: [],
+      appointments: [],
+    })
+
+    expect(slots).toContainEqual({
+      start_time: '15:00:00',
+      end_time: '18:00:00',
+    })
+  })
+
   it('keeps three-hour jobs at three hours', () => {
     expect(applyAppointmentBuffer(180)).toBe(180)
   })
