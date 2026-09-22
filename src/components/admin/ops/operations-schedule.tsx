@@ -2631,7 +2631,7 @@ export function OperationsSchedule() {
             }}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="line-clamp-1 flex min-w-0 flex-1 items-center gap-1.5 leading-tight font-semibold">
+              <div className="line-clamp-1 flex min-w-0 flex-1 shrink-0 items-center gap-1.5 leading-tight font-semibold">
                 {isEstimate && (
                   <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
                 )}
@@ -2647,18 +2647,18 @@ export function OperationsSchedule() {
               </div>
             </div>
             {isEstimate && (
-              <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                 <Ruler className="h-2.5 w-2.5" />
                 Commercial walkthrough
               </span>
             )}
             {isEstimate && customer?.business_name && customer.full_name ? (
-              <div className="mt-1 line-clamp-1 text-[10px] text-slate-600">
+              <div className="mt-1 line-clamp-1 shrink-0 text-[10px] text-slate-600">
                 Contact: {customer.full_name}
               </div>
             ) : null}
             {isEstimate ? (
-              <div className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-slate-600">
+              <div className="mt-0.5 line-clamp-2 shrink-0 text-[10px] leading-tight text-slate-600">
                 {(() => {
                   const address = unwrapRelation(
                     appointment.ops_service_addresses,
@@ -2682,7 +2682,7 @@ export function OperationsSchedule() {
                 Recurring
               </a>
             )}
-            <div className="mt-1 text-slate-700">
+            <div className="mt-1 shrink-0 text-slate-700">
               {placement.startLabel} - {placement.endLabel}
             </div>
             {(() => {
@@ -2690,7 +2690,7 @@ export function OperationsSchedule() {
               const city = isEstimate ? null : address?.city
               const { leadLabel, bookingLabel } =
                 getScheduleCardSources(appointment)
-              if (city || leadLabel || bookingLabel) {
+              if (!isEstimate && (city || leadLabel || bookingLabel)) {
                 return (
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
                     {city && <span>{city}</span>}
@@ -2703,19 +2703,21 @@ export function OperationsSchedule() {
               }
               return null
             })()}
-            <div className="mt-2 line-clamp-2 text-slate-800">
-              {appointment.ops_appointment_line_items.length > 0
-                ? appointment.ops_appointment_line_items
-                    .map((item) => item.name_snapshot)
-                    .join(', ')
-                : isEstimate
-                  ? 'Measurements and pricing pending'
-                  : ''}
-            </div>
+            {!isEstimate ? (
+              <div className="mt-2 line-clamp-2 text-slate-800">
+                {appointment.ops_appointment_line_items
+                  .map((item) => item.name_snapshot)
+                  .join(', ')}
+              </div>
+            ) : appointment.ops_appointment_line_items.length === 0 ? (
+              <div className="mt-1 shrink-0 text-[10px] text-slate-600">
+                Measurements and pricing pending
+              </div>
+            ) : null}
             {recurringLineItemDescriptionBoxes(appointment, false)}
             <div className="mt-auto flex items-center justify-between gap-1 pt-2">
               {isEstimate ? (
-                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+                <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
                   {(appointment.estimate_status || 'draft').replace(
                     /^./,
                     (value) => value.toUpperCase(),
