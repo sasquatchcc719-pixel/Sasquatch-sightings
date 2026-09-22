@@ -85,6 +85,7 @@ import {
   placementsAsOf,
 } from '@/lib/ops/restoration-equipment-ledger'
 import { buildRestorationBillingSummary } from '@/lib/ops/restoration-billing-summary'
+import { EquipmentBillingDateEditor } from '@/components/admin/ops/equipment-billing-date-editor'
 
 /**
  * The restoration project screen.
@@ -1084,158 +1085,6 @@ export function RestorationProjectDetail({
           </div>
         </Card>
       ))}
-
-      {/* ── Running bill ────────────────────────────────────── */}
-      <Card id="running-bill" className={`${SECTION_CARD} border-sky-500/30`}>
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 className={SECTION_TITLE}>
-              <DollarSign className={SECTION_ICON} /> Running bill
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Every charge on the whole job to date. No estimate required.
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
-            <span className="text-muted-foreground block text-xs">
-              Current total
-            </span>
-            <span className="text-2xl font-semibold text-sky-700 tabular-nums dark:text-sky-300">
-              {money(detail.totals.gross_subtotal)}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-5">
-          <section aria-labelledby="running-bill-work">
-            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
-              <h3 id="running-bill-work" className="font-semibold">
-                Work charges
-              </h3>
-              <div className="flex items-center gap-3">
-                {!closed ? (
-                  <a
-                    href="#work-charges"
-                    className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
-                  >
-                    Add or edit
-                  </a>
-                ) : null}
-                <span className="font-medium tabular-nums">
-                  {money(detail.totals.work)}
-                </span>
-              </div>
-            </div>
-            {billingSummary.work.length > 0 ? (
-              <div className="divide-y">
-                {billingSummary.work.map((line) => (
-                  <div
-                    key={line.id}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium">{line.description}</p>
-                      <p className="text-muted-foreground mt-0.5 text-xs capitalize">
-                        {line.visitType ?? 'visit'} ·{' '}
-                        {shortDate(line.appointmentDate)}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium tabular-nums">
-                        {money(line.lineTotal)}
-                      </p>
-                      <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
-                        {line.quantity.toLocaleString()}
-                        {line.unit ? ` ${line.unit}` : ''} ×{' '}
-                        {money(line.unitPrice)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
-                No Work charges have been added to any visit yet.
-              </p>
-            )}
-          </section>
-
-          <section aria-labelledby="running-bill-equipment">
-            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
-              <h3 id="running-bill-equipment" className="font-semibold">
-                Equipment charges
-              </h3>
-              <div className="flex items-center gap-3">
-                {!closed ? (
-                  <a
-                    href="#equipment-charges"
-                    className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
-                  >
-                    Edit dates
-                  </a>
-                ) : null}
-                <span className="font-medium tabular-nums">
-                  {money(detail.totals.equipment)}
-                </span>
-              </div>
-            </div>
-            {billingSummary.equipment.length > 0 ? (
-              <div className="divide-y">
-                {billingSummary.equipment.map((line) => (
-                  <div
-                    key={line.code}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium">
-                        <code className="mr-1 text-xs">{line.code}</code>
-                        {line.description}
-                      </p>
-                      <div className="text-muted-foreground mt-1 flex flex-col gap-0.5 text-xs">
-                        {line.batches.map((batch) => (
-                          <span
-                            key={`${batch.placedOn}-${batch.removedOn ?? 'running'}`}
-                          >
-                            ×{batch.units} · {shortDate(batch.placedOn)}–
-                            {batch.removedOn
-                              ? shortDate(batch.removedOn)
-                              : 'running'}
-                          </span>
-                        ))}
-                        <span>
-                          {line.running} running
-                          {line.pulled > 0 ? ` · ${line.pulled} pulled` : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium tabular-nums">
-                        {money(line.lineTotal)}
-                      </p>
-                      <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
-                        {line.unitDays.toLocaleString()} unit-day
-                        {line.unitDays === 1 ? '' : 's'} ×{' '}
-                        {money(line.unitPrice)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
-                No equipment charges are running or recorded on this job.
-              </p>
-            )}
-          </section>
-
-          <div className="flex items-center justify-between border-t-2 border-sky-500/30 pt-3 text-base font-semibold">
-            <span>Running job total</span>
-            <span className="text-sky-700 tabular-nums dark:text-sky-300">
-              {money(detail.totals.gross_subtotal)}
-            </span>
-          </div>
-        </div>
-      </Card>
 
       {address ? (
         <Card className={SECTION_CARD}>
@@ -3980,21 +3829,173 @@ export function RestorationProjectDetail({
       ) : null}
 
       {/* ── Money ──────────────────────────────────────────── */}
-      <Card className={SECTION_CARD}>
-        <h2 className={`${SECTION_TITLE} mb-3`}>
-          <DollarSign className={SECTION_ICON} /> Payments &amp; balance
-        </h2>
-        <div className="flex flex-col gap-1 text-sm">
-          <div className="flex justify-between font-medium">
-            <span>
-              Job subtotal{' '}
-              <a
-                href="#running-bill"
-                className="text-muted-foreground text-xs font-normal underline underline-offset-2"
-              >
-                see charges
-              </a>
+      <Card id="money" className={`${SECTION_CARD} border-sky-500/30`}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className={SECTION_TITLE}>
+              <DollarSign className={SECTION_ICON} /> Money
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Every charge on the whole job to date. No estimate required.
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-muted-foreground block text-xs">
+              Current charges
             </span>
+            <span className="text-2xl font-semibold text-sky-700 tabular-nums dark:text-sky-300">
+              {money(detail.totals.gross_subtotal)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          <section aria-labelledby="money-work">
+            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
+              <h3 id="money-work" className="font-semibold">
+                Work charges
+              </h3>
+              <div className="flex items-center gap-3">
+                {!closed ? (
+                  <a
+                    href="#work-charges"
+                    className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
+                  >
+                    Add or edit
+                  </a>
+                ) : null}
+                <span className="font-medium tabular-nums">
+                  {money(detail.totals.work)}
+                </span>
+              </div>
+            </div>
+            {billingSummary.work.length > 0 ? (
+              <div className="divide-y">
+                {billingSummary.work.map((line) => (
+                  <div
+                    key={line.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">{line.description}</p>
+                      <p className="text-muted-foreground mt-0.5 text-xs capitalize">
+                        {line.visitType ?? 'visit'} ·{' '}
+                        {shortDate(line.appointmentDate)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium tabular-nums">
+                        {money(line.lineTotal)}
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
+                        {line.quantity.toLocaleString()}
+                        {line.unit ? ` ${line.unit}` : ''} ×{' '}
+                        {money(line.unitPrice)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
+                No Work charges have been added to any visit yet.
+              </p>
+            )}
+          </section>
+
+          <section aria-labelledby="money-equipment">
+            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
+              <div>
+                <h3 id="money-equipment" className="font-semibold">
+                  Equipment charges
+                </h3>
+                {!closed && billingSummary.equipment.length > 0 ? (
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    Edit the dates below and save. An out date stops daily
+                    accrual.
+                  </p>
+                ) : null}
+              </div>
+              <span className="font-medium tabular-nums">
+                {money(detail.totals.equipment)}
+              </span>
+            </div>
+            {billingSummary.equipment.length > 0 ? (
+              <div className="divide-y">
+                {billingSummary.equipment.map((line) => (
+                  <div key={line.code} className="py-3 text-sm">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          <code className="mr-1 text-xs">{line.code}</code>
+                          {line.description}
+                        </p>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          {line.running} running
+                          {line.pulled > 0 ? ` · ${line.pulled} pulled` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium tabular-nums">
+                          {money(line.lineTotal)}
+                        </p>
+                        <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
+                          {line.unitDays.toLocaleString()} unit-day
+                          {line.unitDays === 1 ? '' : 's'} ×{' '}
+                          {money(line.unitPrice)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-col gap-2">
+                      {line.batches.map((batch, index) => (
+                        <EquipmentBillingDateEditor
+                          key={batch.ids.join('-')}
+                          id={`equipment-dates-${line.code.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`}
+                          code={line.code}
+                          units={batch.units}
+                          placedOn={batch.placedOn}
+                          removedOn={batch.removedOn}
+                          disabled={closed}
+                          onSave={async (placedOn, removedOn) =>
+                            Boolean(
+                              await call(
+                                `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
+                                {
+                                  method: 'PATCH',
+                                  body: JSON.stringify({
+                                    ids: batch.ids,
+                                    placed_on: placedOn,
+                                    removed_on: removedOn,
+                                  }),
+                                },
+                                `billing-dates-${batch.ids[0]}`,
+                              ),
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
+                No equipment charges are running or recorded on this job.
+              </p>
+            )}
+          </section>
+
+          <div className="flex items-center justify-between border-t-2 border-sky-500/30 pt-3 text-base font-semibold">
+            <span>Running job total</span>
+            <span className="text-sky-700 tabular-nums dark:text-sky-300">
+              {money(detail.totals.gross_subtotal)}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-1 border-t pt-4 text-sm">
+          <div className="flex justify-between font-medium">
+            <span>Job subtotal</span>
             <span className="tabular-nums">
               {money(detail.totals.gross_subtotal)}
             </span>

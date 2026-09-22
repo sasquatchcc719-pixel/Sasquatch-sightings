@@ -57,11 +57,13 @@ describe('buildRestorationBillingSummary', () => {
       visits: [],
       equipment: [
         {
+          id: 'running-dehu',
           catalog_code: 'DHM>',
           placed_on: '2026-09-11',
           removed_on: null,
         },
         {
+          id: 'pulled-dehu',
           catalog_code: 'DHM>',
           placed_on: '2026-09-11',
           removed_on: '2026-09-14',
@@ -89,8 +91,18 @@ describe('buildRestorationBillingSummary', () => {
         running: 1,
         pulled: 1,
         batches: [
-          { placedOn: '2026-09-11', removedOn: null, units: 1 },
-          { placedOn: '2026-09-11', removedOn: '2026-09-14', units: 1 },
+          {
+            ids: ['running-dehu'],
+            placedOn: '2026-09-11',
+            removedOn: null,
+            units: 1,
+          },
+          {
+            ids: ['pulled-dehu'],
+            placedOn: '2026-09-11',
+            removedOn: '2026-09-14',
+            units: 1,
+          },
         ],
       }),
     ])

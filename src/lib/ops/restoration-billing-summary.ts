@@ -10,6 +10,7 @@ export type BillingWorkLine = {
 }
 
 export type BillingEquipmentBatch = {
+  ids: string[]
   placedOn: string
   removedOn: string | null
   units: number
@@ -41,6 +42,7 @@ type VisitInput = {
 }
 
 type PlacementInput = {
+  id: string
   catalog_code: string
   placed_on: string
   removed_on: string | null
@@ -92,10 +94,12 @@ export function buildRestorationBillingSummary(input: {
     for (const placement of placements) {
       const key = `${placement.placed_on}|${placement.removed_on ?? ''}`
       const batch = grouped.get(key) ?? {
+        ids: [],
         placedOn: placement.placed_on,
         removedOn: placement.removed_on,
         units: 0,
       }
+      batch.ids.push(placement.id)
       batch.units += 1
       grouped.set(key, batch)
     }
