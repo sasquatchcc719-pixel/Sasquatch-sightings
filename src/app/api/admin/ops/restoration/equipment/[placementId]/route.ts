@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { deleteRestorationEquipmentPlacement } from '@/lib/ops/restoration-charge-deletion'
 
 /** Pull a unit off the job (stops its per-day accrual), or put it back. */
 
@@ -22,7 +23,9 @@ export async function PUT(
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const appointmentId = body.appointment_id ? String(body.appointment_id) : null
+    const appointmentId = body.appointment_id
+      ? String(body.appointment_id)
+      : null
     if (!appointmentId) {
       return NextResponse.json(
         { error: 'appointment_id is required — a move belongs to a visit' },
@@ -32,8 +35,16 @@ export async function PUT(
 
     const mapX = body.map_x == null ? null : Number(body.map_x)
     const mapY = body.map_y == null ? null : Number(body.map_y)
-    if (mapX == null || mapY == null || !Number.isFinite(mapX) || !Number.isFinite(mapY)) {
-      return NextResponse.json({ error: 'map_x and map_y are required' }, { status: 400 })
+    if (
+      mapX == null ||
+      mapY == null ||
+      !Number.isFinite(mapX) ||
+      !Number.isFinite(mapY)
+    ) {
+      return NextResponse.json(
+        { error: 'map_x and map_y are required' },
+        { status: 400 },
+      )
     }
 
     const { data, error } = await supabase
@@ -56,7 +67,10 @@ export async function PUT(
     return NextResponse.json({ position: data })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to move equipment'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }
 
@@ -97,7 +111,9 @@ export async function PATCH(
         : String(
             body.removed_on ??
               pullVisit?.appointment_date ??
-              new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }),
+              new Date().toLocaleDateString('en-CA', {
+                timeZone: 'America/Denver',
+              }),
           )
 
     const { data, error } = await supabase
@@ -108,30 +124,79 @@ export async function PATCH(
       .maybeSingle()
 
     if (error) throw error
-    if (!data) return NextResponse.json({ error: 'placement_not_found' }, { status: 404 })
+    if (!data)
+      return NextResponse.json(
+        { error: 'placement_not_found' },
+        { status: 404 },
+      )
     return NextResponse.json({ placement: data })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to update equipment'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    const message =
+      e instanceof Error ? e.message : 'Failed to update equipment'
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ placementId: string }> },
 ) {
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
     const { placementId } = await params
+    const projectId = request.nextUrl.searchParams.get('projectId')
+    if (!projectId) {
+      return NextResponse.json(
+        { error: 'projectId is required' },
+        { status: 400 },
+      )
+    }
+
     const supabase = createAdminClient()
-    const { error } = await supabase
-      .from('restoration_equipment_placements')
-      .delete()
-      .eq('id', placementId)
-    if (error) throw error
-    return NextResponse.json({ ok: true })
+    const result = await deleteRestorationEquipmentPlacement(supabase, {
+      projectId,
+      placementId,
+    })
+    if (!result.ok) {
+      if (result.error === 'project_financially_locked') {
+        return NextResponse.json(
+          {
+            error:
+              'This equipment charge is locked because the restoration job has already been closed or invoiced.',
+          },
+          { status: 409 },
+        )
+      }
+      if (
+        result.error === 'charge_not_found' ||
+        result.error === 'project_not_found'
+      ) {
+        return NextResponse.json(
+          { error: 'placement_not_found' },
+          { status: 404 },
+        )
+      }
+      throw new Error(result.error)
+    }
+
+    console.info('[restoration-charge-delete] equipment placement removed', {
+      projectId,
+      placementId,
+      removedAmount: result.removedAmount,
+    })
+    return NextResponse.json(result)
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to remove placement'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    console.error('[restoration-charge-delete] equipment placement failed', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+    const message =
+      e instanceof Error ? e.message : 'Failed to remove placement'
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }

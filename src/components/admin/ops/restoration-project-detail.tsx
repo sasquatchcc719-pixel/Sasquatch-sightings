@@ -83,9 +83,12 @@ import {
   ledgerBatches,
   ledgerAsOf,
   placementsAsOf,
+  unitDays,
 } from '@/lib/ops/restoration-equipment-ledger'
 import { buildRestorationBillingSummary } from '@/lib/ops/restoration-billing-summary'
 import { EquipmentBillingDateEditor } from '@/components/admin/ops/equipment-billing-date-editor'
+import { RestorationChargeRemoveButton } from '@/components/admin/ops/restoration-charge-remove-button'
+import { deleteRestorationChargeAndRefresh } from '@/lib/ops/restoration-charge-client'
 
 /**
  * The restoration project screen.
@@ -376,6 +379,7 @@ export function RestorationProjectDetail({
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null)
@@ -860,6 +864,22 @@ export function RestorationProjectDetail({
     }
   }
 
+  async function removeCharge(url: string, key: string, success: string) {
+    setBusy(key)
+    setError(null)
+    setNotice(null)
+    try {
+      await deleteRestorationChargeAndRefresh(url, load)
+      setNotice(success)
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove this charge')
+      return false
+    } finally {
+      setBusy(null)
+    }
+  }
+
   /**
    * How long equipment is quoted to run. It goes in on the mitigation day and
    * comes out on the last monitor, so the monitor count is the answer — and it
@@ -970,6 +990,7 @@ export function RestorationProjectDetail({
   const customer = project.ops_customers
   const runningEquipment = detail.equipment.filter((e) => !e.removed_at)
   const closed = project.status === 'closed'
+  const financiallyLocked = closed || Boolean(project.invoice_id)
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 pb-28">
@@ -1038,6 +1059,25 @@ export function RestorationProjectDetail({
               aria-label="Dismiss"
               className="shrink-0 opacity-80 hover:opacity-100"
               onClick={() => setError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {!error && notice ? (
+        <div
+          role="status"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-lg sm:inset-x-6"
+        >
+          <div className="flex items-start gap-3 rounded-lg border border-emerald-300 bg-emerald-700 px-4 py-3 text-sm text-white shadow-lg dark:border-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">{notice}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="shrink-0 opacity-80 hover:opacity-100"
+              onClick={() => setNotice(null)}
             >
               <X className="h-4 w-4" />
             </button>
@@ -2689,7 +2729,7 @@ export function RestorationProjectDetail({
       ) : null}
 
       {/* ── Work on this visit ─────────────────────────────── */}
-      {activeVisit && !closed ? (
+      {activeVisit && !financiallyLocked ? (
         <Card id="work-charges" className={SECTION_CARD}>
           {/*
             Collapsed on a monitor visit. Most monitors add no work at all —
@@ -2971,19 +3011,18 @@ export function RestorationProjectDetail({
                     <span className="w-20 text-right font-medium">
                       {money(Number(line.line_total))}
                     </span>
-                    <button
-                      type="button"
-                      aria-label="Remove line"
-                      onClick={() =>
-                        void call(
-                          `/api/admin/ops/restoration/line-items/${line.id}`,
-                          { method: 'DELETE' },
+                    <RestorationChargeRemoveButton
+                      target={`work charge “${line.name_snapshot}” on ${shortDate(activeVisit.appointment_date)}`}
+                      amount={Number(line.line_total)}
+                      disabled={busy !== null}
+                      onRemove={() =>
+                        removeCharge(
+                          `/api/admin/ops/restoration/line-items/${line.id}?projectId=${encodeURIComponent(projectId)}`,
                           `del-${line.id}`,
+                          `Removed ${line.name_snapshot} and refreshed the job total.`,
                         )
                       }
-                    >
-                      <Trash2 className="text-muted-foreground h-4 w-4" />
-                    </button>
+                    />
                   </div>
                 ))}
                 {activeVisit.ops_appointment_line_items.length === 0 ? (
@@ -2998,7 +3037,7 @@ export function RestorationProjectDetail({
       ) : null}
 
       {/* ── Equipment ──────────────────────────────────────── */}
-      {!closed ? (
+      {!financiallyLocked ? (
         <Card id="equipment-charges" className={SECTION_CARD}>
           <div className="mb-3 flex items-center justify-between">
             <h2 className={SECTION_TITLE}>
@@ -3100,9 +3139,9 @@ export function RestorationProjectDetail({
                     {line ? (
                       <details className="mt-1">
                         <summary className="text-muted-foreground cursor-pointer text-xs">
-                          {line.running} running
-                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} —
-                          set the days these ran
+                          Manage {line.units.length} placement
+                          {line.units.length === 1 ? '' : 's'} — edit dates or
+                          remove one
                         </summary>
                         <div className="mt-2 flex flex-col gap-2">
                           {/*
@@ -3180,6 +3219,29 @@ export function RestorationProjectDetail({
                                   each = {batch.unitDays} unit-day
                                   {batch.unitDays === 1 ? '' : 's'}
                                 </span>
+                                <div className="border-border/60 flex basis-full flex-wrap items-center gap-1 border-t pt-2">
+                                  <span className="text-muted-foreground mr-auto">
+                                    Remove an accidental placement:
+                                  </span>
+                                  {batch.ids.map((placementId, index) => (
+                                    <RestorationChargeRemoveButton
+                                      key={placementId}
+                                      label={`Remove unit ${index + 1}`}
+                                      target={`${row.catalog_code} placement ${index + 1} of ${batch.units}, in ${shortDate(batch.placedOn)}${batch.removedOn ? `, out ${shortDate(batch.removedOn)}` : ', still running'}, ID ${placementId.slice(-8)}`}
+                                      amount={
+                                        batch.days * Number(row.unit_price)
+                                      }
+                                      disabled={busy !== null}
+                                      onRemove={() =>
+                                        removeCharge(
+                                          `/api/admin/ops/restoration/equipment/${placementId}?projectId=${encodeURIComponent(projectId)}`,
+                                          `del-equipment-${placementId}`,
+                                          `Removed one ${row.catalog_code} placement and refreshed the job total.`,
+                                        )
+                                      }
+                                    />
+                                  ))}
+                                </div>
                               </div>
                             ))}
                           {line.pulled > 0 ? (
@@ -3836,7 +3898,9 @@ export function RestorationProjectDetail({
               <DollarSign className={SECTION_ICON} /> Money
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Every charge on the whole job to date. No estimate required.
+              {financiallyLocked
+                ? 'These charges are locked because the job is closed or invoiced.'
+                : 'Every charge on the whole job to date. No estimate required.'}
             </p>
           </div>
           <div className="shrink-0 text-right">
@@ -3856,7 +3920,7 @@ export function RestorationProjectDetail({
                 Work charges
               </h3>
               <div className="flex items-center gap-3">
-                {!closed ? (
+                {!financiallyLocked ? (
                   <a
                     href="#work-charges"
                     className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
@@ -3883,7 +3947,7 @@ export function RestorationProjectDetail({
                         {shortDate(line.appointmentDate)}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="flex flex-col items-end">
                       <p className="font-medium tabular-nums">
                         {money(line.lineTotal)}
                       </p>
@@ -3892,6 +3956,20 @@ export function RestorationProjectDetail({
                         {line.unit ? ` ${line.unit}` : ''} ×{' '}
                         {money(line.unitPrice)}
                       </p>
+                      {!financiallyLocked ? (
+                        <RestorationChargeRemoveButton
+                          target={`work charge “${line.description}” on ${shortDate(line.appointmentDate)}`}
+                          amount={line.lineTotal}
+                          disabled={busy !== null}
+                          onRemove={() =>
+                            removeCharge(
+                              `/api/admin/ops/restoration/line-items/${line.id}?projectId=${encodeURIComponent(projectId)}`,
+                              `money-del-${line.id}`,
+                              `Removed ${line.description} and refreshed the job total.`,
+                            )
+                          }
+                        />
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -3909,7 +3987,7 @@ export function RestorationProjectDetail({
                 <h3 id="money-equipment" className="font-semibold">
                   Equipment charges
                 </h3>
-                {!closed && billingSummary.equipment.length > 0 ? (
+                {!financiallyLocked && billingSummary.equipment.length > 0 ? (
                   <p className="text-muted-foreground mt-0.5 text-xs">
                     Edit the dates below and save. An out date stops daily
                     accrual.
@@ -3948,31 +4026,61 @@ export function RestorationProjectDetail({
                     </div>
                     <div className="mt-2 flex flex-col gap-2">
                       {line.batches.map((batch, index) => (
-                        <EquipmentBillingDateEditor
-                          key={batch.ids.join('-')}
-                          id={`equipment-dates-${line.code.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`}
-                          code={line.code}
-                          units={batch.units}
-                          placedOn={batch.placedOn}
-                          removedOn={batch.removedOn}
-                          disabled={closed}
-                          onSave={async (placedOn, removedOn) =>
-                            Boolean(
-                              await call(
-                                `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
-                                {
-                                  method: 'PATCH',
-                                  body: JSON.stringify({
-                                    ids: batch.ids,
-                                    placed_on: placedOn,
-                                    removed_on: removedOn,
-                                  }),
-                                },
-                                `billing-dates-${batch.ids[0]}`,
-                              ),
-                            )
-                          }
-                        />
+                        <div key={batch.ids.join('-')}>
+                          <EquipmentBillingDateEditor
+                            id={`equipment-dates-${line.code.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`}
+                            code={line.code}
+                            units={batch.units}
+                            placedOn={batch.placedOn}
+                            removedOn={batch.removedOn}
+                            disabled={financiallyLocked}
+                            onSave={async (placedOn, removedOn) =>
+                              Boolean(
+                                await call(
+                                  `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
+                                  {
+                                    method: 'PATCH',
+                                    body: JSON.stringify({
+                                      ids: batch.ids,
+                                      placed_on: placedOn,
+                                      removed_on: removedOn,
+                                    }),
+                                  },
+                                  `billing-dates-${batch.ids[0]}`,
+                                ),
+                              )
+                            }
+                          />
+                          {!financiallyLocked ? (
+                            <div className="flex flex-wrap items-center justify-end gap-1 px-2 pt-1">
+                              <span className="text-muted-foreground mr-auto text-xs">
+                                Each button removes only that one placement.
+                              </span>
+                              {batch.ids.map((placementId, unitIndex) => (
+                                <RestorationChargeRemoveButton
+                                  key={placementId}
+                                  label={`Remove unit ${unitIndex + 1}`}
+                                  target={`${line.code} placement ${unitIndex + 1} of ${batch.units}, in ${shortDate(batch.placedOn)}${batch.removedOn ? `, out ${shortDate(batch.removedOn)}` : ', still running'}, ID ${placementId.slice(-8)}`}
+                                  amount={
+                                    unitDays(
+                                      batch.placedOn,
+                                      batch.removedOn,
+                                      toDateKey(new Date()),
+                                    ) * line.unitPrice
+                                  }
+                                  disabled={busy !== null}
+                                  onRemove={() =>
+                                    removeCharge(
+                                      `/api/admin/ops/restoration/equipment/${placementId}?projectId=${encodeURIComponent(projectId)}`,
+                                      `money-del-equipment-${placementId}`,
+                                      `Removed one ${line.code} placement and refreshed the job total.`,
+                                    )
+                                  }
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   </div>
