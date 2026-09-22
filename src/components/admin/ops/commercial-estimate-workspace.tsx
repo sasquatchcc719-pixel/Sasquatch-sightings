@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Building2,
   CalendarCheck,
-  Clock3,
   Loader2,
   MapPin,
   Ruler,
@@ -22,6 +21,7 @@ import {
   getPublicLeadSourceOptions,
   type PublicLeadSourceOption,
 } from '@/lib/lead-sources'
+import { DayTimePicker, type DayPickerAppointment } from './day-time-picker'
 
 type ServiceAddress = {
   id: string
@@ -56,6 +56,29 @@ type Slot = {
   end_time: string
 }
 
+type ScheduleAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  assigned_staff_user_id: string | null
+  ops_customers:
+    | { full_name: string | null; business_name: string | null }
+    | Array<{ full_name: string | null; business_name: string | null }>
+    | null
+  ops_appointment_line_items: Array<{ name_snapshot: string }> | null
+}
+
+type DailyAvailability = {
+  staff_user_id: string
+  date: string
+  is_open: boolean
+}
+
+function relatedOne<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
 function dateKey(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -82,17 +105,25 @@ function formatTime(value: string): string {
 export function CommercialEstimateWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const prefilledDate = validDate(searchParams.get('date'))
+  const prefilledTime = validTime(searchParams.get('time'))
   const prefilledStaffId = String(searchParams.get('staff') || '')
   const [appointmentDate, setAppointmentDate] = useState(
-    () => validDate(searchParams.get('date')) || dateKey(new Date()),
+    () => prefilledDate || dateKey(new Date()),
   )
-  const [startTime, setStartTime] = useState(
-    () => validTime(searchParams.get('time')) || '',
-  )
+  const [startTime, setStartTime] = useState(() => prefilledTime || '')
   const [staffId, setStaffId] = useState(prefilledStaffId)
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [scheduleAppointments, setScheduleAppointments] = useState<
+    ScheduleAppointment[]
+  >([])
+  const [dailyAvailability, setDailyAvailability] = useState<
+    DailyAvailability[]
+  >([])
+  const [prefillConflict, setPrefillConflict] = useState<string | null>(null)
+  const prefillValidated = useRef(false)
   const [leadSourceOptions, setLeadSourceOptions] = useState<
     PublicLeadSourceOption[]
   >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
@@ -130,6 +161,36 @@ export function CommercialEstimateWorkspace() {
     (slot) => slot.start_time.slice(0, 5) === startTime,
   )
   const savedAddresses = selectedBusiness?.ops_service_addresses || []
+  const selectedDayAppointments = useMemo<DayPickerAppointment[]>(() => {
+    return scheduleAppointments
+      .filter(
+        (appointment) =>
+          appointment.appointment_date === appointmentDate &&
+          (!staffId || appointment.assigned_staff_user_id === staffId),
+      )
+      .map((appointment) => {
+        const customer = relatedOne(appointment.ops_customers)
+        return {
+          id: appointment.id,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          label:
+            customer?.business_name || customer?.full_name || 'Booked visit',
+          detail: (appointment.ops_appointment_line_items || [])
+            .map((item) => item.name_snapshot)
+            .join(', '),
+        }
+      })
+  }, [appointmentDate, scheduleAppointments, staffId])
+  const selectedStaffClosedForDay = useMemo(() => {
+    const override = dailyAvailability.find(
+      (availability) =>
+        availability.staff_user_id === staffId &&
+        availability.date === appointmentDate,
+    )
+    if (override) return !override.is_open
+    return staff.find((member) => member.id === staffId)?.default_open === false
+  }, [appointmentDate, dailyAvailability, staff, staffId])
 
   useEffect(() => {
     let ignore = false
@@ -200,6 +261,16 @@ export function CommercialEstimateWorkspace() {
           ? (result.staff as StaffMember[])
           : []
         setStaff(members)
+        setScheduleAppointments(
+          Array.isArray(result.appointments)
+            ? (result.appointments as ScheduleAppointment[])
+            : [],
+        )
+        setDailyAvailability(
+          Array.isArray(result.dailyAvailability)
+            ? (result.dailyAvailability as DailyAvailability[])
+            : [],
+        )
         setStaffId((current) => {
           if (members.some((member) => member.id === current)) return current
           if (
@@ -217,6 +288,8 @@ export function CommercialEstimateWorkspace() {
         )
           return
         setStaff([])
+        setScheduleAppointments([])
+        setDailyAvailability([])
         setError('Unable to load technicians for that day.')
       })
     return () => controller.abort()
@@ -245,6 +318,27 @@ export function CommercialEstimateWorkspace() {
           ? (result.slots as Slot[])
           : []
         setSlots(nextSlots)
+        const shouldValidatePrefill =
+          !prefillValidated.current &&
+          Boolean(prefilledDate && prefilledTime && prefilledStaffId) &&
+          appointmentDate === prefilledDate &&
+          staffId === prefilledStaffId
+        if (shouldValidatePrefill) {
+          prefillValidated.current = true
+          const exactPrefillExists = nextSlots.some(
+            (slot) => slot.start_time.slice(0, 5) === prefilledTime,
+          )
+          if (exactPrefillExists) {
+            setStartTime(prefilledTime || '')
+            setPrefillConflict(null)
+          } else {
+            setStartTime('')
+            setPrefillConflict(
+              `${formatTime(prefilledTime || '')} is no longer available for this technician. Choose a green opening below or another day.`,
+            )
+          }
+          return
+        }
         setStartTime((current) =>
           nextSlots.some((slot) => slot.start_time.slice(0, 5) === current)
             ? current
@@ -259,7 +353,7 @@ export function CommercialEstimateWorkspace() {
       })
       .finally(() => setSlotsLoading(false))
     return () => controller.abort()
-  }, [appointmentDate, staffId])
+  }, [appointmentDate, prefilledDate, prefilledStaffId, prefilledTime, staffId])
 
   const canSubmit = useMemo(() => {
     return Boolean(
@@ -697,75 +791,70 @@ export function CommercialEstimateWorkspace() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="commercial-estimate-date">Date *</Label>
-              <Input
-                id="commercial-estimate-date"
-                required
-                type="date"
-                value={appointmentDate}
-                onChange={(event) => setAppointmentDate(event.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="commercial-estimate-staff">
-                Assigned technician *
-              </Label>
-              <select
-                id="commercial-estimate-staff"
-                required
-                className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-                value={staffId}
-                onChange={(event) => setStaffId(event.target.value)}
-              >
-                <option value="">Choose technician</option>
-                {staff.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
           <div className="mt-5">
-            <Label>Available start time *</Label>
-            {slotsLoading ? (
-              <p className="text-muted-foreground mt-2 flex items-center gap-2 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" /> Checking the live
-                calendar…
-              </p>
-            ) : slots.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {slots.map((slot) => {
-                  const value = slot.start_time.slice(0, 5)
-                  return (
-                    <Button
-                      key={slot.start_time}
-                      type="button"
-                      variant={startTime === value ? 'default' : 'outline'}
-                      onClick={() => setStartTime(value)}
-                    >
-                      <Clock3 className="mr-2 h-4 w-4" />
-                      {formatTime(value)}
-                    </Button>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="mt-2 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200">
-                No two-hour calendar window is open for this technician on that
-                date. Choose another technician or day.
-              </p>
-            )}
-            {selectedSlot ? (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Calendar hold: {formatTime(selectedSlot.start_time)}–
-                {formatTime(selectedSlot.end_time)}. The walkthrough itself is
-                one hour.
+            <Label htmlFor="commercial-estimate-staff">
+              Assigned technician *
+            </Label>
+            <select
+              id="commercial-estimate-staff"
+              required
+              className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+              value={staffId}
+              onChange={(event) => {
+                setStaffId(event.target.value)
+                setStartTime('')
+                setPrefillConflict(null)
+              }}
+            >
+              <option value="">Choose technician</option>
+              {staff.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.display_name}
+                </option>
+              ))}
+            </select>
+            {staff.length > 1 ? (
+              <p className="text-muted-foreground mt-1 text-xs">
+                Switch technicians to compare each person&apos;s live openings.
               </p>
             ) : null}
+          </div>
+
+          {prefillConflict ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200"
+            >
+              {prefillConflict}
+            </p>
+          ) : null}
+
+          <div className="mt-5">
+            <DayTimePicker
+              selectedDate={appointmentDate}
+              onSelectDate={(nextDate) => {
+                setAppointmentDate(nextDate)
+                setStartTime('')
+                setPrefillConflict(null)
+              }}
+              selectedTime={startTime}
+              onSelectTime={(time) => {
+                setStartTime(time)
+                setPrefillConflict(null)
+              }}
+              appointments={selectedDayAppointments}
+              availableSlots={slots}
+              requiredMinutes={120}
+              serviceMinutes={60}
+              bufferMinutes={60}
+              loadingSlots={slotsLoading}
+              useCustomTime={false}
+              onToggleCustomTime={() => undefined}
+              staffClosed={selectedStaffClosedForDay}
+              staffUserId={staffId}
+              allowConflictOverride={false}
+              showCustomTime={false}
+            />
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">

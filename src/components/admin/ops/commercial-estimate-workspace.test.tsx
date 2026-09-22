@@ -5,27 +5,45 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommercialEstimateWorkspace } from './commercial-estimate-workspace'
 
-const router = { push: vi.fn(), refresh: vi.fn() }
+const navigation = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+  router: { push: vi.fn(), refresh: vi.fn() },
+}))
 vi.mock('next/navigation', () => ({
-  useRouter: () => router,
-  useSearchParams: () =>
-    new URLSearchParams(
-      'date=2026-09-23&time=11:00&staff=11111111-1111-4111-8111-111111111111',
-    ),
+  useRouter: () => navigation.router,
+  useSearchParams: () => navigation.params,
 }))
 
+type Slot = { start_time: string; end_time: string }
 let submittedBody: Record<string, unknown> | null = null
+let slotMap: Record<string, Slot[]> = {}
+let requestedUrls: string[] = []
+
+const staff = [
+  { id: 'staff-a', display_name: 'Charles', default_open: true },
+  { id: 'staff-b', display_name: 'David Gonzalez', default_open: true },
+]
 
 beforeEach(() => {
   vi.clearAllMocks()
+  navigation.params = new URLSearchParams(
+    'date=2026-09-23&time=11:00&staff=staff-a',
+  )
   submittedBody = null
+  requestedUrls = []
+  slotMap = {
+    '2026-09-23|staff-a': [{ start_time: '11:00:00', end_time: '13:00:00' }],
+    '2026-09-23|staff-b': [{ start_time: '13:00:00', end_time: '15:00:00' }],
+    '2026-09-24|staff-a': [{ start_time: '09:00:00', end_time: '11:00:00' }],
+  }
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      requestedUrls.push(url)
       if (url === '/api/public/lead-sources') {
         return {
           ok: true,
@@ -47,21 +65,45 @@ beforeEach(() => {
         return {
           ok: true,
           json: async () => ({
-            staff: [
+            staff,
+            appointments: [
               {
-                id: '11111111-1111-4111-8111-111111111111',
-                display_name: 'Charles',
+                id: 'existing-job',
+                appointment_date: '2026-09-23',
+                start_time: '09:00:00',
+                end_time: '11:00:00',
+                assigned_staff_user_id: 'staff-a',
+                ops_customers: {
+                  full_name: 'Existing Customer',
+                  business_name: null,
+                },
+                ops_appointment_line_items: [
+                  { name_snapshot: 'Carpet cleaning' },
+                ],
               },
             ],
+            dailyAvailability: [],
+          }),
+        }
+      }
+      if (url.startsWith('/api/admin/ops/month-availability?')) {
+        return {
+          ok: true,
+          json: async () => ({
+            days: [
+              { date: '2026-09-23', slots: 1 },
+              { date: '2026-09-24', slots: 1 },
+            ],
+            commercial_days: {},
           }),
         }
       }
       if (url.startsWith('/api/admin/ops/slots?')) {
+        const query = new URL(url, 'https://example.com').searchParams
+        const key = `${query.get('date')}|${query.get('staff_user_id')}`
         return {
           ok: true,
-          json: async () => ({
-            slots: [{ start_time: '11:00:00', end_time: '13:00:00' }],
-          }),
+          json: async () => ({ slots: slotMap[key] || [] }),
         }
       }
       if (url === '/api/admin/ops/estimates' && init?.method === 'POST') {
@@ -81,17 +123,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('prefills the calendar slot and schedules a new commercial business without residential quote fields', async () => {
-  render(<CommercialEstimateWorkspace />)
-
-  expect(screen.getByLabelText('Date *')).toHaveValue('2026-09-23')
-  expect(await screen.findByRole('button', { name: '11:00 AM' })).toHaveClass(
-    'bg-primary',
-  )
-  expect(screen.getByLabelText('Assigned technician *')).toHaveValue(
-    '11111111-1111-4111-8111-111111111111',
-  )
-
+function fillRequiredBusinessFields() {
   fireEvent.change(screen.getByLabelText('Business name *'), {
     target: { value: 'High Plains Dental' },
   })
@@ -119,24 +151,101 @@ it('prefills the calendar slot and schedules a new commercial business without r
   fireEvent.change(screen.getByLabelText('Lead source *'), {
     target: { value: 'google_search' },
   })
+}
 
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Schedule commercial estimate' }),
-  )
+describe('commercial estimate scheduling', () => {
+  it('keeps a valid schedule-cell prefill selected and reserves exactly two hours', async () => {
+    render(<CommercialEstimateWorkspace />)
 
-  await waitFor(() =>
-    expect(router.push).toHaveBeenCalledWith(
-      '/admin/operations?date=2026-09-23&view=day&appointment=appointment-new',
-    ),
-  )
-  expect(submittedBody).toMatchObject({
-    customer_id: null,
-    service_address_id: null,
-    appointment_date: '2026-09-23',
-    start_time: '11:00',
-    assigned_staff_user_id: '11111111-1111-4111-8111-111111111111',
-    lead_source: 'google_search',
+    expect(
+      await screen.findByRole('button', { name: /11:00 AM.*1:00 PM/ }),
+    ).toHaveTextContent('Selected')
+    expect(screen.getByLabelText('Assigned technician *')).toHaveValue(
+      'staff-a',
+    )
+    expect(screen.getByText('Existing Customer')).toBeInTheDocument()
+    expect(
+      screen.getByText(/60 min.*60 min travel.*120 min/),
+    ).toBeInTheDocument()
+    expect(
+      requestedUrls.some(
+        (url) =>
+          url.startsWith('/api/admin/ops/slots?') &&
+          url.includes('required_minutes=120') &&
+          !url.includes('required_minutes=180'),
+      ),
+    ).toBe(true)
+
+    fillRequiredBusinessFields()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Schedule commercial estimate' }),
+    )
+
+    await waitFor(() =>
+      expect(navigation.router.push).toHaveBeenCalledWith(
+        '/admin/operations?date=2026-09-23&view=day&appointment=appointment-new',
+      ),
+    )
+    expect(submittedBody).toMatchObject({
+      appointment_date: '2026-09-23',
+      start_time: '11:00',
+      assigned_staff_user_id: 'staff-a',
+      lead_source: 'google_search',
+    })
+    expect(submittedBody).not.toHaveProperty('quoted_total')
+    expect(submittedBody).not.toHaveProperty('invoice')
   })
-  expect(submittedBody).not.toHaveProperty('quoted_total')
-  expect(submittedBody).not.toHaveProperty('invoice')
+
+  it('shows multiple technicians and refreshes selectable slots when staff changes', async () => {
+    render(<CommercialEstimateWorkspace />)
+    await screen.findByRole('button', { name: /11:00 AM.*1:00 PM/ })
+
+    expect(screen.getByLabelText('Assigned technician *')).toHaveTextContent(
+      'David Gonzalez',
+    )
+    fireEvent.change(screen.getByLabelText('Assigned technician *'), {
+      target: { value: 'staff-b' },
+    })
+
+    expect(
+      await screen.findByRole('button', { name: /1:00 PM.*3:00 PM/ }),
+    ).toHaveTextContent('Selected')
+    expect(
+      requestedUrls.some(
+        (url) =>
+          url.startsWith('/api/admin/ops/slots?') &&
+          url.includes('staff_user_id=staff-b'),
+      ),
+    ).toBe(true)
+  })
+
+  it('turns an unavailable day into calendar navigation to the next open day', async () => {
+    slotMap['2026-09-23|staff-a'] = []
+    render(<CommercialEstimateWorkspace />)
+
+    expect(
+      await screen.findByText(/No opening long enough on this day/),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '2026-09-24' }))
+
+    expect(
+      await screen.findByRole('button', { name: /9:00 AM.*11:00 AM/ }),
+    ).toHaveTextContent('Selected')
+  })
+
+  it('flags a stale schedule-cell time and requires a live opening instead', async () => {
+    navigation.params = new URLSearchParams(
+      'date=2026-09-23&time=10:00&staff=staff-a',
+    )
+    render(<CommercialEstimateWorkspace />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '10:00 AM is no longer available',
+    )
+    const open = screen.getByRole('button', { name: /11:00 AM.*1:00 PM/ })
+    expect(open).toHaveTextContent('Available')
+    fireEvent.click(open)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(open).toHaveTextContent('Selected')
+  })
 })

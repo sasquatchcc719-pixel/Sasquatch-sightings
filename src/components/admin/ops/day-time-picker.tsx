@@ -31,6 +31,7 @@ type DayTimePickerProps = {
   staffClosed?: boolean
   staffUserId?: string
   allowConflictOverride?: boolean
+  showCustomTime?: boolean
 }
 
 const DEFAULT_AVAIL_MINUTES = 120
@@ -347,6 +348,7 @@ export function DayTimePicker({
   staffClosed = false,
   staffUserId,
   allowConflictOverride = true,
+  showCustomTime = true,
 }: DayTimePickerProps) {
   const sortedAppointments = useMemo(
     () =>
@@ -400,7 +402,9 @@ export function DayTimePicker({
         <div className="space-y-2">
           {dayTimeline.length === 0 ? (
             <p className="text-muted-foreground py-2 text-sm">
-              Nothing booked yet — add services above to see open times.
+              {requiredMinutes > 0
+                ? 'Nothing booked for this technician, but no regular opening fits this visit. Pick another day or technician.'
+                : 'Nothing booked yet — add services above to see open times.'}
             </p>
           ) : null}
 
@@ -463,13 +467,15 @@ export function DayTimePicker({
           <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
             Pick a start time
           </p>
-          <button
-            type="button"
-            className="text-xs text-blue-600 underline-offset-2 hover:underline"
-            onClick={onToggleCustomTime}
-          >
-            {useCustomTime ? '← Back to open windows' : 'Custom time →'}
-          </button>
+          {showCustomTime ? (
+            <button
+              type="button"
+              className="text-xs text-blue-600 underline-offset-2 hover:underline"
+              onClick={onToggleCustomTime}
+            >
+              {useCustomTime ? '← Back to open windows' : 'Custom time →'}
+            </button>
+          ) : null}
         </div>
 
         {requiredMinutes <= 0 ? (
@@ -477,7 +483,7 @@ export function DayTimePicker({
             Add services above first — we&apos;ll show the openings that fit
             this job.
           </p>
-        ) : useCustomTime ? (
+        ) : useCustomTime && showCustomTime ? (
           <div>
             <input
               type="time"
@@ -496,9 +502,9 @@ export function DayTimePicker({
         ) : availableSlots.length === 0 ? (
           <p className="text-muted-foreground py-2 text-sm">
             No opening long enough on this day — the gaps above are too short.
-            {allowConflictOverride
+            {allowConflictOverride && showCustomTime
               ? ' Tap “Custom time” to book after hours or stack it, or pick another day.'
-              : ' Pick another day, or use “Custom time” for after-hours work and then verify the entire series.'}
+              : ' Pick another day or technician; green calendar days have an opening long enough.'}
           </p>
         ) : (
           <p className="text-muted-foreground py-1 text-sm">

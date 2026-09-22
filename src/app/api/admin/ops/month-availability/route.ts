@@ -47,11 +47,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const requiredMinutes = applyAppointmentBuffer(
+    // `required_minutes` is the complete occupied calendar block. The booking
+    // UI already adds its service-specific travel buffer before calling us.
+    const requiredMinutes =
       requiredMinutesParam > 0
         ? requiredMinutesParam
-        : DEFAULT_DURATION_MINUTES,
-    )
+        : applyAppointmentBuffer(DEFAULT_DURATION_MINUTES)
 
     const { data: commercialAppointments, error: commercialError } =
       await supabase

@@ -29,9 +29,10 @@ export async function GET(request: NextRequest) {
       Number.isFinite(requiredMinutesFromQuery) &&
       requiredMinutesFromQuery > 0
     ) {
-      requiredMinutesWithBuffer = applyAppointmentBuffer(
-        requiredMinutesFromQuery,
-      )
+      // Callers calculate the complete calendar occupancy (service + travel)
+      // before requesting slots. Applying the default buffer again made a
+      // two-hour visit require a three-hour opening.
+      requiredMinutesWithBuffer = requiredMinutesFromQuery
     } else {
       if (!serviceId) {
         return NextResponse.json(
