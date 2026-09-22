@@ -132,6 +132,13 @@ export async function POST(request: NextRequest) {
 
     let { data: appointment, error } = await fetchAppointment()
 
+    // Production-backed integration tests create disposable appointments.
+    // Never turn those fixtures into real admin notifications.
+    if (!error && appointment?.source === 'integration_test') {
+      console.log('[appointment-booked] Skipping integration-test fixture')
+      return NextResponse.json({ success: true, skipped: 'integration_test' })
+    }
+
     for (const delay of [250, 500, 1000]) {
       const lineItems = Array.isArray(appointment?.ops_appointment_line_items)
         ? appointment.ops_appointment_line_items

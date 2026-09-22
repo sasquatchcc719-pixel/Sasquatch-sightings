@@ -25,6 +25,7 @@
     "prepare": "husky",
     "test": "vitest",
     "test:ci": "vitest run",
+    "test:integration": "node scripts/run-integration-test.mjs",
     "test:ui": "vitest --ui",
     "analyze": "ANALYZE=true pnpm build",
     "backfill-locations": "tsx scripts/backfill-sighting-locations.ts",

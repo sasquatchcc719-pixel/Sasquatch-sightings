@@ -227,6 +227,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Customer deletion must be owner/admin-only, show linked-record impact first, and refuse to erase appointments, agreements, service concerns, or restoration history.
 - Keep the public brand name Sasquatch Carpet Cleaning. The NFC emergency button dials the user-approved water-damage number without a personal name; normal calls and printed cards use the business line. Never invent a separate brand, text keyword, emergency pricing CTA, or response promise.
 - Treat residential emailed quotes and scheduled commercial estimates as separate workflows; never redirect commercial estimate intake into Book Job estimate mode.
+- Keep production-backed `*.integration.test.*` files out of default test runs; require the gated integration config, and keep production browser verification to read-only navigation and screenshots without submitting forms.
 
 ---
 
