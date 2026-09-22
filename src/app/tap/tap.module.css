@@ -132,6 +132,9 @@
 .estimate {
   min-height: 164px;
 }
+.estimate .panelTitle {
+  font-size: clamp(22px, 5.6vw, 32px);
+}
 .actionIcon {
   display: grid;
   place-items: center;
@@ -645,6 +648,9 @@
   }
   .panelTitle {
     font-size: 24px;
+  }
+  .estimate .panelTitle {
+    font-size: 20px;
   }
   .emergencyTitle {
     font-size: 17px;

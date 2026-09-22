@@ -193,33 +193,6 @@ export default function TapLandingPage() {
           className={styles.primaryActions}
           aria-label="Cleaning and water damage help"
         >
-          <button
-            type="button"
-            className={`${styles.actionPanel} ${styles.estimate}`}
-            aria-expanded={showWidget}
-            aria-controls="cleaning-estimator"
-            onClick={() => {
-              setShowWidget((visible) => !visible)
-              if (!showWidget) void trackButtonClick('booking_widget_open')
-            }}
-          >
-            <span className={styles.actionIcon}>
-              <CalendarCheck aria-hidden="true" />
-            </span>
-            <span className={styles.actionCopy}>
-              <span className={styles.panelTitle}>
-                Get a free
-                <br />
-                estimate
-              </span>
-              <span className={styles.offer}>$20 off cleaning</span>
-              <span className={styles.panelDescription}>
-                {couponCode} auto-applied
-              </span>
-            </span>
-            <ChevronRight className={styles.actionArrow} aria-hidden="true" />
-          </button>
-
           <a
             href={`tel:${WATER_DAMAGE_PHONE_E164}`}
             onClick={() => void trackButtonClick('call')}
@@ -227,7 +200,9 @@ export default function TapLandingPage() {
           >
             <span className={styles.waterScene} aria-hidden="true">
               <span className={styles.waterDrop} />
-              <span className={`${styles.waterDrop} ${styles.waterDropSecond}`} />
+              <span
+                className={`${styles.waterDrop} ${styles.waterDropSecond}`}
+              />
               <span className={styles.waterLevel}>
                 <span className={`${styles.waterWave} ${styles.waterWaveRear}`}>
                   <svg
@@ -263,6 +238,35 @@ export default function TapLandingPage() {
             </span>
             <ChevronRight className={styles.actionArrow} aria-hidden="true" />
           </a>
+
+          <button
+            type="button"
+            className={`${styles.actionPanel} ${styles.estimate}`}
+            aria-expanded={showWidget}
+            aria-controls="cleaning-estimator"
+            onClick={() => {
+              setShowWidget((visible) => !visible)
+              if (!showWidget) void trackButtonClick('booking_widget_open')
+            }}
+          >
+            <span className={styles.actionIcon}>
+              <CalendarCheck aria-hidden="true" />
+            </span>
+            <span className={styles.actionCopy}>
+              <span className={styles.panelTitle}>
+                Get a free
+                <br />
+                carpet cleaning
+                <br />
+                estimate
+              </span>
+              <span className={styles.offer}>$20 off cleaning</span>
+              <span className={styles.panelDescription}>
+                {couponCode} auto-applied
+              </span>
+            </span>
+            <ChevronRight className={styles.actionArrow} aria-hidden="true" />
+          </button>
         </section>
 
         <div id="cleaning-estimator" hidden={!showWidget}>

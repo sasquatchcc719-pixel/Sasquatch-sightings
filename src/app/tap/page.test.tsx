@@ -84,6 +84,16 @@ describe('mobile NFC card', () => {
     expect(
       screen.queryByText(/Charles|24\/7|text “water”/i),
     ).not.toBeInTheDocument()
+    const emergency = screen.getByRole('link', {
+      name: /Water damage emergency/,
+    })
+    const estimate = screen.getByRole('button', {
+      name: /Get a free carpet cleaning estimate/,
+    })
+    expect(
+      emergency.compareDocumentPosition(estimate) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('keeps the water decorative and the emergency action accessible', () => {
@@ -155,7 +165,9 @@ describe('mobile NFC card', () => {
         }),
       }),
     )
-    const estimate = screen.getByRole('button', { name: /Get a free estimate/ })
+    const estimate = screen.getByRole('button', {
+      name: /Get a free carpet cleaning estimate/,
+    })
     fireEvent.click(estimate)
     expect(estimate).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByTestId('estimator')).toHaveAttribute(
