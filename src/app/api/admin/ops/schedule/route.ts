@@ -182,6 +182,7 @@ export async function GET(request: NextRequest) {
       staff: staffResult.data || [],
       dailyAvailability: dailyAvailResult.data || [],
       currentUserId: access.id,
+      currentUserRole: access.role,
     })
   } catch (error) {
     const detail =

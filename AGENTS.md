@@ -226,6 +226,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Commercial setup emails must reuse the saved customer email, preview before creating access or sending, and collect missing details from the customer. Require a published agreement and authorized signer, protect one-time links from email scanners, attach the exact agreement, and persist retry-safe delivery. Never say optional maintenance unlocks recurring scheduling just by signing.
 - Customer deletion must be owner/admin-only, show linked-record impact first, and refuse to erase appointments, agreements, service concerns, or restoration history.
 - Keep the public brand name Sasquatch Carpet Cleaning. The NFC emergency button dials the user-approved water-damage number without a personal name; normal calls and printed cards use the business line. Never invent a separate brand, text keyword, emergency pricing CTA, or response promise.
+- Treat residential emailed quotes and scheduled commercial estimates as separate workflows; never redirect commercial estimate intake into Book Job estimate mode.
 
 ---
 

@@ -1,5 +1,7 @@
-import { redirect } from 'next/navigation'
+import { CommercialEstimateWorkspace } from '@/components/admin/ops/commercial-estimate-workspace'
+import { requireAnyRole } from '@/lib/auth'
 
-export default function NewEstimatePage() {
-  redirect('/admin/operations/new-job?mode=estimate')
+export default async function NewEstimatePage() {
+  await requireAnyRole(['admin', 'owner', 'dispatcher'])
+  return <CommercialEstimateWorkspace />
 }

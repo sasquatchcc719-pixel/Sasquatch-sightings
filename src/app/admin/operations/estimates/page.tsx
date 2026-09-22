@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Mail, Ruler } from 'lucide-react'
+import { Plus, Ruler } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -84,8 +84,15 @@ async function loadEstimates(): Promise<Estimate[]> {
 }
 
 export default async function EstimatesListPage() {
-  await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing', 'tech'])
+  const access = await requireAnyRole([
+    'admin',
+    'owner',
+    'dispatcher',
+    'marketing',
+    'tech',
+  ])
   const estimates = await loadEstimates()
+  const canSchedule = ['admin', 'owner', 'dispatcher'].includes(access.role)
 
   const openCount = estimates.filter(
     (e) =>
@@ -98,34 +105,42 @@ export default async function EstimatesListPage() {
         <div>
           <div className="flex items-center gap-2">
             <Ruler className="text-muted-foreground h-5 w-5" />
-            <h1 className="text-2xl font-bold">Estimate history</h1>
+            <h1 className="text-2xl font-bold">Commercial estimates</h1>
           </div>
           <p className="text-muted-foreground text-sm">
-            Existing estimates and commercial quotes. {openCount} open.
+            Scheduled walkthroughs, proposals, and accepted bids. {openCount}{' '}
+            open.
           </p>
         </div>
-        <Button asChild className="gap-2">
-          <Link href="/admin/operations/new-job?mode=estimate">
-            <Mail className="h-4 w-4" />
-            Email estimate in Book Job
-          </Link>
-        </Button>
+        {canSchedule ? (
+          <Button asChild className="gap-2 bg-amber-600 hover:bg-amber-700">
+            <Link href="/admin/operations/estimates/new">
+              <Plus className="h-4 w-4" />
+              Schedule commercial estimate
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       {estimates.length === 0 ? (
         <Card className="p-10 text-center">
           <Ruler className="text-muted-foreground mx-auto h-8 w-8" />
-          <p className="mt-3 font-medium">No estimate history</p>
+          <p className="mt-3 font-medium">No commercial estimates yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Create and email residential estimates from Book Job, without
-            scheduling a visit.
+            Schedule an on-site walkthrough to measure the property and build a
+            commercial proposal.
           </p>
-          <Button asChild className="mt-4 gap-2">
-            <Link href="/admin/operations/new-job?mode=estimate">
-              <Mail className="h-4 w-4" />
-              Email estimate in Book Job
-            </Link>
-          </Button>
+          {canSchedule ? (
+            <Button
+              asChild
+              className="mt-4 gap-2 bg-amber-600 hover:bg-amber-700"
+            >
+              <Link href="/admin/operations/estimates/new">
+                <Plus className="h-4 w-4" />
+                Schedule commercial estimate
+              </Link>
+            </Button>
+          ) : null}
         </Card>
       ) : (
         <Card className="divide-border/60 divide-y p-0">

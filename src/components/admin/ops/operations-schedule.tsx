@@ -168,6 +168,7 @@ type ScheduleResponse = {
   staff?: StaffMember[]
   dailyAvailability?: DailyAvailability[]
   currentUserId?: string
+  currentUserRole?: string
 }
 
 type AvailabilityTemplate = {
@@ -861,7 +862,11 @@ function formatPendingNotifyWhen(dateKey: string, time: string): string {
 export function OperationsSchedule() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [view, setView] = useState<ScheduleView>('week')
+  const [view, setView] = useState<ScheduleView>(() => {
+    const requested = searchParams.get('view')
+    return requested === 'day' || requested === 'month' ? requested : 'week'
+  })
+  const focusedAppointmentId = searchParams.get('appointment')
   const [anchorDate, setAnchorDate] = useState(() => {
     const dateParam = searchParams.get('date')
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -880,6 +885,7 @@ export function OperationsSchedule() {
   })
   const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
   const [dailyAvailability, setDailyAvailability] = useState<
     DailyAvailability[]
   >([])
@@ -1189,6 +1195,8 @@ export function OperationsSchedule() {
       setStaffList(scheduleResult.staff || [])
       if (scheduleResult.currentUserId)
         setCurrentUserId(scheduleResult.currentUserId)
+      if (scheduleResult.currentUserRole)
+        setCurrentUserRole(scheduleResult.currentUserRole)
       setDailyAvailability(scheduleResult.dailyAvailability || [])
       setRecurringFreqMap(scheduleResult.recurringFrequencyMap || {})
       const templates = (availabilityResult.templates ||
@@ -1504,6 +1512,21 @@ export function OperationsSchedule() {
       : data.events.filter((event) =>
           displayedDays.some((day) => intersectsDay(event, formatDateKey(day))),
         ).length
+  const canScheduleCommercialEstimate =
+    currentUserRole === 'admin' ||
+    currentUserRole === 'owner' ||
+    currentUserRole === 'dispatcher'
+
+  useEffect(() => {
+    if (!focusedAppointmentId || loading) return
+    const frame = window.requestAnimationFrame(() => {
+      const card = document.querySelector<HTMLElement>(
+        `[data-appointment-id="${CSS.escape(focusedAppointmentId)}"]`,
+      )
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusedAppointmentId, loading, data.appointments])
 
   const saveBusinessHours = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -1610,6 +1633,19 @@ export function OperationsSchedule() {
   const openNewJobAt = (dateKey: string, hour: number) => {
     const hh = String(hour).padStart(2, '0')
     router.push(`/admin/operations/new-job?date=${dateKey}&time=${hh}:00`)
+  }
+
+  const openCommercialEstimateAt = (
+    dateKey: string,
+    hour: number,
+    staffId?: string | null,
+  ) => {
+    const params = new URLSearchParams({
+      date: dateKey,
+      time: `${String(hour).padStart(2, '0')}:00`,
+    })
+    if (staffId) params.set('staff', staffId)
+    router.push(`/admin/operations/estimates/new?${params}`)
   }
 
   const openBlockAt = (
@@ -2487,6 +2523,9 @@ export function OperationsSchedule() {
         pointerDragging && draggingAppointment?.id === appointment.id
       const effectiveStaffId =
         appointment.assigned_staff_user_id ?? staffList[0]?.id
+      const assignedStaff = staffList.find(
+        (staff) => staff.id === effectiveStaffId,
+      )
       const otherStaff = staffList.filter(
         (staff) => staff.id !== effectiveStaffId,
       )
@@ -2494,7 +2533,8 @@ export function OperationsSchedule() {
         <div
           key={appointment.id}
           data-appointment-block
-          className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
+          data-appointment-id={appointment.id}
+          className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''} ${focusedAppointmentId === appointment.id ? 'ring-4 ring-amber-400/60 ring-offset-2' : ''}`}
           style={{
             top: placement.top + 6,
             height: placement.height - 8,
@@ -2609,9 +2649,29 @@ export function OperationsSchedule() {
             {isEstimate && (
               <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                 <Ruler className="h-2.5 w-2.5" />
-                Measure visit
+                Commercial walkthrough
               </span>
             )}
+            {isEstimate && customer?.business_name && customer.full_name ? (
+              <div className="mt-1 line-clamp-1 text-[10px] text-slate-600">
+                Contact: {customer.full_name}
+              </div>
+            ) : null}
+            {isEstimate ? (
+              <div className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-slate-600">
+                {(() => {
+                  const address = unwrapRelation(
+                    appointment.ops_service_addresses,
+                  )
+                  return address
+                    ? `${address.street_1}, ${address.city}`
+                    : 'Address pending'
+                })()}
+                {assignedStaff?.display_name
+                  ? ` · Tech: ${assignedStaff.display_name}`
+                  : ''}
+              </div>
+            ) : null}
             {!isEstimate && appointment.recurring_template_id && (
               <a
                 href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
@@ -2627,7 +2687,7 @@ export function OperationsSchedule() {
             </div>
             {(() => {
               const address = unwrapRelation(appointment.ops_service_addresses)
-              const city = address?.city
+              const city = isEstimate ? null : address?.city
               const { leadLabel, bookingLabel } =
                 getScheduleCardSources(appointment)
               if (city || leadLabel || bookingLabel) {
@@ -2644,22 +2704,37 @@ export function OperationsSchedule() {
               return null
             })()}
             <div className="mt-2 line-clamp-2 text-slate-800">
-              {appointment.ops_appointment_line_items
-                .map((item) => item.name_snapshot)
-                .join(', ')}
+              {appointment.ops_appointment_line_items.length > 0
+                ? appointment.ops_appointment_line_items
+                    .map((item) => item.name_snapshot)
+                    .join(', ')
+                : isEstimate
+                  ? 'Measurements and pricing pending'
+                  : ''}
             </div>
             {recurringLineItemDescriptionBoxes(appointment, false)}
             <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-              <span>{paymentMethodChip(appointment)}</span>
-              <span
-                className={`text-right font-semibold tabular-nums ${
-                  appointment.status === 'completed'
-                    ? 'text-slate-600'
-                    : 'text-slate-800'
-                }`}
-              >
-                ${calendarDisplayAmount(appointment)}
-              </span>
+              {isEstimate ? (
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+                  {(appointment.estimate_status || 'draft').replace(
+                    /^./,
+                    (value) => value.toUpperCase(),
+                  )}
+                </span>
+              ) : (
+                <>
+                  <span>{paymentMethodChip(appointment)}</span>
+                  <span
+                    className={`text-right font-semibold tabular-nums ${
+                      appointment.status === 'completed'
+                        ? 'text-slate-600'
+                        : 'text-slate-800'
+                    }`}
+                  >
+                    ${calendarDisplayAmount(appointment)}
+                  </span>
+                </>
+              )}
             </div>
           </Link>
           {!isEstimate && appointment.status !== 'completed' && (
@@ -2853,7 +2928,7 @@ export function OperationsSchedule() {
             className="fixed z-[220]"
             style={{
               left: Math.min(cellMenu.x, window.innerWidth - 260),
-              top: Math.min(cellMenu.y, window.innerHeight - 160),
+              top: Math.min(cellMenu.y, window.innerHeight - 210),
             }}
           >
             <Card className="border-border/60 bg-card/95 flex w-56 flex-col gap-1 rounded-xl border p-2 shadow-xl backdrop-blur">
@@ -2872,6 +2947,24 @@ export function OperationsSchedule() {
                 <Plus className="h-3.5 w-3.5" />
                 New job at this time
               </Button>
+              {canScheduleCommercialEstimate ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start gap-2 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                  onClick={() => {
+                    openCommercialEstimateAt(
+                      cellMenu.dateKey,
+                      cellMenu.hour,
+                      cellMenu.staffId,
+                    )
+                    setCellMenu(null)
+                  }}
+                >
+                  <Ruler className="h-3.5 w-3.5" />
+                  Commercial estimate at this time
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="ghost"
@@ -2891,7 +2984,7 @@ export function OperationsSchedule() {
 
       <Card className="glass-accent-ring via-card/80 relative overflow-visible border-transparent bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 p-4 shadow-lg shadow-emerald-950/25 backdrop-blur">
         {/* Row 1: navigation on the left, actions on the right */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -2945,6 +3038,18 @@ export function OperationsSchedule() {
               Book Job
             </Link>
           </Button>
+          {canScheduleCommercialEstimate ? (
+            <Button
+              asChild
+              variant="outline"
+              className="h-11 gap-2 rounded-xl border-amber-300 bg-amber-50/70 px-4 font-semibold text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+            >
+              <Link href="/admin/operations/estimates/new">
+                <Ruler className="h-5 w-5 text-amber-600" />
+                Commercial Estimate
+              </Link>
+            </Button>
+          ) : null}
           <Button
             asChild
             variant="outline"
@@ -3910,8 +4015,10 @@ export function OperationsSchedule() {
                           </div>
                           <div className="text-muted-foreground mt-1">
                             {/* Keep service context visible in compact month tiles */}
-                            {appointment.ops_appointment_line_items[0]
-                              ?.name_snapshot || 'Service'}
+                            {isEstimate
+                              ? 'Commercial walkthrough'
+                              : appointment.ops_appointment_line_items[0]
+                                  ?.name_snapshot || 'Service'}
                           </div>
                           {recurringLineItemDescriptionBoxes(appointment, true)}
                           {(() => {

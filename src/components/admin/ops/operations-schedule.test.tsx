@@ -49,7 +49,12 @@ function mockSchedule(
     ok: true,
     json: async () =>
       url.startsWith('/api/admin/ops/schedule?')
-        ? { appointments, events: [], staff }
+        ? {
+            appointments,
+            events: [],
+            staff,
+            currentUserRole: 'owner',
+          }
         : {},
   }))
   vi.stubGlobal('fetch', fetchMock)
@@ -57,6 +62,7 @@ function mockSchedule(
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.stubGlobal(
     'matchMedia',
     vi.fn().mockReturnValue({
@@ -241,5 +247,76 @@ describe('collapsible weekend schedule', () => {
 
     expect(await screen.findByText('Warranty')).toBeInTheDocument()
     expect(screen.getByText('Unpaid')).toBeInTheDocument()
+  })
+})
+
+describe('commercial estimate scheduling', () => {
+  it('offers a dedicated top action and prefilled calendar-cell action', async () => {
+    mockSchedule(1, [])
+    render(<OperationsSchedule />)
+
+    const topAction = await screen.findByRole('link', {
+      name: /Commercial Estimate/i,
+    })
+    expect(topAction).toHaveAttribute('href', '/admin/operations/estimates/new')
+
+    fireEvent.click(screen.getByRole('button', { name: /^day$/i }))
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Create on 2026-09-12 at 10:00',
+      }),
+    )
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Commercial estimate at this time',
+      }),
+    )
+
+    expect(router.push).toHaveBeenCalledWith(
+      '/admin/operations/estimates/new?date=2026-09-12&time=10%3A00&staff=staff-0',
+    )
+  })
+
+  it('renders an amber commercial walkthrough card with business, contact, address, technician, and detail link', async () => {
+    mockSchedule(1, [
+      {
+        ...saturdayJob,
+        id: 'commercial-estimate',
+        kind: 'estimate',
+        restoration_project_id: null,
+        visit_type: null,
+        estimate_status: 'draft',
+        quoted_total: 0,
+        assigned_staff_user_id: 'staff-0',
+        ops_customers: {
+          full_name: 'Riley Park',
+          business_name: 'High Plains Dental',
+          phone: '+17195550123',
+        },
+        ops_service_addresses: {
+          street_1: '200 Commerce Dr',
+          city: 'Monument',
+          state: 'CO',
+          zip_code: '80132',
+        },
+      },
+    ])
+    render(<OperationsSchedule />)
+
+    await screen.findByTitle('1 on Saturday — click to open the day')
+    fireEvent.click(screen.getByRole('button', { name: /^day$/i }))
+
+    const cardLink = await screen.findByRole('link', {
+      name: /High Plains Dental/i,
+    })
+    expect(cardLink).toHaveAttribute(
+      'href',
+      '/admin/operations/estimates/commercial-estimate',
+    )
+    expect(cardLink).toHaveTextContent('Commercial walkthrough')
+    expect(cardLink).toHaveTextContent('Contact: Riley Park')
+    expect(cardLink).toHaveTextContent('200 Commerce Dr, Monument')
+    expect(cardLink).toHaveTextContent('Tech: Tech 1')
+    expect(cardLink).toHaveTextContent('Draft')
   })
 })

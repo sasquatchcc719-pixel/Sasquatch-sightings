@@ -6,7 +6,10 @@ import {
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
-import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
+import {
+  commercialEstimateCalendarMinutes,
+  createAiStyleEstimate,
+} from '@/lib/ops/create-ai-style-estimate'
 import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { checkServiceArea } from '@/lib/service-area'
@@ -285,7 +288,7 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'book_commercial_estimate',
       description:
-        "COMMERCIAL WORK ONLY. Book a 1-hour time slot on Charles's calendar for an on-site walkthrough / measurement visit of a commercial property (office, restaurant, HOA, church, apartment complex, school, medical office, gym, store, etc.). You are NOT generating the estimate — you are only reserving the slot for Charles to come out, measure, and build the quote himself. Requires a start_time that appears in get_calendar_slots for that date (use duration_minutes=60 when checking). DO NOT use this for any residential job — residential ALWAYS books directly via book_new_job, no matter how big or complex the house is.",
+        "COMMERCIAL WORK ONLY. Book a 1-hour on-site walkthrough / measurement visit of a commercial property (office, restaurant, HOA, church, apartment complex, school, medical office, gym, store, etc.), with a 1-hour travel/setup buffer held on Charles's calendar. You are NOT generating the estimate — you are only reserving the visit so Charles can come out, measure, and build the quote himself. Requires a start_time that appears in get_calendar_slots for that date (use duration_minutes=120 when checking). DO NOT use this for any residential job — residential ALWAYS books directly via book_new_job, no matter how big or complex the house is.",
       parameters: {
         type: 'object',
         properties: {
@@ -747,7 +750,7 @@ export async function executeScoutWebTool(
           })
         }
 
-        const estimateRequiredMinutes = applyAppointmentBuffer(60)
+        const estimateRequiredMinutes = commercialEstimateCalendarMinutes(60)
         const estimateStaffResult = await getStaffPrioritizedSlots({
           supabase,
           date: appointmentDate,
@@ -760,7 +763,7 @@ export async function executeScoutWebTool(
         )
         if (!estimateMatch) {
           return JSON.stringify({
-            error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots with duration_minutes=60 first.`,
+            error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots with duration_minutes=${estimateRequiredMinutes} first.`,
             suggested_slots: estimateSlots
               .slice(0, 8)
               .map((s) => s.start_time.slice(0, 5)),

@@ -21,6 +21,7 @@ import {
   Footprints,
   Fuel,
   ShieldCheck,
+  Ruler,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,6 +58,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'New Job',
     description: 'Full-screen standard job workflow',
     icon: FilePlus2,
+  },
+  {
+    href: '/admin/operations/estimates',
+    label: 'Commercial Estimates',
+    description: 'On-site walkthroughs, proposals, and accepted bids',
+    icon: Ruler,
   },
   {
     href: '/admin/operations?action=block',
@@ -160,8 +167,9 @@ function getSectionLabel(pathname: string): string {
     return 'Job Detail'
   if (pathname.startsWith('/admin/operations/invoices/'))
     return 'Invoice Detail'
-  if (pathname === '/admin/operations/estimates') return 'Estimate history'
-  if (pathname.startsWith('/admin/operations/estimates/')) return 'Estimate'
+  if (pathname === '/admin/operations/estimates') return 'Commercial Estimates'
+  if (pathname.startsWith('/admin/operations/estimates/'))
+    return 'Commercial Estimate'
   if (pathname.startsWith('/admin/operations/recurring/visit/'))
     return 'Recurring Visit'
   return 'Operations'

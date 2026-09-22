@@ -13,21 +13,26 @@
  *   - quoted_total defaults to 0 (the real number comes from the walkthrough)
  *   - quickbooks_sync_status='held' — don't push anything to QB yet
  *   - Optional business_name on the customer (commercial contact)
- *   - Default visit duration is 30 min unless caller overrides
+ *   - Default visit duration is 60 min, plus a one-hour calendar buffer
  *   - No customer-facing email/SMS template runs automatically (lifecycle
  *     templates target real service jobs). Admin gets a push + SMS instead.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeLeadSource } from '@/lib/lead-sources'
-import { applyAppointmentBuffer } from '@/lib/ops/availability'
-import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
+import {
+  getSlotsForStaff,
+  getStaffPrioritizedSlots,
+} from '@/lib/ops/staff-availability'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 
 export type CreateAiStyleEstimateInput = {
   supabase: SupabaseClient
+  customer_id?: string | null
+  service_address_id?: string | null
   customer: {
     first_name: string
     last_name: string
@@ -46,6 +51,8 @@ export type CreateAiStyleEstimateInput = {
   start_time: string
   /** Visit duration in minutes. Defaults to 60 (one hour walkthrough). */
   visit_duration_minutes?: number
+  /** Explicit technician selected by an internal scheduler. */
+  assigned_staff_user_id?: string | null
   /** Free-text summary of what the customer wants quoted. */
   job_description?: string | null
   /** 'ai_agent' for Scout web, 'sms_harry' for Harry SMS, etc. */
@@ -54,9 +61,12 @@ export type CreateAiStyleEstimateInput = {
   source_label: string
   /** ops_appointments.lead_source */
   lead_source?: string | null
+  lead_source_detail?: string | null
   /** Status-event + admin heading actor. */
   actor_label: string
   admin_heading: string
+  created_by?: string | null
+  notify_admin?: boolean
 }
 
 export type CreateAiStyleEstimateResult =
@@ -77,6 +87,16 @@ export type CreateAiStyleEstimateResult =
     }
 
 const DEFAULT_VISIT_MINUTES = 60
+const COMMERCIAL_ESTIMATE_BUFFER_MINUTES = 60
+
+export function commercialEstimateCalendarMinutes(
+  visitMinutes = DEFAULT_VISIT_MINUTES,
+): number {
+  return Math.min(
+    240,
+    Math.max(15, visitMinutes) + COMMERCIAL_ESTIMATE_BUFFER_MINUTES,
+  )
+}
 
 function normClock5(t: string): string {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(t).trim())
@@ -100,23 +120,30 @@ export async function createAiStyleEstimate(
 ): Promise<CreateAiStyleEstimateResult> {
   const {
     supabase,
+    customer_id: selectedCustomerId,
+    service_address_id: selectedAddressId,
     customer,
     address,
     appointment_date: appointmentDate,
     start_time: startTimeRaw,
     visit_duration_minutes: visitMinutesRaw,
+    assigned_staff_user_id: assignedStaffUserId,
     job_description: jobDescription,
     booking_channel: bookingChannel,
     source_label: sourceLabel,
     lead_source: leadSourceRaw = null,
+    lead_source_detail: leadSourceDetailRaw = null,
     actor_label: actorLabel,
     admin_heading: adminHeading,
+    created_by: createdBy = null,
+    notify_admin: notifyAdmin = true,
   } = input
 
   const firstName = customer.first_name.trim()
   const lastName = customer.last_name.trim()
   const email = customer.email.trim()
-  const phone = customer.phone.trim()
+  const rawPhone = customer.phone.trim()
+  const phone = normalizeOpsPhone(rawPhone)
   const businessName = (customer.business_name || '').trim() || null
   const street1 = address.street_1.trim()
   const city = address.city.trim()
@@ -124,6 +151,9 @@ export async function createAiStyleEstimate(
   const zipCode = address.zip_code.trim()
   const startTime = normClock5(startTimeRaw)
   const leadSource = (leadSourceRaw || '').trim() || null
+  const normalizedLeadSource = leadSource
+    ? normalizeLeadSource(leadSource, leadSourceDetailRaw)
+    : null
 
   if (!firstName || !lastName || !email || !phone) {
     return {
@@ -131,7 +161,7 @@ export async function createAiStyleEstimate(
       error: 'Customer first name, last name, email, and phone are required',
     }
   }
-  if (!street1 || !city || !zipCode) {
+  if (!selectedAddressId && (!street1 || !city || !zipCode)) {
     return { ok: false, error: 'Street, city, and zip are required' }
   }
   if (!appointmentDate || !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
@@ -140,27 +170,49 @@ export async function createAiStyleEstimate(
       error: 'appointment_date must be YYYY-MM-DD',
     }
   }
+  if (
+    normalizedLeadSource?.requires_detail &&
+    !normalizedLeadSource.lead_source_detail
+  ) {
+    return {
+      ok: false,
+      error:
+        normalizedLeadSource.detail_label || 'Add the lead source details.',
+    }
+  }
 
   const visitMinutes =
     Number.isFinite(visitMinutesRaw) && (visitMinutesRaw as number) > 0
       ? Math.min(240, Math.max(15, Number(visitMinutesRaw)))
       : DEFAULT_VISIT_MINUTES
 
-  const requiredMinutes = applyAppointmentBuffer(visitMinutes)
+  const requiredMinutes = commercialEstimateCalendarMinutes(visitMinutes)
 
   // Validate the slot is real so two AI agents can't accidentally double-book.
-  const estimateStaffResult = await getStaffPrioritizedSlots({
-    supabase,
-    date: appointmentDate,
-    requiredMinutes,
-    maxResults: 48,
-  })
-  const slots = estimateStaffResult?.slots || []
+  const estimateStaffResult = assignedStaffUserId
+    ? null
+    : await getStaffPrioritizedSlots({
+        supabase,
+        date: appointmentDate,
+        requiredMinutes,
+        maxResults: 48,
+      })
+  const slots = assignedStaffUserId
+    ? await getSlotsForStaff({
+        supabase,
+        date: appointmentDate,
+        requiredMinutes,
+        staffUserId: assignedStaffUserId,
+        maxResults: 48,
+      })
+    : estimateStaffResult?.slots || []
   const slotMatch = slots.some((s) => normClock5(s.start_time) === startTime)
   if (!slotMatch) {
     return {
       ok: false,
-      error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots with duration_minutes=${visitMinutes} and offer a listed time.`,
+      error: assignedStaffUserId
+        ? `That technician is not available at ${startTime} on ${appointmentDate}. Choose one of the available times.`
+        : `That start time is not available on ${appointmentDate}. Call get_calendar_slots with duration_minutes=${requiredMinutes} and offer a listed time.`,
       suggested_slots: slots.slice(0, 8).map((s) => normClock5(s.start_time)),
     }
   }
@@ -172,19 +224,33 @@ export async function createAiStyleEstimate(
 
   let customerId: string
 
-  const { data: existingByEmail } = await supabase
-    .from('ops_customers')
-    .select('id')
-    .eq('email', email)
-    .maybeSingle()
+  const { data: selectedCustomer } = selectedCustomerId
+    ? await supabase
+        .from('ops_customers')
+        .select('id')
+        .eq('id', selectedCustomerId)
+        .maybeSingle()
+    : { data: null }
+  if (selectedCustomerId && !selectedCustomer) {
+    return { ok: false, error: 'The selected business no longer exists' }
+  }
 
-  let existingCustomerRow: { id: string } | null = existingByEmail ?? null
+  const { data: existingByEmail } = selectedCustomer
+    ? { data: null }
+    : await supabase
+        .from('ops_customers')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+
+  let existingCustomerRow: { id: string } | null =
+    selectedCustomer ?? existingByEmail ?? null
 
   if (!existingCustomerRow) {
     const { data: existingByPhone } = await supabase
       .from('ops_customers')
       .select('id')
-      .eq('phone', phone)
+      .in('phone', opsPhoneLookupVariants(rawPhone))
       .maybeSingle()
     existingCustomerRow = existingByPhone ?? null
   }
@@ -225,22 +291,50 @@ export async function createAiStyleEstimate(
     customerId = newCustomer.id
   }
 
-  // --- Service address: reuse via shared dedupe (street + zip when set) ---
-  const resolved = await resolveServiceAddress(supabase, customerId, {
-    label: businessName || 'Walkthrough Address',
-    street_1: street1,
-    city,
-    state,
-    zip_code: zipCode,
-  })
+  // --- Service address: selected saved address or shared street+zip dedupe ---
+  const { data: savedAddress } = selectedAddressId
+    ? await supabase
+        .from('ops_service_addresses')
+        .select('id, street_1, city, state, zip_code')
+        .eq('id', selectedAddressId)
+        .eq('customer_id', customerId)
+        .maybeSingle()
+    : { data: null }
+  if (selectedAddressId && !savedAddress) {
+    return {
+      ok: false,
+      error: 'The selected service address does not belong to this business',
+    }
+  }
+  const resolved = savedAddress
+    ? savedAddress
+    : await resolveServiceAddress(supabase, customerId, {
+        label: businessName || 'Walkthrough Address',
+        street_1: street1,
+        street_2: address.street_2?.trim() || null,
+        city,
+        state,
+        zip_code: zipCode,
+      })
   if (!resolved) {
     return { ok: false, error: 'Could not save service address' }
   }
   const addressId = resolved.id
-  await supabase
-    .from('ops_service_addresses')
-    .update({ city, state, updated_at: new Date().toISOString() })
-    .eq('id', addressId)
+  if (!savedAddress) {
+    await supabase
+      .from('ops_service_addresses')
+      .update({ city, state, updated_at: new Date().toISOString() })
+      .eq('id', addressId)
+  }
+
+  const notificationAddress = savedAddress
+    ? {
+        street1: savedAddress.street_1,
+        city: savedAddress.city,
+        state: savedAddress.state,
+        zipCode: savedAddress.zip_code,
+      }
+    : { street1, city, state, zipCode }
 
   const endTime = addMinutesToHHMM(startTime, requiredMinutes)
 
@@ -267,24 +361,24 @@ export async function createAiStyleEstimate(
       source: sourceLabel,
       // Normalize so estimates carry the same structured attribution as
       // bookings — conversion then inherits the full set of columns.
-      ...(leadSource
-        ? (() => {
-            const n = normalizeLeadSource(leadSource)
-            return {
-              lead_source: n.lead_source,
-              lead_source_key: n.source_key,
-              lead_source_detail: n.lead_source_detail,
-              original_lead_source: n.original_lead_source,
-            }
-          })()
+      ...(normalizedLeadSource
+        ? {
+            lead_source: normalizedLeadSource.lead_source,
+            lead_source_key: normalizedLeadSource.source_key,
+            lead_source_detail: normalizedLeadSource.lead_source_detail,
+            original_lead_source: normalizedLeadSource.original_lead_source,
+          }
         : { lead_source: null }),
       kind: 'estimate',
       estimate_status: 'draft',
       quickbooks_sync_status: 'held',
       quoted_total: 0,
       internal_notes: internalNotes,
-      ...(estimateStaffResult?.staffUserId
-        ? { assigned_staff_user_id: estimateStaffResult.staffUserId }
+      ...(assignedStaffUserId || estimateStaffResult?.staffUserId
+        ? {
+            assigned_staff_user_id:
+              assignedStaffUserId || estimateStaffResult?.staffUserId,
+          }
         : {}),
     })
     .select('id')
@@ -302,6 +396,7 @@ export async function createAiStyleEstimate(
     appointment_id: appointment.id,
     from_status: null,
     to_status: 'confirmed',
+    changed_by: createdBy,
     notes: `Estimate (walkthrough) scheduled via ${actorLabel}`,
   })
 
@@ -313,7 +408,7 @@ export async function createAiStyleEstimate(
     jobDescription
       ? jobDescription.slice(0, 140)
       : 'Walkthrough / on-site estimate',
-    `${street1}, ${city}, ${state} ${zipCode}`,
+    `${notificationAddress.street1}, ${notificationAddress.city}, ${notificationAddress.state} ${notificationAddress.zipCode}`,
     `${appointmentDate} at ${startTime}`,
     `Contact: ${phone} · ${email}`,
     `Source: ${sourceLabel}`,
@@ -322,14 +417,16 @@ export async function createAiStyleEstimate(
     .filter(Boolean)
     .join('\n')
 
-  await Promise.allSettled([
-    sendAdminSMS(adminMsg, 'new_estimate'),
-    sendOneSignalNotification({
-      heading: `New ${adminHeading}`,
-      content: `${businessName || fullName} · ${appointmentDate} ${startTime}`,
-      data: { type: 'new_estimate', appointment_id: appointment.id },
-    }),
-  ])
+  if (notifyAdmin) {
+    await Promise.allSettled([
+      sendAdminSMS(adminMsg, 'new_estimate'),
+      sendOneSignalNotification({
+        heading: `New ${adminHeading}`,
+        content: `${businessName || fullName} · ${appointmentDate} ${startTime}`,
+        data: { type: 'new_estimate', appointment_id: appointment.id },
+      }),
+    ])
+  }
 
   const confirmationNumber = `EST-${appointment.id.slice(0, 8).toUpperCase()}`
 
