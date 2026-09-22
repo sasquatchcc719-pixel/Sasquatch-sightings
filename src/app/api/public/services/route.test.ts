@@ -45,6 +45,12 @@ describe('public services', () => {
           slug: 'card-fee',
           category: 'Carpet Cleaning',
         },
+        {
+          id: 'warranty',
+          name: 'Warranty Re-Clean',
+          slug: 'warranty-re-clean',
+          category: 'Carpet Cleaning',
+        },
       ]),
     )
 

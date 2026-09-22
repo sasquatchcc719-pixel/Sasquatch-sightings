@@ -14,6 +14,12 @@ describe('isExcludedFromBooking', () => {
     )
     expect(isExcludedFromBooking({ slug: null, name: 'Gratuity' })).toBe(true)
     expect(
+      isExcludedFromBooking({
+        slug: 'warranty-re-clean',
+        name: 'Warranty Re-Clean',
+      }),
+    ).toBe(true)
+    expect(
       isExcludedFromBooking({ slug: null, name: 'Commercial carpet cleaning' }),
     ).toBe(true)
   })
