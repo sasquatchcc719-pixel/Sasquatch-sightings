@@ -34,7 +34,8 @@ const APPOINTMENT_SELECT = `
     duration_minutes,
     buffer_minutes,
     line_total,
-    notes
+    notes,
+    service_catalog_items ( slug )
   ),
   ops_invoices (
     id,

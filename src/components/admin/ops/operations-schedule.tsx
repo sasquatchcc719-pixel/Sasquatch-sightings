@@ -31,6 +31,7 @@ import {
   appointmentDisplayRevenue,
   appointmentScheduleRevenue,
 } from '@/lib/ops/utilization-metrics'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
@@ -107,6 +108,7 @@ type Appointment = {
   estimate_status?: string | null
   visit_type?: 'mitigation' | 'monitor' | 'final' | null
   restoration_project_id?: string | null
+  service_concern_id?: string | null
   parked_at?: string | null
   is_subcontracted?: boolean | null
   subcontractor_name?: string | null
@@ -117,6 +119,10 @@ type Appointment = {
     quantity?: number | null
     duration_minutes?: number | null
     line_total?: number | null
+    service_catalog_items?:
+      | { slug?: string | null }
+      | Array<{ slug?: string | null }>
+      | null
   }>
   ops_invoices:
     | {
@@ -266,12 +272,20 @@ const PAYMENT_METHOD_STYLES: Record<
 }
 
 /**
- * A status chip for a completed job's invoice: the payment method when it's
- * been paid (Venmo/Check/…), or a red "Unpaid" tag when it hasn't. Returns
- * null when the job isn't completed or has no invoice yet.
+ * A status chip for a completed job: "Warranty" for a service-concern return
+ * or the canonical warranty catalog service, otherwise the payment method when
+ * paid or a red "Unpaid" tag. Returns null when a normal job isn't completed
+ * or has no invoice yet.
  */
 function paymentMethodChip(appointment: Appointment) {
   if (appointment.status !== 'completed') return null
+  if (isWarrantyAppointment(appointment)) {
+    return (
+      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+        Warranty
+      </span>
+    )
+  }
   const invoice = unwrapRelation(appointment.ops_invoices)
   if (!invoice) return null
   const raw = invoice.payment_method?.trim().toLowerCase()

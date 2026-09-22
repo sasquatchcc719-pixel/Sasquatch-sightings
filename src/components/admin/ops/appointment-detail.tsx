@@ -29,6 +29,7 @@ import {
   getPublicLeadSourceOptions,
   normalizeLeadSource,
 } from '@/lib/lead-sources'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 type AppointmentDetailProps = {
   appointmentId: string
@@ -41,6 +42,7 @@ type AppointmentDetail = {
   end_time: string
   status: string
   payment_status: string
+  service_concern_id?: string | null
   internal_notes: string | null
   quoted_total: number
   lead_source: string | null
@@ -97,6 +99,10 @@ type AppointmentDetail = {
     quantity: number
     unit_price: number
     line_total: number
+    service_catalog_items?:
+      | { slug?: string | null }
+      | Array<{ slug?: string | null }>
+      | null
   }>
   ops_invoices:
     | {
@@ -130,7 +136,6 @@ function timeToMinutes(value: string): number {
   const [h, m] = String(value).slice(0, 5).split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
 }
-
 
 export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const router = useRouter()
@@ -780,7 +785,9 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               {appointment.status.replaceAll('_', ' ')}
             </Badge>
             <Badge variant="outline" className="capitalize">
-              {appointment.payment_status}
+              {isWarrantyAppointment(appointment)
+                ? 'Warranty'
+                : appointment.payment_status}
             </Badge>
             {invoice?.id ? (
               <Button asChild size="sm" variant="outline">

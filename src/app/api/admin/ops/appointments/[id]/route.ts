@@ -94,7 +94,8 @@ const APPOINTMENT_SELECT = `
     buffer_minutes,
     line_total,
     notes,
-    pricing_unit_snapshot
+    pricing_unit_snapshot,
+    service_catalog_items ( slug )
   ),
   ops_invoices (
     id,

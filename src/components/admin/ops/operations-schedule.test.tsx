@@ -32,7 +32,10 @@ const saturdayJob = {
   ops_invoices: null,
 }
 
-function mockSchedule(staffCount: number) {
+function mockSchedule(
+  staffCount: number,
+  appointments: unknown[] = [saturdayJob],
+) {
   const staff = Array.from({ length: staffCount }, (_, i) => ({
     id: `staff-${i}`,
     user_id: `staff-${i}`,
@@ -46,7 +49,7 @@ function mockSchedule(staffCount: number) {
     ok: true,
     json: async () =>
       url.startsWith('/api/admin/ops/schedule?')
-        ? { appointments: [saturdayJob], events: [], staff }
+        ? { appointments, events: [], staff }
         : {},
   }))
   vi.stubGlobal('fetch', fetchMock)
@@ -180,5 +183,63 @@ describe('collapsible weekend schedule', () => {
         }),
       ),
     )
+  })
+
+  it('labels warranty returns without relabeling an ordinary unpaid $0 job', async () => {
+    mockSchedule(1, [
+      {
+        ...saturdayJob,
+        id: 'warranty-job',
+        start_time: '10:00:00',
+        end_time: '11:00:00',
+        status: 'completed',
+        service_concern_id: null,
+        ops_customers: {
+          full_name: 'Warranty Customer',
+          business_name: null,
+        },
+        ops_appointment_line_items: [
+          {
+            id: 'warranty-line',
+            name_snapshot: 'Warranty Re-Clean',
+            service_catalog_items: { slug: 'warranty-re-clean' },
+          },
+        ],
+        ops_invoices: {
+          id: 'warranty-invoice',
+          status: 'ready',
+          payment_status: 'waived',
+          payment_method: null,
+          total: 0,
+        },
+      },
+      {
+        ...saturdayJob,
+        id: 'ordinary-job',
+        start_time: '11:00:00',
+        end_time: '12:00:00',
+        status: 'completed',
+        quoted_total: 0,
+        service_concern_id: null,
+        ops_customers: {
+          full_name: 'Ordinary Customer',
+          business_name: null,
+        },
+        ops_invoices: {
+          id: 'ordinary-invoice',
+          status: 'ready',
+          payment_status: 'unpaid',
+          payment_method: null,
+          total: 0,
+        },
+      },
+    ])
+
+    render(<OperationsSchedule />)
+    await screen.findByTitle('2 on Saturday — click to open the day')
+    fireEvent.click(screen.getByRole('button', { name: /^day$/i }))
+
+    expect(await screen.findByText('Warranty')).toBeInTheDocument()
+    expect(screen.getByText('Unpaid')).toBeInTheDocument()
   })
 })
