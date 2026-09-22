@@ -7,6 +7,7 @@ import {
   verifySquareWebhookSignature,
 } from '@/lib/payments/square-webhook'
 import { handleRestorationFinalPayment } from '@/lib/payments/restoration-webhook'
+import { retrieveSquareOrderInvoiceNumber } from '@/lib/payments/square'
 import { sendOneSignalToExternalIds } from '@/lib/onesignal'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
@@ -30,6 +31,22 @@ type InvoiceRow = {
   square_payment_link_cents: number | null
   ops_appointments?: AppointmentRow | AppointmentRow[] | null
 }
+
+const INVOICE_SELECT = `
+  id,
+  invoice_number,
+  total,
+  square_payment_id,
+  square_payment_link_cents,
+  ops_appointments (
+    id,
+    assigned_staff_user_id,
+    ops_customers!ops_appointments_customer_id_fkey (
+      full_name,
+      business_name
+    )
+  )
+`
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
@@ -136,29 +153,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
-    const { data, error: invoiceError } = await supabase
+    const { data: orderMatchedInvoice, error: invoiceError } = await supabase
       .from('ops_invoices')
-      .select(
-        `
-          id,
-          invoice_number,
-          total,
-          square_payment_id,
-          square_payment_link_cents,
-          ops_appointments (
-            id,
-            assigned_staff_user_id,
-            ops_customers!ops_appointments_customer_id_fkey (
-              full_name,
-              business_name
-            )
-          )
-        `,
-      )
+      .select(INVOICE_SELECT)
       .eq('square_order_id', payment.orderId)
       .maybeSingle()
 
     if (invoiceError) throw invoiceError
+    let data = orderMatchedInvoice
     if (!data) {
       const restoration = await handleRestorationFinalPayment(supabase, payment)
       if (restoration.outcome !== 'unmatched') {
@@ -169,9 +171,29 @@ export async function POST(request: NextRequest) {
             : { ignored: restoration.outcome }),
         })
       }
-      // The Square account also emits events for POS and Dashboard payments.
-      // Only links created by Sightings have a stored order correlation.
-      return NextResponse.json({ ok: true, ignored: 'unmatched_order' })
+
+      // In-person charges create their Square order only after the POS handoff,
+      // so Sightings cannot store the order id ahead of time. The POS request
+      // does include the human invoice number in the order's line-item note;
+      // retrieve that server-side and use it as the durable correlation.
+      const invoiceNumber = await retrieveSquareOrderInvoiceNumber(
+        payment.orderId,
+      )
+      if (!invoiceNumber) {
+        return NextResponse.json({ ok: true, ignored: 'unmatched_order' })
+      }
+
+      const { data: invoiceNumberMatch, error: invoiceNumberError } =
+        await supabase
+          .from('ops_invoices')
+          .select(INVOICE_SELECT)
+          .eq('invoice_number', invoiceNumber)
+          .maybeSingle()
+      if (invoiceNumberError) throw invoiceNumberError
+      data = invoiceNumberMatch
+      if (!data) {
+        return NextResponse.json({ ok: true, ignored: 'invoice_not_found' })
+      }
     }
 
     const invoice = data as InvoiceRow
@@ -205,6 +227,7 @@ export async function POST(request: NextRequest) {
       payment_status: 'paid',
       payment_method: 'square',
       square_payment_id: payment.paymentId,
+      square_order_id: payment.orderId,
       square_payment_event_id: payment.eventId,
       square_paid_cents: payment.amountCents,
       square_paid_at: payment.paidAt,

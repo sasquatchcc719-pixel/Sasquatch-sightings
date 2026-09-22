@@ -89,14 +89,25 @@ export async function POST(
       }
     }
 
-    await supabase
+    const nowIso = new Date().toISOString()
+    const { error: invoiceUpdateError } = await supabase
       .from('ops_invoices')
       .update({
         status: 'paid',
+        payment_status: 'paid',
         payment_method: 'card',
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       })
       .eq('id', id)
+    if (invoiceUpdateError) throw invoiceUpdateError
+
+    if (appointment?.id) {
+      const { error: appointmentUpdateError } = await supabase
+        .from('ops_appointments')
+        .update({ payment_status: 'paid', updated_at: nowIso })
+        .eq('id', appointment.id)
+      if (appointmentUpdateError) throw appointmentUpdateError
+    }
 
     return NextResponse.json({
       ok: true,

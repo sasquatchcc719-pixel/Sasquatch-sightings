@@ -851,7 +851,8 @@ export function TechJobDetail({
             ) : null}
             {squareAmount ? (
               <p className="text-center text-xs text-slate-400">
-                Customer pays online by card, then mark this invoice paid below.
+                Customer pays online by card. Sightings marks it paid when
+                Square confirms the payment.
               </p>
             ) : null}
             {squareLinkFeedback ? (

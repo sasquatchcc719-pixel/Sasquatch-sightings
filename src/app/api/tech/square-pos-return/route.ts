@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     if (invoice) {
       const nowIso = new Date().toISOString()
-      await supabase
+      const { error: invoiceUpdateError } = await supabase
         .from('ops_invoices')
         .update({
           status: 'paid',
@@ -88,10 +88,13 @@ export async function GET(request: NextRequest) {
           updated_at: nowIso,
         })
         .eq('id', invoice.invoiceId)
-      await supabase
+      if (invoiceUpdateError) throw invoiceUpdateError
+
+      const { error: appointmentUpdateError } = await supabase
         .from('ops_appointments')
         .update({ payment_status: 'paid', updated_at: nowIso })
         .eq('id', id)
+      if (appointmentUpdateError) throw appointmentUpdateError
       console.log(
         `[square-pos-return] Marked invoice ${invoice.invoiceId} paid (txn ${result.transactionId ?? 'n/a'})`,
       )

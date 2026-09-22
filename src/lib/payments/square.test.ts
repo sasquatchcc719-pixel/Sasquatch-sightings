@@ -1,5 +1,57 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSquarePaymentLink } from './square'
+import {
+  createSquarePaymentLink,
+  extractSquareOrderInvoiceNumber,
+  retrieveSquareOrderInvoiceNumber,
+} from './square'
+
+describe('Square order invoice correlation', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('extracts invoice numbers from POS notes and hosted-checkout names', () => {
+    expect(
+      extractSquareOrderInvoiceNumber({
+        line_items: [{ note: 'Invoice #18826' }],
+      }),
+    ).toBe(18826)
+    expect(
+      extractSquareOrderInvoiceNumber({
+        line_items: [{ name: 'Sasquatch Invoice #18755 - Customer' }],
+      }),
+    ).toBe(18755)
+  })
+
+  it('refuses to infer an invoice from unrelated order text', () => {
+    expect(
+      extractSquareOrderInvoiceNumber({
+        line_items: [{ name: 'Carpet cleaning', note: '$203 job' }],
+      }),
+    ).toBeNull()
+  })
+
+  it('retrieves a Square order and returns its invoice number', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'test-token')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            order: { line_items: [{ note: 'Invoice #18826' }] },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+
+    await expect(retrieveSquareOrderInvoiceNumber('order/id')).resolves.toBe(
+      18826,
+    )
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/orders/order%2Fid')
+  })
+})
 
 describe('createSquarePaymentLink', () => {
   afterEach(() => {

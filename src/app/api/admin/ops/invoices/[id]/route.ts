@@ -551,6 +551,19 @@ export async function PATCH(
 
     if (invoiceError) throw invoiceError
 
+    const requestedPaymentUpdate =
+      body.payment_status !== undefined || body.status === 'paid'
+    if (current.appointment_id && requestedPaymentUpdate) {
+      const { error: appointmentPaymentError } = await supabase
+        .from('ops_appointments')
+        .update({
+          payment_status: invoice.payment_status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', current.appointment_id)
+      if (appointmentPaymentError) throw appointmentPaymentError
+    }
+
     const isBeingMarkedPaid =
       body.status === 'paid' && current.status !== 'paid'
     const method = body.payment_method || current.payment_method
