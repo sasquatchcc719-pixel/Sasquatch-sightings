@@ -7,6 +7,7 @@ import {
   type PlanWall,
   type WallOpening,
 } from '@/lib/ops/restoration-walls'
+import { ledgerBatches } from '@/lib/ops/restoration-equipment-ledger'
 
 const VISIT_LABELS: Record<string, string> = {
   mitigation: 'Mitigation',
@@ -148,7 +149,9 @@ export async function buildDryingReportData(
       .eq('project_id', projectId),
     supabase
       .from('restoration_equipment_placements')
-      .select('id, catalog_code, map_x, map_y, removed_at')
+      .select(
+        'id, catalog_code, map_x, map_y, placed_on, removed_on, removed_at',
+      )
       .eq('project_id', projectId),
   ])
 
@@ -360,6 +363,17 @@ export async function buildDryingReportData(
       units: Number(e.units),
       unitDays: Number(e.unit_days),
       total: Number(e.line_total),
+      spans: ledgerBatches(
+        (placements ?? []).filter(
+          (placement) => placement.catalog_code === e.catalog_code,
+        ),
+        String(project.closed_at ?? new Date().toISOString()).slice(0, 10),
+      ).map((batch) => ({
+        placedOn: batch.placedOn,
+        removedOn: batch.removedOn,
+        units: batch.units,
+        unitDays: batch.unitDays,
+      })),
     })),
     readingPoints: (points ?? []).map((point) => ({
       label: String(point.label),

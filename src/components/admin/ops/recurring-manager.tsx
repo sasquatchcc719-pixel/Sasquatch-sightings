@@ -421,7 +421,41 @@ type BillingVisit = {
   templateLabel: string
   description: string
   isAdHoc?: boolean
+  address?: string
+  included?: boolean
   lineItems: BillingLineItem[]
+}
+
+type BillingRestorationCharge = {
+  description: string
+  serviceDate: string
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  equipmentSpans?: Array<{
+    placedOn: string
+    removedOn: string
+    units: number
+    unitDays: number
+  }>
+}
+
+type BillingRestoration = {
+  projectId: string
+  date: string
+  address: string
+  work: BillingRestorationCharge[]
+  equipment: BillingRestorationCharge[]
+  grossSubtotal: number
+  deductibleCredit: number
+  depositApplied: number
+  amountDue: number
+  refundDueCents: number
+  reportSha256: string | null
+  reportVersion: number | null
+  attachmentStatus: string
+  attachmentError: string | null
+  included: boolean
 }
 
 type BillingAddress = {
@@ -439,6 +473,8 @@ type BillingCustomer = {
   businessName: string | null
   addresses: BillingAddress[]
   visits: BillingVisit[]
+  jobs: BillingVisit[]
+  restorations: BillingRestoration[]
   totalVisits: number
   completedVisits: number
   runningTotal: number
@@ -448,6 +484,8 @@ type BillingCustomer = {
     sync_status: string | null
     quickbooks_invoice_id: string | null
     total: number
+    attachment_status?: string
+    attachment_error?: string | null
   } | null
 }
 
@@ -480,6 +518,9 @@ function MonthEndBillingSection() {
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [month, setMonth] = useState(defaultMonth)
   const [customers, setCustomers] = useState<BillingCustomer[]>([])
+  const [selected, setSelected] = useState<
+    Record<string, { appointments: string[]; restorations: string[] }>
+  >({})
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState<string | null>(null)
   const [addingFor, setAddingFor] = useState<string | null>(null)
@@ -504,7 +545,23 @@ function MonthEndBillingSection() {
         `/api/admin/ops/recurring/billing-summary?month=${m}`,
       )
       const data = await res.json()
-      setCustomers(data.customers || [])
+      const nextCustomers = (data.customers || []) as BillingCustomer[]
+      setCustomers(nextCustomers)
+      setSelected(
+        Object.fromEntries(
+          nextCustomers.map((customer) => [
+            customer.customerId,
+            {
+              appointments: customer.visits
+                .filter((visit) => visit.included !== false)
+                .map((visit) => visit.appointmentId),
+              restorations: customer.restorations
+                .filter((project) => project.included !== false)
+                .map((project) => project.projectId),
+            },
+          ]),
+        ),
+      )
     } catch {
       console.error('Failed to load billing summary')
     } finally {
@@ -533,6 +590,26 @@ function MonthEndBillingSection() {
       })
   }, [])
 
+  const toggleIncluded = (
+    customerId: string,
+    kind: 'appointments' | 'restorations',
+    id: string,
+  ) => {
+    setSelected((current) => {
+      const customer = current[customerId] ?? {
+        appointments: [],
+        restorations: [],
+      }
+      const values = new Set(customer[kind])
+      if (values.has(id)) values.delete(id)
+      else values.add(id)
+      return {
+        ...current,
+        [customerId]: { ...customer, [kind]: [...values] },
+      }
+    })
+  }
+
   const handleGenerate = async (customerId: string) => {
     setGenerating(customerId)
     try {
@@ -541,7 +618,12 @@ function MonthEndBillingSection() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId, month: `${month}-01` }),
+          body: JSON.stringify({
+            customerId,
+            month: `${month}-01`,
+            appointmentIds: selected[customerId]?.appointments ?? [],
+            restorationProjectIds: selected[customerId]?.restorations ?? [],
+          }),
         },
       )
       const data = await res.json()
@@ -754,8 +836,24 @@ function MonthEndBillingSection() {
           const isGenerating = generating === entry.customerId
           const hasInvoice = !!entry.existingInvoice
           const canSendExisting =
-            hasInvoice && !entry.existingInvoice!.quickbooks_invoice_id
-          const canGenerate = entry.completedVisits > 0 && !hasInvoice
+            hasInvoice &&
+            !['sent', 'paid'].includes(entry.existingInvoice!.status)
+          const selectedAppointments = new Set(
+            selected[entry.customerId]?.appointments ?? [],
+          )
+          const selectedRestorations = new Set(
+            selected[entry.customerId]?.restorations ?? [],
+          )
+          const selectedTotal =
+            entry.visits
+              .filter((visit) => selectedAppointments.has(visit.appointmentId))
+              .reduce((sum, visit) => sum + visit.total, 0) +
+            entry.restorations
+              .filter((project) => selectedRestorations.has(project.projectId))
+              .reduce((sum, project) => sum + project.amountDue, 0)
+          const canGenerate =
+            (selectedAppointments.size > 0 || selectedRestorations.size > 0) &&
+            !hasInvoice
           const isAdding = addingFor === entry.customerId
 
           return (
@@ -1088,6 +1186,24 @@ function MonthEndBillingSection() {
                         className={`flex w-full items-center gap-4 px-5 py-3 text-left transition ${canEdit ? 'hover:bg-muted/40 cursor-pointer' : 'cursor-default'}`}
                         onClick={() => canEdit && toggleVisit(visit)}
                       >
+                        {!hasInvoice && isDone ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Include job from ${dateLabel}`}
+                            checked={selectedAppointments.has(
+                              visit.appointmentId,
+                            )}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() =>
+                              toggleIncluded(
+                                entry.customerId,
+                                'appointments',
+                                visit.appointmentId,
+                              )
+                            }
+                            className="h-4 w-4 shrink-0 accent-blue-600"
+                          />
+                        ) : null}
                         {isDone ? (
                           <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
                         ) : (
@@ -1105,6 +1221,11 @@ function MonthEndBillingSection() {
                               (one-off)
                             </span>
                           )}
+                          {visit.address ? (
+                            <span className="text-muted-foreground ml-2 text-xs">
+                              · {visit.address}
+                            </span>
+                          ) : null}
                         </span>
                         <span
                           className={`shrink-0 text-sm font-semibold tabular-nums ${isDone ? '' : 'text-muted-foreground'}`}
@@ -1259,15 +1380,158 @@ function MonthEndBillingSection() {
                 })}
               </div>
 
+              {entry.restorations.length > 0 ? (
+                <div className="border-t">
+                  <div className="bg-muted/30 px-5 py-2 text-xs font-semibold tracking-wide uppercase">
+                    Restoration projects
+                  </div>
+                  {entry.restorations.map((project) => (
+                    <div
+                      key={project.projectId}
+                      className="space-y-3 border-t px-5 py-4 first:border-t-0"
+                    >
+                      <div className="flex items-start gap-3">
+                        {!hasInvoice ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Include restoration at ${project.address}`}
+                            checked={selectedRestorations.has(
+                              project.projectId,
+                            )}
+                            onChange={() =>
+                              toggleIncluded(
+                                entry.customerId,
+                                'restorations',
+                                project.projectId,
+                              )
+                            }
+                            className="mt-1 h-4 w-4 accent-blue-600"
+                          />
+                        ) : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="font-semibold">
+                                Water mitigation · {project.date}
+                              </p>
+                              <p className="text-muted-foreground text-sm">
+                                {project.address}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold tabular-nums">
+                                {formatCurrency(project.amountDue)} due
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                Report v{project.reportVersion ?? '—'} ·{' '}
+                                {project.attachmentStatus}
+                              </p>
+                              <a
+                                href={`/api/admin/ops/restoration/projects/${project.projectId}/report`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-500 hover:underline"
+                              >
+                                Open frozen PDF
+                              </a>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                            <div className="rounded-md border p-3">
+                              <p className="mb-2 text-xs font-semibold uppercase">
+                                Dated work
+                              </p>
+                              {project.work.map((line, index) => (
+                                <div
+                                  key={`${line.serviceDate}-${index}`}
+                                  className="flex justify-between gap-3 text-sm"
+                                >
+                                  <span>
+                                    {line.serviceDate} · {line.description}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums">
+                                    {formatCurrency(line.lineTotal)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="rounded-md border p-3">
+                              <p className="mb-2 text-xs font-semibold uppercase">
+                                Equipment spans
+                              </p>
+                              {project.equipment.map((line, index) => (
+                                <div
+                                  key={`${line.description}-${index}`}
+                                  className="mb-2 text-sm"
+                                >
+                                  <div className="flex justify-between gap-3">
+                                    <span>{line.description}</span>
+                                    <span className="shrink-0 tabular-nums">
+                                      {line.quantity} unit-days ·{' '}
+                                      {formatCurrency(line.lineTotal)}
+                                    </span>
+                                  </div>
+                                  {(line.equipmentSpans ?? []).map(
+                                    (span, spanIndex) => (
+                                      <p
+                                        key={spanIndex}
+                                        className="text-muted-foreground text-xs"
+                                      >
+                                        {span.units} unit
+                                        {span.units === 1 ? '' : 's'} ·{' '}
+                                        {span.placedOn} to {span.removedOn} ·{' '}
+                                        {span.unitDays} unit-days
+                                      </p>
+                                    ),
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                            <span>
+                              Gross {formatCurrency(project.grossSubtotal)}
+                            </span>
+                            <span>
+                              Deductible credit −
+                              {formatCurrency(project.deductibleCredit)}
+                            </span>
+                            <span>
+                              Deposit applied −
+                              {formatCurrency(project.depositApplied)}
+                            </span>
+                            {project.refundDueCents > 0 ? (
+                              <span className="text-amber-500">
+                                Refund due{' '}
+                                {formatCurrency(project.refundDueCents / 100)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {project.attachmentError ? (
+                            <p className="mt-2 text-xs text-red-400">
+                              {project.attachmentError}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               {/* Footer — total + generate button */}
               <div className="flex flex-wrap items-center justify-between gap-4 border-t px-5 py-4">
                 <div>
                   <p className="text-2xl font-bold tabular-nums">
-                    {formatCurrency(entry.runningTotal)}
+                    {formatCurrency(
+                      hasInvoice ? entry.runningTotal : selectedTotal,
+                    )}
                   </p>
                   <p className="text-muted-foreground text-sm">
-                    {entry.completedVisits} of {entry.totalVisits} visits
-                    completed
+                    {selectedAppointments.size} jobs +{' '}
+                    {selectedRestorations.size} restoration projects selected
                   </p>
                 </div>
 
@@ -1295,7 +1559,7 @@ function MonthEndBillingSection() {
                     ) : (
                       <Receipt className="h-4 w-4" />
                     )}
-                    Generate & Send to QB
+                    Create one invoice & send to QB
                   </Button>
                 )}
               </div>
@@ -1823,9 +2087,9 @@ function CreateTemplateForm({
               <span className="text-sm">
                 <span className="font-medium">Subcontracted work</span>
                 <span className="text-muted-foreground block text-xs">
-                  An outside crew does this job. It stays off the schedule
-                  lanes and never blocks your or David&apos;s availability, but
-                  it still invoices the customer normally. Weekend dates move to
+                  An outside crew does this job. It stays off the schedule lanes
+                  and never blocks your or David&apos;s availability, but it
+                  still invoices the customer normally. Weekend dates move to
                   the next Monday.
                 </span>
               </span>

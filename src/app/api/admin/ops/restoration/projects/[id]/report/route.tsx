@@ -4,6 +4,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { DryingReportPDF } from '@/lib/ops/pdf/drying-report'
 import { buildDryingReportData } from '@/lib/ops/pdf/drying-report-data'
+import { downloadFrozenRestorationReport } from '@/lib/ops/pdf/frozen-restoration-report'
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +14,17 @@ export async function GET(
     await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
     const { id } = await params
     const supabase = createAdminClient()
+
+    const frozen = await downloadFrozenRestorationReport(supabase, id)
+    if (frozen) {
+      return new NextResponse(new Uint8Array(frozen), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline; filename="drying-report-final.pdf"',
+          'Cache-Control': 'private, no-store',
+        },
+      })
+    }
 
     const includePhotos = request.nextUrl.searchParams.get('photos') !== '0'
     const built = await buildDryingReportData(supabase, id, includePhotos)

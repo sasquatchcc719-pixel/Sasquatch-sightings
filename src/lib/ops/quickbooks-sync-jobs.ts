@@ -33,7 +33,8 @@ export async function ensureCustomerQuickBooksSyncJob(
     .maybeSingle()
 
   if (error) throw error
-  if (!customer) return { ok: true, queued: false, reason: 'customer not found' }
+  if (!customer)
+    return { ok: true, queued: false, reason: 'customer not found' }
 
   const now = new Date().toISOString()
 
@@ -207,4 +208,54 @@ export async function ensureInvoiceQuickBooksSyncJob(
     .eq('id', invoiceId)
 
   return { ok: true, queued: true, status: syncStatus }
+}
+
+export async function ensureBatchInvoiceQuickBooksSyncJob(
+  supabase: AdminClient,
+  batchInvoiceId: string,
+): Promise<void> {
+  const now = new Date().toISOString()
+  const payload = { invoice_id: batchInvoiceId }
+  const { data: rows, error } = await supabase
+    .from('ops_quickbooks_sync_jobs')
+    .select('id')
+    .eq('entity_type', 'batch_invoice')
+    .eq('entity_id', batchInvoiceId)
+    .in('status', ['pending', 'held', 'failed', 'synced'])
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  if (rows?.length) {
+    const [primary, ...duplicates] = rows
+    await supabase
+      .from('ops_quickbooks_sync_jobs')
+      .update({
+        status: 'pending',
+        payload,
+        error_message: null,
+        next_retry_at: null,
+        updated_at: now,
+      })
+      .eq('id', primary.id)
+    if (duplicates.length) {
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .delete()
+        .in(
+          'id',
+          duplicates.map((row) => row.id),
+        )
+    }
+    return
+  }
+
+  const { error: insertError } = await supabase
+    .from('ops_quickbooks_sync_jobs')
+    .insert({
+      entity_type: 'batch_invoice',
+      entity_id: batchInvoiceId,
+      status: 'pending',
+      payload,
+    })
+  if (insertError) throw insertError
 }

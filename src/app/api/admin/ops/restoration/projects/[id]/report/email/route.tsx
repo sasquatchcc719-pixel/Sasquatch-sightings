@@ -6,6 +6,7 @@ import { createAdminClient } from '@/supabase/server'
 import { DryingReportPDF } from '@/lib/ops/pdf/drying-report'
 import { buildDryingReportData } from '@/lib/ops/pdf/drying-report-data'
 import { opsEmailBcc } from '@/lib/ops/email-bcc'
+import { downloadFrozenRestorationReport } from '@/lib/ops/pdf/frozen-restoration-report'
 
 /** Emails the same drying report PDF the "Drying report (PDF)" button downloads. */
 export async function POST(
@@ -44,21 +45,23 @@ export async function POST(
       )
     }
 
-    let buffer: Buffer
-    try {
-      buffer = Buffer.from(
-        await renderToBuffer(<DryingReportPDF data={data} />),
-      )
-    } catch (renderError) {
-      console.error(
-        '[restoration/report/email] retrying without photos:',
-        renderError,
-      )
-      buffer = Buffer.from(
-        await renderToBuffer(
-          <DryingReportPDF data={{ ...data, includePhotos: false }} />,
-        ),
-      )
+    let buffer = await downloadFrozenRestorationReport(supabase, id)
+    if (!buffer) {
+      try {
+        buffer = Buffer.from(
+          await renderToBuffer(<DryingReportPDF data={data} />),
+        )
+      } catch (renderError) {
+        console.error(
+          '[restoration/report/email] retrying without photos:',
+          renderError,
+        )
+        buffer = Buffer.from(
+          await renderToBuffer(
+            <DryingReportPDF data={{ ...data, includePhotos: false }} />,
+          ),
+        )
+      }
     }
 
     const subject = 'Your drying report from Sasquatch Carpet Cleaning'

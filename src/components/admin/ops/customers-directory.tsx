@@ -83,6 +83,7 @@ type CustomerRow = {
   phone: string
   notes: string | null
   email_opt_out: boolean | null
+  billing_mode?: 'immediate' | 'monthly_consolidated'
   quickbooks_customer_id: string | null
   created_at: string
   job_count?: number
@@ -103,6 +104,7 @@ type CustomerEditState = {
   notes: string
   is_commercial: boolean
   email_opt_out: boolean
+  billing_mode: 'immediate' | 'monthly_consolidated'
   addresses: Array<{
     id: string
     label: string
@@ -264,6 +266,7 @@ export function CustomersDirectory({
         Boolean(customer.is_commercial) ||
         Boolean(String(customer.business_name || '').trim()),
       email_opt_out: customer.email_opt_out ?? false,
+      billing_mode: customer.billing_mode ?? 'immediate',
       addresses: (customer.ops_service_addresses || []).map((a) => ({
         id: a.id,
         label: a.label || '',
@@ -302,6 +305,7 @@ export function CustomersDirectory({
             notes: editForm.notes || null,
             is_commercial: editForm.is_commercial,
             email_opt_out: editForm.email_opt_out,
+            billing_mode: editForm.billing_mode,
           },
           addresses: editForm.addresses.map((a) => ({
             id: a.id,
@@ -520,6 +524,36 @@ export function CustomersDirectory({
                           }`}
                         />
                       </button>
+                    </div>
+                    <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3">
+                      <Label className="text-sm font-medium text-violet-100">
+                        Billing policy
+                      </Label>
+                      <p className="mt-0.5 text-xs text-violet-100/60">
+                        Monthly consolidation holds every completed cleaning and
+                        closed restoration project for one reviewed invoice.
+                      </p>
+                      <select
+                        value={editForm.billing_mode}
+                        onChange={(event) =>
+                          setEditForm((form) =>
+                            form
+                              ? {
+                                  ...form,
+                                  billing_mode: event.target.value as
+                                    | 'immediate'
+                                    | 'monthly_consolidated',
+                                }
+                              : form,
+                          )
+                        }
+                        className="border-input bg-background mt-2 h-9 w-full rounded-md border px-3 text-sm"
+                      >
+                        <option value="immediate">Invoice each job</option>
+                        <option value="monthly_consolidated">
+                          One monthly consolidated invoice
+                        </option>
+                      </select>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

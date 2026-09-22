@@ -401,25 +401,9 @@ export async function GET(request: NextRequest) {
             invoice_id: string
           }
 
-          const { data: batchRow } = await supabase
-            .from('ops_batch_invoices')
-            .select('quickbooks_invoice_id')
-            .eq('id', payload.invoice_id)
-            .maybeSingle()
-
-          if (batchRow?.quickbooks_invoice_id) {
-            await supabase
-              .from('ops_quickbooks_sync_jobs')
-              .update({
-                status: 'synced',
-                error_message: null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', job.id)
-            results.synced++
-            continue
-          }
-
+          // A batch can have its QBO invoice id and still be unfinished while
+          // a restoration report attachment is retrying. The sync function is
+          // resumable and decides whether there is anything left to do.
           await syncBatchInvoiceToQuickBooks(payload.invoice_id)
         }
 

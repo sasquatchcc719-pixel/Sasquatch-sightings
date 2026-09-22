@@ -13,6 +13,7 @@ import {
 import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { scheduleJobReminder } from '@/lib/onesignal'
+import { effectiveBillingMode } from '@/lib/ops/monthly-restoration-billing'
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -465,7 +466,7 @@ export async function generateRecurringAppointments(
 
   const { data: customer } = await supabase
     .from('ops_customers')
-    .select('full_name, business_name, email, phone')
+    .select('full_name, business_name, email, phone, billing_mode')
     .eq('id', template.customer_id)
     .single()
 
@@ -482,6 +483,9 @@ export async function generateRecurringAppointments(
 
   const lineItems = template.line_items as TemplateLineItem[]
   const syncStatus = getQuickBooksSyncStatus()
+  const usesMonthlyBilling =
+    effectiveBillingMode(customer.billing_mode, template.invoice_mode) ===
+    'monthly_consolidated'
 
   const quotedSubtotal = lineItems.reduce(
     (sum: number, item: TemplateLineItem) =>
@@ -570,8 +574,7 @@ export async function generateRecurringAppointments(
           ...(inheritedLeadSource ?? {}),
           status: 'booked',
           payment_status: 'unpaid',
-          quickbooks_sync_status:
-            template.invoice_mode === 'batch_monthly' ? 'held' : syncStatus,
+          quickbooks_sync_status: usesMonthlyBilling ? 'held' : syncStatus,
           appointment_date: scheduledDate,
           original_recurring_date: date,
           start_time: normalizedStart,
@@ -617,7 +620,7 @@ export async function generateRecurringAppointments(
         result.errors.push(`${date} lines: ${lineErr.message}`)
       }
 
-      if (template.invoice_mode === 'per_visit') {
+      if (!usesMonthlyBilling) {
         const { data: invoice, error: invErr } = await supabase
           .from('ops_invoices')
           .insert({
@@ -753,13 +756,22 @@ export async function generateBatchInvoice(
 ): Promise<BatchInvoiceResult | { error: string }> {
   const { data: template } = await supabase
     .from('ops_recurring_templates')
-    .select('*, ops_customers(full_name, email, phone)')
+    .select('*, ops_customers(full_name, email, phone, billing_mode)')
     .eq('id', templateId)
     .single()
 
   if (!template) return { error: 'Template not found' }
   if (template.invoice_mode !== 'batch_monthly') {
     return { error: 'Template is not set to batch monthly invoicing' }
+  }
+  const templateCustomer = Array.isArray(template.ops_customers)
+    ? template.ops_customers[0]
+    : template.ops_customers
+  if (templateCustomer?.billing_mode === 'monthly_consolidated') {
+    return {
+      error:
+        'Use Month-End Billing so every completed job and restoration project is reviewed together.',
+    }
   }
 
   const monthStart = month.slice(0, 7) + '-01'
@@ -773,7 +785,7 @@ export async function generateBatchInvoice(
   const { data: existingBatch } = await supabase
     .from('ops_batch_invoices')
     .select('id')
-    .eq('template_id', templateId)
+    .eq('customer_id', template.customer_id)
     .eq('month', monthStart)
     .maybeSingle()
 
@@ -851,7 +863,9 @@ export async function generateBatchInvoice(
 
   const entryPayload = entries.map((e) => ({
     batch_invoice_id: batchInvoice.id,
+    entry_type: 'appointment',
     appointment_id: e.appointmentId,
+    service_date: e.appointmentDate,
     line_items_snapshot: e.lineItemsSnapshot,
     subtotal: Number(e.apptSubtotal.toFixed(2)),
   }))

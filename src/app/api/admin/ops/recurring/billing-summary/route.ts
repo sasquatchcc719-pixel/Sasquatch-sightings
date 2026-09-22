@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { isMonthlyRestorationSnapshot } from '@/lib/ops/monthly-restoration-billing'
 
-/**
- * GET /api/admin/ops/recurring/billing-summary?month=2026-04
- *
- * Returns one entry per customer (not per template), gathering all
- * batch_monthly visits for the month with dates, descriptions, and amounts.
- */
+const lineDescription = (lines: unknown): string =>
+  (Array.isArray(lines) ? lines : [])
+    .map((line) => {
+      const item = line as { notes?: string | null; name_snapshot?: string }
+      return item.notes || item.name_snapshot || ''
+    })
+    .filter(Boolean)
+    .join(', ')
+
+/** Reviewable customer-level month end ledger: ordinary jobs and closed losses. */
 export async function GET(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
-
-    const url = new URL(request.url)
-    const now = new Date()
-    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const month = url.searchParams.get('month') || defaultMonth
-
+    const month =
+      request.nextUrl.searchParams.get('month') ||
+      new Date().toISOString().slice(0, 7)
     const monthStart = `${month}-01`
     const [year, mon] = month.split('-').map(Number)
     const nextMonth =
@@ -25,259 +27,222 @@ export async function GET(request: NextRequest) {
         ? `${year + 1}-01-01`
         : `${year}-${String(mon + 1).padStart(2, '0')}-01`
 
-    // 1. All active batch_monthly templates grouped by customer
-    const { data: templates, error: tplErr } = await supabase
-      .from('ops_recurring_templates')
+    const { data: customers, error: customerError } = await supabase
+      .from('ops_customers')
       .select(
-        `id, label, customer_id,
-         ops_customers (id, full_name, business_name,
-           ops_service_addresses (id, label, street_1, city, state, zip_code)
-         )`,
+        `id, full_name, business_name, billing_mode,
+         ops_service_addresses (id, label, street_1, city, state, zip_code)`,
       )
-      .eq('invoice_mode', 'batch_monthly')
-      .eq('is_active', true)
-
-    if (tplErr) {
-      return NextResponse.json({ error: tplErr.message }, { status: 500 })
-    }
-
-    if (!templates || templates.length === 0) {
+      .eq('billing_mode', 'monthly_consolidated')
+      .order('business_name')
+    if (customerError) throw customerError
+    if (!customers?.length) {
       return NextResponse.json({ month, customers: [] })
     }
+    const customerIds = customers.map((customer) => customer.id)
+    const lineItems =
+      'id, service_catalog_item_id, name_snapshot, notes, quantity, unit_price, duration_minutes, line_total'
 
-    const templateIds = templates.map((t) => t.id)
+    const [appointmentsResult, projectsResult, invoicesResult] =
+      await Promise.all([
+        supabase
+          .from('ops_appointments')
+          .select(
+            `id, customer_id, service_address_id, recurring_template_id, status, appointment_date,
+             ops_service_addresses (street_1, city, state, zip_code),
+             ops_appointment_line_items (${lineItems})`,
+          )
+          .in('customer_id', customerIds)
+          .is('restoration_project_id', null)
+          .gte('appointment_date', monthStart)
+          .lt('appointment_date', nextMonth)
+          .order('appointment_date'),
+        supabase
+          .from('restoration_projects')
+          .select(
+            'id, customer_id, billing_month, billing_status, billing_snapshot, final_report_sha256, final_report_version, closed_at',
+          )
+          .in('customer_id', customerIds)
+          .eq('billing_month', monthStart)
+          .in('billing_status', ['ready', 'batched', 'sent'])
+          .order('closed_at'),
+        supabase
+          .from('ops_batch_invoices')
+          .select(
+            `id, customer_id, status, sync_status, quickbooks_invoice_id,
+             subtotal, discount_amount, total, attachment_status, attachment_error,
+             ops_batch_invoice_entries (
+               id, entry_type, appointment_id, restoration_project_id,
+               service_date, service_address_snapshot, subtotal,
+               line_items_snapshot, attachment_status, attachment_error
+             )`,
+          )
+          .in('customer_id', customerIds)
+          .eq('month', monthStart),
+      ])
+    if (appointmentsResult.error) throw appointmentsResult.error
+    if (projectsResult.error) throw projectsResult.error
+    if (invoicesResult.error) throw invoicesResult.error
 
-    const LINE_ITEM_SELECT = `id, name_snapshot, notes, quantity, unit_price, duration_minutes, line_total`
+    const appointments = appointmentsResult.data ?? []
+    const projects = projectsResult.data ?? []
+    const invoices = invoicesResult.data ?? []
 
-    // 2. All appointments for these templates in the month, with line items
-    const { data: recurringAppts } = await supabase
-      .from('ops_appointments')
-      .select(
-        `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
-         ops_appointment_line_items (${LINE_ITEM_SELECT})`,
-      )
-      .in('recurring_template_id', templateIds)
-      .gte('appointment_date', monthStart)
-      .lt('appointment_date', nextMonth)
-      .order('appointment_date')
+    const result = customers.map((customer) => {
+      const existingInvoice =
+        invoices.find((invoice) => invoice.customer_id === customer.id) ?? null
+      const frozenEntries = existingInvoice
+        ? Array.isArray(existingInvoice.ops_batch_invoice_entries)
+          ? existingInvoice.ops_batch_invoice_entries
+          : []
+        : []
 
-    // 2b. One-off appointments tagged for batch billing for these customers
-    const customerIds = [
-      ...new Set(templates.map((t) => t.customer_id as string)),
-    ]
+      const jobs = existingInvoice
+        ? frozenEntries
+            .filter((entry) => entry.entry_type === 'appointment')
+            .map((entry) => {
+              const lines = Array.isArray(entry.line_items_snapshot)
+                ? entry.line_items_snapshot
+                : []
+              return {
+                appointmentId: entry.appointment_id,
+                date: entry.service_date,
+                status: 'completed',
+                total: Number(entry.subtotal),
+                templateLabel: 'Completed job',
+                description: lineDescription(lines),
+                address: entry.service_address_snapshot || '',
+                included: true,
+                lineItems: lines,
+              }
+            })
+        : appointments
+            .filter((appointment) => appointment.customer_id === customer.id)
+            .map((appointment) => {
+              const lines = Array.isArray(
+                appointment.ops_appointment_line_items,
+              )
+                ? appointment.ops_appointment_line_items
+                : []
+              const address = Array.isArray(appointment.ops_service_addresses)
+                ? appointment.ops_service_addresses[0]
+                : appointment.ops_service_addresses
+              return {
+                appointmentId: appointment.id,
+                date: appointment.appointment_date,
+                status: appointment.status,
+                total: lines.reduce(
+                  (sum, line) => sum + Number(line.line_total),
+                  0,
+                ),
+                templateLabel: appointment.recurring_template_id
+                  ? 'Recurring job'
+                  : 'One-off job',
+                description: lineDescription(lines),
+                address: address
+                  ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
+                  : '',
+                included: appointment.status === 'completed',
+                lineItems: lines,
+              }
+            })
 
-    const { data: batchBillingAppts } = await supabase
-      .from('ops_appointments')
-      .select(
-        `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
-         ops_appointment_line_items (${LINE_ITEM_SELECT})`,
-      )
-      .in('batch_billing_customer_id', customerIds)
-      .is('recurring_template_id', null)
-      .gte('appointment_date', monthStart)
-      .lt('appointment_date', nextMonth)
-      .order('appointment_date')
+      const restorations = existingInvoice
+        ? frozenEntries
+            .filter((entry) => entry.entry_type === 'restoration')
+            .map((entry) => {
+              const snapshot = isMonthlyRestorationSnapshot(
+                entry.line_items_snapshot,
+              )
+                ? entry.line_items_snapshot
+                : null
+              return snapshot
+                ? {
+                    projectId: entry.restoration_project_id,
+                    date: snapshot.serviceDate,
+                    address: snapshot.serviceAddress,
+                    work: snapshot.charges.filter(
+                      (line) => line.kind === 'work',
+                    ),
+                    equipment: snapshot.charges.filter(
+                      (line) => line.kind === 'equipment',
+                    ),
+                    grossSubtotal: snapshot.grossSubtotal,
+                    deductibleCredit: snapshot.deductibleCredit,
+                    depositApplied: snapshot.depositApplied,
+                    amountDue: snapshot.amountDue,
+                    refundDueCents: snapshot.refundDueCents,
+                    reportSha256: null,
+                    reportVersion: null,
+                    attachmentStatus: entry.attachment_status,
+                    attachmentError: entry.attachment_error,
+                    included: true,
+                  }
+                : null
+            })
+            .filter(Boolean)
+        : projects
+            .filter((project) => project.customer_id === customer.id)
+            .map((project) => {
+              const snapshot = isMonthlyRestorationSnapshot(
+                project.billing_snapshot,
+              )
+                ? project.billing_snapshot
+                : null
+              return snapshot
+                ? {
+                    projectId: project.id,
+                    date: snapshot.serviceDate,
+                    address: snapshot.serviceAddress,
+                    work: snapshot.charges.filter(
+                      (line) => line.kind === 'work',
+                    ),
+                    equipment: snapshot.charges.filter(
+                      (line) => line.kind === 'equipment',
+                    ),
+                    grossSubtotal: snapshot.grossSubtotal,
+                    deductibleCredit: snapshot.deductibleCredit,
+                    depositApplied: snapshot.depositApplied,
+                    amountDue: snapshot.amountDue,
+                    refundDueCents: snapshot.refundDueCents,
+                    reportSha256: project.final_report_sha256,
+                    reportVersion: project.final_report_version,
+                    attachmentStatus: 'pending',
+                    attachmentError: null,
+                    included: project.billing_status === 'ready',
+                  }
+                : null
+            })
+            .filter(Boolean)
 
-    // Merge and deduplicate by appointment ID
-    const seenIds = new Set<string>()
-    const allAppts = [
-      ...(recurringAppts || []),
-      ...(batchBillingAppts || []),
-    ].filter((a) => {
-      if (seenIds.has(a.id)) return false
-      seenIds.add(a.id)
-      return true
-    })
-    const { data: batchInvoices } = await supabase
-      .from('ops_batch_invoices')
-      .select(
-        `id, customer_id, status, sync_status, quickbooks_invoice_id, total,
-         ops_batch_invoice_entries (
-           appointment_id, subtotal, line_items_snapshot,
-           ops_appointments (
-             appointment_date, status, recurring_template_id,
-             batch_billing_customer_id
-           )
-         )`,
-      )
-      .in('customer_id', customerIds)
-      .gte('month', monthStart)
-      .lt('month', nextMonth)
+      const completedJobs = jobs.filter((job) => job.status === 'completed')
+      const runningTotal = existingInvoice
+        ? Number(existingInvoice.total)
+        : completedJobs.reduce((sum, job) => sum + Number(job.total), 0) +
+          restorations.reduce(
+            (sum, project) => sum + Number(project?.amountDue ?? 0),
+            0,
+          )
 
-    // 4. Group templates by customer_id
-    const templatesByCustomer = new Map<string, typeof templates>()
-    for (const tpl of templates) {
-      const cid = tpl.customer_id as string
-      if (!templatesByCustomer.has(cid)) {
-        templatesByCustomer.set(cid, [])
+      return {
+        customerId: customer.id,
+        customerName: customer.full_name || 'Unknown',
+        businessName: customer.business_name || null,
+        billingMode: customer.billing_mode,
+        addresses: customer.ops_service_addresses ?? [],
+        visits: jobs,
+        jobs,
+        restorations,
+        totalVisits: jobs.length,
+        completedVisits: completedJobs.length,
+        runningTotal,
+        existingInvoice,
       }
-      templatesByCustomer.get(cid)!.push(tpl)
-    }
+    })
 
-    // Build a templateId -> label map for descriptions
-    const templateLabelMap = new Map<string, string>()
-    for (const tpl of templates) {
-      templateLabelMap.set(tpl.id, tpl.label)
-    }
-
-    const invoices = batchInvoices || []
-
-    // 5. Build per-customer summary
-    const customers = [...templatesByCustomer.entries()].map(
-      ([customerId, tpls]) => {
-        const tplIds = new Set(tpls.map((t) => t.id))
-
-        // Unwrap customer from first template
-        const rawCustomer = tpls[0].ops_customers
-        const customer = Array.isArray(rawCustomer)
-          ? (rawCustomer[0] ?? null)
-          : (rawCustomer ?? null)
-
-        const existingInvoice =
-          invoices.find((bi) => bi.customer_id === customerId) || null
-
-        // All appointments for this customer: recurring template matches + batch_billing one-offs
-        const customerAppts = allAppts.filter(
-          (a) =>
-            (a.recurring_template_id && tplIds.has(a.recurring_template_id)) ||
-            a.batch_billing_customer_id === customerId,
-        )
-
-        // Once an invoice exists, show its frozen entries instead of rebuilding
-        // the list from appointments inside the selected month. A legitimate
-        // prior-period correction can belong to this invoice while retaining
-        // its original service date.
-        const invoiceEntries = existingInvoice
-          ? Array.isArray(existingInvoice.ops_batch_invoice_entries)
-            ? existingInvoice.ops_batch_invoice_entries
-            : []
-          : []
-
-        const visits = (
-          invoiceEntries.length > 0
-            ? invoiceEntries.map((entry) => {
-                const appointment = Array.isArray(entry.ops_appointments)
-                  ? entry.ops_appointments[0]
-                  : entry.ops_appointments
-                const lines = Array.isArray(entry.line_items_snapshot)
-                  ? (entry.line_items_snapshot as Array<{
-                      name_snapshot: string
-                      notes?: string | null
-                      quantity: number
-                      unit_price: number
-                      duration_minutes?: number
-                      line_total: number
-                    }>)
-                  : []
-
-                return {
-                  appointmentId: entry.appointment_id,
-                  date: appointment?.appointment_date || monthStart,
-                  status: appointment?.status || 'completed',
-                  total: Number(entry.subtotal || 0),
-                  templateLabel:
-                    appointment?.appointment_date < monthStart ||
-                    appointment?.appointment_date >= nextMonth
-                      ? 'Prior-period correction'
-                      : appointment?.recurring_template_id
-                        ? templateLabelMap.get(
-                            appointment.recurring_template_id,
-                          ) || ''
-                        : 'One-off',
-                  description: lines
-                    .map((line) => line.notes || line.name_snapshot)
-                    .join(', '),
-                  isAdHoc: !appointment?.recurring_template_id,
-                  lineItems: lines.map((line) => ({
-                    name_snapshot: line.name_snapshot,
-                    quantity: line.quantity,
-                    unit_price: line.unit_price,
-                    duration_minutes: line.duration_minutes || 0,
-                    line_total: line.line_total,
-                    notes: line.notes || null,
-                  })),
-                }
-              })
-            : customerAppts.map((appt) => {
-                const lines = Array.isArray(appt.ops_appointment_line_items)
-                  ? appt.ops_appointment_line_items
-                  : []
-
-                // Build a human-readable description from line item notes/names
-                const description = lines
-                  .map(
-                    (l: { notes?: string | null; name_snapshot: string }) =>
-                      l.notes || l.name_snapshot,
-                  )
-                  .join(', ')
-
-                return {
-                  appointmentId: appt.id,
-                  date: appt.appointment_date,
-                  status: appt.status,
-                  total: appt.quoted_total || 0,
-                  templateLabel: appt.recurring_template_id
-                    ? templateLabelMap.get(appt.recurring_template_id) || ''
-                    : 'One-off',
-                  description,
-                  isAdHoc: !appt.recurring_template_id,
-                  lineItems: lines.map(
-                    (l: {
-                      id: string
-                      name_snapshot: string
-                      quantity: number
-                      unit_price: number
-                      duration_minutes: number
-                      line_total: number
-                      notes: string | null
-                    }) => ({
-                      id: l.id,
-                      name_snapshot: l.name_snapshot,
-                      quantity: l.quantity,
-                      unit_price: l.unit_price,
-                      duration_minutes: l.duration_minutes,
-                      line_total: l.line_total,
-                      notes: l.notes,
-                    }),
-                  ),
-                }
-              })
-        ).sort((a, b) => a.date.localeCompare(b.date))
-
-        const completedVisits = visits.filter((v) => v.status === 'completed')
-        const runningTotal = completedVisits.reduce((s, v) => s + v.total, 0)
-
-        // Extract addresses from the customer object
-        const addresses = customer?.ops_service_addresses
-          ? Array.isArray(customer.ops_service_addresses)
-            ? customer.ops_service_addresses
-            : [customer.ops_service_addresses]
-          : []
-
-        return {
-          customerId,
-          customerName: customer?.full_name || 'Unknown',
-          businessName: customer?.business_name || null,
-          addresses,
-          visits,
-          totalVisits: visits.length,
-          completedVisits: completedVisits.length,
-          runningTotal,
-          existingInvoice,
-        }
-      },
-    )
-
-    // Sort by business name / customer name
-    customers.sort((a, b) =>
-      (a.businessName || a.customerName).localeCompare(
-        b.businessName || b.customerName,
-      ),
-    )
-
-    return NextResponse.json({ month, customers })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unexpected error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ month, customers: result })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

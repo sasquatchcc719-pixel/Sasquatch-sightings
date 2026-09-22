@@ -1,240 +1,285 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
+import {
+  isMonthlyRestorationSnapshot,
+  reconcileBatchAmounts,
+} from '@/lib/ops/monthly-restoration-billing'
 import { createAdminClient } from '@/supabase/server'
+import { ensureBatchInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
-/**
- * POST /api/admin/ops/recurring/generate-monthly-invoice
- *
- * Consolidates ALL completed batch_monthly visits for a single customer,
- * then immediately sends that invoice to QuickBooks.
- *
- * Body: { customerId: string, month: string }   month = "YYYY-MM-01"
- */
+const addressText = (value: unknown): string => {
+  const address = Array.isArray(value) ? value[0] : value
+  if (!address || typeof address !== 'object') return ''
+  const row = address as {
+    street_1?: string
+    street_2?: string | null
+    city?: string
+    state?: string
+    zip_code?: string
+  }
+  return `${row.street_1 ?? ''}${row.street_2 ? `, ${row.street_2}` : ''}, ${row.city ?? ''}, ${row.state ?? ''} ${row.zip_code ?? ''}`.trim()
+}
+
+/** Freeze the reviewed selection, then create/sync exactly one monthly invoice. */
 export async function POST(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
-    const body = await request.json()
-    const { customerId, month } = body as {
-      customerId: string
-      month: string
+    const body = (await request.json()) as {
+      customerId?: string
+      month?: string
+      appointmentIds?: string[]
+      restorationProjectIds?: string[]
     }
-
-    if (!customerId || !month) {
+    if (!body.customerId || !body.month) {
       return NextResponse.json(
         { error: 'customerId and month are required' },
         { status: 400 },
       )
     }
+    const customerId = body.customerId
+    const monthStart = `${body.month.slice(0, 7)}-01`
+    const [year, mon] = body.month.slice(0, 7).split('-').map(Number)
+    const nextMonth =
+      mon === 12
+        ? `${year + 1}-01-01`
+        : `${year}-${String(mon + 1).padStart(2, '0')}-01`
 
-    const monthStart = month.slice(0, 7) + '-01'
-    const [year, mon] = month.slice(0, 7).split('-').map(Number)
-    const monthEnd = new Date(year, mon, 0)
-    const monthEndStr = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`
+    const { data: customer } = await supabase
+      .from('ops_customers')
+      .select('id, billing_mode')
+      .eq('id', customerId)
+      .maybeSingle()
+    if (!customer) {
+      return NextResponse.json({ error: 'customer_not_found' }, { status: 404 })
+    }
+    if (customer.billing_mode !== 'monthly_consolidated') {
+      return NextResponse.json(
+        { error: 'customer_is_not_monthly_consolidated' },
+        { status: 409 },
+      )
+    }
 
-    // Prevent duplicates: check if a batch invoice already exists for this customer + month
     const { data: existingBatch } = await supabase
       .from('ops_batch_invoices')
-      .select('id, quickbooks_invoice_id, sync_status')
+      .select('id, quickbooks_invoice_id, status')
       .eq('customer_id', customerId)
       .eq('month', monthStart)
       .maybeSingle()
-
     if (existingBatch) {
-      if (!existingBatch.quickbooks_invoice_id) {
-        try {
-          const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
-            existingBatch.id,
-          )
-          return NextResponse.json({
-            batchInvoiceId: existingBatch.id,
-            quickbooksInvoiceId,
-            retried: true,
-          })
-        } catch (syncErr) {
-          await supabase
-            .from('ops_batch_invoices')
-            .update({
-              sync_status: 'failed',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existingBatch.id)
-
-          const msg =
-            syncErr instanceof Error
-              ? syncErr.message
-              : 'Failed to send invoice to QuickBooks'
-          return NextResponse.json({ error: msg }, { status: 500 })
-        }
+      if (existingBatch.status === 'sent' || existingBatch.status === 'paid') {
+        return NextResponse.json(
+          { error: 'This monthly invoice has already been sent.' },
+          { status: 409 },
+        )
       }
+      try {
+        const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
+          existingBatch.id,
+        )
+        return NextResponse.json({
+          batchInvoiceId: existingBatch.id,
+          quickbooksInvoiceId,
+          retried: true,
+        })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'QuickBooks sync failed'
+        return NextResponse.json({ error: message }, { status: 502 })
+      }
+    }
 
+    const selectedAppointments = new Set(body.appointmentIds ?? [])
+    const selectedProjects = new Set(body.restorationProjectIds ?? [])
+    if (selectedAppointments.size === 0 && selectedProjects.size === 0) {
+      return NextResponse.json(
+        { error: 'Select at least one completed job or restoration project.' },
+        { status: 400 },
+      )
+    }
+
+    const [appointmentsResult, projectsResult] = await Promise.all([
+      selectedAppointments.size
+        ? supabase
+            .from('ops_appointments')
+            .select(
+              `id, customer_id, status, appointment_date, restoration_project_id,
+               ops_service_addresses (street_1, street_2, city, state, zip_code),
+               ops_appointment_line_items (
+                 service_catalog_item_id, name_snapshot, notes, quantity,
+                 unit_price, duration_minutes, line_total
+               )`,
+            )
+            .in('id', [...selectedAppointments])
+            .eq('customer_id', customerId)
+            .eq('status', 'completed')
+            .is('restoration_project_id', null)
+            .gte('appointment_date', monthStart)
+            .lt('appointment_date', nextMonth)
+        : Promise.resolve({ data: [], error: null }),
+      selectedProjects.size
+        ? supabase
+            .from('restoration_projects')
+            .select(
+              'id, customer_id, billing_month, billing_status, billing_snapshot, final_report_storage_path, final_report_sha256, final_report_version',
+            )
+            .in('id', [...selectedProjects])
+            .eq('customer_id', customerId)
+            .eq('billing_month', monthStart)
+            .eq('billing_status', 'ready')
+        : Promise.resolve({ data: [], error: null }),
+    ])
+    if (appointmentsResult.error) throw appointmentsResult.error
+    if (projectsResult.error) throw projectsResult.error
+
+    const appointments = appointmentsResult.data ?? []
+    const projects = projectsResult.data ?? []
+    if (appointments.length !== selectedAppointments.size) {
+      return NextResponse.json(
+        { error: 'One or more selected jobs are no longer eligible.' },
+        { status: 409 },
+      )
+    }
+    if (projects.length !== selectedProjects.size) {
       return NextResponse.json(
         {
           error:
-            'A batch invoice already exists for this customer and month and has already been sent to QuickBooks',
+            'One or more selected restoration projects are no longer ready.',
         },
         { status: 409 },
       )
     }
 
-    // Find all batch_monthly templates for this customer
-    const { data: templates } = await supabase
-      .from('ops_recurring_templates')
-      .select('id')
-      .eq('customer_id', customerId)
-      .eq('invoice_mode', 'batch_monthly')
-      .eq('is_active', true)
-
-    const templateIds = (templates || []).map((t) => t.id)
-
-    const apptSelect = `id, appointment_date, quoted_total,
-         ops_appointment_line_items (
-           name_snapshot, notes, quantity, unit_price, line_total
-         )`
-
-    // Load completed appointments from recurring templates
-    const { data: recurringAppts } =
-      templateIds.length > 0
-        ? await supabase
-            .from('ops_appointments')
-            .select(apptSelect)
-            .in('recurring_template_id', templateIds)
-            .eq('status', 'completed')
-            .gte('appointment_date', monthStart)
-            .lte('appointment_date', monthEndStr)
-            .order('appointment_date')
-        : { data: [] as never[] }
-
-    // Load completed one-off appointments tagged for batch billing
-    const { data: adHocAppts } = await supabase
-      .from('ops_appointments')
-      .select(apptSelect)
-      .eq('batch_billing_customer_id', customerId)
-      .is('recurring_template_id', null)
-      .eq('status', 'completed')
-      .gte('appointment_date', monthStart)
-      .lte('appointment_date', monthEndStr)
-      .order('appointment_date')
-
-    // Merge and deduplicate
-    const seenIds = new Set<string>()
-    const appointments = [
-      ...(recurringAppts || []),
-      ...(adHocAppts || []),
-    ].filter((a) => {
-      if (seenIds.has(a.id)) return false
-      seenIds.add(a.id)
-      return true
+    const restorationSnapshots = projects.map((project) => {
+      if (!isMonthlyRestorationSnapshot(project.billing_snapshot)) {
+        throw new Error(
+          `Restoration ${project.id} has an invalid billing snapshot`,
+        )
+      }
+      if (
+        !project.final_report_storage_path ||
+        !project.final_report_sha256 ||
+        !project.final_report_version
+      ) {
+        throw new Error(`Restoration ${project.id} has no frozen final report`)
+      }
+      return project.billing_snapshot
+    })
+    const appointmentSubtotals = appointments.map((appointment) =>
+      (Array.isArray(appointment.ops_appointment_line_items)
+        ? appointment.ops_appointment_line_items
+        : []
+      ).reduce((sum, line) => sum + Number(line.line_total), 0),
+    )
+    const amounts = reconcileBatchAmounts({
+      appointmentSubtotals,
+      restorationSnapshots,
     })
 
-    if (appointments.length === 0) {
-      return NextResponse.json(
-        { error: 'No completed appointments found for this month' },
-        { status: 400 },
-      )
-    }
-
-    // Build entries and compute totals
-    let subtotal = 0
-    const entries: {
-      appointmentId: string
-      lineItemsSnapshot: unknown[]
-      apptSubtotal: number
-    }[] = []
-
-    for (const appt of appointments) {
-      const lines = Array.isArray(appt.ops_appointment_line_items)
-        ? appt.ops_appointment_line_items
-        : []
-      const apptSubtotal = lines.reduce(
-        (s: number, l: { line_total: number }) => s + Number(l.line_total),
-        0,
-      )
-      subtotal += apptSubtotal
-      entries.push({
-        appointmentId: appt.id,
-        lineItemsSnapshot: lines,
-        apptSubtotal,
-      })
-    }
-
-    const total = Math.max(0, subtotal)
-
-    // Create ONE batch invoice for the customer (template_id = null since it spans multiple)
-    const { data: batchInvoice, error: biErr } = await supabase
+    const { data: batchInvoice, error: batchError } = await supabase
       .from('ops_batch_invoices')
       .insert({
         template_id: null,
         customer_id: customerId,
         month: monthStart,
         status: 'ready',
-        subtotal: Number(subtotal.toFixed(2)),
-        total: Number(total.toFixed(2)),
+        subtotal: amounts.subtotal,
+        discount_amount: amounts.discountAmount,
+        total: amounts.total,
         sync_status: 'pending',
+        attachment_status: projects.length ? 'pending' : 'not_required',
       })
       .select('id')
       .single()
-
-    if (biErr || !batchInvoice) {
-      return NextResponse.json(
-        { error: biErr?.message || 'Failed to create batch invoice' },
-        { status: 500 },
-      )
+    if (batchError || !batchInvoice) {
+      throw new Error(batchError?.message ?? 'batch_invoice_insert_failed')
     }
 
-    // Create entry rows linking each appointment to the batch invoice
-    const entryPayload = entries.map((e) => ({
-      batch_invoice_id: batchInvoice.id,
-      appointment_id: e.appointmentId,
-      line_items_snapshot: e.lineItemsSnapshot,
-      subtotal: Number(e.apptSubtotal.toFixed(2)),
-    }))
-
-    const { error: entryErr } = await supabase
+    const entries = [
+      ...appointments.map((appointment, index) => ({
+        batch_invoice_id: batchInvoice.id,
+        entry_type: 'appointment',
+        appointment_id: appointment.id,
+        restoration_project_id: null,
+        service_date: appointment.appointment_date,
+        service_address_snapshot: addressText(
+          appointment.ops_service_addresses,
+        ),
+        line_items_snapshot: appointment.ops_appointment_line_items ?? [],
+        subtotal: Number(appointmentSubtotals[index].toFixed(2)),
+        attachment_status: 'not_required',
+      })),
+      ...projects.map((project, index) => ({
+        batch_invoice_id: batchInvoice.id,
+        entry_type: 'restoration',
+        appointment_id: null,
+        restoration_project_id: project.id,
+        service_date: restorationSnapshots[index].serviceDate,
+        service_address_snapshot: restorationSnapshots[index].serviceAddress,
+        line_items_snapshot: restorationSnapshots[index],
+        subtotal: restorationSnapshots[index].grossSubtotal,
+        attachment_status: 'pending',
+      })),
+    ]
+    const { error: entryError } = await supabase
       .from('ops_batch_invoice_entries')
-      .insert(entryPayload)
-
-    if (entryErr) {
+      .insert(entries)
+    if (entryError) {
       await supabase
         .from('ops_batch_invoices')
         .delete()
         .eq('id', batchInvoice.id)
-
-      return NextResponse.json(
-        { error: entryErr.message || 'Failed to create batch invoice entries' },
-        { status: 500 },
-      )
+      throw new Error(entryError.message)
     }
 
-    let quickbooksInvoiceId: string
-    try {
-      quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(batchInvoice.id)
-    } catch (syncErr) {
-      await supabase
-        .from('ops_batch_invoices')
+    if (projects.length) {
+      const { error: projectUpdateError } = await supabase
+        .from('restoration_projects')
         .update({
-          sync_status: 'failed',
+          billing_status: 'batched',
           updated_at: new Date().toISOString(),
         })
-        .eq('id', batchInvoice.id)
-
-      const msg =
-        syncErr instanceof Error
-          ? syncErr.message
-          : 'Failed to send invoice to QuickBooks'
-      return NextResponse.json({ error: msg }, { status: 500 })
+        .in(
+          'id',
+          projects.map((project) => project.id),
+        )
+        .eq('billing_status', 'ready')
+      if (projectUpdateError) throw projectUpdateError
     }
 
-    return NextResponse.json({
-      batchInvoiceId: batchInvoice.id,
-      appointmentCount: appointments.length,
-      subtotal: Number(subtotal.toFixed(2)),
-      total: Number(total.toFixed(2)),
-      quickbooksInvoiceId,
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unexpected error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    await ensureBatchInvoiceQuickBooksSyncJob(supabase, batchInvoice.id)
+
+    try {
+      const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
+        batchInvoice.id,
+      )
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .update({
+          status: 'synced',
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('entity_type', 'batch_invoice')
+        .eq('entity_id', batchInvoice.id)
+      return NextResponse.json({
+        batchInvoiceId: batchInvoice.id,
+        quickbooksInvoiceId,
+        appointmentCount: appointments.length,
+        restorationCount: projects.length,
+        ...amounts,
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'QuickBooks sync failed'
+      return NextResponse.json(
+        { error: message, batchInvoiceId: batchInvoice.id },
+        { status: 502 },
+      )
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

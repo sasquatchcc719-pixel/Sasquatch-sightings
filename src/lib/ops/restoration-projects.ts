@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
+import { ledgerBatches } from '@/lib/ops/restoration-equipment-ledger'
+import {
+  buildMonthlyRestorationSnapshot,
+  effectiveBillingMode,
+  monthStart,
+} from '@/lib/ops/monthly-restoration-billing'
 
 /**
  * Restoration project lifecycle.
@@ -133,7 +139,10 @@ export type CloseProjectResult =
   | { ok: false; error: string }
   | {
       ok: true
-      invoiceId: string
+      customerId: string
+      billingMode: 'immediate' | 'monthly_consolidated'
+      invoiceId: string | null
+      billingMonth: string | null
       subtotal: number
       total: number
       depositCents: number
@@ -144,6 +153,128 @@ export type CloseProjectResult =
       cancelledQueued: number
       cancelledAppointments: number
     }
+
+async function finalizeClosedProjectVisits(
+  supabase: SupabaseClient,
+  params: {
+    projectId: string
+    closingAppointmentId: string
+    userId: string
+    dryStandardNotes?: string | null
+    nowIso: string
+    visitList: Array<{
+      id: string
+      status: string
+      visit_type: string | null
+      appointment_date: string
+      end_time: string | null
+    }>
+    projectPatch: Record<string, unknown>
+  },
+): Promise<{ cancelledQueued: number; cancelledAppointments: number }> {
+  const { data: cancelledQueue } = await supabase
+    .from('restoration_visit_queue')
+    .update({
+      status: 'cancelled',
+      cancelled_reason: 'project closed — dry standard reached',
+      updated_at: params.nowIso,
+    })
+    .eq('project_id', params.projectId)
+    .eq('status', 'queued')
+    .select('id')
+
+  let cancelledVisitCount = 0
+  const openVisitIds = params.visitList
+    .filter(
+      (visit) =>
+        visit.id !== params.closingAppointmentId &&
+        visit.status !== 'completed' &&
+        visit.status !== 'cancelled',
+    )
+    .map((visit) => visit.id)
+
+  if (openVisitIds.length > 0) {
+    const [{ data: readingRows }, { data: lineRows }, { data: photoRows }] =
+      await Promise.all([
+        supabase
+          .from('restoration_readings')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+        supabase
+          .from('ops_appointment_line_items')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+        supabase
+          .from('ops_job_photos')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+      ])
+
+    const worked = new Set<string>()
+    for (const rows of [readingRows, lineRows, photoRows]) {
+      for (const row of rows ?? []) {
+        const id = (row as { appointment_id?: string | null }).appointment_id
+        if (id) worked.add(id)
+      }
+    }
+
+    const workedIds = openVisitIds.filter((id) => worked.has(id))
+    const emptyIds = openVisitIds.filter((id) => !worked.has(id))
+
+    for (const id of workedIds) {
+      const visit = params.visitList.find((candidate) => candidate.id === id)
+      const endedAt =
+        visit?.appointment_date && visit?.end_time
+          ? new Date(
+              `${visit.appointment_date}T${visit.end_time}`,
+            ).toISOString()
+          : params.nowIso
+      await supabase
+        .from('ops_appointments')
+        .update({
+          status: 'completed',
+          completed_at: endedAt,
+          updated_at: params.nowIso,
+        })
+        .eq('id', id)
+        .is('completed_at', null)
+    }
+
+    if (emptyIds.length > 0) {
+      await supabase
+        .from('ops_appointments')
+        .update({ status: 'cancelled', updated_at: params.nowIso })
+        .in('id', emptyIds)
+      cancelledVisitCount = emptyIds.length
+    }
+  }
+
+  await supabase
+    .from('ops_appointments')
+    .update({
+      visit_type: 'final',
+      status: 'completed',
+      completed_at: params.nowIso,
+      updated_at: params.nowIso,
+    })
+    .eq('id', params.closingAppointmentId)
+
+  await supabase
+    .from('restoration_projects')
+    .update({
+      status: 'closed',
+      closed_by_user_id: params.userId,
+      dry_standard_notes: params.dryStandardNotes ?? null,
+      updated_at: params.nowIso,
+      ...params.projectPatch,
+    })
+    .eq('id', params.projectId)
+
+  return {
+    cancelledQueued: cancelledQueue?.length ?? 0,
+    cancelledAppointments: cancelledVisitCount,
+  }
+}
 
 /**
  * Close a project from a monitor visit that has reached dry standard.
@@ -166,7 +297,9 @@ export async function closeRestorationProject(
 
   const { data: project } = await supabase
     .from('restoration_projects')
-    .select('id, status, invoice_id, closed_at, deductible, deductible_credit')
+    .select(
+      'id, customer_id, service_address_id, status, invoice_id, closed_at, deductible, deductible_credit, billing_status',
+    )
     .eq('id', projectId)
     .maybeSingle()
 
@@ -174,6 +307,20 @@ export async function closeRestorationProject(
   if (project.status === 'closed' || project.invoice_id) {
     return { ok: false, error: 'project_already_closed' }
   }
+
+  const [{ data: customer }, { data: serviceAddress }] = await Promise.all([
+    supabase
+      .from('ops_customers')
+      .select('billing_mode')
+      .eq('id', project.customer_id)
+      .maybeSingle(),
+    supabase
+      .from('ops_service_addresses')
+      .select('street_1, street_2, city, state, zip_code')
+      .eq('id', project.service_address_id)
+      .maybeSingle(),
+  ])
+  const billingMode = effectiveBillingMode(customer?.billing_mode)
 
   const { data: visits } = await supabase
     .from('ops_appointments')
@@ -194,7 +341,7 @@ export async function closeRestorationProject(
   const { data: apptLines } = await supabase
     .from('ops_appointment_line_items')
     .select(
-      'id, appointment_id, name_snapshot, quantity, unit_price, line_total',
+      'id, appointment_id, name_snapshot, quantity, unit_price, line_total, service_catalog_item_id, restoration_catalog_code',
     )
     .in('appointment_id', visitIds)
 
@@ -241,6 +388,158 @@ export async function closeRestorationProject(
       String(l.id),
     ]),
   )
+
+  if (billingMode === 'monthly_consolidated') {
+    const [{ data: deposits }, { data: placements }] = await Promise.all([
+      visitIds.length
+        ? supabase
+            .from('ops_payments')
+            .select('amount_cents')
+            .in('appointment_id', visitIds)
+        : Promise.resolve({ data: [] as Array<{ amount_cents: number }> }),
+      supabase
+        .from('restoration_equipment_placements')
+        .select('id, catalog_code, placed_on, removed_on')
+        .eq('project_id', projectId),
+    ])
+
+    const depositCents = (deposits ?? []).reduce(
+      (sum, payment) => sum + Number(payment.amount_cents),
+      0,
+    )
+    const settlement = settleProjectInvoice({
+      subtotal,
+      creditRequested: Number(project.deductible_credit ?? 0) || 0,
+      depositCents,
+    })
+
+    const restorationCodes = [
+      ...new Set([
+        ...(apptLines ?? [])
+          .map((line) => line.restoration_catalog_code)
+          .filter((code): code is string => Boolean(code)),
+        ...(equipment ?? []).map((line) => String(line.catalog_code)),
+      ]),
+    ]
+    const { data: catalogRows } = restorationCodes.length
+      ? await supabase
+          .from('restoration_catalog_items')
+          .select('code, quickbooks_item_id')
+          .in('code', restorationCodes)
+      : {
+          data: [] as Array<{
+            code: string
+            quickbooks_item_id: string | null
+          }>,
+        }
+    const quickBooksItemByCode = new Map(
+      (catalogRows ?? []).map((row) => [
+        String(row.code),
+        row.quickbooks_item_id ? String(row.quickbooks_item_id) : null,
+      ]),
+    )
+    const visitDateById = new Map(
+      visitList.map((visit) => [visit.id, visit.appointment_date]),
+    )
+    const closeDate = String(closing.appointment_date)
+
+    const charges = [
+      ...(apptLines ?? []).map((line) => {
+        const restorationCode = line.restoration_catalog_code
+          ? String(line.restoration_catalog_code)
+          : null
+        return {
+          kind: 'work' as const,
+          description: String(line.name_snapshot),
+          serviceDate:
+            visitDateById.get(String(line.appointment_id)) ?? closeDate,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.unit_price),
+          lineTotal: round2(Number(line.line_total)),
+          serviceCatalogItemId: line.service_catalog_item_id
+            ? String(line.service_catalog_item_id)
+            : null,
+          restorationCatalogCode: restorationCode,
+          quickbooksItemId: restorationCode
+            ? (quickBooksItemByCode.get(restorationCode) ?? null)
+            : null,
+        }
+      }),
+      ...(equipment ?? []).map((line) => {
+        const code = String(line.catalog_code)
+        return {
+          kind: 'equipment' as const,
+          description:
+            Number(line.units) > 1
+              ? `${line.description} (${line.units} units)`
+              : String(line.description),
+          serviceDate: closeDate,
+          quantity: Number(line.unit_days),
+          unitPrice: Number(line.unit_price),
+          lineTotal: round2(Number(line.line_total)),
+          serviceCatalogItemId: null,
+          restorationCatalogCode: code,
+          quickbooksItemId: quickBooksItemByCode.get(code) ?? null,
+          equipmentSpans: ledgerBatches(
+            (placements ?? []).filter(
+              (placement) => placement.catalog_code === code,
+            ),
+            closeDate,
+          ).map((batch) => ({
+            placedOn: batch.placedOn,
+            removedOn: batch.removedOn ?? closeDate,
+            units: batch.units,
+            unitDays: batch.unitDays,
+          })),
+        }
+      }),
+    ]
+    const address = serviceAddress
+      ? `${serviceAddress.street_1}${serviceAddress.street_2 ? `, ${serviceAddress.street_2}` : ''}, ${serviceAddress.city}, ${serviceAddress.state} ${serviceAddress.zip_code}`
+      : ''
+    const snapshot = buildMonthlyRestorationSnapshot({
+      projectId,
+      customerId: String(project.customer_id),
+      serviceDate: closeDate,
+      serviceAddress: address,
+      closedAt: nowIso,
+      charges,
+      grossSubtotal: subtotal,
+      deductibleCredit: settlement.discount,
+      depositCents,
+      refundDueCents: settlement.refundDueCents,
+    })
+
+    const finalized = await finalizeClosedProjectVisits(supabase, {
+      projectId,
+      closingAppointmentId,
+      userId,
+      dryStandardNotes: params.dryStandardNotes,
+      nowIso,
+      visitList,
+      projectPatch: {
+        invoice_id: null,
+        billing_month: monthStart(closeDate),
+        billing_status: 'not_ready',
+        billing_snapshot: snapshot,
+      },
+    })
+
+    return {
+      ok: true,
+      customerId: String(project.customer_id),
+      billingMode,
+      invoiceId: null,
+      billingMonth: monthStart(closeDate),
+      subtotal,
+      total: snapshot.amountDue,
+      depositCents,
+      balanceCents: Math.max(0, settlement.balanceCents),
+      refundDueCents: settlement.refundDueCents,
+      paymentStatus: settlement.paymentStatus,
+      ...finalized,
+    }
+  }
 
   const { data: invoice, error: invoiceError } = await supabase
     .from('ops_invoices')
@@ -467,7 +766,10 @@ export async function closeRestorationProject(
 
   return {
     ok: true,
+    customerId: String(project.customer_id),
+    billingMode: 'immediate',
     invoiceId: invoice.id,
+    billingMonth: null,
     subtotal,
     total: Number(invoice.total),
     depositCents,

@@ -7,14 +7,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
 
     const { data: existing, error: existingError } = await supabase
       .from('ops_customers')
-      .select('id')
+      .select('id, billing_mode')
       .eq('id', id)
       .single()
 
@@ -48,6 +48,51 @@ export async function PATCH(
       if (c.notes !== undefined) updates.notes = c.notes || null
       if (c.email_opt_out !== undefined)
         updates.email_opt_out = Boolean(c.email_opt_out)
+      if (c.billing_mode !== undefined) {
+        if (!['immediate', 'monthly_consolidated'].includes(c.billing_mode)) {
+          return NextResponse.json(
+            { error: 'Invalid billing mode' },
+            { status: 400 },
+          )
+        }
+        if (
+          c.billing_mode !== existing.billing_mode &&
+          !['admin', 'owner'].includes(access.role)
+        ) {
+          return NextResponse.json(
+            { error: 'Only an owner or admin can change billing policy.' },
+            { status: 403 },
+          )
+        }
+        if (
+          existing.billing_mode === 'monthly_consolidated' &&
+          c.billing_mode === 'immediate'
+        ) {
+          const [{ count: projectCount }, { count: batchCount }] =
+            await Promise.all([
+              supabase
+                .from('restoration_projects')
+                .select('id', { count: 'exact', head: true })
+                .eq('customer_id', id)
+                .in('billing_status', ['ready', 'batched']),
+              supabase
+                .from('ops_batch_invoices')
+                .select('id', { count: 'exact', head: true })
+                .eq('customer_id', id)
+                .in('status', ['draft', 'ready']),
+            ])
+          if ((projectCount ?? 0) > 0 || (batchCount ?? 0) > 0) {
+            return NextResponse.json(
+              {
+                error:
+                  'Finish or void the customer’s open monthly billing before switching to per-job invoices.',
+              },
+              { status: 409 },
+            )
+          }
+        }
+        updates.billing_mode = c.billing_mode
+      }
 
       if (Object.keys(updates).length > 0) {
         updates.updated_at = new Date().toISOString()

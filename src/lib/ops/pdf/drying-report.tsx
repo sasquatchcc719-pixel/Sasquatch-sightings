@@ -70,6 +70,12 @@ export type DryingReportData = {
     units: number
     unitDays: number
     total: number
+    spans?: Array<{
+      placedOn: string
+      removedOn: string | null
+      units: number
+      unitDays: number
+    }>
   }>
   readingPoints: Array<{
     label: string
@@ -627,17 +633,29 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               <Text style={{ width: 60, textAlign: 'right' }}>Total</Text>
             </View>
             {data.equipment.map((item) => (
-              <View key={item.code} style={styles.row}>
-                <Text style={styles.cell}>{item.description}</Text>
-                <Text style={{ width: 45, textAlign: 'right' }}>
-                  {item.units}
-                </Text>
-                <Text style={{ width: 60, textAlign: 'right' }}>
-                  {item.unitDays}
-                </Text>
-                <Text style={{ width: 60, textAlign: 'right' }}>
-                  {money(item.total)}
-                </Text>
+              <View key={item.code} wrap={false}>
+                <View style={styles.row}>
+                  <Text style={styles.cell}>{item.description}</Text>
+                  <Text style={{ width: 45, textAlign: 'right' }}>
+                    {item.units}
+                  </Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>
+                    {item.unitDays}
+                  </Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>
+                    {money(item.total)}
+                  </Text>
+                </View>
+                {(item.spans ?? []).map((span, index) => (
+                  <Text
+                    key={`${span.placedOn}-${span.removedOn}-${index}`}
+                    style={{ ...styles.muted, marginLeft: 8, marginBottom: 2 }}
+                  >
+                    {span.units} unit{span.units === 1 ? '' : 's'} ·{' '}
+                    {span.placedOn} to {span.removedOn ?? 'running'} ·{' '}
+                    {span.unitDays} unit-day{span.unitDays === 1 ? '' : 's'}
+                  </Text>
+                ))}
               </View>
             ))}
           </View>

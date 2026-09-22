@@ -3,6 +3,11 @@ import {
   getQBConnectionStatus,
 } from '@/lib/quickbooks-auth'
 import { createAdminClient } from '@/supabase/server'
+import {
+  isMonthlyRestorationSnapshot,
+  reportSha256,
+  RESTORATION_REPORT_BUCKET,
+} from '@/lib/ops/monthly-restoration-billing'
 
 const QB_BASE_URL = 'https://quickbooks.api.intuit.com/v3/company'
 const QB_PAYMENTS_BASE_URL =
@@ -358,6 +363,7 @@ export async function createQBInvoice(params: {
     description: string
     product_name?: string | null
     service_catalog_item_id?: string | null
+    quickbooks_item_id?: string | null
     quantity: number
     unit_price: number
     line_total: number
@@ -409,13 +415,15 @@ export async function createQBInvoice(params: {
     const productName = String(item.product_name || item.description || '')
       .trim()
       .replace(/\s+/g, ' ')
-    const itemRef = await resolveQBItemRef(
-      auth.realmId,
-      auth.accessToken,
-      item.service_catalog_item_id,
-      productName,
-      itemRefCache,
-    )
+    const itemRef = item.quickbooks_item_id
+      ? { value: String(item.quickbooks_item_id), name: productName }
+      : await resolveQBItemRef(
+          auth.realmId,
+          auth.accessToken,
+          item.service_catalog_item_id,
+          productName,
+          itemRefCache,
+        )
 
     lines.push({
       Amount: item.line_total,
@@ -608,6 +616,109 @@ export async function findQBItemRefByName(
   return null
 }
 
+type QBAttachable = {
+  Id?: string
+  FileName?: string
+  AttachableRef?: Array<{
+    EntityRef?: { type?: string; value?: string }
+  }>
+}
+
+async function findQBAttachment(
+  realmId: string,
+  accessToken: string,
+  invoiceId: string,
+  fileName: string,
+): Promise<string | null> {
+  const escaped = fileName.replace(/'/g, "\\'")
+  const query = encodeURIComponent(
+    `SELECT * FROM Attachable WHERE FileName = '${escaped}'`,
+  )
+  const response = await qbFetch(
+    realmId,
+    accessToken,
+    `/query?query=${query}&minorversion=65`,
+  )
+  if (!response.ok) return null
+  const data = await response.json()
+  const attachables = (data?.QueryResponse?.Attachable ?? []) as QBAttachable[]
+  const match = attachables.find((attachable) =>
+    (attachable.AttachableRef ?? []).some(
+      (ref) =>
+        ref.EntityRef?.type === 'Invoice' &&
+        String(ref.EntityRef?.value) === String(invoiceId),
+    ),
+  )
+  return match?.Id ? String(match.Id) : null
+}
+
+/** Upload one immutable report and link it to an existing QBO invoice. */
+async function uploadQBInvoiceAttachment(params: {
+  realmId: string
+  accessToken: string
+  invoiceId: string
+  fileName: string
+  buffer: Buffer
+}): Promise<string> {
+  const existing = await findQBAttachment(
+    params.realmId,
+    params.accessToken,
+    params.invoiceId,
+    params.fileName,
+  )
+  if (existing) return existing
+
+  const metadata = {
+    FileName: params.fileName,
+    ContentType: 'application/pdf',
+    AttachableRef: [
+      {
+        EntityRef: { type: 'Invoice', value: params.invoiceId },
+        IncludeOnSend: true,
+      },
+    ],
+  }
+  const form = new FormData()
+  form.append(
+    'file_metadata_01',
+    new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+  )
+  form.append(
+    'file_content_01',
+    new Blob([new Uint8Array(params.buffer)], { type: 'application/pdf' }),
+    params.fileName,
+  )
+
+  const url = `${QB_BASE_URL}/${params.realmId}/upload?minorversion=65`
+  let response: Response | null = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.accessToken}`,
+        Accept: 'application/json',
+      },
+      body: form,
+    })
+    if (response.status !== 429) break
+    await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt))
+  }
+  if (!response?.ok) {
+    const detail = response ? await readQBErrorDetail(response) : null
+    throw new Error(
+      `QB attachment upload failed: ${response?.status ?? 'no response'}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+  const data = await response.json()
+  const uploaded = (data?.AttachableResponse ?? []) as Array<{
+    Attachable?: QBAttachable
+    Fault?: unknown
+  }>
+  const id = uploaded[0]?.Attachable?.Id
+  if (!id) throw new Error('QB attachment upload returned no Attachable id')
+  return String(id)
+}
+
 export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
   const status = await getQBConnectionStatus()
   if (!status.connected || !status.sync_enabled) {
@@ -622,6 +733,8 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
       id,
       customer_id,
       month,
+      total,
+      discount_amount,
       invoice_number,
       quickbooks_invoice_id,
       ops_customers!ops_batch_invoices_customer_id_fkey (
@@ -629,8 +742,19 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_batch_invoice_entries (
+        id,
+        entry_type,
+        restoration_project_id,
+        service_date,
         line_items_snapshot,
-        ops_appointments ( appointment_date )
+        attachment_status,
+        quickbooks_attachable_id,
+        ops_appointments ( appointment_date ),
+        restoration_projects (
+          final_report_storage_path,
+          final_report_sha256,
+          final_report_version
+        )
       )
     `,
     )
@@ -639,10 +763,6 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
 
   if (!batchInvoice) {
     throw new Error(`Batch invoice ${batchInvoiceId} not found`)
-  }
-
-  if (batchInvoice.quickbooks_invoice_id) {
-    return batchInvoice.quickbooks_invoice_id
   }
 
   const customer = Array.isArray(batchInvoice.ops_customers)
@@ -687,17 +807,22 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
     const appointment = Array.isArray(entry.ops_appointments)
       ? entry.ops_appointments[0]
       : entry.ops_appointments
-    const date = appointment?.appointment_date || batchInvoice.month
-    const datePrefix = new Date(date + 'T12:00:00').toLocaleDateString(
-      'en-US',
-      {
-        month: 'short',
-        day: 'numeric',
-      },
-    )
-    const snapshot = Array.isArray(entry.line_items_snapshot)
-      ? entry.line_items_snapshot
-      : []
+    const date =
+      entry.service_date || appointment?.appointment_date || batchInvoice.month
+    const snapshot = isMonthlyRestorationSnapshot(entry.line_items_snapshot)
+      ? entry.line_items_snapshot.charges.map((charge) => ({
+          name_snapshot: charge.description,
+          notes: null,
+          quantity: charge.quantity,
+          unit_price: charge.unitPrice,
+          line_total: charge.lineTotal,
+          service_catalog_item_id: charge.serviceCatalogItemId,
+          quickbooks_item_id: charge.quickbooksItemId,
+          service_date: charge.serviceDate,
+        }))
+      : Array.isArray(entry.line_items_snapshot)
+        ? entry.line_items_snapshot
+        : []
 
     return snapshot.map(
       (line: {
@@ -707,26 +832,150 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
         unit_price: number
         line_total: number
         service_catalog_item_id?: string | null
-      }) => ({
-        description: `${datePrefix} — ${line.notes || line.name_snapshot}`,
-        product_name: line.name_snapshot,
-        service_catalog_item_id: line.service_catalog_item_id,
-        quantity: Number(line.quantity || 1),
-        unit_price: Number(line.unit_price || 0),
-        line_total: Number(line.line_total || 0),
-        service_date: date,
-      }),
+        quickbooks_item_id?: string | null
+        service_date?: string | null
+      }) => {
+        const lineDate = line.service_date || date
+        const datePrefix = new Date(`${lineDate}T12:00:00`).toLocaleDateString(
+          'en-US',
+          { month: 'short', day: 'numeric' },
+        )
+        return {
+          description: `${datePrefix} — ${line.notes || line.name_snapshot}`,
+          product_name: line.name_snapshot,
+          service_catalog_item_id: line.service_catalog_item_id,
+          quickbooks_item_id: line.quickbooks_item_id,
+          quantity: Number(line.quantity || 1),
+          unit_price: Number(line.unit_price || 0),
+          line_total: Number(line.line_total || 0),
+          service_date: lineDate,
+        }
+      },
     )
   })
 
-  const qbInvoiceId = await createQBInvoice({
-    qbCustomerId,
-    serviceDate: batchInvoice.month,
-    lineItems,
-    docNumber:
-      (batchInvoice as { invoice_number?: number | string | null })
-        .invoice_number ?? null,
-  })
+  const expectedTotal =
+    Math.round(
+      (lineItems.reduce((sum, line) => sum + Number(line.line_total), 0) -
+        Number(batchInvoice.discount_amount || 0)) *
+        100,
+    ) / 100
+  if (expectedTotal !== Number(batchInvoice.total)) {
+    throw new Error(
+      `Batch reconciliation failed: snapshot total ${expectedTotal.toFixed(2)} does not match invoice ${Number(batchInvoice.total).toFixed(2)}`,
+    )
+  }
+
+  let qbInvoiceId = batchInvoice.quickbooks_invoice_id
+  if (!qbInvoiceId) {
+    qbInvoiceId = await createQBInvoice({
+      qbCustomerId,
+      serviceDate: batchInvoice.month,
+      lineItems,
+      discountAmount: Number(batchInvoice.discount_amount || 0),
+      docNumber:
+        (batchInvoice as { invoice_number?: number | string | null })
+          .invoice_number ?? null,
+    })
+
+    // Persist the external id before uploading documents. A retry can now
+    // resume attachments without ever creating a second QuickBooks invoice.
+    await supabase
+      .from('ops_batch_invoices')
+      .update({
+        quickbooks_invoice_id: qbInvoiceId,
+        sync_status: 'attaching',
+        status: 'ready',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', batchInvoice.id)
+  }
+
+  const auth = await getValidQBAccessToken()
+  if (!auth) throw new Error('QuickBooks not connected')
+  const attachmentErrors: string[] = []
+  for (const entry of entries) {
+    if (entry.entry_type !== 'restoration') continue
+    if (
+      entry.attachment_status === 'attached' &&
+      entry.quickbooks_attachable_id
+    ) {
+      continue
+    }
+    const project = Array.isArray(entry.restoration_projects)
+      ? entry.restoration_projects[0]
+      : entry.restoration_projects
+    if (
+      !project?.final_report_storage_path ||
+      !project.final_report_sha256 ||
+      !project.final_report_version
+    ) {
+      const message = 'Frozen restoration report metadata is missing'
+      attachmentErrors.push(`${entry.id}: ${message}`)
+      await supabase
+        .from('ops_batch_invoice_entries')
+        .update({ attachment_status: 'failed', attachment_error: message })
+        .eq('id', entry.id)
+      continue
+    }
+
+    try {
+      const { data: object, error: downloadError } = await supabase.storage
+        .from(RESTORATION_REPORT_BUCKET)
+        .download(project.final_report_storage_path)
+      if (downloadError || !object) {
+        throw new Error(downloadError?.message ?? 'Stored report is missing')
+      }
+      const buffer = Buffer.from(await object.arrayBuffer())
+      if (reportSha256(buffer) !== project.final_report_sha256) {
+        throw new Error('Stored report checksum does not match close snapshot')
+      }
+      const attachableId = await uploadQBInvoiceAttachment({
+        realmId: auth.realmId,
+        accessToken: auth.accessToken,
+        invoiceId: qbInvoiceId,
+        fileName: `restoration-${entry.restoration_project_id}-v${project.final_report_version}.pdf`,
+        buffer,
+      })
+      await supabase
+        .from('ops_batch_invoice_entries')
+        .update({
+          attachment_status: 'attached',
+          quickbooks_attachable_id: attachableId,
+          attachment_error: null,
+          attached_at: new Date().toISOString(),
+        })
+        .eq('id', entry.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed'
+      attachmentErrors.push(`${entry.id}: ${message}`)
+      await supabase
+        .from('ops_batch_invoice_entries')
+        .update({ attachment_status: 'failed', attachment_error: message })
+        .eq('id', entry.id)
+    }
+  }
+
+  if (attachmentErrors.length > 0) {
+    await supabase
+      .from('ops_batch_invoices')
+      .update({
+        attachment_status: 'partial',
+        attachment_error: attachmentErrors.join(' | ').slice(0, 2_000),
+        sync_status: 'partial',
+        status: 'ready',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', batchInvoice.id)
+    throw new Error(
+      `QuickBooks invoice created, but report attachment failed: ${attachmentErrors.join(' | ')}`,
+    )
+  }
+
+  const hasRestoration = entries.some(
+    (entry) => entry.entry_type === 'restoration',
+  )
+  const sentAt = new Date().toISOString()
 
   await supabase
     .from('ops_batch_invoices')
@@ -734,9 +983,23 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
       quickbooks_invoice_id: qbInvoiceId,
       sync_status: 'synced',
       status: 'sent',
-      updated_at: new Date().toISOString(),
+      attachment_status: hasRestoration ? 'complete' : 'not_required',
+      attachment_error: null,
+      sent_at: sentAt,
+      updated_at: sentAt,
     })
     .eq('id', batchInvoice.id)
+
+  const restorationProjectIds = entries
+    .filter((entry) => entry.entry_type === 'restoration')
+    .map((entry) => entry.restoration_project_id)
+    .filter((id): id is string => Boolean(id))
+  if (restorationProjectIds.length > 0) {
+    await supabase
+      .from('restoration_projects')
+      .update({ billing_status: 'sent', updated_at: sentAt })
+      .in('id', restorationProjectIds)
+  }
 
   return qbInvoiceId
 }
