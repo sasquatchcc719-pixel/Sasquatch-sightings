@@ -84,6 +84,7 @@ import {
   ledgerAsOf,
   placementsAsOf,
 } from '@/lib/ops/restoration-equipment-ledger'
+import { buildRestorationBillingSummary } from '@/lib/ops/restoration-billing-summary'
 
 /**
  * The restoration project screen.
@@ -293,6 +294,12 @@ function toDateKey(date: Date): string {
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+const shortDate = (value: string) =>
+  new Date(`${value}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
 
 /** The standard arc of a water-loss file, which is also how the report is organised. */
 const PHOTO_PHASES = [
@@ -799,6 +806,17 @@ export function RestorationProjectDetail({
     [detail],
   )
 
+  /** Every charge on the project, not only the visit currently open above. */
+  const billingSummary = useMemo(
+    () =>
+      buildRestorationBillingSummary({
+        visits: detail?.visits ?? [],
+        equipment: detail?.equipment ?? [],
+        equipmentBilling: detail?.equipment_billing ?? [],
+      }),
+    [detail],
+  )
+
   const catalogResults = catalog
   const groupedCatalog = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -1066,6 +1084,158 @@ export function RestorationProjectDetail({
           </div>
         </Card>
       ))}
+
+      {/* ── Running bill ────────────────────────────────────── */}
+      <Card id="running-bill" className={`${SECTION_CARD} border-sky-500/30`}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className={SECTION_TITLE}>
+              <DollarSign className={SECTION_ICON} /> Running bill
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Every charge on the whole job to date. No estimate required.
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-muted-foreground block text-xs">
+              Current total
+            </span>
+            <span className="text-2xl font-semibold text-sky-700 tabular-nums dark:text-sky-300">
+              {money(detail.totals.gross_subtotal)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-5">
+          <section aria-labelledby="running-bill-work">
+            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
+              <h3 id="running-bill-work" className="font-semibold">
+                Work charges
+              </h3>
+              <div className="flex items-center gap-3">
+                {!closed ? (
+                  <a
+                    href="#work-charges"
+                    className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
+                  >
+                    Add or edit
+                  </a>
+                ) : null}
+                <span className="font-medium tabular-nums">
+                  {money(detail.totals.work)}
+                </span>
+              </div>
+            </div>
+            {billingSummary.work.length > 0 ? (
+              <div className="divide-y">
+                {billingSummary.work.map((line) => (
+                  <div
+                    key={line.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">{line.description}</p>
+                      <p className="text-muted-foreground mt-0.5 text-xs capitalize">
+                        {line.visitType ?? 'visit'} ·{' '}
+                        {shortDate(line.appointmentDate)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium tabular-nums">
+                        {money(line.lineTotal)}
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
+                        {line.quantity.toLocaleString()}
+                        {line.unit ? ` ${line.unit}` : ''} ×{' '}
+                        {money(line.unitPrice)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
+                No Work charges have been added to any visit yet.
+              </p>
+            )}
+          </section>
+
+          <section aria-labelledby="running-bill-equipment">
+            <div className="mb-1 flex items-center justify-between gap-3 border-b pb-2">
+              <h3 id="running-bill-equipment" className="font-semibold">
+                Equipment charges
+              </h3>
+              <div className="flex items-center gap-3">
+                {!closed ? (
+                  <a
+                    href="#equipment-charges"
+                    className="text-xs text-sky-700 underline underline-offset-2 dark:text-sky-300"
+                  >
+                    Edit dates
+                  </a>
+                ) : null}
+                <span className="font-medium tabular-nums">
+                  {money(detail.totals.equipment)}
+                </span>
+              </div>
+            </div>
+            {billingSummary.equipment.length > 0 ? (
+              <div className="divide-y">
+                {billingSummary.equipment.map((line) => (
+                  <div
+                    key={line.code}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        <code className="mr-1 text-xs">{line.code}</code>
+                        {line.description}
+                      </p>
+                      <div className="text-muted-foreground mt-1 flex flex-col gap-0.5 text-xs">
+                        {line.batches.map((batch) => (
+                          <span
+                            key={`${batch.placedOn}-${batch.removedOn ?? 'running'}`}
+                          >
+                            ×{batch.units} · {shortDate(batch.placedOn)}–
+                            {batch.removedOn
+                              ? shortDate(batch.removedOn)
+                              : 'running'}
+                          </span>
+                        ))}
+                        <span>
+                          {line.running} running
+                          {line.pulled > 0 ? ` · ${line.pulled} pulled` : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium tabular-nums">
+                        {money(line.lineTotal)}
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
+                        {line.unitDays.toLocaleString()} unit-day
+                        {line.unitDays === 1 ? '' : 's'} ×{' '}
+                        {money(line.unitPrice)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground bg-muted/30 mt-2 rounded-md px-3 py-3 text-sm">
+                No equipment charges are running or recorded on this job.
+              </p>
+            )}
+          </section>
+
+          <div className="flex items-center justify-between border-t-2 border-sky-500/30 pt-3 text-base font-semibold">
+            <span>Running job total</span>
+            <span className="text-sky-700 tabular-nums dark:text-sky-300">
+              {money(detail.totals.gross_subtotal)}
+            </span>
+          </div>
+        </div>
+      </Card>
 
       {address ? (
         <Card className={SECTION_CARD}>
@@ -2671,7 +2841,7 @@ export function RestorationProjectDetail({
 
       {/* ── Work on this visit ─────────────────────────────── */}
       {activeVisit && !closed ? (
-        <Card className={SECTION_CARD}>
+        <Card id="work-charges" className={SECTION_CARD}>
           {/*
             Collapsed on a monitor visit. Most monitors add no work at all —
             they are readings and a look around — so this card sat open taking
@@ -2980,7 +3150,7 @@ export function RestorationProjectDetail({
 
       {/* ── Equipment ──────────────────────────────────────── */}
       {!closed ? (
-        <Card className={SECTION_CARD}>
+        <Card id="equipment-charges" className={SECTION_CARD}>
           <div className="mb-3 flex items-center justify-between">
             <h2 className={SECTION_TITLE}>
               <Wind className={SECTION_ICON} /> Equipment
@@ -3812,29 +3982,19 @@ export function RestorationProjectDetail({
       {/* ── Money ──────────────────────────────────────────── */}
       <Card className={SECTION_CARD}>
         <h2 className={`${SECTION_TITLE} mb-3`}>
-          <DollarSign className={SECTION_ICON} /> Money
+          <DollarSign className={SECTION_ICON} /> Payments &amp; balance
         </h2>
         <div className="flex flex-col gap-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Work</span>
-            <span>{money(detail.totals.work)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">
-              Equipment{' '}
-              <span className="text-xs">
-                — whole job to date, not the visit above
-              </span>
+          <div className="flex justify-between font-medium">
+            <span>
+              Job subtotal{' '}
+              <a
+                href="#running-bill"
+                className="text-muted-foreground text-xs font-normal underline underline-offset-2"
+              >
+                see charges
+              </a>
             </span>
-            <span>{money(detail.totals.equipment)}</span>
-          </div>
-          {/*
-            What the job came to before any concession. Without it the deductible
-            split appears to come off a number that is never shown, and there is
-            no line to check the work and equipment add up to.
-          */}
-          <div className="flex justify-between border-t pt-2 font-medium">
-            <span>Subtotal</span>
             <span className="tabular-nums">
               {money(detail.totals.gross_subtotal)}
             </span>
