@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 
-const title = 'Sasquatch Carpet Cleaning | Your Digital Card'
+const title = 'Sasquatch Carpet Cleaning'
 const description =
-  'Get a cleaning estimate, contact our team, or call for water damage help. Serving Monument, Colorado Springs, Castle Rock, and Black Forest.'
+  'Tap for water damage help or a free carpet cleaning estimate.'
 
 export const metadata: Metadata = {
   title,
@@ -10,21 +10,22 @@ export const metadata: Metadata = {
   openGraph: {
     title,
     description,
+    siteName: title,
     type: 'website',
     images: [
       {
-        url: '/sasquatch-website-logo.png',
-        width: 2723,
-        height: 1155,
-        alt: 'Sasquatch Carpet Cleaning',
+        url: '/tap/share-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Sasquatch Carpet Cleaning logo on a wooden sign',
       },
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title,
     description,
-    images: ['/sasquatch-website-logo.png'],
+    images: ['/tap/share-card.jpg'],
   },
 }
 

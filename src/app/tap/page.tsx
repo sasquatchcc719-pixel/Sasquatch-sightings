@@ -185,7 +185,8 @@ export default function TapLandingPage() {
             />
           </div>
           <h1 className="sr-only">
-            Sasquatch Carpet Cleaning — your digital card
+            Sasquatch Carpet Cleaning — water damage help and carpet cleaning
+            estimates
           </h1>
         </header>
 
