@@ -25,6 +25,8 @@ import { PushOptInBanner } from '@/components/push-opt-in-banner'
 import { WATER_DAMAGE_PHONE_E164 } from '@/lib/phone'
 import styles from './tap.module.css'
 
+const SHARE_PREVIEW_VERSION = 'wood-sign'
+
 export default function TapLandingPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -127,7 +129,9 @@ export default function TapLandingPage() {
   const handleShare = async () => {
     trackButtonClick('share')
 
-    const shareUrl = window.location.href
+    const shareUrl = new URL(window.location.href)
+    shareUrl.searchParams.set('preview', SHARE_PREVIEW_VERSION)
+    const shareUrlString = shareUrl.toString()
     const shareText = `🦶 Get $20 OFF carpet cleaning from Sasquatch! Use code ${couponCode} when booking. Colorado Springs area.`
 
     // Check if native share is available (mobile)
@@ -136,19 +140,19 @@ export default function TapLandingPage() {
         await navigator.share({
           title: 'Sasquatch Carpet Cleaning - $20 OFF',
           text: shareText,
-          url: shareUrl,
+          url: shareUrlString,
         })
       } catch (error) {
         // User cancelled share, that's okay
         if (error instanceof Error && error.name !== 'AbortError') {
           console.error('Share failed:', error)
           // Fallback to copy
-          copyToClipboard(shareUrl)
+          copyToClipboard(shareUrlString)
         }
       }
     } else {
       // Desktop: Copy to clipboard
-      copyToClipboard(shareUrl)
+      copyToClipboard(shareUrlString)
     }
   }
 

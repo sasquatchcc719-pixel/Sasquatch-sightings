@@ -222,7 +222,7 @@ describe('mobile NFC card', () => {
     await waitFor(() =>
       expect(share).toHaveBeenCalledWith(
         expect.objectContaining({
-          url: window.location.href,
+          url: expect.stringContaining('preview=wood-sign'),
           text: expect.stringContaining('LOCAL20'),
         }),
       ),
@@ -235,7 +235,9 @@ describe('mobile NFC card', () => {
     render(<TapLandingPage />)
     fireEvent.click(screen.getByRole('button', { name: /Share this card/ }))
     expect(await screen.findByRole('status')).toHaveTextContent('Link copied')
-    expect(writeText).toHaveBeenCalledWith(window.location.href)
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining('preview=wood-sign'),
+    )
   })
 
   it('keeps supporting links and notifications below the main actions', () => {
