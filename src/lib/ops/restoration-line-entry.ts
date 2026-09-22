@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  normalizeRestorationCatalogItem,
   resolveVariant,
   type LossContext,
   type RestorationCatalogItem,
@@ -51,9 +52,9 @@ export async function loadEnabledCatalog(
     )
     .eq('is_enabled', true)
   return (data ?? []).map((r) => ({
-    ...r,
+    ...normalizeRestorationCatalogItem(r as RestorationCatalogItem),
     unit_price: Number(r.unit_price),
-  })) as RestorationCatalogItem[]
+  }))
 }
 
 /** One choice per distinct piece of work — never one per price variant. */
@@ -81,13 +82,16 @@ export async function parseRestorationLines(
   if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not configured' }
 
   const items = await loadEnabledCatalog(supabase)
-  if (items.length === 0) return { ok: false, error: 'restoration catalog is empty' }
+  if (items.length === 0)
+    return { ok: false, error: 'restoration catalog is empty' }
 
   const menu = conceptMenu(items)
-  const menuText = menu.map((m) => `${m.code}\t${m.label}\t(${m.unit})`).join('\n')
+  const menuText = menu
+    .map((m) => `${m.code}\t${m.label}\t(${m.unit})`)
+    .join('\n')
 
   const system = [
-    'You convert a restoration technician\'s spoken notes into line items.',
+    "You convert a restoration technician's spoken notes into line items.",
     'You are given a menu of work concepts, each with an ID, a description, and a unit.',
     'Return ONLY concepts from the menu, by their exact ID.',
     'The technician speaks in shorthand and may correct themselves mid-sentence;',
@@ -163,7 +167,10 @@ export async function parseRestorationLines(
     if (!raw) return { ok: false, error: 'no response from the model' }
     parsed = JSON.parse(raw)
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'extraction failed' }
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'extraction failed',
+    }
   }
 
   const byConcept = new Set(menu.map((m) => m.code))
@@ -189,7 +196,9 @@ export async function parseRestorationLines(
       unitPrice: hit.unit_price,
       daily: isDailyBilled(hit.description, hit.unit),
       days:
-        typeof entry.days === 'number' && Number.isFinite(entry.days) && entry.days > 0
+        typeof entry.days === 'number' &&
+        Number.isFinite(entry.days) &&
+        entry.days > 0
           ? entry.days
           : null,
       quantity:

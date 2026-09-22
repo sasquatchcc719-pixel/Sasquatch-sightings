@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { loadEnabledCatalog } from '@/lib/ops/restoration-line-entry'
-import { resolveVariant, type WaterCategory } from '@/lib/ops/restoration-catalog'
+import {
+  matchesRestorationCatalogSearch,
+  resolveVariant,
+  type WaterCategory,
+} from '@/lib/ops/restoration-catalog'
 import { groupForConcept } from '@/lib/ops/restoration-catalog-groups'
 import { isDailyBilled } from '@/lib/ops/restoration-daily-billing'
 
@@ -17,7 +21,8 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const { searchParams } = new URL(request.url)
 
-    const category = (Number(searchParams.get('category') ?? 1) || 1) as WaterCategory
+    const category = (Number(searchParams.get('category') ?? 1) ||
+      1) as WaterCategory
     const afterHours = searchParams.get('after_hours') === 'true'
     const query = (searchParams.get('q') ?? '').trim().toLowerCase()
 
@@ -41,8 +46,11 @@ export async function GET(request: NextRequest) {
       if (!hit) continue
       if (
         query &&
-        !concept.label.toLowerCase().includes(query) &&
-        !hit.code.toLowerCase().includes(query)
+        !matchesRestorationCatalogSearch(query, [
+          concept.label,
+          hit.description,
+          hit.code,
+        ])
       ) {
         continue
       }
@@ -64,6 +72,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ items: results })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to load catalog'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }

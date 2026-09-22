@@ -3,6 +3,8 @@ import {
   categoryAt,
   isBillable,
   listConcepts,
+  matchesRestorationCatalogSearch,
+  normalizeRestorationCatalogItem,
   resolveVariant,
   type RestorationCatalogItem,
 } from './restoration-catalog'
@@ -103,8 +105,15 @@ describe('resolveVariant', () => {
 
   it('ignores disabled items and unknown concepts', () => {
     const disabled = EXTRACTION.map((i) => ({ ...i, is_enabled: false }))
-    expect(resolveVariant(disabled, 'EXT', { waterCategory: 1, afterHours: false })).toBeNull()
-    expect(resolveVariant(EXTRACTION, 'NOPE', { waterCategory: 1, afterHours: false })).toBeNull()
+    expect(
+      resolveVariant(disabled, 'EXT', { waterCategory: 1, afterHours: false }),
+    ).toBeNull()
+    expect(
+      resolveVariant(EXTRACTION, 'NOPE', {
+        waterCategory: 1,
+        afterHours: false,
+      }),
+    ).toBeNull()
   })
 })
 
@@ -116,10 +125,66 @@ describe('listConcepts', () => {
   })
 })
 
+describe('emergency service variants', () => {
+  const emergencyItems = [
+    item('ESRV', 295.92, {
+      description: 'Emergency service call - after business hours',
+      unit: 'EA',
+      concept_code: 'ESRV',
+      concept_label: 'Emergency service call - after business hours',
+    }),
+    item('ESRVD', 197.29, {
+      description: 'Emergency service call - during business hours',
+      unit: 'EA',
+      concept_code: 'ESRVD',
+      concept_label: 'Emergency service call - during business hours',
+    }),
+  ].map(normalizeRestorationCatalogItem)
+
+  it('keeps price selection deterministic from the loss context', () => {
+    expect(
+      resolveVariant(emergencyItems, 'ESRVD', {
+        waterCategory: 1,
+        afterHours: false,
+      }),
+    ).toMatchObject({ code: 'ESRVD', unit_price: 197.29 })
+    expect(
+      resolveVariant(emergencyItems, 'ESRVD', {
+        waterCategory: 1,
+        afterHours: true,
+      }),
+    ).toMatchObject({ code: 'ESRV', unit_price: 295.92 })
+  })
+
+  it("finds the after-hours item using the technician's natural wording", () => {
+    const afterHours = resolveVariant(emergencyItems, 'ESRVD', {
+      waterCategory: 1,
+      afterHours: true,
+    })!
+
+    expect(
+      matchesRestorationCatalogSearch('emergency service fee after hours', [
+        afterHours.concept_label,
+        afterHours.description,
+        afterHours.code,
+      ]),
+    ).toBe(true)
+    expect(
+      matchesRestorationCatalogSearch('emergency service fee after hours', [
+        'Emergency service call',
+        'Emergency service call - during business hours',
+        'ESRVD',
+      ]),
+    ).toBe(false)
+  })
+})
+
 describe('isBillable', () => {
   it('requires a QuickBooks mapping before an item can reach an invoice', () => {
     expect(isBillable(item('EXT', 0.58))).toBe(true)
-    expect(isBillable(item('EXT', 0.58, { quickbooks_item_id: null }))).toBe(false)
+    expect(isBillable(item('EXT', 0.58, { quickbooks_item_id: null }))).toBe(
+      false,
+    )
     expect(isBillable(item('EXT', 0.58, { is_enabled: false }))).toBe(false)
   })
 })

@@ -39,8 +39,8 @@ describe('restoration line entry', () => {
     // asserted against the real catalog in restoration-catalog.integration.test.ts.
     expect(codes.length).toBeGreaterThan(0)
     expect(codes.some((c) => c.endsWith('S'))).toBe(false)
-    expect(codes).toContain('GRM')   // antimicrobial
-    expect(codes).toContain('TACK')  // tackless strip
+    expect(codes).toContain('GRM') // antimicrobial
+    expect(codes).toContain('TACK') // tackless strip
 
     // The technician corrected themselves mid-sentence: 2 ft, not 4 ft.
     expect(codes).toContain('DRYWLF')
@@ -93,4 +93,20 @@ describe('restoration line entry', () => {
     })
     expect(result).toEqual({ ok: true, lines: [], unmatched: [] })
   })
+
+  it('keeps emergency-service price selection out of the language model', async () => {
+    const result = await parseRestorationLines(supabase, {
+      transcript: 'emergency service fee after hours',
+      context: { waterCategory: 1, afterHours: true },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lines).toHaveLength(1)
+    expect(result.lines[0]).toMatchObject({
+      conceptCode: 'ESRVD',
+      code: 'ESRV',
+      unitPrice: 295.92,
+    })
+  }, 60_000)
 })

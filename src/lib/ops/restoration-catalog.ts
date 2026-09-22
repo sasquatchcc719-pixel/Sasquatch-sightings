@@ -35,6 +35,59 @@ export type LossContext = {
   heavy?: boolean
 }
 
+const EMERGENCY_SERVICE_CONCEPT_CODE = 'ESRVD'
+const EMERGENCY_SERVICE_CONCEPT_LABEL = 'Emergency service call'
+
+/**
+ * Xactimate names the after-hours emergency call ESRV and the daytime call
+ * ESRVD, so the usual trailing-A variant rule does not apply. Keep this repair
+ * at the catalog boundary as well as in the data migration so a future import
+ * cannot split them back into two choices or mark ESRV as a daytime item.
+ */
+export function normalizeRestorationCatalogItem(
+  item: RestorationCatalogItem,
+): RestorationCatalogItem {
+  if (item.code !== 'ESRV' && item.code !== 'ESRVD') return item
+
+  return {
+    ...item,
+    after_hours: item.code === 'ESRV',
+    concept_code: EMERGENCY_SERVICE_CONCEPT_CODE,
+    concept_label: EMERGENCY_SERVICE_CONCEPT_LABEL,
+  }
+}
+
+const searchTokens = (value: string): string[] =>
+  value
+    .toLowerCase()
+    .replace(/\bafterhours\b/g, 'after hours')
+    .match(/[a-z0-9]+/g)
+    ?.map((token) => {
+      if (token === 'fee' || token === 'fees') return 'call'
+      if (token === 'hr' || token === 'hrs') return 'hours'
+      return token
+    }) ?? []
+
+/**
+ * The picker keeps literal substring matching, then falls back to token
+ * matching for natural phrases whose wording differs from Xactimate. Requiring
+ * every normalized token prevents an unrelated partial match.
+ */
+export function matchesRestorationCatalogSearch(
+  query: string,
+  values: string[],
+): boolean {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return true
+  if (values.some((value) => value.toLowerCase().includes(normalizedQuery))) {
+    return true
+  }
+
+  const wanted = searchTokens(normalizedQuery)
+  const available = new Set(searchTokens(values.join(' ')))
+  return wanted.length > 0 && wanted.every((token) => available.has(token))
+}
+
 /** Catalog rows store null for Category 1 / unspecified. */
 export function categoryOf(item: RestorationCatalogItem): WaterCategory {
   return (item.water_category ?? 1) as WaterCategory
@@ -59,7 +112,11 @@ function candidatePreferences(ctx: LossContext): Array<{
   const heavyPrefs = ctx.heavy ? [true, false] : [false]
   const afterHoursPrefs = ctx.afterHours ? [true, false] : [false]
 
-  const prefs: Array<{ category: WaterCategory; afterHours: boolean; heavy: boolean }> = []
+  const prefs: Array<{
+    category: WaterCategory
+    afterHours: boolean
+    heavy: boolean
+  }> = []
   for (let category = ctx.waterCategory; category >= 1; category--) {
     for (const afterHours of afterHoursPrefs) {
       for (const heavy of heavyPrefs) {
@@ -110,7 +167,10 @@ export function resolveVariant(
 export function listConcepts(
   items: RestorationCatalogItem[],
 ): Array<{ conceptCode: string; label: string; unit: string }> {
-  const seen = new Map<string, { conceptCode: string; label: string; unit: string }>()
+  const seen = new Map<
+    string,
+    { conceptCode: string; label: string; unit: string }
+  >()
   for (const item of items) {
     if (!item.is_enabled) continue
     if (seen.has(item.concept_code)) continue
@@ -120,7 +180,9 @@ export function listConcepts(
       unit: item.unit,
     })
   }
-  return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label))
+  return Array.from(seen.values()).sort((a, b) =>
+    a.label.localeCompare(b.label),
+  )
 }
 
 /**
