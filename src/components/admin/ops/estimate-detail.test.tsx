@@ -29,16 +29,27 @@ beforeEach(() => {
     vi.fn(async (input: string, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method || 'GET'
+      const requestBody = init?.body ? JSON.parse(String(init.body)) : null
       requests.push({
         url,
         method,
-        body: init?.body ? JSON.parse(String(init.body)) : null,
+        body: requestBody,
       })
       if (method === 'PATCH')
         return Response.json(
           saveSucceeds ? {} : { error: 'Database save failed' },
           { status: saveSucceeds ? 200 : 500 },
         )
+      if (url.endsWith('/send-email') && requestBody?.action === 'preview')
+        return Response.json({
+          to_email: 'customer@example.com',
+          subject: 'Your Estimate from Sasquatch Carpet Cleaning',
+          body_text:
+            'Hi Test,\n\n- Carpet cleaning: $100.00\n- Gym membership trade credit: -$150.00',
+          html: '<p>Carpet cleaning: $100.00</p><p>Gym membership trade credit: -$150.00</p><a>Accept this estimate</a>',
+          total: 100,
+          preview_fingerprint: 'preview-fingerprint',
+        })
       if (url.endsWith('/send-email'))
         return Response.json({
           success: true,
@@ -97,49 +108,69 @@ beforeEach(() => {
   )
 })
 
-async function confirmReopen() {
+async function openReopenReview() {
   render(<EstimateDetail estimateId="estimate-a" />)
   fireEvent.click(
     await screen.findByRole('button', { name: 'Reopen & resend' }),
   )
+  await screen.findByTitle('Estimate email preview')
   fireEvent.change(
     screen.getByLabelText('Reason for reopening (required, internal only)'),
     { target: { value: 'Approval disputed' } },
   )
-  await act(async () => {
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm reopen & send' }),
-    )
-  })
 }
 
 describe('estimate editor send integration', () => {
   it('never sends after an unsuccessful save', async () => {
-    await confirmReopen()
+    saveSucceeds = true
+    await openReopenReview()
+    saveSucceeds = false
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Confirm reopen & send' }),
+      )
+    })
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Save failed. No email was sent.',
     )
     expect(requests.some((r) => r.method === 'PATCH')).toBe(true)
-    expect(requests.some((r) => r.url.endsWith('/send-email'))).toBe(false)
+    expect(
+      requests.some(
+        (r) => r.url.endsWith('/send-email') && r.body?.action === 'send',
+      ),
+    ).toBe(false)
   })
   it('saves before sending and passes the reviewed recipient, total, status and reason', async () => {
     saveSucceeds = true
-    await confirmReopen()
+    await openReopenReview()
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Confirm reopen & send' }),
+      )
+    })
     await waitFor(() =>
-      expect(requests.some((r) => r.url.endsWith('/send-email'))).toBe(true),
+      expect(
+        requests.some(
+          (r) => r.url.endsWith('/send-email') && r.body?.action === 'send',
+        ),
+      ).toBe(true),
     )
-    const sendIndex = requests.findIndex((r) => r.url.endsWith('/send-email'))
+    const sendIndex = requests.findIndex(
+      (r) => r.url.endsWith('/send-email') && r.body?.action === 'send',
+    )
     expect(requests.findIndex((r) => r.method === 'PATCH')).toBeLessThan(
       sendIndex,
     )
     expect(requests[sendIndex].body).toMatchObject({
       type: 'quote',
+      action: 'send',
       reopen: true,
       reason: 'Approval disputed',
       expected_email: 'customer@example.com',
       expected_total: 100,
       expected_status: 'accepted',
       request_id: expect.any(String),
+      expected_fingerprint: 'preview-fingerprint',
     })
     await screen.findByRole('status')
   })
@@ -187,6 +218,7 @@ describe('estimate editor send integration', () => {
   })
 
   it('separates real email sending from the manual sent status', async () => {
+    saveSucceeds = true
     estimateStatus = 'draft'
     render(<EstimateDetail estimateId="estimate-a" />)
 
@@ -199,6 +231,10 @@ describe('estimate editor send integration', () => {
     expect(
       await screen.findByRole('button', { name: 'Confirm & send email' }),
     ).toBeVisible()
+    expect(screen.getByTitle('Estimate email preview')).toHaveAttribute(
+      'srcdoc',
+      expect.stringContaining('Gym membership trade credit: -$150.00'),
+    )
     expect(
       screen.getByRole('button', { name: 'Record as sent manually' }),
     ).toHaveAttribute(

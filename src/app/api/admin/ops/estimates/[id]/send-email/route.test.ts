@@ -178,6 +178,38 @@ describe('manual estimate resend', () => {
       'Estimated Total: $899.94',
     )
   })
+  it('previews the exact subject, language, line items, notes, credit, total, and action without sending', async () => {
+    current.estimate_status = 'accepted'
+    current.quoted_total = 899.94
+    ;(
+      current.ops_appointment_line_items as Array<Record<string, unknown>>
+    ).push({
+      name_snapshot: 'Gym membership trade credit',
+      quantity: 1,
+      unit_price: -150,
+      line_total: -150,
+      pricing_unit_snapshot: 'fixed',
+      notes: 'Membership exchange',
+    })
+    const requestId = `${Date.now()}-01234567-89ab-4cde-8fab-0123456789ab`
+
+    const response = await POST(
+      request({ action: 'preview', request_id: requestId }),
+      context,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      to_email: 'customer@example.com',
+      subject: 'Your Estimate from Sasquatch Carpet Cleaning',
+      body_text: expect.stringContaining(
+        'Commercial carpet cleaning: 2258 sqft × $0.40 = $903.20',
+      ),
+      html: expect.stringContaining('Gym membership trade credit: -$150.00'),
+      total: 899.94,
+      preview_fingerprint: expect.any(String),
+    })
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
   it.each(['draft', 'sent'])(
     'sends a %s estimate without requiring a reopen reason',
     async (status) => {
@@ -243,11 +275,41 @@ describe('manual estimate resend', () => {
   it('keeps retries on the same provider key and the same link expiration', async () => {
     current.estimate_status = 'sent'
     const requestId = `${Date.now()}-01234567-89ab-4cde-8fab-0123456789ab`
-    await POST(request({ request_id: requestId }), context)
-    await POST(request({ request_id: requestId }), context)
+    const previewResponse = await POST(
+      request({ action: 'preview', request_id: requestId }),
+      context,
+    )
+    const preview = await previewResponse.json()
+    await POST(
+      request({
+        request_id: requestId,
+        expected_fingerprint: preview.preview_fingerprint,
+      }),
+      context,
+    )
+    await POST(
+      request({
+        request_id: requestId,
+        expected_fingerprint: preview.preview_fingerprint,
+      }),
+      context,
+    )
     expect(mocks.send.mock.calls[0][1]).toEqual({
       idempotencyKey: `estimate-quote/estimate-a/${requestId}`,
     })
     expect(mocks.token.mock.calls[0][0]).toEqual(mocks.token.mock.calls[1][0])
+  })
+  it('refuses to send when the reviewed content fingerprint is stale', async () => {
+    current.estimate_status = 'sent'
+    const requestId = `${Date.now()}-01234567-89ab-4cde-8fab-0123456789ab`
+    const response = await POST(
+      request({ request_id: requestId, expected_fingerprint: 'stale' }),
+      context,
+    )
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('changed after review'),
+    })
+    expect(mocks.send).not.toHaveBeenCalled()
   })
 })

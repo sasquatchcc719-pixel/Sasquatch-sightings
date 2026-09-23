@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -11,6 +12,15 @@ import {
 import { isBlacklisted } from '@/lib/blacklist'
 
 type EmailType = 'booking_confirmation' | 'quote'
+
+function estimateEmailFingerprint(params: {
+  estimateId: string
+  recipient: string
+  subject: string
+  bodyText: string
+}) {
+  return createHash('sha256').update(JSON.stringify(params)).digest('hex')
+}
 
 function toLocalDate(iso: string): string {
   try {
@@ -138,6 +148,7 @@ export async function POST(
     const body = await request.json()
     const emailType: EmailType =
       body.type === 'quote' ? 'quote' : 'booking_confirmation'
+    const action = body.action === 'preview' ? 'preview' : 'send'
     const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
     const requestId = body.request_id
     const requestedAt =
@@ -220,7 +231,7 @@ export async function POST(
           { status: 409 },
         )
       }
-      if (needsReopen && body.reopen !== true) {
+      if (action === 'send' && needsReopen && body.reopen !== true) {
         return NextResponse.json(
           {
             error:
@@ -229,7 +240,11 @@ export async function POST(
           { status: 409 },
         )
       }
-      if (needsReopen && (!reason || reason.length > 1000)) {
+      if (
+        action === 'send' &&
+        needsReopen &&
+        (!reason || reason.length > 1000)
+      ) {
         return NextResponse.json(
           { error: 'Enter a reason for reopening (up to 1,000 characters).' },
           { status: 400 },
@@ -286,20 +301,6 @@ export async function POST(
         { status: 409 },
       )
     }
-
-    const resendKey = process.env.RESEND_API_KEY
-    if (!resendKey) {
-      return NextResponse.json(
-        { error: 'Email service not configured' },
-        { status: 500 },
-      )
-    }
-    const resend = new Resend(resendKey)
-
-    const fromEmail =
-      process.env.OPS_FROM_EMAIL ||
-      'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>'
-    const bcc = process.env.OPS_EMAIL_BCC || undefined
 
     const firstName =
       customer.first_name || customer.full_name?.split(' ')[0] || ''
@@ -363,6 +364,52 @@ export async function POST(
             }
           : null,
     })
+
+    const previewFingerprint = estimateEmailFingerprint({
+      estimateId: id,
+      recipient: customer.email.trim().toLowerCase(),
+      subject,
+      bodyText,
+    })
+
+    if (emailType === 'quote' && action === 'preview') {
+      return NextResponse.json({
+        to_email: customer.email,
+        subject,
+        body_text: bodyText,
+        html,
+        total: Number(estimate.quoted_total ?? 0),
+        preview_fingerprint: previewFingerprint,
+      })
+    }
+
+    if (
+      emailType === 'quote' &&
+      requestId &&
+      body.expected_fingerprint !== previewFingerprint
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'The recipient, line items, pricing, notes, or email language changed after review. Review the refreshed email before sending.',
+        },
+        { status: 409 },
+      )
+    }
+
+    const resendKey = process.env.RESEND_API_KEY
+    if (!resendKey) {
+      return NextResponse.json(
+        { error: 'Email service not configured' },
+        { status: 500 },
+      )
+    }
+    const resend = new Resend(resendKey)
+
+    const fromEmail =
+      process.env.OPS_FROM_EMAIL ||
+      'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>'
+    const bcc = process.env.OPS_EMAIL_BCC || undefined
 
     const { data: sent, error: sendError } = await resend.emails.send(
       {

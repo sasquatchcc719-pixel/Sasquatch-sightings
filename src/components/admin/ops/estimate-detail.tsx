@@ -39,6 +39,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { DayTimePicker } from './day-time-picker'
 import {
   EstimateDeliveryPanel,
+  type EstimateEmailPreview,
   type EstimateSendConfirmation,
   type LastQuoteEmail,
 } from './estimate-delivery-panel'
@@ -1208,6 +1209,7 @@ export function EstimateDetail({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               type,
+              action: 'send',
               ...confirmation,
               expected_email: contactEmail.trim(),
               ...(type === 'quote'
@@ -1250,6 +1252,37 @@ export function EstimateDetail({
       estimate?.estimate_status,
       subtotal,
     ],
+  )
+
+  const handlePreviewEmail = useCallback(
+    async (requestId: string): Promise<EstimateEmailPreview> => {
+      if (!(await handleSave())) {
+        throw new Error(
+          'Save failed. The email preview was not prepared. Check the estimate details and try again.',
+        )
+      }
+      const response = await fetch(
+        `/api/admin/ops/estimates/${estimateId}/send-email`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'quote',
+            action: 'preview',
+            request_id: requestId,
+            expected_email: contactEmail.trim(),
+            expected_status: estimate?.estimate_status || 'draft',
+            expected_total: Number(subtotal.toFixed(2)),
+          }),
+        },
+      )
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to prepare email preview')
+      }
+      return payload as EstimateEmailPreview
+    },
+    [contactEmail, estimate?.estimate_status, estimateId, handleSave, subtotal],
   )
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -1455,6 +1488,7 @@ export function EstimateDetail({
         lastEmail={lastQuoteEmail}
         historyUnavailable={emailHistoryUnavailable}
         openConfirmationRequest={deliveryOpenRequest}
+        onPreview={handlePreviewEmail}
         onSend={async (confirmation) => {
           const result = await handleSendEmail('quote', confirmation)
           if (!result)

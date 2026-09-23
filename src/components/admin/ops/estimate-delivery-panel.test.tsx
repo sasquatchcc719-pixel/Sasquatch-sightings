@@ -5,6 +5,15 @@ import { EstimateDeliveryPanel } from './estimate-delivery-panel'
 function setup(
   overrides: Partial<React.ComponentProps<typeof EstimateDeliveryPanel>> = {},
 ) {
+  const onPreview = vi.fn().mockResolvedValue({
+    to_email: 'customer@example.com',
+    subject: 'Your Estimate from Sasquatch Carpet Cleaning',
+    body_text:
+      'Hi Customer,\n\n- Commercial carpet cleaning: $432.00\n- Gym membership trade credit: -$150.00\n\nEstimated Total: $282.00',
+    html: '<p>Hi Customer,</p><p>Commercial carpet cleaning: $432.00</p><p>Gym membership trade credit: -$150.00</p><p>Estimated Total: $282.00</p><a>Accept this estimate</a>',
+    total: 282,
+    preview_fingerprint: 'reviewed-email-fingerprint',
+  })
   const onSend = vi
     .fn()
     .mockResolvedValue({ to_email: 'customer@example.com', warning: null })
@@ -18,6 +27,7 @@ function setup(
       busy={false}
       lastEmail={null}
       historyUnavailable={false}
+      onPreview={onPreview}
       onSend={onSend}
       {...overrides}
     />,
@@ -33,7 +43,7 @@ describe('estimate delivery panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reopen & resend' }))
     expect(onSend).not.toHaveBeenCalled()
     expect(screen.getByText(/Accepted to Sent/)).toBeInTheDocument()
-    const confirm = screen.getByRole('button', {
+    const confirm = await screen.findByRole('button', {
       name: 'Confirm reopen & send',
     })
     expect(confirm).toBeDisabled()
@@ -47,14 +57,16 @@ describe('estimate delivery panel', () => {
       reopen: true,
       reason: 'Customer disputes approval',
       request_id: expect.any(String),
+      expected_fingerprint: 'reviewed-email-fingerprint',
     })
     expect(await screen.findByRole('status')).toHaveTextContent(
       'The estimate was sent to customer@example.com',
     )
   })
-  it('cancel does not send or change anything', () => {
+  it('cancel does not send or change anything', async () => {
     const onSend = setup()
     fireEvent.click(screen.getByRole('button', { name: 'Reopen & resend' }))
+    await screen.findByText('Review the exact customer email')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(
       screen.queryByText('Confirm reopen and resend'),
@@ -64,11 +76,11 @@ describe('estimate delivery panel', () => {
   it.each([
     ['draft', 'Send estimate'],
     ['sent', 'Resend estimate'],
-  ])('labels a %s estimate clearly', (status, action) => {
+  ])('labels a %s estimate clearly', async (status, action) => {
     setup({ status })
     fireEvent.click(screen.getByRole('button', { name: action }))
     expect(
-      screen.getByRole('button', { name: 'Confirm & send email' }),
+      await screen.findByRole('button', { name: 'Confirm & send email' }),
     ).toBeEnabled()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -110,7 +122,7 @@ describe('estimate delivery panel', () => {
     setup({ status: 'sent', onSend })
     fireEvent.click(screen.getByRole('button', { name: 'Resend estimate' }))
     fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm & send email' }),
+      await screen.findByRole('button', { name: 'Confirm & send email' }),
     )
     expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Sending…' }))
@@ -133,7 +145,7 @@ describe('estimate delivery panel', () => {
     setup({ status: 'sent', onSend })
     fireEvent.click(screen.getByRole('button', { name: 'Resend estimate' }))
     fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm & send email' }),
+      await screen.findByRole('button', { name: 'Confirm & send email' }),
     )
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'No email was sent',
@@ -147,7 +159,15 @@ describe('estimate delivery panel', () => {
     )
   })
 
-  it('opens the confirmation when requested by the estimate action bar', () => {
+  it('shows the exact customer-facing email when requested by the estimate action bar', async () => {
+    const onPreview = vi.fn().mockResolvedValue({
+      to_email: 'customer@example.com',
+      subject: 'Your Estimate from Sasquatch Carpet Cleaning',
+      body_text: 'Customer-facing language',
+      html: '<p>Carpet cleaning: $432.00</p><p>Trade credit: -$150.00</p><a>Accept this estimate</a>',
+      total: 282,
+      preview_fingerprint: 'fingerprint-a',
+    })
     const props: React.ComponentProps<typeof EstimateDeliveryPanel> = {
       status: 'draft',
       converted: false,
@@ -158,6 +178,7 @@ describe('estimate delivery panel', () => {
       lastEmail: null,
       historyUnavailable: false,
       openConfirmationRequest: 0,
+      onPreview,
       onSend: vi.fn(),
     }
     const { rerender } = render(<EstimateDeliveryPanel {...props} />)
@@ -165,10 +186,20 @@ describe('estimate delivery panel', () => {
     rerender(<EstimateDeliveryPanel {...props} openConfirmationRequest={1} />)
 
     expect(
-      screen.getByRole('button', { name: 'Confirm & send email' }),
+      await screen.findByRole('button', { name: 'Confirm & send email' }),
     ).toBeVisible()
     expect(
-      screen.getByText(/Send the current line items and pricing/),
-    ).toHaveTextContent('$432.00')
+      screen.getByText('Your Estimate from Sasquatch Carpet Cleaning'),
+    ).toBeVisible()
+    expect(screen.getByText('$282.00')).toBeVisible()
+    expect(screen.getByTitle('Estimate email preview')).toHaveAttribute(
+      'srcdoc',
+      expect.stringContaining('Trade credit: -$150.00'),
+    )
+    expect(screen.getByTitle('Estimate email preview')).toHaveAttribute(
+      'srcdoc',
+      expect.stringContaining('Accept this estimate'),
+    )
+    expect(onPreview).toHaveBeenCalledWith(expect.any(String))
   })
 })
