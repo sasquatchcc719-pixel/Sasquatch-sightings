@@ -41,8 +41,9 @@ async function sendOwnerEmail(params: {
   facts: string[]
   decision: Decision
   adminLink: string
+  recurringLink: string
 }): Promise<void> {
-  const { headline, who, facts, decision, adminLink } = params
+  const { headline, who, facts, decision, adminLink, recurringLink } = params
 
   const resendKey = process.env.RESEND_API_KEY
   const toEmail = process.env.OWNER_ALERT_EMAIL || 'sasquatchcc719@gmail.com'
@@ -55,7 +56,7 @@ async function sendOwnerEmail(params: {
     `${who} just ${decision === 'accepted' ? 'accepted' : 'declined'} their estimate.`,
     facts.map((f) => `- ${f}`).join('\n'),
     decision === 'accepted'
-      ? `Convert it to a job to get it on the calendar.`
+      ? `Choose whether this is one service or recurring work, then finish the schedule in Sasquatch Sightings.`
       : `The estimate is marked declined. Nothing else to do unless you want to follow up.`,
   ].join('\n\n')
 
@@ -69,9 +70,19 @@ async function sendOwnerEmail(params: {
     subject: `${headline} — ${who}`,
     html: buildEmailHtml(bodyText, 'owner_alert', {
       cta: {
-        label: decision === 'accepted' ? 'Open the estimate' : 'View the estimate',
+        label:
+          decision === 'accepted'
+            ? 'Schedule one-time service'
+            : 'View the estimate',
         url: adminLink,
       },
+      secondaryCta:
+        decision === 'accepted'
+          ? {
+              label: 'Set up recurring work',
+              url: recurringLink,
+            }
+          : null,
     }),
   })
 
@@ -88,7 +99,10 @@ export async function POST(request: NextRequest) {
       body?.decision === 'declined' ? 'declined' : 'accepted'
 
     if (!token) {
-      return NextResponse.json({ error: 'Missing link token.' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Missing link token.' },
+        { status: 400 },
+      )
     }
 
     let estimateId: string
@@ -113,7 +127,7 @@ export async function POST(request: NextRequest) {
         estimate_status,
         quoted_total,
         converted_appointment_id,
-        ops_customers!ops_appointments_customer_id_fkey ( full_name, phone, email ),
+        ops_customers!ops_appointments_customer_id_fkey ( id, full_name, phone, email ),
         ops_service_addresses ( street_1, city, state, zip_code )
       `,
       )
@@ -173,7 +187,11 @@ export async function POST(request: NextRequest) {
 
     const headline =
       decision === 'accepted' ? '✅ Estimate ACCEPTED' : '❌ Estimate declined'
-    const adminLink = `https://sightings.sasquatchcarpet.com/admin/operations/estimates/${estimateId}`
+    const estimateAdminLink = `https://sightings.sasquatchcarpet.com/admin/operations/estimates/${estimateId}`
+    const oneTimeLink = `${estimateAdminLink}?schedule=1`
+    const recurringLink = customer?.id
+      ? `https://sightings.sasquatchcarpet.com/admin/operations/commercial/${customer.id}?estimate=${estimateId}&action=recurring`
+      : estimateAdminLink
     const facts = [
       where,
       `Quoted: ${money(Number(estimate.quoted_total ?? 0))}`,
@@ -181,8 +199,8 @@ export async function POST(request: NextRequest) {
       customer?.email ? `Email: ${customer.email}` : null,
     ].filter((line): line is string => line !== null)
 
-    // Charles works alone and needs to know immediately — an accepted bid is a
-    // job to schedule. Telegram and email go out independently: neither one
+    // The owners need to know immediately — an accepted bid is work to schedule.
+    // Telegram and email go out independently: neither one
     // failing may sink the other, and neither may roll back the decision the
     // customer already made.
     await Promise.allSettled([
@@ -193,18 +211,28 @@ export async function POST(request: NextRequest) {
           ...facts,
           '',
           decision === 'accepted'
-            ? 'Convert it to a job to get it on the calendar:'
+            ? 'Choose how to schedule it:'
             : 'Estimate marked declined.',
-          adminLink,
-        ].join('\n'),
+          decision === 'accepted'
+            ? `One-time: ${oneTimeLink}`
+            : estimateAdminLink,
+          decision === 'accepted' ? `Recurring: ${recurringLink}` : null,
+        ]
+          .filter((line): line is string => line !== null)
+          .join('\n'),
       ).catch((alertError) => {
         console.error('[estimates/decision] Telegram alert failed:', alertError)
       }),
-      sendOwnerEmail({ headline, who, facts, decision, adminLink }).catch(
-        (mailError) => {
-          console.error('[estimates/decision] Owner email failed:', mailError)
-        },
-      ),
+      sendOwnerEmail({
+        headline,
+        who,
+        facts,
+        decision,
+        adminLink: decision === 'accepted' ? oneTimeLink : estimateAdminLink,
+        recurringLink,
+      }).catch((mailError) => {
+        console.error('[estimates/decision] Owner email failed:', mailError)
+      }),
     ])
 
     return NextResponse.json({ success: true, decision })

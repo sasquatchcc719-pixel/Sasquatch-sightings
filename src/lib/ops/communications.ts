@@ -712,6 +712,8 @@ export function buildEmailHtml(
      * URL, which is long enough to look like a phishing link.
      */
     cta?: { label: string; url: string } | null
+    /** Optional second action for owner alerts that have two valid next steps. */
+    secondaryCta?: { label: string; url: string } | null
   },
 ): string {
   // Normalize literal \n sequences (stored in some templates) to real newlines
@@ -732,10 +734,37 @@ export function buildEmailHtml(
 
   // Table-wrapped and inline-styled: Outlook ignores display/padding on a bare
   // anchor, which would collapse the button down to plain underlined text.
-  const ctaBlock = options?.cta
-    ? `<table cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;"><tr><td style="background:${accentColor};border-radius:6px;">
-              <a href="${options.cta.url.replace(/"/g, '%22')}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">${escapeHtml(options.cta.label)}</a>
-            </td></tr></table>`
+  const actions = [
+    options?.cta
+      ? { ...options.cta, background: accentColor, color: '#ffffff' }
+      : null,
+    options?.secondaryCta
+      ? {
+          ...options.secondaryCta,
+          background: '#0f172a',
+          color: '#ffffff',
+        }
+      : null,
+  ].filter(
+    (
+      action,
+    ): action is {
+      label: string
+      url: string
+      background: string
+      color: string
+    } => action !== null,
+  )
+  const ctaBlock = actions.length
+    ? `<table cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;">${actions
+        .map(
+          (
+            action,
+          ) => `<tr><td style="padding:0 0 10px 0;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${action.background};border-radius:6px;">
+              <a href="${action.url.replace(/"/g, '%22')}" style="display:inline-block;padding:14px 28px;color:${action.color};font-size:16px;font-weight:700;text-decoration:none;">${escapeHtml(action.label)}</a>
+            </td></tr></table></td></tr>`,
+        )
+        .join('')}</table>`
     : ''
 
   return `<!DOCTYPE html>

@@ -41,7 +41,7 @@ const DECISION_SELECT = `
         estimate_status,
         quoted_total,
         converted_appointment_id,
-        ops_customers!ops_appointments_customer_id_fkey ( full_name, phone, email ),
+        ops_customers!ops_appointments_customer_id_fkey ( id, full_name, phone, email ),
         ops_service_addresses ( street_1, city, state, zip_code )
       `
 

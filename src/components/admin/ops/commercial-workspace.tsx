@@ -287,13 +287,21 @@ export function CommercialAccounts() {
   )
 }
 
-export function CommercialAccount({ customerId }: { customerId: string }) {
+export function CommercialAccount({
+  customerId,
+  initialEstimateId = '',
+  autoOpenRecurring = false,
+}: {
+  customerId: string
+  initialEstimateId?: string
+  autoOpenRecurring?: boolean
+}) {
   const [data, setData] = useState<AccountData | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState('')
-  const [estimateId, setEstimateId] = useState('')
+  const [estimateId, setEstimateId] = useState(initialEstimateId)
   const [setupContactId, setSetupContactId] = useState('')
   const [setupContactName, setSetupContactName] = useState('')
   const [setupContactEmail, setSetupContactEmail] = useState('')
@@ -339,6 +347,12 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   useEffect(() => {
     void load().catch((e) => setError(e.message))
   }, [load])
+  useEffect(() => {
+    if (!data || !autoOpenRecurring) return
+    document
+      .getElementById('scheduling-center')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [autoOpenRecurring, data])
   async function create() {
     setBusy(true)
     setError('')
@@ -570,6 +584,7 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
         </div>
       </section>
       <section
+        id="scheduling-center"
         aria-labelledby="scheduling-center-heading"
         className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/60 shadow-lg shadow-cyan-950/20"
       >

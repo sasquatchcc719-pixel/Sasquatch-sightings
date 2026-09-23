@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildEmailHtml,
   dayBeforeTemplateKey,
   formatCustomerServiceSummary,
   getOpsTemplateKeysForEvent,
 } from '@/lib/ops/communications'
+
+describe('buildEmailHtml actions', () => {
+  it('renders both scheduling choices in an accepted-estimate owner email', () => {
+    const html = buildEmailHtml('Choose how to schedule it.', 'owner_alert', {
+      cta: {
+        label: 'Schedule one-time service',
+        url: 'https://example.com/estimate/1?schedule=1',
+      },
+      secondaryCta: {
+        label: 'Set up recurring work',
+        url: 'https://example.com/commercial/1?action=recurring',
+      },
+    })
+
+    expect(html).toContain('Schedule one-time service')
+    expect(html).toContain('Set up recurring work')
+    expect(html).toContain('https://example.com/estimate/1?schedule=1')
+    expect(html).toContain('https://example.com/commercial/1?action=recurring')
+  })
+})
 
 describe('getOpsTemplateKeysForEvent', () => {
   it('sends both SMS and email when a job is rescheduled', () => {
