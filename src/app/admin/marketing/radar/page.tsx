@@ -560,7 +560,7 @@ export default function RadarPage() {
   // Legacy rows used 50 as a fake miss. New provider-backed rows use NULL, so
   // a real #50 is preserved; placedAt handles both generations.
   const OUT_OF_PACK = 21
-  const ORGANIC_FLOOR = 50
+  const ORGANIC_OUT = 51
   const myDomainIds = new Set(
     domains.filter((d) => d.is_my_domain).map((d) => d.id),
   )
@@ -576,17 +576,26 @@ export default function RadarPage() {
     metric === 'map'
       ? (r.map_rank ?? null)
       : r.rank_position != null &&
-          !(r.scan_run_id == null && r.rank_position === ORGANIC_FLOOR)
+          !(r.scan_run_id == null && r.rank_position === 50)
         ? r.rank_position
         : null
 
   const buildRankChart = (metric: ChartMetric) => {
-    const outValue = metric === 'map' ? OUT_OF_PACK : ORGANIC_FLOOR
+    const outValue = metric === 'map' ? OUT_OF_PACK : ORGANIC_OUT
+    // Organic history before the repair came from an incomplete first-page
+    // response masquerading as a 50-deep scan. Do not graph those rows beside
+    // provider-backed scans as though they were comparable. Maps used the same
+    // DataForSEO local-finder method before and after the repair, so its valid
+    // history remains available.
+    const rowsForMetric =
+      metric === 'organic'
+        ? myChartRows.filter((row) => row.scan_run_id != null)
+        : myChartRows
     // Only chart towns we've placed in at least once in the window — towns we
     // never rank in would just be a flat "Out" line cluttering the chart.
     const keywordIds = [
       ...new Set(
-        myChartRows
+        rowsForMetric
           .filter((r) => placedAt(r, metric) != null)
           .map((r) => r.keyword_id),
       ),
@@ -600,7 +609,7 @@ export default function RadarPage() {
       }
     })
     const byDate = new Map<string, Record<string, number | string>>()
-    for (const r of myChartRows) {
+    for (const r of rowsForMetric) {
       const s = series.find((ss) => ss.id === r.keyword_id)
       if (!s) continue
       const date = r.created_at.slice(0, 10)
@@ -628,8 +637,8 @@ export default function RadarPage() {
       ? v >= OUT_OF_PACK
         ? 'Out'
         : `#${v}`
-      : v >= ORGANIC_FLOOR
-        ? '50+'
+      : v >= ORGANIC_OUT
+        ? 'Not found'
         : `#${v}`
 
   const hasData = keywords.length > 0 && domains.length > 0
@@ -1387,16 +1396,17 @@ export default function RadarPage() {
                 ) : (
                   <>
                     Your spot in Google’s regular blue-link results per town —
-                    #1 at the top, “50+” = not found in the top 50. Head terms
-                    like “carpet cleaning” are dominated by directories and
-                    national chains, so smaller towns are where you break
-                    through. This is the view that still shows movement while
-                    the map pack is down.
+                    #1 at the top, “Not found” = absent from the returned
+                    full-depth crawl. Legacy organic scans are excluded because
+                    they only returned a short first page despite claiming a
+                    depth of 50. Reliable organic history begins Sep 23, 2026.
                   </>
                 )}{' '}
                 One line per town you’ve appeared in. Pick a range above, or
-                drag the slider under the chart to zoom and scroll. Tracking
-                started 2026-06-06, so history fills in daily from there.
+                drag the slider under the chart to zoom and scroll.
+                {chartMetric === 'map'
+                  ? ' Comparable Maps history begins Jun 6, 2026.'
+                  : ' The reliable organic series fills in daily from the repair date.'}
               </p>
               {activeChart.data.length > 0 && activeChart.series.length > 0 ? (
                 <div className="h-[300px] w-full">
@@ -1420,7 +1430,7 @@ export default function RadarPage() {
                         ticks={
                           chartMetric === 'map'
                             ? [1, 3, 5, 10, 15, 20, OUT_OF_PACK]
-                            : [1, 3, 5, 10, 20, 30, 40, ORGANIC_FLOOR]
+                            : [1, 3, 5, 10, 20, 30, 40, 50, ORGANIC_OUT]
                         }
                         tickFormatter={formatRank}
                         stroke="rgba(255,255,255,0.6)"
