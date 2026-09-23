@@ -26,6 +26,8 @@ export type ReportCardMetric = {
 export type ReportCardSeries = {
   label: string
   points: Array<{ label: string; value: number }>
+  /** Keep comparable fixed-scale charts from visually exaggerating a peak. */
+  maxValue?: number
 }
 
 export type ReportCardInput = {
@@ -114,9 +116,14 @@ function MetricTile({ metric }: { metric: ReportCardMetric }) {
 
 function BarChart({ series }: { series: ReportCardSeries }) {
   const values = series.points.map((point) => point.value)
-  const max = Math.max(...values, 1)
+  const max = Math.max(series.maxValue ?? 0, ...values, 1)
   const peak = Math.max(...values)
   const lastIndex = series.points.length - 1
+  const dense = series.points.length > 8
+  const itemWidth = dense
+    ? Math.max(42, Math.floor(760 / series.points.length))
+    : 84
+  const barWidth = dense ? Math.min(36, itemWidth - 12) : 52
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -160,13 +167,13 @@ function BarChart({ series }: { series: ReportCardSeries }) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'flex-end',
-                width: 84,
+                width: itemWidth,
               }}
             >
               <div
                 style={{
                   display: 'flex',
-                  fontSize: 24,
+                  fontSize: dense ? 19 : 24,
                   marginBottom: 8,
                   color: isCurrent ? '#7dd3fc' : COLORS.textMuted,
                 }}
@@ -176,7 +183,7 @@ function BarChart({ series }: { series: ReportCardSeries }) {
               <div
                 style={{
                   display: 'flex',
-                  width: 52,
+                  width: barWidth,
                   height: barHeight,
                   backgroundColor: barColor,
                   borderRadius: 6,
@@ -185,7 +192,7 @@ function BarChart({ series }: { series: ReportCardSeries }) {
               <div
                 style={{
                   display: 'flex',
-                  fontSize: 17,
+                  fontSize: dense ? 13 : 17,
                   marginTop: 10,
                   color: isCurrent ? COLORS.textMuted : COLORS.textFaint,
                 }}

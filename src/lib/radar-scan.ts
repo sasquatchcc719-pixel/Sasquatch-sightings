@@ -210,13 +210,24 @@ export async function runRadarScan(): Promise<RadarScanResult> {
 /** How deep the Maps town-centre sample checks. */
 const MAPS_DEPTH = 20
 const ORGANIC_MISS_FLOOR = 51
+// DataForSEO's fixed town-centre coordinates replaced SerpApi's town-name
+// search on this date. Earlier finder_rank rows are real observations, but
+// they are not comparable enough to put on the same progress graph.
+const MAPS_COMPARABLE_SINCE = '2026-08-10'
 
 type RankRow = {
   keyword_id: string
   map_rank: number | null
+  finder_rank: number | null
   rank_position: number | null
   created_at: string
   scan_run_id: string | null
+}
+
+export type MapsHistoryRow = {
+  keyword_id: string
+  finder_rank: number | null
+  created_at: string
 }
 
 type ScanRunRow = {
@@ -271,6 +282,81 @@ export function rollingMedianRank(
     .sort((a, b) => a - b)
   const median = sorted[1]
   return median >= missFloor ? null : median
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle]
+}
+
+function mondayFor(dateKey: string): string {
+  const date = new Date(`${dateKey}T12:00:00Z`)
+  const daysFromMonday = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - daysFromMonday)
+  return date.toISOString().slice(0, 10)
+}
+
+/**
+ * Build a fixed-scale weekly history from the comparable Maps local-finder
+ * era. A town counts as visible when its median daily position for the week is
+ * within the top 20. Weeks missing any tracked town are omitted rather than
+ * quietly changing the denominator.
+ */
+export function buildWeeklyMapsVisibility(
+  rows: MapsHistoryRow[],
+  keywordIds: string[],
+): Array<{ label: string; value: number }> {
+  const daily = new Map<string, number | null>()
+  for (const row of rows) {
+    const dateKey = row.created_at.slice(0, 10)
+    if (dateKey < MAPS_COMPARABLE_SINCE) continue
+    const key = `${dateKey}:${row.keyword_id}`
+    const existing = daily.get(key)
+    if (
+      !daily.has(key) ||
+      (row.finder_rank != null &&
+        (existing == null || row.finder_rank < existing))
+    ) {
+      daily.set(key, row.finder_rank)
+    }
+  }
+
+  const weeklyTownRanks = new Map<string, number[]>()
+  const weeks = new Set<string>()
+  for (const [key, rank] of daily) {
+    const separator = key.indexOf(':')
+    const dateKey = key.slice(0, separator)
+    const keywordId = key.slice(separator + 1)
+    const week = mondayFor(dateKey)
+    weeks.add(week)
+    const weeklyKey = `${week}:${keywordId}`
+    const values = weeklyTownRanks.get(weeklyKey) ?? []
+    values.push(rank ?? MAPS_DEPTH + 1)
+    weeklyTownRanks.set(weeklyKey, values)
+  }
+
+  return [...weeks]
+    .sort()
+    .flatMap((week) => {
+      const townMedians = keywordIds.map((keywordId) => {
+        const values = weeklyTownRanks.get(`${week}:${keywordId}`)
+        return values?.length ? median(values) : null
+      })
+      if (townMedians.some((value) => value == null)) return []
+      const visible = townMedians.filter(
+        (value) => value != null && value <= MAPS_DEPTH,
+      ).length
+      return [
+        {
+          label: shortDate(`${week}T12:00:00Z`),
+          value: visible,
+        },
+      ]
+    })
+    .slice(-13)
 }
 
 function bestRank(rows: RankRow[], metric: 'map' | 'organic'): number | null {
@@ -368,8 +454,9 @@ function mountainDateKey(date = new Date()): string {
  * Build the daily Telegram report and its phone-sized progress image.
  *
  * The daily Maps rows are explicitly labelled as fixed town-centre samples.
- * The progress graph comes from Local Falcon's multi-point grid, which is the
- * more meaningful measure of coverage across the service area.
+ * The progress graph shows every comparable week (up to 13) from the fixed-
+ * coordinate era; Local Falcon remains the service-area coverage metric in
+ * the summary tiles.
  */
 export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> {
   const supabase = createAdminClient()
@@ -390,10 +477,12 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     .eq('active', true)
   if (!keywords?.length) return null
 
-  const since = new Date(Date.now() - 21 * 86_400_000).toISOString()
+  const since = new Date(Date.now() - 100 * 86_400_000).toISOString()
   const { data: ranks } = await supabase
     .from('radar_rankings')
-    .select('keyword_id, map_rank, rank_position, created_at, scan_run_id')
+    .select(
+      'keyword_id, map_rank, finder_rank, rank_position, created_at, scan_run_id',
+    )
     .in(
       'keyword_id',
       keywords.map((k) => k.id),
@@ -402,10 +491,15 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     .gte('created_at', since)
     .order('created_at', { ascending: false })
   if (!ranks?.length) return null
+  const rankRows = ranks as RankRow[]
+  const weeklyMapsVisibility = buildWeeklyMapsVisibility(
+    rankRows,
+    keywords.map((keyword) => keyword.id),
+  )
 
   const runIds = [
     ...new Set(
-      (ranks as RankRow[])
+      rankRows
         .map((row) => row.scan_run_id)
         .filter((id): id is string => Boolean(id)),
     ),
@@ -453,9 +547,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   const organicCurrent: Array<{ town: string; rank: number | null }> = []
 
   for (const kw of keywords) {
-    const keywordRows = (ranks as RankRow[]).filter(
-      (row) => row.keyword_id === kw.id,
-    )
+    const keywordRows = rankRows.filter((row) => row.keyword_id === kw.id)
     if (!keywordRows.length) continue
     const town = kw.location.split(',')[0].trim()
 
@@ -572,7 +664,9 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   const card: ReportCardInput = {
     eyebrow: 'Radar Daily',
     title: date,
-    subtitle: 'Full-depth organic · fixed town-center Maps · service-area grid',
+    subtitle:
+      `${weeklyMapsVisibility.length}-week fixed-location Maps history · ` +
+      'full-depth organic · service-area grid',
     verdict: { text: verdict, tone },
     metrics: [
       {
@@ -604,28 +698,23 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       },
     ],
     series:
-      localFalcon.length > 0
+      weeklyMapsVisibility.length > 0
         ? {
-            label: 'Local map visibility (SoLV %)',
-            points: [...localFalcon]
-              .reverse()
-              .filter(
-                (row): row is LocalFalconRow & { solv: number } =>
-                  row.solv != null,
-              )
-              .map((row) => ({
-                label: shortDate(row.scanned_at),
-                value: Number(row.solv.toFixed(1)),
-              })),
+            label: `Town centers visible in Maps top 20 (of ${keywords.length})`,
+            points: weeklyMapsVisibility,
+            maxValue: keywords.length,
           }
         : null,
     footer:
-      'Grid trend = service-area coverage. Town ranks = one fixed sample point each.',
+      'Weekly bars use the same fixed town centers. Grid coverage is Local Falcon.',
   }
 
   const caption = [
     `Radar · ${date}`,
     verdict,
+    weeklyMapsVisibility.length > 0
+      ? `${weeklyMapsVisibility.length}-week fixed-location Maps history attached`
+      : null,
     latestGrid
       ? `Grid: rank ${latestGrid.arp?.toFixed(1) ?? '—'} · ${coveragePct ?? '—'}% coverage`
       : null,

@@ -13,12 +13,12 @@ describe('renderReportCardPng', () => {
         { label: 'Grid coverage', value: '91%', note: '74 of 81 points' },
       ],
       series: {
-        label: 'Local map visibility (SoLV %)',
-        points: [
-          { label: 'Sep 2', value: 29.6 },
-          { label: 'Sep 10', value: 30.9 },
-          { label: 'Sep 18', value: 30.9 },
-        ],
+        label: 'Town centers visible in Maps top 20 (of 5)',
+        maxValue: 5,
+        points: Array.from({ length: 13 }, (_, index) => ({
+          label: `W${index + 1}`,
+          value: index % 4,
+        })),
       },
     })
 

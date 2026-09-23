@@ -1,7 +1,7 @@
 /**
  * Delivers a report card to Telegram: renders the PNG, parks it in the public
- * job-images bucket (Telegram fetches the URL itself), posts the image with a
- * short caption, then posts the full text underneath.
+ * job-images bucket (Telegram fetches the URL itself), posts the full detail,
+ * then posts the image with a short caption so the graph stays in view.
  *
  * Image generation is best-effort on purpose. If rendering or upload fails the
  * text report still goes out — a missing chart is an annoyance, a missing report
@@ -84,6 +84,17 @@ export async function deliverReportCard(params: {
 
   const imageUrl = await uploadReportCard({ supabase, slug, card, runKey })
 
+  // Send the detail first and the image last. Telegram cannot embed a photo in
+  // a text bubble, and sending the long text last pushed the graph above the
+  // visible viewport, making it look as though no image had arrived.
+  const body = imageUrl ? text : [caption, '', text].join('\n')
+  const textSent = await sendText(body)
+    .then((result) => result !== false)
+    .catch((error) => {
+      console.error('[reports] text send failed:', error)
+      return false
+    })
+
   let imageSent = false
   if (imageUrl) {
     imageSent = await sendPhoto(imageUrl, caption).catch((error) => {
@@ -91,16 +102,6 @@ export async function deliverReportCard(params: {
       return false
     })
   }
-
-  // When the image never made it, fold the caption into the text so the
-  // headline verdict is not lost.
-  const body = imageSent ? text : [caption, '', text].join('\n')
-  const textSent = await sendText(body)
-    .then(() => true)
-    .catch((error) => {
-      console.error('[reports] text send failed:', error)
-      return false
-    })
 
   return { imageUrl, imageSent, textSent }
 }
