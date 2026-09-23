@@ -91,7 +91,10 @@ export function EstimateDeliveryPanel({
   }
 
   return (
-    <Card className="space-y-4 border-sky-400/30 bg-gradient-to-br from-sky-500/10 to-transparent p-6">
+    <Card
+      id="estimate-delivery-panel"
+      className="space-y-4 border-sky-400/30 bg-gradient-to-br from-sky-500/10 to-transparent p-6"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-lg font-semibold">

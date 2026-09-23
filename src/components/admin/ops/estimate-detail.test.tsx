@@ -18,10 +18,12 @@ let requests: Array<{
   body: Record<string, unknown> | null
 }>
 let saveSucceeds: boolean
+let estimateStatus: string
 afterEach(() => vi.unstubAllGlobals())
 beforeEach(() => {
   requests = []
   saveSucceeds = false
+  estimateStatus = 'accepted'
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -52,7 +54,7 @@ beforeEach(() => {
             start_time: '10:00',
             end_time: '11:00',
             status: 'confirmed',
-            estimate_status: 'accepted',
+            estimate_status: estimateStatus,
             lead_source_key: 'google',
             converted_appointment_id: null,
             ops_customers: {
@@ -76,7 +78,21 @@ beforeEach(() => {
             ],
           },
         })
-      return Response.json({ services: [], options: [] })
+      if (url === '/api/admin/ops/services')
+        return Response.json({
+          services: [
+            {
+              id: 'discount-service',
+              name: 'Discount',
+              slug: 'discount',
+              category: 'Other',
+              base_price: 0,
+              pricing_unit: 'fixed',
+              default_duration_minutes: 30,
+            },
+          ],
+        })
+      return Response.json({ options: [] })
     }),
   )
 })
@@ -126,5 +142,58 @@ describe('estimate editor send integration', () => {
       request_id: expect.any(String),
     })
     await screen.findByRole('status')
+  })
+
+  it('adds a named trade credit, subtracts it, and saves it as the Discount catalog line', async () => {
+    saveSucceeds = true
+    render(<EstimateDetail estimateId="estimate-a" />)
+    const addCredit = await screen.findByRole('button', {
+      name: 'Add discount / trade credit',
+    })
+    await waitFor(() => expect(addCredit).toBeEnabled())
+    fireEvent.click(addCredit)
+
+    expect(screen.getByLabelText('Credit name')).toHaveValue(
+      'Gym membership trade credit',
+    )
+    expect(screen.getByLabelText('Credit amount')).toHaveValue(150)
+    expect(screen.queryByText('Duration (min)')).not.toBeInTheDocument()
+    expect(screen.getAllByText('−$50.00').length).toBeGreaterThan(0)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    })
+    await waitFor(() =>
+      expect(requests.some((request) => request.method === 'PATCH')).toBe(true),
+    )
+    const saved = requests.find((request) => request.method === 'PATCH')
+    expect(saved?.body?.line_items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service_catalog_item_id: 'discount-service',
+          name_snapshot: 'Gym membership trade credit',
+          quantity: 1,
+          unit_price: -150,
+          duration_minutes: 0,
+        }),
+      ]),
+    )
+  })
+
+  it('separates real email sending from the manual sent status', async () => {
+    estimateStatus = 'draft'
+    render(<EstimateDetail estimateId="estimate-a" />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Email estimate' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Record as sent manually' }),
+    ).toHaveAttribute(
+      'title',
+      'Updates the estimate status only. It does not send an email.',
+    )
+    expect(screen.queryByText('Mark sent (no email)')).not.toBeInTheDocument()
+    expect(screen.getByText(/Estimated service time: 2 hours/)).toBeVisible()
   })
 })

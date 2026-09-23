@@ -156,6 +156,28 @@ describe('manual estimate resend', () => {
       }),
     )
   })
+  it('shows a named trade credit as a negative amount in the customer email', async () => {
+    current.estimate_status = 'draft'
+    current.quoted_total = 899.94
+    ;(
+      current.ops_appointment_line_items as Array<Record<string, unknown>>
+    ).push({
+      name_snapshot: 'Gym membership trade credit',
+      quantity: 1,
+      unit_price: -150,
+      line_total: -150,
+      pricing_unit_snapshot: 'fixed',
+      notes: null,
+    })
+
+    expect((await POST(request(), context)).status).toBe(200)
+    expect(mocks.send.mock.calls[0][0].html).toContain(
+      'Gym membership trade credit: -$150.00',
+    )
+    expect(mocks.send.mock.calls[0][0].html).toContain(
+      'Estimated Total: $899.94',
+    )
+  })
   it.each(['draft', 'sent'])(
     'sends a %s estimate without requiring a reopen reason',
     async (status) => {

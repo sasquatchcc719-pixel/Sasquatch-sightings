@@ -59,6 +59,7 @@ import {
 type ServiceCatalogItem = {
   id: string
   name: string
+  slug?: string | null
   category: string | null
   base_price: number | null
   default_duration_minutes: number | null
@@ -310,6 +311,11 @@ function toNumber(
   return Number.isFinite(n) ? n : fallback
 }
 
+function formatCurrency(value: number): string {
+  const amount = Math.abs(value).toFixed(2)
+  return value < 0 ? `−$${amount}` : `$${amount}`
+}
+
 type SectionTone = 'emerald' | 'sky' | 'amber' | 'violet'
 
 const SECTION_TONE: Record<SectionTone, string> = {
@@ -545,6 +551,7 @@ export function EstimateDetail({
   const catalogCategories = useMemo(() => {
     const labels = new Set<string>()
     for (const s of catalog) {
+      if (s.slug === 'discount') continue
       labels.add((s.category || 'Other').trim() || 'Other')
     }
     return Array.from(labels).sort((a, b) => a.localeCompare(b))
@@ -552,7 +559,9 @@ export function EstimateDetail({
 
   const servicesInPickerCategory = useMemo(() => {
     const cat = (linePickerCategory || catalogCategories[0] || 'Other').trim()
-    return catalog.filter((s) => (s.category || 'Other').trim() === cat)
+    return catalog.filter(
+      (s) => s.slug !== 'discount' && (s.category || 'Other').trim() === cat,
+    )
   }, [catalog, linePickerCategory, catalogCategories])
 
   useEffect(() => {
@@ -742,12 +751,6 @@ export function EstimateDetail({
     )
   }, [convertDailyAvailability, convertDate, convertStaff, convertStaffId])
 
-  const totalMeasureMinutes = useMemo(() => {
-    return lineItems.reduce((sum, line) => {
-      return sum + toNumber(line.duration_minutes, 0)
-    }, 0)
-  }, [lineItems])
-
   // ── Line item editing ───────────────────────────────────────────────────
 
   const updateLine = useCallback((id: string, patch: Partial<LineItem>) => {
@@ -869,6 +872,32 @@ export function EstimateDetail({
     }
     setLineItems((prev) => [...prev, newRow])
   }, [])
+
+  const discountCatalogItem = useMemo(
+    () => catalog.find((item) => item.slug === 'discount') ?? null,
+    [catalog],
+  )
+
+  const handleAddCreditLine = useCallback(() => {
+    if (!discountCatalogItem) return
+    const newRow: LineItem = {
+      id: makeRowKey(),
+      service_catalog_item_id: discountCatalogItem.id,
+      name_snapshot: 'Gym membership trade credit',
+      notes: null,
+      quantity: 1,
+      unit_price: -150,
+      duration_minutes: 0,
+      buffer_minutes: 0,
+      line_total: -150,
+      length_value: null,
+      width_value: null,
+      pricing_unit_snapshot: 'fixed',
+      area_segments: [],
+      _isNew: true,
+    }
+    setLineItems((prev) => [...prev, newRow])
+  }, [discountCatalogItem])
 
   const handleDeleteLine = useCallback((id: string) => {
     setLineItems((prev) => prev.filter((line) => line.id !== id))
@@ -1268,7 +1297,6 @@ export function EstimateDetail({
     contactBusiness ||
     [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
     'New Estimate'
-  const visitMinutes = Math.round(totalMeasureMinutes) || 30
   const selectedLeadSource = leadSourceOptions.find(
     (option) => option.key === leadSource,
   )
@@ -1320,10 +1348,6 @@ export function EstimateDetail({
                 {estimate.start_time.slice(0, 5)}–
                 {estimate.end_time.slice(0, 5)}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 font-medium text-white ring-1 ring-white/15">
-                <CalendarClock className="h-4 w-4 text-amber-300" />
-                {visitMinutes} min measuring visit
-              </span>
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-start sm:items-end">
@@ -1331,7 +1355,7 @@ export function EstimateDetail({
               Est. job total
             </p>
             <p className="mt-1 text-4xl font-black text-amber-300 tabular-nums drop-shadow-sm">
-              ${subtotal.toFixed(2)}
+              {formatCurrency(subtotal)}
             </p>
             <p className="mt-1 text-xs text-white/60">
               {lineItems.length === 0
@@ -1486,6 +1510,7 @@ export function EstimateDetail({
           <div>
             <Label className="text-xs">Email</Label>
             <Input
+              id="estimate-contact-email"
               type="email"
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
@@ -1747,15 +1772,32 @@ export function EstimateDetail({
               </>
             }
           />
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 gap-1"
-            onClick={handleAddCustomLine}
-          >
-            <Plus className="h-4 w-4" />
-            Custom line (no catalog)
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1"
+              disabled={!discountCatalogItem}
+              title={
+                discountCatalogItem
+                  ? 'Add a named amount that subtracts from the estimate.'
+                  : 'The discount catalog item is unavailable.'
+              }
+              onClick={handleAddCreditLine}
+            >
+              <Plus className="h-4 w-4" />
+              Add discount / trade credit
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1"
+              onClick={handleAddCustomLine}
+            >
+              <Plus className="h-4 w-4" />
+              Custom line (no catalog)
+            </Button>
+          </div>
         </div>
 
         <div className="border-border/60 mt-4 rounded-lg border bg-slate-50/80 p-3 dark:bg-slate-900/40">
@@ -1816,10 +1858,16 @@ export function EstimateDetail({
         <div className="mt-4 space-y-4">
           {lineItems.map((line, idx) => {
             const unit = line.pricing_unit_snapshot
-            const showDimensions = supportsDimensions(unit)
-            const lineQty = showDimensions
-              ? derivedQuantityFromSegments(line.area_segments, unit)
-              : toNumber(line.quantity, 1)
+            const isCredit =
+              toNumber(line.unit_price, 0) < 0 ||
+              (!!discountCatalogItem &&
+                line.service_catalog_item_id === discountCatalogItem.id)
+            const showDimensions = !isCredit && supportsDimensions(unit)
+            const lineQty = isCredit
+              ? 1
+              : showDimensions
+                ? derivedQuantityFromSegments(line.area_segments, unit)
+                : toNumber(line.quantity, 1)
             const segNumeric = segmentRowsToAreaSegments(line.area_segments)
             const segmentsSummary =
               showDimensions && segNumeric.length > 0
@@ -1834,7 +1882,11 @@ export function EstimateDetail({
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-muted-foreground text-xs font-medium">
                     Line {idx + 1}
-                    {line.service_catalog_item_id ? ' · catalog' : ' · custom'}
+                    {isCredit
+                      ? ' · discount / credit'
+                      : line.service_catalog_item_id
+                        ? ' · catalog'
+                        : ' · custom'}
                   </p>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button
@@ -1859,7 +1911,62 @@ export function EstimateDetail({
                 </div>
 
                 <div className="mt-3 space-y-3">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {isCredit ? (
+                    <div className="grid grid-cols-1 gap-3 rounded-md border border-emerald-300/60 bg-emerald-50/60 p-3 sm:grid-cols-2 dark:border-emerald-800/60 dark:bg-emerald-950/20">
+                      <div>
+                        <Label
+                          className="text-xs"
+                          htmlFor={`credit-name-${line.id}`}
+                        >
+                          Credit name
+                        </Label>
+                        <Input
+                          id={`credit-name-${line.id}`}
+                          className="mt-1"
+                          value={line.name_snapshot}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              name_snapshot: e.target.value,
+                            })
+                          }
+                          placeholder="For example: Gym membership trade credit"
+                        />
+                      </div>
+                      <div>
+                        <Label
+                          className="text-xs"
+                          htmlFor={`credit-amount-${line.id}`}
+                        >
+                          Credit amount
+                        </Label>
+                        <Input
+                          id={`credit-amount-${line.id}`}
+                          className="mt-1"
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          value={Math.abs(toNumber(line.unit_price, 0))}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              quantity: 1,
+                              unit_price:
+                                e.target.value === ''
+                                  ? ''
+                                  : -Math.abs(Number(e.target.value)),
+                            })
+                          }
+                        />
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          This amount is subtracted from the estimate and stays
+                          named on the job and invoice.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div
+                    className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${isCredit ? 'hidden' : ''}`}
+                  >
                     <div>
                       <Label className="text-xs">Service</Label>
                       <select
@@ -1872,11 +1979,13 @@ export function EstimateDetail({
                         <option value="">
                           — Custom (manual name &amp; price) —
                         </option>
-                        {catalog.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
+                        {catalog
+                          .filter((item) => item.slug !== 'discount')
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
                       </select>
                     </div>
                     <div>
@@ -2037,7 +2146,7 @@ export function EstimateDetail({
                         {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
                       </p>
                     </div>
-                  ) : (
+                  ) : !isCredit ? (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <div>
                         <Label className="text-xs">Quantity</Label>
@@ -2055,37 +2164,23 @@ export function EstimateDetail({
                         />
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <Label className="text-xs">Unit price</Label>
-                      <Input
-                        className="mt-1"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        value={line.unit_price}
-                        onChange={(e) =>
-                          updateLine(line.id, { unit_price: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Duration (min)</Label>
-                      <Input
-                        className="mt-1"
-                        type="number"
-                        inputMode="numeric"
-                        step="5"
-                        value={line.duration_minutes}
-                        onChange={(e) =>
-                          updateLine(line.id, {
-                            duration_minutes: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
+                  <div className={isCredit ? 'hidden' : undefined}>
+                    <Label className="text-xs">Unit price</Label>
+                    <Input
+                      className="mt-1"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={line.unit_price}
+                      onChange={(e) =>
+                        updateLine(line.id, {
+                          unit_price: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                 </div>
 
@@ -2105,8 +2200,8 @@ export function EstimateDetail({
                 </div>
 
                 <div className="text-muted-foreground mt-2 flex justify-end text-xs tabular-nums">
-                  Line total: $
-                  {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
+                  Line total:{' '}
+                  {formatCurrency(lineQty * toNumber(line.unit_price, 0))}
                 </div>
               </div>
             )
@@ -2118,12 +2213,17 @@ export function EstimateDetail({
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Estimated job total</span>
             <span className="text-2xl font-bold tabular-nums">
-              ${subtotal.toFixed(2)}
+              {formatCurrency(subtotal)}
             </span>
           </div>
           <p className="text-muted-foreground mt-1 text-xs">
             No payment collected on estimates. Totals lock in when you schedule
             the actual work.
+          </p>
+          <p className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">
+            Estimated service time: {convertServiceMinutes / 60} hours based on
+            this total. You choose the actual date and start time when you
+            schedule the work; the calendar adds a travel buffer automatically.
           </p>
         </div>
       </Card>
@@ -2141,17 +2241,38 @@ export function EstimateDetail({
 
         {!isConverted ? (
           <>
+            <Button
+              variant="outline"
+              className="border-sky-400/60 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-500/10"
+              onClick={() =>
+                document
+                  .getElementById(
+                    contactEmail.trim()
+                      ? 'estimate-delivery-panel'
+                      : 'estimate-contact-email',
+                  )
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }
+            >
+              <Mail className="mr-2 h-4 w-4" />
+              {contactEmail.trim()
+                ? statusKey === 'draft' && !lastQuoteEmail
+                  ? 'Email estimate'
+                  : 'Resend estimate'
+                : 'Add email to send'}
+            </Button>
             {statusKey === 'draft' ? (
               <Button
                 variant="outline"
                 className="border-sky-400/60 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-500/10"
                 disabled={actionLoading !== null}
+                title="Updates the estimate status only. It does not send an email."
                 onClick={() => void handleStatusChange('sent')}
               >
                 {actionLoading === 'sent' ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
-                Mark sent (no email)
+                Record as sent manually
               </Button>
             ) : null}
             {statusKey !== 'accepted' ? (
@@ -2324,8 +2445,9 @@ export function EstimateDetail({
                 <div className="border-border/60 bg-muted/40 rounded-xl border p-4 text-sm">
                   <p className="font-semibold">Appointment being created</p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {convertServiceMinutes / 60}-hour calendar block · draft
-                    invoice created automatically
+                    {convertServiceMinutes / 60} hours estimated service time +{' '}
+                    {convertRequiredMinutes - convertServiceMinutes}-minute
+                    calendar buffer · draft invoice created automatically
                   </p>
                   <ul className="mt-3 space-y-2 text-xs">
                     {lineItems.map((line) => (
@@ -2343,18 +2465,19 @@ export function EstimateDetail({
                               : ''}
                         </span>
                         <span className="shrink-0 tabular-nums">
-                          $
-                          {(
+                          {formatCurrency(
                             toNumber(line.quantity, 1) *
-                            toNumber(line.unit_price, 0)
-                          ).toFixed(2)}
+                              toNumber(line.unit_price, 0),
+                          )}
                         </span>
                       </li>
                     ))}
                   </ul>
                   <div className="border-border/60 mt-3 flex justify-between border-t pt-3 font-semibold">
                     <span>Total</span>
-                    <span className="tabular-nums">${subtotal.toFixed(2)}</span>
+                    <span className="tabular-nums">
+                      {formatCurrency(subtotal)}
+                    </span>
                   </div>
                 </div>
 

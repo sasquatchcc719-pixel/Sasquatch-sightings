@@ -58,7 +58,7 @@ function buildBookingConfirmationBody(params: {
 }
 
 function formatCurrency(n: number): string {
-  return `$${n.toFixed(2)}`
+  return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
 }
 
 /**

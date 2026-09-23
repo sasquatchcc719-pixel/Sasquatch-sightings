@@ -300,7 +300,7 @@ export async function PATCH(
       const { data: services } = serviceIds.length
         ? await supabase
             .from('service_catalog_items')
-            .select('id, pricing_unit')
+            .select('id, pricing_unit, slug')
             .in('id', serviceIds)
         : { data: [] }
 
@@ -316,6 +316,10 @@ export async function PATCH(
             ? (serviceMap.get(String(item.service_catalog_item_id))
                 ?.pricing_unit ?? null)
             : null)
+        const isDiscount =
+          item.service_catalog_item_id &&
+          serviceMap.get(String(item.service_catalog_item_id))?.slug ===
+            'discount'
 
         let lengthValue = toNumberOrNull(item.length_value)
         let widthValue = toNumberOrNull(item.width_value)
@@ -352,8 +356,29 @@ export async function PATCH(
           quantity = providedQty != null && providedQty > 0 ? providedQty : 1
         }
 
-        const unitPrice = Number(item.unit_price ?? 0)
-        const durationMinutes = Number(item.duration_minutes ?? 0)
+        const requestedUnitPrice = Number(item.unit_price ?? 0)
+        if (!Number.isFinite(requestedUnitPrice)) {
+          return NextResponse.json(
+            { error: 'Each line item needs a valid price.' },
+            { status: 400 },
+          )
+        }
+        if (!isDiscount && requestedUnitPrice < 0) {
+          return NextResponse.json(
+            {
+              error:
+                'Negative prices must use the Discount catalog item so they remain traceable on the estimate and invoice.',
+            },
+            { status: 400 },
+          )
+        }
+        if (isDiscount) quantity = 1
+        const unitPrice = isDiscount
+          ? -Math.abs(requestedUnitPrice)
+          : requestedUnitPrice
+        const durationMinutes = isDiscount
+          ? 0
+          : Number(item.duration_minutes ?? 0)
         const bufferMinutes = Number(item.buffer_minutes ?? 0)
         const lineTotal = Number((unitPrice * quantity).toFixed(2))
 
