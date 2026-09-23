@@ -59,8 +59,9 @@ const TONES: Record<ReportCardTone, { accent: string; tint: string }> = {
   neutral: { accent: '#94a3b8', tint: 'rgba(148, 163, 184, 0.14)' },
 }
 
-const CHART_HEIGHT = 240
-const MIN_BAR_HEIGHT = 3
+const CHART_WIDTH = 800
+const CHART_HEIGHT = 285
+const CHART_MARGIN = { top: 18, right: 20, bottom: 52, left: 58 }
 
 function MetricTile({ metric }: { metric: ReportCardMetric }) {
   const tone = TONES[metric.tone ?? 'neutral']
@@ -114,16 +115,33 @@ function MetricTile({ metric }: { metric: ReportCardMetric }) {
   )
 }
 
-function BarChart({ series }: { series: ReportCardSeries }) {
+function LineChart({ series }: { series: ReportCardSeries }) {
   const values = series.points.map((point) => point.value)
   const max = Math.max(series.maxValue ?? 0, ...values, 1)
-  const peak = Math.max(...values)
-  const lastIndex = series.points.length - 1
-  const dense = series.points.length > 8
-  const itemWidth = dense
-    ? Math.max(42, Math.floor(760 / series.points.length))
-    : 84
-  const barWidth = dense ? Math.min(36, itemWidth - 12) : 52
+  const plotWidth = CHART_WIDTH - CHART_MARGIN.left - CHART_MARGIN.right
+  const plotHeight = CHART_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom
+  const xFor = (index: number) =>
+    CHART_MARGIN.left +
+    (series.points.length === 1
+      ? plotWidth / 2
+      : (index / (series.points.length - 1)) * plotWidth)
+  const yFor = (value: number) =>
+    CHART_MARGIN.top + plotHeight - (value / max) * plotHeight
+  const linePath = series.points
+    .map(
+      (point, index) =>
+        `${index === 0 ? 'M' : 'L'} ${xFor(index).toFixed(1)} ${yFor(point.value).toFixed(1)}`,
+    )
+    .join(' ')
+  const areaPath =
+    `${linePath} ` +
+    `L ${xFor(series.points.length - 1).toFixed(1)} ${(CHART_MARGIN.top + plotHeight).toFixed(1)} ` +
+    `L ${xFor(0).toFixed(1)} ${(CHART_MARGIN.top + plotHeight).toFixed(1)} Z`
+  const integerScale = Number.isInteger(max) && max <= 10
+  const yTicks = integerScale
+    ? Array.from({ length: max + 1 }, (_, index) => index)
+    : [0, max / 2, max]
+  const labelEvery = Math.max(1, Math.ceil(series.points.length / 7))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -139,69 +157,144 @@ function BarChart({ series }: { series: ReportCardSeries }) {
         {series.label}
       </div>
       <div
+        role="img"
+        aria-label={`${series.label} line graph`}
         style={{
           display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
+          position: 'relative',
+          width: CHART_WIDTH,
           height: CHART_HEIGHT,
-          marginTop: 18,
+          marginTop: 12,
         }}
       >
+        <svg
+          width={CHART_WIDTH}
+          height={CHART_HEIGHT}
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          style={{ position: 'absolute', left: 0, top: 0 }}
+        >
+          {yTicks.map((tick) => {
+            const y = yFor(tick)
+            return (
+              <line
+                key={`grid-${tick}`}
+                x1={CHART_MARGIN.left}
+                y1={y}
+                x2={CHART_WIDTH - CHART_MARGIN.right}
+                y2={y}
+                stroke={COLORS.panelEdge}
+                strokeWidth={2}
+              />
+            )
+          })}
+
+          <line
+            x1={CHART_MARGIN.left}
+            y1={CHART_MARGIN.top}
+            x2={CHART_MARGIN.left}
+            y2={CHART_MARGIN.top + plotHeight}
+            stroke={COLORS.textFaint}
+            strokeWidth={2}
+          />
+          <line
+            x1={CHART_MARGIN.left}
+            y1={CHART_MARGIN.top + plotHeight}
+            x2={CHART_WIDTH - CHART_MARGIN.right}
+            y2={CHART_MARGIN.top + plotHeight}
+            stroke={COLORS.textFaint}
+            strokeWidth={2}
+          />
+
+          <path d={areaPath} fill="rgba(56, 189, 248, 0.12)" />
+          <path
+            d={linePath}
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {series.points.map((point, index) => {
+            const isCurrent = index === series.points.length - 1
+            return (
+              <circle
+                key={`${point.label}-${index}`}
+                cx={xFor(index)}
+                cy={yFor(point.value)}
+                r={isCurrent ? 9 : 6}
+                fill={isCurrent ? '#7dd3fc' : COLORS.background}
+                stroke="#38bdf8"
+                strokeWidth={4}
+              />
+            )
+          })}
+        </svg>
+
+        {yTicks.map((tick) => (
+          <div
+            key={`y-${tick}`}
+            style={{
+              display: 'flex',
+              position: 'absolute',
+              left: 0,
+              top: yFor(tick) - 11,
+              width: CHART_MARGIN.left - 14,
+              justifyContent: 'flex-end',
+              fontSize: 17,
+              color: COLORS.textMuted,
+            }}
+          >
+            {Number.isInteger(tick) ? tick : tick.toFixed(1)}
+          </div>
+        ))}
+
         {series.points.map((point, index) => {
-          const isCurrent = index === lastIndex
-          const isPeak = point.value === peak && !isCurrent
-          const barColor = isCurrent
-            ? '#38bdf8'
-            : isPeak
-              ? '#475f85'
-              : COLORS.panelEdge
-          const barHeight = Math.max(
-            MIN_BAR_HEIGHT,
-            Math.round((point.value / max) * (CHART_HEIGHT - 70)),
-          )
+          const isCurrent = index === series.points.length - 1
+          if (index % labelEvery !== 0 && !isCurrent) return null
+          const labelWidth = 82
           return (
             <div
-              key={`${point.label}-${index}`}
+              key={`x-${point.label}-${index}`}
               style={{
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                width: itemWidth,
+                position: 'absolute',
+                left: Math.max(
+                  CHART_MARGIN.left,
+                  Math.min(
+                    CHART_WIDTH - CHART_MARGIN.right - labelWidth,
+                    xFor(index) - labelWidth / 2,
+                  ),
+                ),
+                top: CHART_HEIGHT - 30,
+                width: labelWidth,
+                justifyContent:
+                  index === 0
+                    ? 'flex-start'
+                    : isCurrent
+                      ? 'flex-end'
+                      : 'center',
+                fontSize: 16,
+                color: isCurrent ? '#7dd3fc' : COLORS.textMuted,
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  fontSize: dense ? 19 : 24,
-                  marginBottom: 8,
-                  color: isCurrent ? '#7dd3fc' : COLORS.textMuted,
-                }}
-              >
-                {point.value}
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  width: barWidth,
-                  height: barHeight,
-                  backgroundColor: barColor,
-                  borderRadius: 6,
-                }}
-              />
-              <div
-                style={{
-                  display: 'flex',
-                  fontSize: dense ? 13 : 17,
-                  marginTop: 10,
-                  color: isCurrent ? COLORS.textMuted : COLORS.textFaint,
-                }}
-              >
-                {point.label}
-              </div>
+              {point.label}
             </div>
           )
         })}
+
+        <div
+          style={{
+            display: 'flex',
+            position: 'absolute',
+            right: CHART_MARGIN.right,
+            top: Math.max(0, yFor(values[values.length - 1]) - 31),
+            fontSize: 21,
+            color: '#7dd3fc',
+          }}
+        >
+          Latest: {values[values.length - 1]}
+        </div>
       </div>
     </div>
   )
@@ -320,7 +413,7 @@ function ReportCard({ input }: { input: ReportCardInput }) {
         <div style={{ display: 'flex', flexGrow: 1 }} />
 
         {input.series && input.series.points.length > 0 ? (
-          <BarChart series={input.series} />
+          <LineChart series={input.series} />
         ) : null}
 
         {input.footer ? (

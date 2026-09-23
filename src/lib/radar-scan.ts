@@ -706,7 +706,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
           }
         : null,
     footer:
-      'Weekly bars use the same fixed town centers. Grid coverage is Local Falcon.',
+      'Weekly points use the same fixed town centers. Grid coverage is Local Falcon.',
   }
 
   const caption = [
