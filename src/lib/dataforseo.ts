@@ -1,10 +1,8 @@
 /**
- * DataForSEO client — Google Maps SERP, for geo-grid rank tracking.
+ * DataForSEO client — Google organic and Maps SERPs for rank tracking.
  *
- * Replaces SerpApi for the two Maps fetchers only (~42x cheaper per point:
- * $0.0006-0.002 vs $0.025). Organic rank tracking (fetchSerpRanks,
- * fetchSerpDomains, fetchSerpSnippets) stays on SerpApi's free tier in
- * serpApi.ts — those three calls alone fit comfortably in the 250/month quota.
+ * Radar's auditable full-depth organic scan and both Maps fetchers use this
+ * client. Other discovery/snippet utilities remain in serpApi.ts.
  *
  * Uses the `live/advanced` endpoint: synchronous, one request in one request
  * out. DataForSEO also offers a cheaper async standard queue (task_post +
@@ -20,6 +18,7 @@ import {
 } from '@/lib/serpApi'
 import type {
   RadarDomain,
+  SerpDomainWithPosition,
   SerpMapPackPlace,
   SerpMapsLocalFinder,
 } from '@/lib/serpApi'
@@ -37,6 +36,11 @@ const BASE = 'https://api.dataforseo.com/v3'
  * inherited zoom — this constant exists specifically to avoid that.
  */
 export const DATAFORSEO_MAPS_ZOOM = 12
+
+/** A real organic depth, crawled across result pages by DataForSEO. */
+export const DATAFORSEO_ORGANIC_DEPTH = 50
+export const DATAFORSEO_ORGANIC_DEVICE = 'desktop'
+const DATAFORSEO_ORGANIC_RADIUS_METERS = 500
 
 /**
  * `lat,lng,zoomz` — NOT `formatLl` from serpApi.ts, which prefixes an `@`
@@ -136,6 +140,118 @@ type RawMapsItem = {
   longitude?: number
 }
 
+type RawOrganicItem = {
+  type?: string
+  rank_group?: number
+  rank_absolute?: number
+  page?: number
+  domain?: string
+  url?: string
+  title?: string
+}
+
+type RawOrganicResult = {
+  items?: RawOrganicItem[]
+}
+
+export type DataForSeoOrganicRank = {
+  domain_id: string
+  rank_position: number | null
+}
+
+export type DataForSeoOrganicRanks = {
+  ranks: DataForSeoOrganicRank[]
+  snapshot: SerpDomainWithPosition[]
+  requestedDepth: number
+  returnedDepth: number
+  taskId: string | null
+  cost: number
+  device: typeof DATAFORSEO_ORGANIC_DEVICE
+  lat: number
+  lng: number
+}
+
+/**
+ * Fetch an actual multi-page organic ranking from a fixed town-centre point.
+ *
+ * Google no longer honours the old `num=50` shortcut used by the SerpApi
+ * scanner. DataForSEO's `depth` explicitly crawls result pages, and rank_group
+ * is the organic-only position (rank_absolute also counts maps and other SERP
+ * features, so it is not the number people mean by "organic rank").
+ */
+export async function fetchOrganicRanks(
+  keyword: string,
+  location: string,
+  domains: RadarDomain[],
+): Promise<DataForSeoOrganicRanks> {
+  const centroid = TOWN_CENTROIDS[townKeyFromLocation(location)]
+  if (!centroid) {
+    throw new Error(
+      `No centroid for "${location}" — add it to TOWN_CENTROIDS in serpApi.ts`,
+    )
+  }
+
+  const { result, taskId, cost } = await dfsPost<RawOrganicResult>(
+    '/serp/google/organic/live/advanced',
+    {
+      keyword: keyword.trim(),
+      location_coordinate: `${centroid.lat},${centroid.lng},${DATAFORSEO_ORGANIC_RADIUS_METERS}`,
+      language_code: 'en',
+      device: DATAFORSEO_ORGANIC_DEVICE,
+      depth: DATAFORSEO_ORGANIC_DEPTH,
+    },
+  )
+
+  const organic = (result[0]?.items ?? []).filter(
+    (item) => item.type === 'organic' && (item.rank_group ?? 0) > 0,
+  )
+  const returnedDepth = organic.reduce(
+    (max, item) => Math.max(max, item.rank_group ?? 0),
+    0,
+  )
+
+  const domainMap = new Map(
+    domains.map((domain) => [
+      domain.domain.toLowerCase().replace(/^www\./, ''),
+      domain.id,
+    ]),
+  )
+  const found = new Set<string>()
+  const ranks: DataForSeoOrganicRank[] = []
+  const snapshot: SerpDomainWithPosition[] = []
+
+  for (const item of organic) {
+    const position = item.rank_group ?? 0
+    const normalized = normalizeDomain(item.url ?? item.domain ?? '')
+    if (!position || !normalized) continue
+
+    snapshot.push({ domain: normalized, position })
+    const domainId = domainMap.get(normalized)
+    if (domainId && !found.has(domainId)) {
+      found.add(domainId)
+      ranks.push({ domain_id: domainId, rank_position: position })
+    }
+  }
+
+  for (const domain of domains) {
+    if (!found.has(domain.id)) {
+      ranks.push({ domain_id: domain.id, rank_position: null })
+    }
+  }
+
+  return {
+    ranks,
+    snapshot,
+    requestedDepth: DATAFORSEO_ORGANIC_DEPTH,
+    returnedDepth,
+    taskId,
+    cost,
+    device: DATAFORSEO_ORGANIC_DEVICE,
+    lat: centroid.lat,
+    lng: centroid.lng,
+  }
+}
+
 async function mapsSearch(
   keyword: string,
   coordinate: string,
@@ -171,16 +287,21 @@ async function mapsSearch(
   try {
     json = JSON.parse(text)
   } catch {
-    throw new Error(`DataForSEO returned non-JSON (${res.status}): ${text.slice(0, 200)}`)
+    throw new Error(
+      `DataForSEO returned non-JSON (${res.status}): ${text.slice(0, 200)}`,
+    )
   }
 
   if (!res.ok || json.status_code !== 20000) {
-    throw new Error(`DataForSEO error: ${json.status_message || text.slice(0, 200)}`)
+    throw new Error(
+      `DataForSEO error: ${json.status_message || text.slice(0, 200)}`,
+    )
   }
   const task = json.tasks?.[0]
   if (task && task.status_code !== 20000) {
     // "no results" for a sparse rural point is a normal empty case.
-    if (/no results|no search results/i.test(task.status_message || '')) return []
+    if (/no results|no search results/i.test(task.status_message || ''))
+      return []
     throw new Error(`DataForSEO task error: ${task.status_message}`)
   }
   return task?.result?.[0]?.items ?? []
@@ -192,7 +313,11 @@ function toPlace(item: RawMapsItem): SerpMapPackPlace | null {
   return {
     position: pos,
     title: (item.title ?? '').trim() || null,
-    domain: item.url ? normalizeDomain(item.url) : item.domain ? normalizeDomain(item.domain) : null,
+    domain: item.url
+      ? normalizeDomain(item.url)
+      : item.domain
+        ? normalizeDomain(item.domain)
+        : null,
     rating: item.rating?.value ?? null,
     reviews: item.rating?.votes_count ?? null,
     address: (item.address ?? '').trim() || null,
@@ -214,13 +339,20 @@ function matchPlaceToDomainId(
     )
     if (byDomain) return byDomain.id
   }
-  const placeNorm = (place.title ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const placeNorm = (place.title ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
   if (!placeNorm) return null
   for (const d of domains) {
-    const displayNorm = (d.display_name ?? d.domain).trim().toLowerCase().replace(/\s+/g, ' ')
+    const displayNorm = (d.display_name ?? d.domain)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
     if (!displayNorm) continue
     if (placeNorm === displayNorm) return d.id
-    if (placeNorm.includes(displayNorm) || displayNorm.includes(placeNorm)) return d.id
+    if (placeNorm.includes(displayNorm) || displayNorm.includes(placeNorm))
+      return d.id
   }
   return null
 }

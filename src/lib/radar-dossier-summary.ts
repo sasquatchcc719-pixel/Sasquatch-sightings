@@ -14,7 +14,7 @@ export async function getRadarSummaryForDomain(
   const { data: rankings } = await supabase
     .from('radar_rankings')
     .select(
-      'rank_position, map_rank, created_at, radar_keywords(keyword, location)',
+      'rank_position, map_rank, scan_run_id, created_at, radar_keywords(keyword, location)',
     )
     .eq('domain_id', domainId)
     .order('created_at', { ascending: false })
@@ -42,8 +42,17 @@ export async function getRadarSummaryForDomain(
         (r as { map_rank?: number | null }).map_rank != null
           ? `, map #${(r as { map_rank: number }).map_rank}`
           : ''
+      const rank = (
+        r as {
+          rank_position: number | null
+          scan_run_id?: string | null
+        }
+      ).rank_position
+      const legacyMiss =
+        (r as { scan_run_id?: string | null }).scan_run_id == null &&
+        rank === 50
       lines.push(
-        `  ${kwLabel}: organic #${(r as { rank_position: number }).rank_position}${mapStr}`,
+        `  ${kwLabel}: organic ${rank == null || legacyMiss ? 'not found' : `#${rank}`}${mapStr}`,
       )
     }
   }

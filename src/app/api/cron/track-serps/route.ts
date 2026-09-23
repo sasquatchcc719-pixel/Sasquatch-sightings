@@ -2,11 +2,11 @@
  * Radar SERP tracking cron job. Also syncs Google Business Profile reviews
  * (new reviews → Telegram notice to Charles; reviewer names let the review
  * request engine skip customers who already reviewed).
- * Schedule in vercel.json. Requires CRON_SECRET and SERPAPI_API_KEY.
+ * Schedule in vercel.json. Requires CRON_SECRET and DataForSEO credentials.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { runRadarScan, buildRadarDigest } from '@/lib/radar-scan'
+import { runRadarScan, buildRadarDailyReport } from '@/lib/radar-scan'
 import { syncGbpReviews } from '@/lib/gbp-reviews'
 import {
   formatReviewCountChange,
@@ -14,10 +14,8 @@ import {
 } from '@/lib/gbp-review-count'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { deliverReportCard } from '@/lib/reports/telegram-report'
 
-// Radar spends two SerpApi credits per keyword (web results + deep Maps finder).
-// runRadarScan now processes the oldest keyword slice within a daily credit
-// budget, and GBP review sync is capped separately to protect the 250/mo plan.
 export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
@@ -73,20 +71,34 @@ export async function GET(request: NextRequest) {
       console.error('[Radar Cron] GBP review sync failed:', reviewErr)
     }
 
-    // Daily Telegram digest of where we rank in each town's Maps 3-pack.
-    // Never let a digest failure break rank tracking.
+    // Daily Telegram report: a graph image first, then the detailed rank text.
+    // Never let a report failure break rank tracking.
     let digestSent = false
+    let digestImageSent = false
     try {
-      const digest = await buildRadarDigest()
-      if (digest) {
-        await sendTelegramNotification(digest)
-        digestSent = true
+      const report = await buildRadarDailyReport()
+      if (report) {
+        const delivery = await deliverReportCard({
+          supabase: createAdminClient(),
+          slug: 'radar-daily',
+          runKey: report.runKey,
+          card: report.card,
+          caption: report.caption,
+          text: report.text,
+        })
+        digestSent = delivery.textSent
+        digestImageSent = delivery.imageSent
       }
     } catch (digestErr) {
       console.error('[Radar Cron] digest send failed:', digestErr)
     }
 
-    return NextResponse.json({ ...result, review_sync: reviewSync, digestSent })
+    return NextResponse.json({
+      ...result,
+      review_sync: reviewSync,
+      digestSent,
+      digestImageSent,
+    })
   } catch (err) {
     console.error('[Radar Cron] Error:', err)
     return NextResponse.json(

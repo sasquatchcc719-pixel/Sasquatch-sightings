@@ -9,8 +9,6 @@ import { buildRadarDigest } from '@/lib/radar-scan'
 import { DATAFORSEO_MAPS_ZOOM } from '@/lib/dataforseo'
 import { TOWN_CENTROIDS, townKeyFromLocation } from '@/lib/serpApi'
 
-const NOT_FOUND_RANK = 50
-
 export async function GET() {
   try {
     await requireAnyRole(['admin', 'owner', 'marketing'])
@@ -37,7 +35,9 @@ export async function GET() {
     const { data: ranks } = active.length
       ? await supabase
           .from('radar_rankings')
-          .select('keyword_id, domain_id, map_rank, rank_position, created_at')
+          .select(
+            'keyword_id, domain_id, map_rank, rank_position, scan_run_id, created_at',
+          )
           .in(
             'keyword_id',
             active.map((k) => k.id),
@@ -61,8 +61,12 @@ export async function GET() {
         .map((r) => r.map_rank)
         .filter((p): p is number => p != null)
       const organic = current
-        .map((r) => r.rank_position)
-        .filter((p): p is number => p != null && p < NOT_FOUND_RANK)
+        .map((r) =>
+          r.scan_run_id == null && r.rank_position === 50
+            ? null
+            : r.rank_position,
+        )
+        .filter((p): p is number => p != null)
       const prevMaps = previous
         .map((r) => r.map_rank)
         .filter((p): p is number => p != null)

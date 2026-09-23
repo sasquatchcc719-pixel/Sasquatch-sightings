@@ -56,8 +56,9 @@ type Ranking = {
   id: string
   keyword_id: string
   domain_id: string
-  rank_position: number
+  rank_position: number | null
   map_rank?: number | null
+  scan_run_id?: string | null
   created_at: string
 }
 type SerpSnapshotRow = {
@@ -67,6 +68,7 @@ type SerpSnapshotRow = {
   rating?: number | null
   reviews?: number | null
   address?: string | null
+  created_at: string
 }
 
 type DossierProfile = {
@@ -187,14 +189,17 @@ export default function RadarPage() {
       supabase
         .from('radar_rankings')
         .select(
-          'id, keyword_id, domain_id, rank_position, map_rank, created_at',
+          'id, keyword_id, domain_id, rank_position, map_rank, scan_run_id, created_at',
         )
         .gte('created_at', sixtyDaysAgo.toISOString())
         .order('created_at', { ascending: false }),
       supabase
         .from('radar_serp_snapshots')
-        .select('keyword_id, position, domain, rating, reviews, address')
-        .order('keyword_id')
+        .select(
+          'keyword_id, position, domain, rating, reviews, address, created_at',
+        )
+        .gte('created_at', sixtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
         .order('position', { ascending: true }),
       supabase
         .from('radar_domain_profiles')
@@ -208,7 +213,20 @@ export default function RadarPage() {
     else setRankings(rankRes.data ?? [])
     if (snapRes.error) {
       if (snapRes.error.code !== '42P01') setError(snapRes.error.message)
-    } else setSnapshots((snapRes.data as SerpSnapshotRow[]) ?? [])
+    } else {
+      const rows = (snapRes.data as SerpSnapshotRow[]) ?? []
+      const latestByKeyword = new Map<string, string>()
+      for (const row of rows) {
+        if (!latestByKeyword.has(row.keyword_id)) {
+          latestByKeyword.set(row.keyword_id, row.created_at)
+        }
+      }
+      setSnapshots(
+        rows.filter(
+          (row) => latestByKeyword.get(row.keyword_id) === row.created_at,
+        ),
+      )
+    }
     if (profilesRes.error) {
       if (profilesRes.error.code !== '42P01')
         setError(profilesRes.error.message)
@@ -513,16 +531,18 @@ export default function RadarPage() {
     }
   }
 
-  const latestMap = new Map<string, number>()
+  const latestMap = new Map<string, number | null>()
   const latestMapPack = new Map<string, number>()
-  const previousMap = new Map<string, number>()
+  const previousMap = new Map<string, number | null>()
   for (const r of rankings) {
     const key = `${r.keyword_id}:${r.domain_id}`
+    const organicRank =
+      r.scan_run_id == null && r.rank_position === 50 ? null : r.rank_position
     if (!latestMap.has(key)) {
-      latestMap.set(key, r.rank_position)
+      latestMap.set(key, organicRank)
       if (r.map_rank != null) latestMapPack.set(key, r.map_rank)
     } else if (!previousMap.has(key)) {
-      previousMap.set(key, r.rank_position)
+      previousMap.set(key, organicRank)
     }
   }
 
@@ -537,8 +557,8 @@ export default function RadarPage() {
   //                so we sit at the 50 floor), but it's the only signal left
   //                while the GBP is gone, and smaller towns do break through.
   //
-  // 50 is the scanner's "not found in the top 50" sentinel, not a real rank —
-  // see rank_position in lib/radar-scan.ts.
+  // Legacy rows used 50 as a fake miss. New provider-backed rows use NULL, so
+  // a real #50 is preserved; placedAt handles both generations.
   const OUT_OF_PACK = 21
   const ORGANIC_FLOOR = 50
   const myDomainIds = new Set(
@@ -555,7 +575,8 @@ export default function RadarPage() {
   const placedAt = (r: Ranking, metric: ChartMetric) =>
     metric === 'map'
       ? (r.map_rank ?? null)
-      : r.rank_position < ORGANIC_FLOOR
+      : r.rank_position != null &&
+          !(r.scan_run_id == null && r.rank_position === ORGANIC_FLOOR)
         ? r.rank_position
         : null
 
@@ -1444,8 +1465,8 @@ export default function RadarPage() {
                 <div className="flex h-[300px] w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.02] px-6 text-center text-sm text-white/50">
                   No {chartMetric === 'map' ? 'map-pack' : 'organic'} placements
                   in this range — you haven’t cracked the top{' '}
-                  {chartMetric === 'map' ? '20' : '50'} in any tracked town.
-                  Try a wider range, or switch views above.
+                  {chartMetric === 'map' ? '20' : '50'} in any tracked town. Try
+                  a wider range, or switch views above.
                 </div>
               )}
             </Card>
