@@ -196,6 +196,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**
 
+- A button labeled Email or Send must initiate or open the send confirmation and show explicit success only after the server confirms delivery; never use a send-labeled button as a silent scroll link.
+
 - David’s vehicle-help scripts must identify David as the caller even when Charles views the portal; the account may be under Charles Sewell, but bill and issue all paperwork to Sasquatch Carpet Cleaning. Keep pickup GPS for roadside/towing and shop directions/drop-off instructions for repairs.
 
 - For the Sapphire Scientific 370 guide, preserve Charles’s NAPA Gold 3054 and familiar tool names. List the socket set, adjustable wrench, and vice grips under “Tools needed”; keep the repair action in the heading and do not silently substitute tools.

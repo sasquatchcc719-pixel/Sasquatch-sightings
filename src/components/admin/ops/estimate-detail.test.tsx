@@ -191,7 +191,13 @@ describe('estimate editor send integration', () => {
     render(<EstimateDetail estimateId="estimate-a" />)
 
     expect(
-      await screen.findByRole('button', { name: 'Email estimate' }),
+      await screen.findByRole('button', { name: 'Review & send estimate' }),
+    ).toBeVisible()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review & send estimate' }),
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Confirm & send email' }),
     ).toBeVisible()
     expect(
       screen.getByRole('button', { name: 'Record as sent manually' }),

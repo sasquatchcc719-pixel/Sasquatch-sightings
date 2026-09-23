@@ -446,6 +446,7 @@ export function EstimateDetail({
     null,
   )
   const [emailHistoryUnavailable, setEmailHistoryUnavailable] = useState(false)
+  const [deliveryOpenRequest, setDeliveryOpenRequest] = useState(0)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [onMyWayLoading, setOnMyWayLoading] = useState(false)
   const [onMyWaySms, setOnMyWaySms] = useState<string | null>(null)
@@ -1453,6 +1454,7 @@ export function EstimateDetail({
         }
         lastEmail={lastQuoteEmail}
         historyUnavailable={emailHistoryUnavailable}
+        openConfirmationRequest={deliveryOpenRequest}
         onSend={async (confirmation) => {
           const result = await handleSendEmail('quote', confirmation)
           if (!result)
@@ -2244,21 +2246,30 @@ export function EstimateDetail({
             <Button
               variant="outline"
               className="border-sky-400/60 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-500/10"
-              onClick={() =>
-                document
-                  .getElementById(
+              onClick={() => {
+                if (contactEmail.trim()) {
+                  setDeliveryOpenRequest((request) => request + 1)
+                }
+                window.requestAnimationFrame(() => {
+                  const target = document.getElementById(
                     contactEmail.trim()
                       ? 'estimate-delivery-panel'
                       : 'estimate-contact-email',
                   )
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }
+                  if (target && typeof target.scrollIntoView === 'function') {
+                    target.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'center',
+                    })
+                  }
+                })
+              }}
             >
               <Mail className="mr-2 h-4 w-4" />
               {contactEmail.trim()
                 ? statusKey === 'draft' && !lastQuoteEmail
-                  ? 'Email estimate'
-                  : 'Resend estimate'
+                  ? 'Review & send estimate'
+                  : 'Review & resend estimate'
                 : 'Add email to send'}
             </Button>
             {statusKey === 'draft' ? (

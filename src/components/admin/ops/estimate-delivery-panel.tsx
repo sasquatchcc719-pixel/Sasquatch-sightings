@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, Mail, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -24,6 +24,7 @@ export function EstimateDeliveryPanel({
   busy,
   lastEmail,
   historyUnavailable,
+  openConfirmationRequest = 0,
   onSend,
 }: {
   status: string
@@ -34,6 +35,7 @@ export function EstimateDeliveryPanel({
   busy: boolean
   lastEmail: LastQuoteEmail | null
   historyUnavailable: boolean
+  openConfirmationRequest?: number
   onSend: (
     confirmation: EstimateSendConfirmation,
   ) => Promise<{ to_email: string; warning: string | null }>
@@ -42,6 +44,7 @@ export function EstimateDeliveryPanel({
   const [reason, setReason] = useState('')
   const [sending, setSending] = useState(false)
   const inFlight = useRef(false)
+  const lastHandledOpenRequest = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{
     to_email: string
@@ -56,6 +59,24 @@ export function EstimateDeliveryPanel({
   const blocked = converted
     ? 'Already converted to a job. Use the service appointment for further changes.'
     : blockedReason
+
+  function openConfirmation() {
+    setResult(null)
+    setError(null)
+    setRequestId(`${Date.now()}-${crypto.randomUUID()}`)
+  }
+
+  useEffect(() => {
+    if (
+      !openConfirmationRequest ||
+      openConfirmationRequest === lastHandledOpenRequest.current
+    )
+      return
+
+    lastHandledOpenRequest.current = openConfirmationRequest
+    if (converted || blocked) return
+    openConfirmation()
+  }, [blocked, converted, openConfirmationRequest])
 
   async function send() {
     if (
@@ -119,11 +140,7 @@ export function EstimateDeliveryPanel({
           <Button
             className="gap-2 bg-sky-600 font-semibold text-white hover:bg-sky-500"
             disabled={busy || !!blocked}
-            onClick={() => {
-              setResult(null)
-              setError(null)
-              setRequestId(`${Date.now()}-${crypto.randomUUID()}`)
-            }}
+            onClick={openConfirmation}
           >
             {reopen ? (
               <RotateCcw className="h-4 w-4" />
@@ -217,11 +234,16 @@ export function EstimateDeliveryPanel({
       ) : null}
       {result ? (
         <div
+          id="estimate-delivery-result"
           role="status"
-          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm"
+          aria-live="polite"
+          className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm"
         >
-          <p>
-            Estimate email sent to <strong>{result.to_email}</strong>.
+          <p className="font-semibold text-emerald-700 dark:text-emerald-300">
+            Email sent successfully
+          </p>
+          <p className="mt-1">
+            The estimate was sent to <strong>{result.to_email}</strong>.
           </p>
           {result.warning ? (
             <p className="mt-2 text-amber-600 dark:text-amber-300">

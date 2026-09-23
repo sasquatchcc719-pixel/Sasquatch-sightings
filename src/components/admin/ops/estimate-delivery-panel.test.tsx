@@ -49,7 +49,7 @@ describe('estimate delivery panel', () => {
       request_id: expect.any(String),
     })
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Estimate email sent to customer@example.com',
+      'The estimate was sent to customer@example.com',
     )
   })
   it('cancel does not send or change anything', () => {
@@ -145,5 +145,30 @@ describe('estimate delivery panel', () => {
     expect(onSend.mock.calls[0][0].request_id).toBe(
       onSend.mock.calls[1][0].request_id,
     )
+  })
+
+  it('opens the confirmation when requested by the estimate action bar', () => {
+    const props: React.ComponentProps<typeof EstimateDeliveryPanel> = {
+      status: 'draft',
+      converted: false,
+      email: 'customer@example.com',
+      total: 432,
+      blockedReason: null,
+      busy: false,
+      lastEmail: null,
+      historyUnavailable: false,
+      openConfirmationRequest: 0,
+      onSend: vi.fn(),
+    }
+    const { rerender } = render(<EstimateDeliveryPanel {...props} />)
+
+    rerender(<EstimateDeliveryPanel {...props} openConfirmationRequest={1} />)
+
+    expect(
+      screen.getByRole('button', { name: 'Confirm & send email' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText(/Send the current line items and pricing/),
+    ).toHaveTextContent('$432.00')
   })
 })
