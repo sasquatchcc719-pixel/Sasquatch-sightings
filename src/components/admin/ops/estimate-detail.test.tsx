@@ -154,11 +154,17 @@ describe('estimate editor send integration', () => {
     fireEvent.click(addCredit)
 
     expect(screen.getByLabelText('Credit name')).toHaveValue(
-      'Gym membership trade credit',
+      'Discount / trade credit',
     )
-    expect(screen.getByLabelText('Credit amount')).toHaveValue(150)
+    expect(screen.getByLabelText('Credit amount')).toHaveValue(0)
+    fireEvent.change(screen.getByLabelText('Credit name'), {
+      target: { value: 'Referral courtesy discount' },
+    })
+    fireEvent.change(screen.getByLabelText('Credit amount'), {
+      target: { value: '25' },
+    })
     expect(screen.queryByText('Duration (min)')).not.toBeInTheDocument()
-    expect(screen.getAllByText('−$50.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('$75.00').length).toBeGreaterThan(0)
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
@@ -171,9 +177,9 @@ describe('estimate editor send integration', () => {
       expect.arrayContaining([
         expect.objectContaining({
           service_catalog_item_id: 'discount-service',
-          name_snapshot: 'Gym membership trade credit',
+          name_snapshot: 'Referral courtesy discount',
           quantity: 1,
-          unit_price: -150,
+          unit_price: -25,
           duration_minutes: 0,
         }),
       ]),
