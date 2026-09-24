@@ -201,3 +201,45 @@ describe('which lifecycle messages a restoration visit sends', () => {
     ).toContain('satisfaction_checkin_email')
   })
 })
+
+describe('which lifecycle messages a warranty visit sends', () => {
+  const warranty = {
+    kind: 'service',
+    visitType: null,
+    isWarranty: true,
+  }
+
+  it('uses warranty confirmation and reschedule messages without normal-job pricing', () => {
+    expect(getOpsTemplateKeysForEvent('job_scheduled', null, warranty)).toEqual(
+      ['job_scheduled_warranty_sms', 'job_scheduled_warranty_email'],
+    )
+    expect(
+      getOpsTemplateKeysForEvent('job_rescheduled', null, warranty),
+    ).toEqual([
+      'job_rescheduled_warranty_sms',
+      'job_rescheduled_warranty_email',
+    ])
+  })
+
+  it('does not send the cleaning video or review-request completion messages', () => {
+    expect(getOpsTemplateKeysForEvent('on_my_way', null, warranty)).toEqual([
+      'on_my_way_warranty_sms',
+    ])
+    const finished = getOpsTemplateKeysForEvent(
+      'job_finished',
+      [{ name_snapshot: 'Urine Eliminator Treatment' }],
+      warranty,
+    )
+    expect(finished).toEqual([
+      'job_finished_warranty_sms',
+      'job_finished_warranty_email',
+    ])
+    expect(finished).not.toContain('job_finished_sms')
+    expect(finished).not.toContain('job_finished_email_urine')
+    expect(finished).not.toContain('satisfaction_checkin_email')
+  })
+
+  it('uses the warranty day-before reminder', () => {
+    expect(dayBeforeTemplateKey(warranty, null)).toBe('day_before_warranty_sms')
+  })
+})

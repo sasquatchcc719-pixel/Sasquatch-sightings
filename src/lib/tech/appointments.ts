@@ -3,6 +3,7 @@ import { requiresFiberCheck } from '@/lib/fiber/requires-check'
 import type { FiberVerdict } from '@/lib/fiber/types'
 import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
 import type { PaymentTextSend } from '@/lib/ops/payment-texts'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>
 
@@ -156,7 +157,8 @@ const TECH_APPOINTMENT_SELECT = `
     fiber_check_id,
     service_catalog_items (
       category,
-      pricing_unit
+      pricing_unit,
+      slug
     )
   ),
   fiber_checks (
@@ -260,9 +262,15 @@ export function shouldHideTechPricing(row: Record<string, unknown>): boolean {
       | Array<{ invoice_mode?: string | null }>
       | null,
   )
+  const noChargeWarranty =
+    Boolean(row.service_concern_id) ||
+    (isWarrantyAppointment(
+      row as Parameters<typeof isWarrantyAppointment>[0],
+    ) &&
+      Number(row.quoted_total || 0) <= 0)
 
   return (
-    Boolean(row.service_concern_id) ||
+    noChargeWarranty ||
     isRecoveryVillageCustomer(customer) ||
     recurringTemplate?.invoice_mode === 'batch_monthly'
   )

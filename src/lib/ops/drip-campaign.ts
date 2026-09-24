@@ -2,6 +2,7 @@ import { createHmac } from 'crypto'
 import { Resend } from 'resend'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 import { isBlacklisted } from '@/lib/blacklist'
 
 const BOOK_URL = 'https://sightings.sasquatchcarpet.com/book'
@@ -187,7 +188,7 @@ export async function enrollCustomerInDrip(
   const { data: appt } = await supabase
     .from('ops_appointments')
     .select(
-      'id, customer_id, appointment_date, completed_at, status, recurring_template_id, kind, visit_type, restoration_project_id, ops_customers!ops_appointments_customer_id_fkey(email, email_opt_out)',
+      'id, customer_id, appointment_date, completed_at, status, recurring_template_id, kind, visit_type, restoration_project_id, service_concern_id, ops_appointment_line_items(name_snapshot, service_catalog_items(slug)), ops_customers!ops_appointments_customer_id_fkey(email, email_opt_out)',
     )
     .eq('id', appointmentId)
     .single()
@@ -216,6 +217,11 @@ export async function enrollCustomerInDrip(
   ) {
     return
   }
+
+  // A return visit exists to resolve a concern from prior work. Treating that
+  // completion as a fresh sale restarts the carpet-marketing sequence and can
+  // ask the same customer to book again while the warranty issue is closing.
+  if (isWarrantyAppointment(appt)) return
 
   const customer = Array.isArray(appt.ops_customers)
     ? appt.ops_customers[0]

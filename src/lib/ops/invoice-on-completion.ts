@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 export type InvoiceOnCompletionResult =
   | {
@@ -39,21 +40,28 @@ export async function promoteInvoiceOnJobCompletion(
   const { data: appt } = await supabase
     .from('ops_appointments')
     .select(
-      'id, kind, visit_type, restoration_project_id, recurring_template_id, service_concern_id',
+      'id, kind, visit_type, restoration_project_id, recurring_template_id, service_concern_id, quoted_total, ops_appointment_line_items(name_snapshot, service_catalog_items(slug))',
     )
     .eq('id', appointmentId)
     .maybeSingle()
 
-  if (appt?.service_concern_id) {
+  const noChargeWarranty =
+    appt &&
+    (Boolean(appt.service_concern_id) ||
+      (isWarrantyAppointment(appt) && Number(appt.quoted_total || 0) <= 0))
+
+  if (noChargeWarranty) {
     const completedAt = new Date().toISOString()
-    await supabase
-      .from('ops_service_concerns')
-      .update({
-        status: 'resolved',
-        resolved_at: completedAt,
-        updated_at: completedAt,
-      })
-      .eq('id', appt.service_concern_id)
+    if (appt.service_concern_id) {
+      await supabase
+        .from('ops_service_concerns')
+        .update({
+          status: 'resolved',
+          resolved_at: completedAt,
+          updated_at: completedAt,
+        })
+        .eq('id', appt.service_concern_id)
+    }
 
     const { data: warrantyInvoice } = await supabase
       .from('ops_invoices')

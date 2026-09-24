@@ -124,6 +124,48 @@ describe('tech appointment pricing redaction', () => {
     expect(shouldHideTechPricing(row)).toBe(true)
     expect(mapTechAppointment(row).invoice?.total).toBeNull()
   })
+
+  it('hides pricing for a manually booked zero-dollar warranty re-clean', () => {
+    const row = baseAppointment({
+      quoted_total: 0,
+      ops_appointment_line_items: [
+        {
+          id: 'line-1',
+          name_snapshot: 'Warranty Re-Clean',
+          quantity: 1,
+          unit_price: 0,
+          line_total: 0,
+          service_catalog_items: { slug: 'warranty-re-clean' },
+        },
+      ],
+    })
+
+    expect(shouldHideTechPricing(row)).toBe(true)
+  })
+
+  it('keeps pricing visible when paid work is added to a warranty visit', () => {
+    const row = baseAppointment({
+      ops_appointment_line_items: [
+        {
+          id: 'line-1',
+          name_snapshot: 'Warranty Re-Clean',
+          quantity: 1,
+          unit_price: 0,
+          line_total: 0,
+          service_catalog_items: { slug: 'warranty-re-clean' },
+        },
+        {
+          id: 'line-2',
+          name_snapshot: 'Paid add-on',
+          quantity: 1,
+          unit_price: 325,
+          line_total: 325,
+        },
+      ],
+    })
+
+    expect(shouldHideTechPricing(row)).toBe(false)
+  })
 })
 
 describe('tech appointment access', () => {

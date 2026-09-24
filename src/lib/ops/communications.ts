@@ -3,15 +3,22 @@ import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { isBlacklisted, normalizePhone } from '@/lib/blacklist'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
+  'job_scheduled_warranty_sms',
   'on_my_way_sms',
   'on_my_way_estimate_sms',
+  'on_my_way_warranty_sms',
   'job_finished_sms',
+  'job_finished_warranty_sms',
   'job_rescheduled_sms',
+  'job_rescheduled_warranty_sms',
   'job_rescheduled_email',
+  'job_rescheduled_warranty_email',
   'day_before_residential_sms',
+  'day_before_warranty_sms',
   'day_before_recovery_village_sms',
   'day_before_restoration_sms',
   'day_before_restoration_monitor_sms',
@@ -20,7 +27,9 @@ export const OPS_TEMPLATE_KEYS = [
   'job_finished_restoration_monitor_sms',
   'job_rescheduled_restoration_sms',
   'job_scheduled_email',
+  'job_scheduled_warranty_email',
   'job_finished_email',
+  'job_finished_warranty_email',
   'job_finished_email_urine',
   'satisfaction_checkin_email',
 ] as const
@@ -64,6 +73,7 @@ type TemplateContext = {
   tech_name: string
   quoted_total: string
   work_area: string
+  service_list: string
 }
 
 type TechnicianEmailProfile = {
@@ -79,6 +89,7 @@ type AppointmentWithRelations = {
   start_time: string
   end_time: string
   internal_notes: string | null
+  service_concern_id?: string | null
   ops_customers:
     | {
         full_name: string
@@ -116,6 +127,10 @@ type AppointmentWithRelations = {
     quantity: number
     line_total: number
     notes?: string | null
+    service_catalog_items?:
+      | { slug?: string | null }
+      | Array<{ slug?: string | null }>
+      | null
   }>
   quoted_total: number | null
   status?: string | null
@@ -142,6 +157,7 @@ export function dayBeforeTemplateKey(
   visit: LifecycleVisit,
   businessName: string | null,
 ): string {
+  if (visit.isWarranty) return 'day_before_warranty_sms'
   if (isRestorationVisit(visit)) {
     return visit.visitType === 'monitor'
       ? 'day_before_restoration_monitor_sms'
@@ -160,6 +176,7 @@ const APPOINTMENT_SELECT = `
   start_time,
   end_time,
   internal_notes,
+  service_concern_id,
   status,
   quoted_total,
   assigned_staff_user_id,
@@ -183,7 +200,8 @@ const APPOINTMENT_SELECT = `
     name_snapshot,
     quantity,
     line_total,
-    notes
+    notes,
+    service_catalog_items (slug)
   )
 `
 
@@ -278,7 +296,11 @@ export function hasUrineTreatmentLineItem(
   )
 }
 
-export type LifecycleVisit = { kind: string | null; visitType: string | null }
+export type LifecycleVisit = {
+  kind: string | null
+  visitType: string | null
+  isWarranty?: boolean
+}
 
 export function isRestorationVisit(visit?: LifecycleVisit | null): boolean {
   if (!visit) return false
@@ -306,6 +328,17 @@ export function getOpsTemplateKeysForEvent(
   // An estimate is a walkthrough, not a cleaning: no "what to expect" video.
   if (visit?.kind === 'estimate' && event === 'on_my_way') {
     return ['on_my_way_estimate_sms']
+  }
+
+  if (visit?.isWarranty) {
+    if (event === 'job_scheduled') {
+      return ['job_scheduled_warranty_sms', 'job_scheduled_warranty_email']
+    }
+    if (event === 'on_my_way') return ['on_my_way_warranty_sms']
+    if (event === 'job_rescheduled') {
+      return ['job_rescheduled_warranty_sms', 'job_rescheduled_warranty_email']
+    }
+    return ['job_finished_warranty_sms', 'job_finished_warranty_email']
   }
 
   if (isRestorationVisit(visit)) {
@@ -518,6 +551,9 @@ async function getAppointmentContext(
         .join('; ') ||
       customerVisibleLineItems?.join(', ') ||
       'Scheduled service area',
+    service_list:
+      customerVisibleLineItems?.map((name) => `- ${name}`).join('\n') ||
+      'Warranty follow-up',
   }
 
   return { appointment, context, technician }
@@ -633,7 +669,13 @@ function buildTechnicianCardHtml(
   templateKey: string,
   technician?: TechnicianEmailProfile | null,
 ): string {
-  if (templateKey !== 'job_scheduled_email' || !technician) return ''
+  if (
+    !['job_scheduled_email', 'job_scheduled_warranty_email'].includes(
+      templateKey,
+    ) ||
+    !technician
+  )
+    return ''
 
   const initials = technician.displayName
     .split(' ')
@@ -818,16 +860,31 @@ export async function getOnMyWaySmsRenderedBody(
   appointmentId: string,
 ): Promise<string | null> {
   const supabase = createAdminClient()
+  const { appointment, context } = await getAppointmentContext(
+    supabase,
+    appointmentId,
+  )
+  if (!appointment || !context) return null
+
+  const templateKey = getOpsTemplateKeysForEvent(
+    'on_my_way',
+    appointment.ops_appointment_line_items,
+    {
+      kind: (appointment as { kind?: string | null }).kind ?? null,
+      visitType:
+        (appointment as { visit_type?: string | null }).visit_type ?? null,
+      isWarranty: isWarrantyAppointment(appointment),
+    },
+  )[0]
+  if (!templateKey) return null
+
   const { data: template } = await supabase
     .from('ops_communication_templates')
     .select('body_template')
-    .eq('template_key', 'on_my_way_sms')
+    .eq('template_key', templateKey)
     .maybeSingle()
 
   if (!template?.body_template) return null
-
-  const { context } = await getAppointmentContext(supabase, appointmentId)
-  if (!context) return null
 
   return renderTemplate(template.body_template, context)
 }
@@ -859,6 +916,7 @@ export async function sendOpsLifecycleCommunications(params: {
       kind: (appointment as { kind?: string | null }).kind ?? null,
       visitType:
         (appointment as { visit_type?: string | null }).visit_type ?? null,
+      isWarranty: isWarrantyAppointment(appointment),
     },
   )
   if (templates.length === 0) return { sent: [] }
@@ -1289,6 +1347,7 @@ export async function sendDayBeforeReminderSms(params?: {
     .select('template_key, body_template, is_enabled')
     .in('template_key', [
       'day_before_residential_sms',
+      'day_before_warranty_sms',
       'day_before_recovery_village_sms',
       'day_before_restoration_sms',
       'day_before_restoration_monitor_sms',
@@ -1329,6 +1388,7 @@ export async function sendDayBeforeReminderSms(params?: {
         kind: (appointment as { kind?: string | null }).kind ?? null,
         visitType:
           (appointment as { visit_type?: string | null }).visit_type ?? null,
+        isWarranty: isWarrantyAppointment(appointment),
       },
       customer?.business_name ?? null,
     )

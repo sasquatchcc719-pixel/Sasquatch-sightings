@@ -31,6 +31,7 @@ import {
   getTechStatusTransitionError,
   isActiveTechJobStatus,
 } from '@/lib/tech/appointments'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -281,9 +282,12 @@ export async function PATCH(
         `
           *,
           ops_appointment_line_items (
+            name_snapshot,
             duration_minutes,
             buffer_minutes,
-            quantity
+            quantity,
+            unit_price,
+            service_catalog_items (slug)
           )
         `,
       )
@@ -392,7 +396,11 @@ export async function PATCH(
       body.skip_customer_communications === true
     const notifyCustomerOnReschedule =
       body.notify_customer_on_reschedule === true
-    const nextPaymentStatus = current.service_concern_id
+    const isWarrantyWork = isWarrantyAppointment(current)
+    const isNoChargeWarranty =
+      Boolean(current.service_concern_id) ||
+      (isWarrantyWork && Number(current.quoted_total || 0) <= 0)
+    const nextPaymentStatus = isNoChargeWarranty
       ? 'waived'
       : body.payment_status
         ? String(body.payment_status)
@@ -732,7 +740,9 @@ export async function PATCH(
           const previewBody = await getOnMyWaySmsRenderedBody(id)
           if (previewBody != null) {
             lifecycleNotifications.push({
-              template_key: 'on_my_way_sms',
+              template_key: isWarrantyWork
+                ? 'on_my_way_warranty_sms'
+                : 'on_my_way_sms',
               channel: 'sms',
               body: previewBody,
               actually_sent: false,

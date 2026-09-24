@@ -14,6 +14,7 @@ import { isBlacklisted } from '@/lib/blacklist'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 /** Public page listing every platform we can be reviewed on (Google, Yelp, BBB, Nextdoor, …). */
 export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
@@ -138,7 +139,21 @@ export async function enqueueReviewRequests(
 
   const { data: completed, error } = await supabase
     .from('ops_appointments')
-    .select('id, customer_id, completed_at, kind, visit_type, restoration_project_id')
+    .select(
+      `
+      id,
+      customer_id,
+      completed_at,
+      kind,
+      visit_type,
+      restoration_project_id,
+      service_concern_id,
+      ops_appointment_line_items (
+        name_snapshot,
+        service_catalog_items (slug)
+      )
+    `,
+    )
     .eq('status', 'completed')
     .gte('completed_at', lookbackIso)
     .order('completed_at', { ascending: true })
@@ -193,6 +208,13 @@ export async function enqueueReviewRequests(
     // one that closes the job.
     if (appt.kind === 'restoration' || appt.restoration_project_id) {
       await insertSkip('restoration job - we do not ask for reviews on floods')
+      continue
+    }
+
+    if (isWarrantyAppointment(appt)) {
+      await insertSkip(
+        'warranty follow-up - do not ask for another review after a return visit',
+      )
       continue
     }
 

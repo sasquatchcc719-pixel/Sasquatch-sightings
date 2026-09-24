@@ -15,6 +15,8 @@ let originalJobId = ''
 let concernId = ''
 let returnJobId = ''
 let invoiceId = ''
+let manualReturnJobId = ''
+let manualInvoiceId = ''
 let userId = ''
 
 beforeAll(async () => {
@@ -116,19 +118,71 @@ beforeAll(async () => {
     .single()
   expect(invoiceError).toBeNull()
   invoiceId = invoice!.id
+
+  const { data: warrantyService, error: warrantyServiceError } = await supabase
+    .from('service_catalog_items')
+    .select('id, name')
+    .eq('slug', 'warranty-re-clean')
+    .single()
+  expect(warrantyServiceError).toBeNull()
+
+  const { data: manualReturn, error: manualReturnError } = await supabase
+    .from('ops_appointments')
+    .insert({
+      ...baseJob,
+      status: 'in_progress',
+      appointment_date: '2026-09-05',
+    })
+    .select('id')
+    .single()
+  expect(manualReturnError).toBeNull()
+  manualReturnJobId = manualReturn!.id
+
+  const { error: manualLineError } = await supabase
+    .from('ops_appointment_line_items')
+    .insert({
+      appointment_id: manualReturnJobId,
+      service_catalog_item_id: warrantyService!.id,
+      name_snapshot: warrantyService!.name,
+      quantity: 1,
+      unit_price: 0,
+      line_total: 0,
+      duration_minutes: 60,
+      buffer_minutes: 0,
+    })
+  expect(manualLineError).toBeNull()
+
+  const { data: manualInvoice, error: manualInvoiceError } = await supabase
+    .from('ops_invoices')
+    .insert({
+      appointment_id: manualReturnJobId,
+      status: 'draft',
+      payment_status: 'unpaid',
+      subtotal: 0,
+      total: 0,
+      sync_status: 'pending',
+    })
+    .select('id')
+    .single()
+  expect(manualInvoiceError).toBeNull()
+  manualInvoiceId = manualInvoice!.id
 })
 
 afterAll(async () => {
-  if (invoiceId) {
-    await supabase
-      .from('ops_quickbooks_sync_jobs')
-      .delete()
-      .eq('entity_id', invoiceId)
+  for (const id of [invoiceId, manualInvoiceId].filter(Boolean)) {
+    await supabase.from('ops_quickbooks_sync_jobs').delete().eq('entity_id', id)
     await supabase
       .from('ops_invoice_status_events')
       .delete()
-      .eq('invoice_id', invoiceId)
-    await supabase.from('ops_invoices').delete().eq('id', invoiceId)
+      .eq('invoice_id', id)
+    await supabase.from('ops_invoices').delete().eq('id', id)
+  }
+  if (manualReturnJobId) {
+    await supabase
+      .from('ops_appointment_line_items')
+      .delete()
+      .eq('appointment_id', manualReturnJobId)
+    await supabase.from('ops_appointments').delete().eq('id', manualReturnJobId)
   }
   if (returnJobId) {
     await supabase.from('ops_appointments').delete().eq('id', returnJobId)
@@ -176,6 +230,34 @@ describe('warranty return completion', () => {
 
     expect(concern).toMatchObject({ status: 'resolved' })
     expect(concern?.resolved_at).toBeTruthy()
+    expect(invoice).toEqual({
+      status: 'ready',
+      payment_status: 'waived',
+      sync_status: 'held',
+    })
+    expect(qbJobs).toEqual([])
+  })
+
+  it('also holds a manually booked zero-dollar warranty service out of QuickBooks', async () => {
+    const result = await promoteInvoiceOnJobCompletion(supabase, {
+      appointmentId: manualReturnJobId,
+      userId,
+      note: 'Manual warranty integration test completed',
+    })
+    expect(result).toEqual({ promoted: true, invoiceId: manualInvoiceId })
+
+    const [{ data: invoice }, { data: qbJobs }] = await Promise.all([
+      supabase
+        .from('ops_invoices')
+        .select('status, payment_status, sync_status')
+        .eq('id', manualInvoiceId)
+        .single(),
+      supabase
+        .from('ops_quickbooks_sync_jobs')
+        .select('id')
+        .eq('entity_id', manualInvoiceId),
+    ])
+
     expect(invoice).toEqual({
       status: 'ready',
       payment_status: 'waived',

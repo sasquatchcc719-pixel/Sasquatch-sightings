@@ -21,6 +21,7 @@ import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -352,6 +353,12 @@ export async function POST(request: NextRequest) {
 
     discountAmount = Math.min(quotedSubtotal, discountAmount)
     const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
+    const isWarrantyWork = isWarrantyAppointment({
+      service_concern_id: serviceConcernId,
+      ops_appointment_line_items: normalizedLineItems,
+    })
+    const isNoChargeWarranty =
+      isWarrantyReturn || (isWarrantyWork && quotedTotal <= 0)
 
     // Calculate duration based on dollar amount (simple tier system)
     // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
@@ -588,13 +595,13 @@ export async function POST(request: NextRequest) {
         source: body.appointment?.source || 'internal',
         ...leadSourcePayload,
         status: 'booked',
-        payment_status: isWarrantyReturn ? 'waived' : 'unpaid',
+        payment_status: isNoChargeWarranty ? 'waived' : 'unpaid',
         kind: appointmentKind,
         estimate_status: isEstimate ? 'draft' : null,
         // Estimates never sync to QuickBooks; 'held' is the allowed
         // "do not sync" value on the ops_appointments CHECK constraint.
         quickbooks_sync_status:
-          isEstimate || isWarrantyReturn ? 'held' : syncStatus,
+          isEstimate || isNoChargeWarranty ? 'held' : syncStatus,
         service_concern_id: serviceConcernId,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
@@ -650,7 +657,7 @@ export async function POST(request: NextRequest) {
         .insert({
           appointment_id: appointment.id,
           status: 'draft',
-          payment_status: isWarrantyReturn ? 'waived' : 'unpaid',
+          payment_status: isNoChargeWarranty ? 'waived' : 'unpaid',
           subtotal: Number(quotedSubtotal.toFixed(2)),
           discount_amount: Number(discountAmount.toFixed(2)),
           discount_metadata: appliedPromoCode
@@ -664,7 +671,7 @@ export async function POST(request: NextRequest) {
               }
             : {},
           total: Number(quotedTotal.toFixed(2)),
-          sync_status: isWarrantyReturn ? 'held' : syncStatus,
+          sync_status: isNoChargeWarranty ? 'held' : syncStatus,
         })
         .select()
         .single()
@@ -695,8 +702,8 @@ export async function POST(request: NextRequest) {
           from_status: null,
           to_status: 'booked',
           changed_by: access.id,
-          notes: isWarrantyReturn
-            ? 'Approved warranty return scheduled from service concern'
+          notes: isNoChargeWarranty
+            ? 'No-charge warranty work scheduled'
             : 'Appointment created from internal operations dashboard',
         }),
         supabase.from('ops_invoice_status_events').insert({
@@ -704,12 +711,12 @@ export async function POST(request: NextRequest) {
           from_status: null,
           to_status: 'draft',
           changed_by: access.id,
-          notes: isWarrantyReturn
+          notes: isNoChargeWarranty
             ? 'No-charge warranty invoice held from QuickBooks sync'
             : 'Invoice draft created at booking time',
         }),
       ]
-      if (!isWarrantyReturn) {
+      if (!isNoChargeWarranty) {
         creationTasks.push(
           ensureCustomerQuickBooksSyncJob(
             supabase,
@@ -751,7 +758,7 @@ export async function POST(request: NextRequest) {
           event: 'job_scheduled',
           appointmentId: appointment.id,
         }),
-        isWarrantyReturn
+        isNoChargeWarranty
           ? Promise.resolve(null)
           : syncAppointmentToQuickBooks(appointment.id),
         scheduleJobReminder({
@@ -842,7 +849,8 @@ export async function PATCH(request: NextRequest) {
             name_snapshot,
             quantity,
             unit_price,
-            line_total
+            line_total,
+            service_catalog_items (slug)
           ),
           ops_invoices (
             id,
@@ -858,10 +866,13 @@ export async function PATCH(request: NextRequest) {
     if (appointmentError) throw appointmentError
 
     const nextStatus = body.status ? String(body.status) : appointment.status
-    const isWarrantyReturn = Boolean(appointment.service_concern_id)
+    const isWarrantyWork = isWarrantyAppointment(appointment)
+    const isNoChargeWarranty =
+      Boolean(appointment.service_concern_id) ||
+      (isWarrantyWork && Number(appointment.quoted_total || 0) <= 0)
     const skipCustomerCommunications =
       body.skip_customer_communications === true
-    const paymentStatus = isWarrantyReturn
+    const paymentStatus = isNoChargeWarranty
       ? 'waived'
       : body.payment_status
         ? String(body.payment_status)
@@ -919,7 +930,7 @@ export async function PATCH(request: NextRequest) {
       const invoiceUpdate = {
         status: nextInvoiceStatus,
         payment_status: paymentStatus,
-        sync_status: isWarrantyReturn ? 'held' : getQuickBooksSyncStatus(),
+        sync_status: isNoChargeWarranty ? 'held' : getQuickBooksSyncStatus(),
         updated_at: new Date().toISOString(),
       }
 
@@ -952,14 +963,14 @@ export async function PATCH(request: NextRequest) {
         if (invoiceEventError) throw invoiceEventError
       }
 
-      if (!isWarrantyReturn) {
+      if (!isNoChargeWarranty) {
         void syncAppointmentToQuickBooks(appointmentId).catch((qbErr) =>
           console.error('[ops/appointments][PATCH] QB sync:', qbErr),
         )
       }
     }
 
-    if (nextStatus === 'completed' && !isWarrantyReturn) {
+    if (nextStatus === 'completed' && !isWarrantyWork) {
       const customer = Array.isArray(appointment.ops_customers)
         ? appointment.ops_customers[0]
         : appointment.ops_customers

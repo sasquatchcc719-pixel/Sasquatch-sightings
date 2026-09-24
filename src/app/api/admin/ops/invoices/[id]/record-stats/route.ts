@@ -3,12 +3,12 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
-import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
-import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
+import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -70,7 +70,9 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (markCompleted) {
       const { data: appt } = await supabase
         .from('ops_appointments')
-        .select('id, status, completed_at')
+        .select(
+          'id, status, completed_at, quoted_total, service_concern_id, ops_appointment_line_items(name_snapshot, service_catalog_items(slug))',
+        )
         .eq('id', inv.appointment_id)
         .single()
 
@@ -115,29 +117,21 @@ export async function POST(request: NextRequest, { params }: Params) {
         await enrollCustomerInDrip(inv.appointment_id)
       }
 
-      const { data: invRow } = await supabase
-        .from('ops_invoices')
-        .select('id, status')
-        .eq('id', invoiceId)
-        .single()
+      await promoteInvoiceOnJobCompletion(supabase, {
+        appointmentId: inv.appointment_id,
+        userId: access.id,
+        note: 'Job completed while recording stats',
+      })
 
-      if (invRow?.status === 'draft') {
-        const ts = new Date().toISOString()
-        await supabase
-          .from('ops_invoices')
-          .update({
-            status: 'ready',
-            sync_status: getQuickBooksSyncStatus(),
-            updated_at: ts,
-          })
-          .eq('id', invoiceId)
+      const noChargeWarranty =
+        appt &&
+        (Boolean(appt.service_concern_id) ||
+          (isWarrantyAppointment(appt) && Number(appt.quoted_total || 0) <= 0))
+      if (!noChargeWarranty) {
+        void syncAppointmentToQuickBooks(inv.appointment_id).catch((qbErr) =>
+          console.error('[record-stats] QB sync:', qbErr),
+        )
       }
-
-      await ensureInvoiceQuickBooksSyncJob(supabase, invoiceId)
-
-      void syncAppointmentToQuickBooks(inv.appointment_id).catch((qbErr) =>
-        console.error('[record-stats] QB sync:', qbErr),
-      )
     }
 
     if (result.skipped) {
