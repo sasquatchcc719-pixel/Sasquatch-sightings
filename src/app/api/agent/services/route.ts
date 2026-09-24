@@ -9,6 +9,7 @@ import { createAdminClient } from '@/supabase/server'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { getServiceAreaDescription } from '@/lib/service-area'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -88,8 +89,7 @@ export async function GET() {
       {
         services,
         promotions,
-        booking_instructions:
-          'To book: 1) Call GET /api/agent/availability?date=YYYY-MM-DD to find open slots. 2) Call GET /api/agent/estimate?services=id1,id2 for pricing. 3) Call POST /api/agent/book with customer info, address, date, start_time, and line_items. Use Authorization: Bearer sqa_bo8b58mo2424z2kocz7lftajhet2fgy50mwduiaf for the book request. Minimum booking total is $150.',
+        booking_instructions: `To book: 1) Call GET /api/agent/availability?date=YYYY-MM-DD to find open slots. 2) Call GET /api/agent/estimate?services=id1,id2 for pricing. 3) Call POST /api/agent/book with customer info, address, date, start_time, and line_items. Use Authorization: Bearer sqa_bo8b58mo2424z2kocz7lftajhet2fgy50mwduiaf for the book request. Minimum booking total is $${MINIMUM_JOB_TOTAL}.`,
         service_area: getServiceAreaDescription(),
       },
       { headers: CORS },

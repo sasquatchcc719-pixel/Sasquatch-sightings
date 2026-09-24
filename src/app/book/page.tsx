@@ -8,6 +8,7 @@ import {
   getPublicLeadSourceOptions,
 } from '@/lib/lead-sources'
 import { calculateAppointmentDurationFromTotal } from '@/lib/ops/availability'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 // ─────────────────────────────────────────────
 //  Types
@@ -130,8 +131,6 @@ function StepBar({ current }: { current: number }) {
 // ─────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────
-const MIN_TOTAL = 150
-
 function cartTotal(cart: CartItem[]): number {
   return cart.reduce((sum, ci) => sum + ci.service.base_price * ci.quantity, 0)
 }
@@ -649,7 +648,7 @@ export default function BookPage() {
 
   // ── Derived totals ──
   const subtotal = cartTotal(cart)
-  const meetsMinimum = subtotal >= MIN_TOTAL
+  const meetsMinimum = subtotal >= MINIMUM_JOB_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
   const selectedLeadSource = useMemo(
     () => leadSourceOptions.find((option) => option.key === form.lead_source),
@@ -873,7 +872,7 @@ export default function BookPage() {
                 </h1>
                 <p className="mb-6 text-sm text-gray-500">
                   Choose the services you need. Minimum booking is{' '}
-                  {formatPrice(MIN_TOTAL)}.
+                  {formatPrice(MINIMUM_JOB_TOTAL)}.
                 </p>
 
                 {servicesLoading ? (
@@ -916,7 +915,7 @@ export default function BookPage() {
                         </div>
                         {!meetsMinimum && (
                           <p className="text-xs leading-tight text-red-500">
-                            {formatPrice(MIN_TOTAL - subtotal)} more
+                            {formatPrice(MINIMUM_JOB_TOTAL - subtotal)} more
                           </p>
                         )}
                       </div>

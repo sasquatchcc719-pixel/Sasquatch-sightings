@@ -148,6 +148,16 @@ describe('summarizeFunnel', () => {
     })
   })
 
+  it('uses the current $175 minimum when qualifying quotes', () => {
+    const s = summarizeFunnel([
+      ev('old-minimum', 'quote_started', 150),
+      ev('current-minimum', 'quote_started', 175),
+    ])
+
+    expect(s.quoteSessions).toBe(1)
+    expect(s.abandonedQuoteValue).toBe(175)
+  })
+
   it('builds a continuous seven-day trend from qualified-quote cohorts', () => {
     const s = summarizeFunnel(
       [

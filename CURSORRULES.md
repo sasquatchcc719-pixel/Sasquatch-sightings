@@ -98,14 +98,14 @@ src/
 | Create booked job from widget | `src/app/api/public/appointments/route.ts` |
 | Pre-Vacuuming **$10** DB fix | `supabase/migrations/20260413120000_fix_pre_vacuuming_catalog_price.sql` |
 | Migration index (searchable) | `supabase/migrations/README.md` |
-| $150 minimum + Pre-Vacuum UI override | `sasquatch.com-client` → `booking-widget.component.ts` (sibling repo, not this one) |
+| $175 minimum + Pre-Vacuum UI override | `sasquatch.com-client` → `booking-widget.component.ts` (sibling repo, not this one) |
 
 **Keywords to search in this repo:** `pre-vacuuming`, `service_catalog_items`, `public/services`, `BOOKING_API_SECRET`, `minimumJobTotal`.
 
 ### Cursor prompt (paste in chat when you want the assistant to load context)
 
 ```
-Open and follow Sasquatch Sightings: supabase/migrations/README.md and CURSORRULES.md section "WEBSITE BOOKING & CATALOG PRICES". Use those paths for booking, Pre-Vacuuming $10, and $150 minimum work.
+Open and follow Sasquatch Sightings: supabase/migrations/README.md and CURSORRULES.md section "WEBSITE BOOKING & CATALOG PRICES". Use those paths for booking, Pre-Vacuuming $10, and $175 minimum work.
 ```
 
 ---

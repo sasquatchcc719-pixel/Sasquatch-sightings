@@ -883,7 +883,7 @@ export default function VendorContestPage() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-foreground">•</span>
-              <span>$20 coupon valid on services $150 or more</span>
+              <span>$20 coupon valid on services $175 or more</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-foreground">•</span>

@@ -24,6 +24,7 @@ import {
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -65,7 +66,7 @@ export type CreateAiStyleBookingInput = {
   admin_heading: string
   /** Rabecca may apply the AI promo only when the caller explicitly asks. */
   discount_requested?: boolean
-  /** Customer explicitly agreed to pay the $150 minimum even when catalog lines price lower. */
+  /** Customer explicitly agreed to pay the booking minimum even when catalog lines price lower. */
   accepted_minimum_charge?: boolean
   /** Staff member to assign this appointment to. */
   assigned_staff_user_id?: string | null
@@ -363,11 +364,10 @@ export async function createAiStyleBooking(
   const travelCharge = serviceAreaCheck.travelCharge
   const googleLsaCharge =
     bookingChannel === 'lsa_sms' ? GOOGLE_LSA_LEAD_RECOVERY_AMOUNT : 0
-  const MINIMUM_BOOKING_AMOUNT = 150
   const subtotalBeforeMinimum = serviceSubtotal + googleLsaCharge + travelCharge
   const minimumAdjustment =
-    acceptedMinimumCharge && subtotalBeforeMinimum < MINIMUM_BOOKING_AMOUNT
-      ? MINIMUM_BOOKING_AMOUNT - subtotalBeforeMinimum
+    acceptedMinimumCharge && subtotalBeforeMinimum < MINIMUM_JOB_TOTAL
+      ? MINIMUM_JOB_TOTAL - subtotalBeforeMinimum
       : 0
   if (minimumAdjustment > 0) {
     lineItems.push({
@@ -405,10 +405,10 @@ export async function createAiStyleBooking(
     })
   }
 
-  if (subtotal < MINIMUM_BOOKING_AMOUNT) {
+  if (subtotal < MINIMUM_JOB_TOTAL) {
     return {
       ok: false,
-      error: `Minimum booking amount is $${MINIMUM_BOOKING_AMOUNT}. Your current total is $${subtotal.toFixed(2)}. Please add more services to meet the minimum.`,
+      error: `Minimum booking amount is $${MINIMUM_JOB_TOTAL}. Your current total is $${subtotal.toFixed(2)}. Please add more services to meet the minimum.`,
     }
   }
 

@@ -43,7 +43,7 @@ See you Tuesday, August 25th at 3:00 PM. We'll text a reminder the day before.`
     'I need a few more details so you can get booked.',
     'What day works for you?',
     'So that is 2 bedrooms and 14 stairs, correct?',
-    'Our minimum job total is $150. Would you like to add more rooms?',
+    'Our minimum job total is $175. Would you like to add more rooms?',
     'That comes to $406 for the Legendary Restoration Clean.',
     'I have availability Tuesday at 3:00 PM or Wednesday at 9:00 AM. Which would you prefer?',
     "I wasn't able to finish that booking, so you are NOT on the schedule yet.",

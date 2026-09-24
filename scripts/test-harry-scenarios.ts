@@ -46,13 +46,13 @@ const scenarios: Scenario[] = [
       if (r.includes('138'))
         issues.push('FAIL: Used Monster tier — combined sqft across rooms')
       if (r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Mentioned minimum when total exceeds $150')
+        issues.push('FAIL: Mentioned minimum when total exceeds $175')
       return issues
     },
   },
   {
     name: '2. Multi-room pricing — 2 bedrooms',
-    description: '2 × $46 = $92. Must mention $150 minimum.',
+    description: '2 × $46 = $92. Must mention $175 minimum.',
     messages: [
       {
         role: 'user',
@@ -63,14 +63,14 @@ const scenarios: Scenario[] = [
     checks(r) {
       const issues: string[] = []
       if (!r.includes('92')) issues.push('FAIL: Expected $92 (2×$46)')
-      if (!r.includes('150') || !r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Must mention $150 minimum when total < $150')
+      if (!r.includes('175') || !r.toLowerCase().includes('minimum'))
+        issues.push('FAIL: Must mention $175 minimum when total < $175')
       return issues
     },
   },
   {
     name: '3. Single bedroom — under minimum',
-    description: '$46 for 1 room. Must mention $150 minimum.',
+    description: '$46 for 1 room. Must mention $175 minimum.',
     messages: [
       { role: 'user', content: 'How much for one bedroom? About 150 sq ft.' },
     ],
@@ -79,8 +79,8 @@ const scenarios: Scenario[] = [
       const issues: string[] = []
       if (!r.includes('46'))
         issues.push('FAIL: Expected $46 for standard bedroom')
-      if (!r.includes('150') || !r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Must mention $150 minimum')
+      if (!r.includes('175') || !r.toLowerCase().includes('minimum'))
+        issues.push('FAIL: Must mention $175 minimum')
       return issues
     },
   },
@@ -106,7 +106,7 @@ const scenarios: Scenario[] = [
   },
   {
     name: '5. Stairs pricing',
-    description: '15 steps × $4 = $60. Must mention $150 minimum.',
+    description: '15 steps × $4 = $60. Must mention $175 minimum.',
     messages: [
       { role: 'user', content: 'I need my stairs cleaned. 15 steps.' },
     ],
@@ -114,8 +114,8 @@ const scenarios: Scenario[] = [
     checks(r) {
       const issues: string[] = []
       if (!r.includes('60')) issues.push('FAIL: Expected $60 (15×$4)')
-      if (!r.includes('150') || !r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Must mention $150 minimum when total < $150')
+      if (!r.includes('175') || !r.toLowerCase().includes('minimum'))
+        issues.push('FAIL: Must mention $175 minimum when total < $175')
       return issues
     },
   },
@@ -133,7 +133,7 @@ const scenarios: Scenario[] = [
       const issues: string[] = []
       if (!r.includes('184')) issues.push('FAIL: Expected $184 (4×$46)')
       if (r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Mentioned minimum when total ($184) exceeds $150')
+        issues.push('FAIL: Mentioned minimum when total ($184) exceeds $175')
       return issues
     },
   },
@@ -164,14 +164,14 @@ const scenarios: Scenario[] = [
   },
   {
     name: '8. Leather chair — under minimum',
-    description: 'Leather chair = $99. Must mention $150 minimum.',
+    description: 'Leather chair = $99. Must mention $175 minimum.',
     messages: [{ role: 'user', content: 'How much to clean a leather chair?' }],
     channel: 'inbound',
     checks(r) {
       const issues: string[] = []
       if (!r.includes('99')) issues.push('FAIL: Expected $99 for leather chair')
-      if (!r.includes('150') || !r.toLowerCase().includes('minimum'))
-        issues.push('FAIL: Must mention $150 minimum when total < $150')
+      if (!r.includes('175') || !r.toLowerCase().includes('minimum'))
+        issues.push('FAIL: Must mention $175 minimum when total < $175')
       return issues
     },
   },

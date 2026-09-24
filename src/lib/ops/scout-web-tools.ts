@@ -14,6 +14,7 @@ import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { checkServiceArea } from '@/lib/service-area'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 import { sendScoutEscalationAlert } from '@/lib/telegram'
 
 /**
@@ -261,8 +262,7 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
           },
           accepted_minimum_charge: {
             type: 'boolean',
-            description:
-              'Set true only when selected services are below the $150 minimum and the customer explicitly agreed to book at the $150 minimum anyway.',
+            description: `Set true only when selected services are below the $${MINIMUM_JOB_TOTAL} minimum and the customer explicitly agreed to book at the $${MINIMUM_JOB_TOTAL} minimum anyway.`,
           },
         },
         required: [
@@ -611,16 +611,15 @@ export async function executeScoutWebTool(
           return JSON.stringify({ error: priced.error })
         }
 
-        const MIN_JOB_TOTAL = 150
         const preServiceTotal = priced.serviceTotal
         const serviceAreaCheck = checkServiceArea(zipCode)
         if (!serviceAreaCheck.allowed) {
           return JSON.stringify({ error: serviceAreaCheck.message })
         }
         const preTotal = preServiceTotal + (serviceAreaCheck.travelCharge || 0)
-        if (preTotal < MIN_JOB_TOTAL && !acceptedMinimumCharge) {
+        if (preTotal < MINIMUM_JOB_TOTAL && !acceptedMinimumCharge) {
           return JSON.stringify({
-            error: `Job total of $${preTotal.toFixed(2)} is below the $${MIN_JOB_TOTAL} minimum. Ask if the customer wants to add more services or book at the $${MIN_JOB_TOTAL} minimum. If they explicitly accept the minimum, call book_new_job again with accepted_minimum_charge: true.`,
+            error: `Job total of $${preTotal.toFixed(2)} is below the $${MINIMUM_JOB_TOTAL} minimum. Ask if the customer wants to add more services or book at the $${MINIMUM_JOB_TOTAL} minimum. If they explicitly accept the minimum, call book_new_job again with accepted_minimum_charge: true.`,
           })
         }
 

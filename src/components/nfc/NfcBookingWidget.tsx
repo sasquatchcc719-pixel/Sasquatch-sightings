@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import styles from './booking-forest.module.css'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,7 +66,6 @@ export interface NfcBookingWidgetProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const MIN_TOTAL = 150
 const MULTI_RUG_DISCOUNT_PERCENT = 10
 const STEPS = ['Services', 'Schedule', 'Your Info', 'Review']
 
@@ -885,7 +885,7 @@ export function NfcBookingWidget({
     0,
     subtotal - promoDiscountAmount - rugDiscountAmount,
   )
-  const meetsMinimum = subtotal >= MIN_TOTAL
+  const meetsMinimum = subtotal >= MINIMUM_JOB_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
   const rugOfferServices = useMemo(
     () => services.filter((service) => isRugService(service)),
@@ -1157,7 +1157,7 @@ export function NfcBookingWidget({
               Select Services
             </h3>
             <p className="mb-4 text-xs text-white/50">
-              Minimum booking {formatPrice(MIN_TOTAL)}.
+              Minimum booking {formatPrice(MINIMUM_JOB_TOTAL)}.
             </p>
 
             {servicesLoading ? (
@@ -1241,7 +1241,8 @@ export function NfcBookingWidget({
                     </p>
                     {!meetsMinimum && (
                       <p className="text-xs text-red-400">
-                        {formatPrice(MIN_TOTAL - subtotal)} more to meet minimum
+                        {formatPrice(MINIMUM_JOB_TOTAL - subtotal)} more to meet
+                        minimum
                       </p>
                     )}
                   </div>
@@ -1890,7 +1891,7 @@ export function NfcBookingWidget({
                 {meetsMinimum ? null : (
                   <span className="text-red-300/90">
                     {' '}
-                    · {formatPrice(MIN_TOTAL - subtotal)} to min
+                    · {formatPrice(MINIMUM_JOB_TOTAL - subtotal)} to min
                   </span>
                 )}
               </span>

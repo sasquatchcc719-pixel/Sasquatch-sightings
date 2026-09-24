@@ -38,6 +38,7 @@ import {
 } from '@/lib/ops/scout-booking-claim'
 import { toPlainText } from '@/lib/ops/scout-plain-text'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 // Scout's tool-calling loop (up to 8 rounds × GPT-4o + DB) can run long. The
 // Vercel default function timeout (10–15s on Pro) is too tight — if we hit it,
@@ -413,7 +414,7 @@ Hard stops:
 - NEVER make up a slot_token. It is a long signed string that only get_calendar_slots can produce. If you don't have one in front of you, call get_calendar_slots again.
 - If a line item changes after you fetched slots (they add a room, correct a size), you MUST call get_calendar_slots again with the updated line_items. The old slot_token is no longer valid.
 - NEVER call book_new_job without first AND last name, email, phone, full address (street/city/zip), and lead_source.
-- MINIMUM JOB TOTAL: $150. If selected services total under $150, tell the customer: "Our minimum job total is $150. Would you like to add more rooms or services, or book this at the $150 minimum?" If they explicitly accept the $150 minimum, you may call book_new_job with accepted_minimum_charge=true. Do NOT escalate this as a technical issue.
+- MINIMUM JOB TOTAL: $${MINIMUM_JOB_TOTAL}. If selected services total under $${MINIMUM_JOB_TOTAL}, tell the customer: "Our minimum job total is $${MINIMUM_JOB_TOTAL}. Would you like to add more rooms or services, or book this at the $${MINIMUM_JOB_TOTAL} minimum?" If they explicitly accept the $${MINIMUM_JOB_TOTAL} minimum, you may call book_new_job with accepted_minimum_charge=true. Do NOT escalate this as a technical issue.
 - Commercial jobs do NOT use book_new_job. Use book_commercial_estimate to schedule a free on-site walkthrough — see the COMMERCIAL / WALKTHROUGH ESTIMATES section below.
 
 ## LEAD SOURCE (REQUIRED FOR ALL BOOKINGS)
@@ -668,7 +669,7 @@ Use notify_charles for:
 - If a tool returns "error", do NOT claim it worked. Handle the error:
   - Missing data → ask the customer for it ("I need your email for the confirmation — what's the best one?")
   - Time not available → offer the real suggested_slots from the error, or a different date if the list is empty
-  - Under $150 minimum → tell them and offer to add services or book at the $150 minimum. If they explicitly accept the minimum, retry book_new_job with accepted_minimum_charge=true.
+  - Under $${MINIMUM_JOB_TOTAL} minimum → tell them and offer to add services or book at the $${MINIMUM_JOB_TOTAL} minimum. If they explicitly accept the minimum, retry book_new_job with accepted_minimum_charge=true.
   - Out-of-area / technical / truly stuck → collect their phone number, then call notify_charles.
 - If you cannot get a booking through after a genuine attempt, say so plainly, collect their phone number, and call notify_charles. A customer who knows they still need to be booked is a saved job. A customer who was told they're booked when they aren't is a lost customer and a missed appointment.
 - NEVER use phrases like "I'll go ahead and update that" or "Done!" unless a tool just returned success.

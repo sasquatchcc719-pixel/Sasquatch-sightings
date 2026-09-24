@@ -2,6 +2,7 @@
 
 import { Phone, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 const PHONE = '7192498791'
 const PHONE_DISPLAY = '(719) 249-8791'
@@ -50,8 +51,8 @@ export function ContactSection() {
         </div>
 
         <p className="mt-8 text-xs tracking-wider text-white/30">
-          $150 minimum · Serving Colorado&apos;s Front Range · Monument ·
-          Colorado Springs · Castle Rock
+          ${MINIMUM_JOB_TOTAL} minimum · Serving Colorado&apos;s Front Range ·
+          Monument · Colorado Springs · Castle Rock
         </p>
       </div>
     </section>

@@ -32,6 +32,7 @@ import {
 } from '@/lib/server/lead-sources'
 import { createCustomerPhotoUploadToken } from '@/lib/ops/customer-photo-upload-token'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -408,6 +409,15 @@ export async function POST(request: NextRequest) {
       0,
       subtotal - discountAmount - percentageDiscountAmount,
     )
+
+    if (subtotal < MINIMUM_JOB_TOTAL) {
+      return NextResponse.json(
+        {
+          error: `Our minimum service subtotal is $${MINIMUM_JOB_TOTAL}. Please add more services before booking.`,
+        },
+        { status: 400, headers: CORS },
+      )
+    }
 
     // --- Calculate end time based on dollar amount ---
     // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr

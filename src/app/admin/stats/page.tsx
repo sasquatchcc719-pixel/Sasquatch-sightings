@@ -38,6 +38,7 @@ import {
   YAxis,
 } from 'recharts'
 import { LeadSourceRevenuePanel } from '@/components/admin/stats/LeadSourceRevenuePanel'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 type OpsStats = {
   weekStart: string
@@ -3555,7 +3556,7 @@ export default function StatsPage() {
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
             Three numbers, last {funnel.windowDays ?? 90} days:{' '}
             <strong>visitors</strong> to the site, <strong>quotes built</strong>{' '}
-            (they reached the $150 online minimum), and{' '}
+            (they reached the ${MINIMUM_JOB_TOTAL} online minimum), and{' '}
             <strong>jobs booked</strong>. Counts are unique browser sessions,
             not page views. <strong>sasquatchcarpet.com only</strong> — NFC
             cards, partner locations, door hangers, phone and admin bookings are

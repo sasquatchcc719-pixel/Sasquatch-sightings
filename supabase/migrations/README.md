@@ -20,4 +20,4 @@ Use this file to **search** for business logic that lives in SQL (humans and Cur
 
 **Apply to remote:** from repo root, `supabase db push` (requires linked project).
 
-**Related (not in this folder):** the marketing site booking UI is the Angular **booking widget** in the separate `sasquatch.com-client` repo (`booking-widget.component.*`). It enforces the **$150 minimum** and corrects Pre-Vacuuming display if the API still lags.
+**Related (not in this folder):** the marketing site booking UI is the Angular **booking widget** in the separate `sasquatch.com-client` repo (`booking-widget.component.*`). It enforces the **$175 minimum** and corrects Pre-Vacuuming display if the API still lags.

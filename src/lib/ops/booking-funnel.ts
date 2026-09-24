@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 /**
  * Booking-widget funnel: how many visitors configure a quote (an "estimate")
@@ -92,7 +93,6 @@ type EventRow = {
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
-const ONLINE_BOOKING_MINIMUM = 150
 const TREND_WINDOW_DAYS = 7
 const POST_QUOTE_STEPS = new Set<FunnelStep>([
   'calendar_viewed',
@@ -143,7 +143,7 @@ export function summarizeFunnel(
   }
 
   // Older website builds recorded quote_started on the first + button press,
-  // even when the cart was far below the $150 online minimum. Treat a session
+  // even when the cart was far below the online minimum. Treat a session
   // as a real quote only once it reached a bookable total (or a later step,
   // which itself proves the minimum gate was passed).
   const qualifiedQuoteSessions = new Set<string>()
@@ -153,7 +153,7 @@ export function summarizeFunnel(
     )
     if (
       steps.has('quote_started') &&
-      ((bestQuoteBySession.get(sessionId) ?? 0) >= ONLINE_BOOKING_MINIMUM ||
+      ((bestQuoteBySession.get(sessionId) ?? 0) >= MINIMUM_JOB_TOTAL ||
         reachedPostQuoteStep)
     ) {
       qualifiedQuoteSessions.add(sessionId)
@@ -235,7 +235,7 @@ export function summarizeFunnel(
     if (!qualifiedQuoteSessions.has(row.session_id)) continue
     const provesQualification =
       (row.step === 'quote_started' &&
-        Number(row.quote_total || 0) >= ONLINE_BOOKING_MINIMUM) ||
+        Number(row.quote_total || 0) >= MINIMUM_JOB_TOTAL) ||
       POST_QUOTE_STEPS.has(row.step as FunnelStep)
     if (!provesQualification) continue
 

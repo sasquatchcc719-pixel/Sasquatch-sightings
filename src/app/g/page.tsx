@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 import { VideoBackground } from '@/components/public/VideoBackground'
 import { PushOptInBanner } from '@/components/push-opt-in-banner'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 
 const PHONE_RAW = '7192498791'
 const PHONE_DISPLAY = '(719) 249-8791'
@@ -176,7 +177,7 @@ export default function GoogleLandingPage() {
             <p className="mb-4 text-center text-sm text-white/70">
               Professional carpet, upholstery, tile &amp; leather cleaning.{' '}
               <span className="font-medium text-cyan-400">
-                $150 minimum dispatch.
+                ${MINIMUM_JOB_TOTAL} minimum dispatch.
               </span>
             </p>
 
@@ -320,7 +321,8 @@ export default function GoogleLandingPage() {
             </Accordion>
           </div>
           <p className="mt-3 text-center text-xs text-white/30">
-            $150 minimum · Prices are estimates — final quote in the chat
+            ${MINIMUM_JOB_TOTAL} minimum · Prices are estimates — final quote in
+            the chat
           </p>
         </Card>
 
