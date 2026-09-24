@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Area,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -127,6 +128,31 @@ export function BusinessEconomicsChart({
     )
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4)
+  const chartData = weeklySnapshots.map((snapshot) => ({
+    ...snapshot,
+    hourlyGapRange: [
+      Math.min(snapshot.revenuePerHour, snapshot.ownerAdjustedCostPerHour),
+      Math.max(snapshot.revenuePerHour, snapshot.ownerAdjustedCostPerHour),
+    ],
+    profitable: snapshot.revenuePerHour >= snapshot.ownerAdjustedCostPerHour,
+  }))
+  const gapColor = (profitable: boolean) => (profitable ? '#22c55e' : '#f43f5e')
+  const gapStops = chartData.flatMap((point, index) => {
+    if (index === 0) {
+      return [{ offset: 0, color: gapColor(point.profitable) }]
+    }
+    const boundary = ((index - 0.5) / (chartData.length - 1)) * 100
+    return [
+      {
+        offset: boundary,
+        color: gapColor(chartData[index - 1].profitable),
+      },
+      { offset: boundary, color: gapColor(point.profitable) },
+      ...(index === chartData.length - 1
+        ? [{ offset: 100, color: gapColor(point.profitable) }]
+        : []),
+    ]
+  })
 
   return (
     <section className="mb-8" aria-labelledby="business-economics-heading">
@@ -275,18 +301,40 @@ export function BusinessEconomicsChart({
           <span className="flex items-center gap-2 text-orange-400">
             <span className="h-0.5 w-5 bg-orange-400" /> Owner-adjusted cost
           </span>
-          <span className="flex items-center gap-2 text-violet-400">
-            <span className="h-0.5 w-5 border-t border-dashed border-violet-400" />
-            Cost share %
+          <span className="flex items-center gap-2 text-emerald-400">
+            <span className="h-2.5 w-5 rounded-sm bg-emerald-500/25" />
+            Profitable gap
+          </span>
+          <span className="flex items-center gap-2 text-rose-400">
+            <span className="h-2.5 w-5 rounded-sm bg-rose-500/25" />
+            Loss gap
           </span>
         </div>
 
         <div className="mt-3 h-72 w-full sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={weeklySnapshots}
+              data={chartData}
               margin={{ top: 12, right: 4, left: 0, bottom: 0 }}
             >
+              <defs>
+                <linearGradient
+                  id="business-hourly-gap"
+                  x1="0"
+                  y1="0"
+                  x2="1"
+                  y2="0"
+                >
+                  {gapStops.map((stop, index) => (
+                    <stop
+                      key={`${stop.offset}-${index}`}
+                      offset={`${stop.offset}%`}
+                      stopColor={stop.color}
+                      stopOpacity={0.24}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 vertical={false}
                 strokeDasharray="3 3"
@@ -310,20 +358,17 @@ export function BusinessEconomicsChart({
                 tick={{ fill: 'currentColor', fontSize: 10 }}
                 className="text-muted-foreground"
               />
-              <YAxis
-                yAxisId="percent"
-                orientation="right"
-                domain={[0, 'auto']}
-                tickFormatter={(value: number) => `${value}%`}
-                width={38}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: 'currentColor', fontSize: 10 }}
-                className="text-muted-foreground"
-              />
               <Tooltip
                 content={<EconomicsTooltip />}
                 cursor={{ stroke: 'rgba(148,163,184,0.35)' }}
+              />
+              <Area
+                yAxisId="dollars"
+                type="monotone"
+                dataKey="hourlyGapRange"
+                stroke="none"
+                fill="url(#business-hourly-gap)"
+                isAnimationActive={false}
               />
               <Line
                 yAxisId="dollars"
@@ -342,16 +387,6 @@ export function BusinessEconomicsChart({
                 strokeWidth={3}
                 dot={false}
                 activeDot={{ r: 4, fill: '#fb923c', strokeWidth: 0 }}
-              />
-              <Line
-                yAxisId="percent"
-                type="monotone"
-                dataKey="ownerAdjustedCostPct"
-                stroke="#a78bfa"
-                strokeWidth={1.75}
-                strokeDasharray="5 5"
-                dot={false}
-                activeDot={{ r: 3, fill: '#a78bfa', strokeWidth: 0 }}
               />
             </ComposedChart>
           </ResponsiveContainer>
