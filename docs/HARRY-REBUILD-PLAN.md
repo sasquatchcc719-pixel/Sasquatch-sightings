@@ -96,7 +96,7 @@ Twilio send, Supabase clients, `service_catalog_items`, price/duration math.
 | **No blind numbers** (the "$150" lie) | Every figure in the reply is the computed total; the model cannot state one itself |
 | **Recipient lock** (Marianne→Alex) | Sends only to the inbound thread's number, whatever the body says |
 | **No write/send before approval** | Zero DB change and zero SMS until Approve is tapped |
-| **Below-minimum honesty** (the $1,600) | If the change drops under the $150 minimum, Harry says so plainly and asks — never silently inflates quantities |
+| **Below-minimum honesty** (the $1,600) | If the change drops under the $175 minimum, Harry says so plainly and asks — never silently inflates quantities |
 
 ---
 

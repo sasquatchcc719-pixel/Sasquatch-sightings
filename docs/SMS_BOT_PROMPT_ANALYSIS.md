@@ -24,15 +24,15 @@ This removes the conflict and matches the intended flow: answer pricing question
 
 ---
 
-## 2. AMBIGUITY: "$150 minimum" – two different phrasings
+## 2. AMBIGUITY: "$175 minimum" – two different phrasings
 
 **Current wording:**
-- **Line 97 (Pricing Guide):** "Only mention the $150 minimum if the job total might be under $150"
-- **CRITICAL RULE (lines 208–210):** "If the quoted total is LESS THAN $150 → ALWAYS mention the minimum AND suggest adding more"
+- **Line 97 (Pricing Guide):** "Only mention the $175 minimum if the job total might be under $175"
+- **CRITICAL RULE (lines 208–210):** "If the quoted total is LESS THAN $175 → ALWAYS mention the minimum AND suggest adding more"
 
-**Problem:** "Only mention... if might be under" can sound like "mention it only sometimes." The CRITICAL RULE is correct: when total < $150, **always** mention the minimum and suggest adding more.
+**Problem:** "Only mention... if might be under" can sound like "mention it only sometimes." The CRITICAL RULE is correct: when total < $175, **always** mention the minimum and suggest adding more.
 
-**Resolution:** Remove or rephrase line 97 so it does not contradict the CRITICAL RULE. For example: "When the quoted total is under $150, always mention the minimum and suggest adding more (see CRITICAL RULE below)." Or delete line 97 and rely on the CRITICAL RULE.
+**Resolution:** Remove or rephrase line 97 so it does not contradict the CRITICAL RULE. For example: "When the quoted total is under $175, always mention the minimum and suggest adding more (see CRITICAL RULE below)." Or delete line 97 and rely on the CRITICAL RULE.
 
 ---
 
@@ -75,7 +75,7 @@ No conflict here; keep as is.
 ## Changes applied (in code)
 
 1. **CUSTOMER INFO:** Require name, email, address only **before sending the booking link**. Explicitly allow giving **price estimates** as soon as we have job details; encourage collecting name/email/address early but do not require them to state a price.
-2. **Pricing Guide (old line 97):** Replaced "Only mention the $150 minimum if..." with a forward reference to the CRITICAL RULE so the model always mentions the minimum when total < $150 and suggests adding more.
+2. **Pricing Guide (old line 97):** Replaced "Only mention the $175 minimum if..." with a forward reference to the CRITICAL RULE so the model always mentions the minimum when total < $175 and suggests adding more.
 3. **Section 7 CONVERSATION FLOW:** Clarified that "necessary details" for pricing = **job details** (rooms, sizes). Name, email, address are required only before sending the link. Removed "full quote" wording to avoid conflict with giving a price before we have customer info.
 
-This keeps: per-room pricing, $150 minimum + suggest adding more, no scheduling in chat, and link only after name/email/address—without conflicting instructions on when we can give a number like "$230 for 5 bedrooms."
+This keeps: per-room pricing, $175 minimum + suggest adding more, no scheduling in chat, and link only after name/email/address—without conflicting instructions on when we can give a number like "$230 for 5 bedrooms."
