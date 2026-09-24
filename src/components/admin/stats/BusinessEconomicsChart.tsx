@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 
 export type BusinessCostSnapshot = {
+  periodKind: 'rolling_28_day' | 'weekly' | 'year_to_date'
   windowStart: string
   windowEnd: string
   capturedAt: string
@@ -81,7 +82,7 @@ function EconomicsTooltip({
       <p className="font-semibold">
         {dateLabel(point.windowStart)}–{dateLabel(point.windowEnd)}
       </p>
-      <p className="text-muted-foreground mt-0.5">Trailing 28 days</p>
+      <p className="text-muted-foreground mt-0.5">Thursday–Wednesday week</p>
       <div className="mt-3 space-y-1.5">
         <div className="flex justify-between gap-5 text-emerald-400">
           <span>Revenue/hour</span>
@@ -109,13 +110,15 @@ function EconomicsTooltip({
 }
 
 export function BusinessEconomicsChart({
-  snapshots,
+  weeklySnapshots,
+  yearToDate,
 }: {
-  snapshots: BusinessCostSnapshot[]
+  weeklySnapshots: BusinessCostSnapshot[]
+  yearToDate: BusinessCostSnapshot | null
 }) {
-  if (snapshots.length === 0) return null
-  const latest = snapshots[snapshots.length - 1]
-  const previous = snapshots[snapshots.length - 2]
+  if (weeklySnapshots.length === 0) return null
+  const latest = weeklySnapshots[weeklySnapshots.length - 1]
+  const previous = weeklySnapshots[weeklySnapshots.length - 2]
   const costShare = Math.max(0, Math.min(100, latest.ownerAdjustedCostPct))
   const marginShare = Math.max(0, 100 - costShare)
   const topExpenses = Object.entries(latest.expenseBreakdown)
@@ -133,17 +136,81 @@ export function BusinessEconomicsChart({
             id="business-economics-heading"
             className="text-gradient text-xl font-semibold tracking-tight"
           >
-            Revenue vs. Cost per Productive Hour
+            Business Economics
           </h2>
           <p className="text-muted-foreground mt-1 max-w-3xl text-sm">
-            Each point is the prior 28 days, ending Wednesday. The wider window
-            keeps one repair, insurance payment, or slow week from distorting
-            the trend.
+            The year-to-date average answers what the business normally earns
+            and costs. The weekly view shows what moved in the most recently
+            completed Thursday–Wednesday periods.
           </p>
         </div>
         <span className="w-fit rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
           Updated from QuickBooks weekly
         </span>
+      </div>
+
+      {yearToDate && (
+        <Card className="via-card/85 border-cyan-500/25 bg-gradient-to-br from-cyan-500/[0.08] to-violet-500/[0.06] p-4 sm:p-5">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.16em] text-cyan-300 uppercase">
+                {yearToDate.windowEnd.slice(0, 4)} year-to-date average
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {dateLabel(yearToDate.windowStart)} through{' '}
+                {dateLabel(yearToDate.windowEnd)}
+              </p>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Big-picture operating benchmark
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div>
+              <p className="text-muted-foreground text-xs">Revenue/hour</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-300">
+                {money(yearToDate.revenuePerHour)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">
+                QuickBooks cost/hour
+              </p>
+              <p className="mt-1 text-3xl font-bold text-slate-100">
+                {money(yearToDate.bookCostPerHour)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">
+                Owner-adjusted cost/hour
+              </p>
+              <p className="mt-1 text-3xl font-bold text-orange-300">
+                {money(yearToDate.ownerAdjustedCostPerHour)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">Tracked margin</p>
+              <p className="mt-1 text-3xl font-bold text-violet-300">
+                {yearToDate.ownerAdjustedMarginPct.toFixed(1)}%
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {yearToDate.ownerAdjustedCostPct.toFixed(1)}% cost share
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="mt-6 mb-3">
+        <h3 className="text-lg font-semibold text-amber-300">
+          Weekly movement
+        </h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Latest completed week: {dateLabel(latest.windowStart)}–
+          {dateLabel(latest.windowEnd)}. Weekly expenses will naturally move
+          more sharply than the annual average. Weekly history begins in May,
+          when complete operational time records became available.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -217,7 +284,7 @@ export function BusinessEconomicsChart({
         <div className="mt-3 h-72 w-full sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={snapshots}
+              data={weeklySnapshots}
               margin={{ top: 12, right: 4, left: 0, bottom: 0 }}
             >
               <CartesianGrid
@@ -246,7 +313,7 @@ export function BusinessEconomicsChart({
               <YAxis
                 yAxisId="percent"
                 orientation="right"
-                domain={[0, 100]}
+                domain={[0, 'auto']}
                 tickFormatter={(value: number) => `${value}%`}
                 width={38}
                 axisLine={false}
@@ -314,7 +381,7 @@ export function BusinessEconomicsChart({
         {topExpenses.length > 0 && (
           <div className="border-border/60 mt-5 border-t pt-4">
             <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-              Largest QuickBooks costs in the latest window
+              Largest QuickBooks costs in the latest week
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {topExpenses.map(([label, amount]) => (
@@ -330,10 +397,11 @@ export function BusinessEconomicsChart({
         )}
 
         <p className="text-muted-foreground mt-4 text-[11px] leading-relaxed">
-          QuickBooks cost uses the cash-basis P&amp;L and removes reconciliation
-          discrepancies. Owner-adjusted cost adds recorded owner field hours at
-          $31/hour. It does not guess at depreciation, Square fees, loan
-          principal, owner draws, income-tax payments, or untracked office time.
+          Both views use the cash-basis QuickBooks P&amp;L and remove
+          reconciliation discrepancies. Owner-adjusted cost adds recorded owner
+          field hours at $31/hour. They do not guess at depreciation, Square
+          fees, loan principal, owner draws, income-tax payments, or untracked
+          office time.
         </p>
       </Card>
     </section>

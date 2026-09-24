@@ -11,8 +11,10 @@ export const OWNER_FIELD_REPLACEMENT_RATE = 31
 export const BUSINESS_COST_HISTORY_START = '2026-05-01'
 
 export type CostWindow = { start: string; end: string }
+export type BusinessCostPeriod = 'rolling_28_day' | 'weekly' | 'year_to_date'
 
 export type BusinessCostSnapshot = {
+  periodKind: BusinessCostPeriod
   windowStart: string
   windowEnd: string
   capturedAt: string
@@ -67,20 +69,26 @@ export function latestCompletedWednesday(now = new Date()): string {
   return addDays(yesterday, -daysSinceWednesday)
 }
 
-export function rollingCostWindowsSince(
+export function weeklyCostWindowsSince(
   earliestStart = BUSINESS_COST_HISTORY_START,
   now = new Date(),
 ): CostWindow[] {
   const windows: CostWindow[] = []
   for (let end = latestCompletedWednesday(now); ; end = addDays(end, -7)) {
-    const start = addDays(end, -27)
+    const start = addDays(end, -6)
     if (start < earliestStart) break
     windows.push({ start, end })
   }
   return windows.reverse()
 }
 
+export function yearToDateCostWindow(now = new Date()): CostWindow {
+  const end = latestCompletedWednesday(now)
+  return { start: `${end.slice(0, 4)}-01-01`, end }
+}
+
 export function calculateBusinessCostSnapshot(params: {
+  periodKind: BusinessCostPeriod
   window: CostWindow
   revenue: number
   productiveHours: number
@@ -107,6 +115,7 @@ export function calculateBusinessCostSnapshot(params: {
     params.revenue > 0 ? (ownerAdjustedCost / params.revenue) * 100 : 0
 
   return {
+    periodKind: params.periodKind,
     windowStart: params.window.start,
     windowEnd: params.window.end,
     capturedAt: params.capturedAt || new Date().toISOString(),
@@ -212,6 +221,7 @@ async function loadOwnerHourRows(
 
 function toRow(snapshot: BusinessCostSnapshot) {
   return {
+    period_kind: snapshot.periodKind,
     window_start: snapshot.windowStart,
     window_end: snapshot.windowEnd,
     captured_at: snapshot.capturedAt,
@@ -235,6 +245,8 @@ export function coerceBusinessCostSnapshot(
   row: Record<string, unknown>,
 ): BusinessCostSnapshot {
   return {
+    periodKind:
+      (row.period_kind as BusinessCostPeriod | undefined) || 'rolling_28_day',
     windowStart: String(row.window_start),
     windowEnd: String(row.window_end),
     capturedAt: String(row.captured_at),
@@ -267,6 +279,7 @@ export function coerceBusinessCostSnapshot(
 export async function refreshBusinessCostSnapshots(
   supabase: SupabaseClient,
   windows: CostWindow[],
+  periodKind: BusinessCostPeriod,
 ): Promise<BusinessCostSnapshot[]> {
   if (windows.length === 0) return []
   const earliestStart = windows.reduce(
@@ -300,6 +313,7 @@ export async function refreshBusinessCostSnapshots(
     })
     snapshots.push(
       calculateBusinessCostSnapshot({
+        periodKind,
         window,
         revenue: operational.revenue,
         productiveHours: operational.hours,
@@ -314,7 +328,9 @@ export async function refreshBusinessCostSnapshots(
   if (snapshots.length > 0) {
     const { error } = await supabase
       .from('business_cost_snapshots')
-      .upsert(snapshots.map(toRow), { onConflict: 'window_start,window_end' })
+      .upsert(snapshots.map(toRow), {
+        onConflict: 'period_kind,window_start,window_end',
+      })
     if (error) throw error
   }
   return snapshots
@@ -322,11 +338,17 @@ export async function refreshBusinessCostSnapshots(
 
 export async function loadBusinessCostSnapshots(
   supabase: SupabaseClient,
+  periodKind: BusinessCostPeriod,
   limit = 52,
 ): Promise<BusinessCostSnapshot[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('business_cost_snapshots')
     .select('*')
+    .eq('period_kind', periodKind)
+  if (periodKind === 'weekly') {
+    query = query.gte('window_start', BUSINESS_COST_HISTORY_START)
+  }
+  const { data, error } = await query
     .order('window_end', { ascending: false })
     .limit(limit)
   if (error) throw error
@@ -344,11 +366,12 @@ function signedMoney(value: number): string {
 }
 
 export function buildBusinessCostDigest(
-  snapshots: BusinessCostSnapshot[],
+  weeklySnapshots: BusinessCostSnapshot[],
+  yearToDate: BusinessCostSnapshot | null,
 ): string {
-  const latest = snapshots[snapshots.length - 1]
+  const latest = weeklySnapshots[weeklySnapshots.length - 1]
   if (!latest) return 'Business Cost Report — no productive hours available.'
-  const previous = snapshots[snapshots.length - 2]
+  const previous = weeklySnapshots[weeklySnapshots.length - 2]
   const costDelta = previous
     ? latest.ownerAdjustedCostPerHour - previous.ownerAdjustedCostPerHour
     : null
@@ -357,8 +380,10 @@ export function buildBusinessCostDigest(
     : null
 
   return [
-    'Business Cost Report — trailing 28 days',
-    `${latest.windowStart} through ${latest.windowEnd}`,
+    'Weekly Business Cost Report',
+    `${latest.windowStart} through ${latest.windowEnd} (Thu–Wed)`,
+    '',
+    `Work completed: $${latest.revenue.toFixed(2)} revenue across ${latest.productiveHours.toFixed(1)} productive hours`,
     '',
     `Revenue/hour: $${latest.revenuePerHour.toFixed(2)}`,
     `QuickBooks cost/hour: $${latest.bookCostPerHour.toFixed(2)}`,
@@ -369,8 +394,18 @@ export function buildBusinessCostDigest(
       ? []
       : [
           '',
-          `Since last Thursday: cost/hour ${signedMoney(costDelta)}, margin ${signed(marginDelta || 0, ' pts')}`,
+          `Versus prior week: cost/hour ${signedMoney(costDelta)}, margin ${signed(marginDelta || 0, ' pts')}`,
         ]),
+    ...(yearToDate
+      ? [
+          '',
+          `${yearToDate.windowEnd.slice(0, 4)} YEAR-TO-DATE AVERAGE`,
+          `Revenue/hour: $${yearToDate.revenuePerHour.toFixed(2)}`,
+          `Owner-adjusted cost/hour: $${yearToDate.ownerAdjustedCostPerHour.toFixed(2)}`,
+          `Cost share: ${yearToDate.ownerAdjustedCostPct.toFixed(1)}%`,
+          `Tracked margin: ${yearToDate.ownerAdjustedMarginPct.toFixed(1)}%`,
+        ]
+      : []),
     '',
     `Owner field time valued at $${OWNER_FIELD_REPLACEMENT_RATE}/hour. No estimated depreciation, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.`,
   ].join('\n')

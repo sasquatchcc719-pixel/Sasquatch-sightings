@@ -233,6 +233,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - New estimate discount rows must start with neutral editable values; never hardcode one customer's discount name or amount into every future estimate.
 - Keep production-backed `*.integration.test.*` files out of default test runs; require the gated integration config, and keep production browser verification to read-only navigation and screenshots without submitting forms.
 - Business cost reporting must separate QuickBooks-booked cost, owner field replacement labor, and speculative economic adjustments; never collapse them into one headline cost per hour.
+- Business economics must show a January-to-date benchmark separately from non-overlapping Thursday–Wednesday weekly movement and reporting; never use a rolling window as both.
 
 ---
 

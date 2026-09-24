@@ -2,15 +2,22 @@ import 'dotenv/config'
 import {
   BUSINESS_COST_HISTORY_START,
   refreshBusinessCostSnapshots,
-  rollingCostWindowsSince,
+  weeklyCostWindowsSince,
+  yearToDateCostWindow,
 } from '../src/lib/ops/business-economics'
 import { createAdminClient } from '../src/supabase/server'
 
 async function main() {
-  const windows = rollingCostWindowsSince(BUSINESS_COST_HISTORY_START)
+  const windows = weeklyCostWindowsSince(BUSINESS_COST_HISTORY_START)
   const snapshots = await refreshBusinessCostSnapshots(
     createAdminClient(),
     windows,
+    'weekly',
+  )
+  const [yearToDate] = await refreshBusinessCostSnapshots(
+    createAdminClient(),
+    [yearToDateCostWindow()],
+    'year_to_date',
   )
   const latest = snapshots.at(-1)
   console.log(
@@ -23,6 +30,9 @@ async function main() {
         latestBookCostPerHour: latest?.bookCostPerHour || null,
         latestOwnerAdjustedCostPerHour:
           latest?.ownerAdjustedCostPerHour || null,
+        yearToDateRevenuePerHour: yearToDate?.revenuePerHour || null,
+        yearToDateOwnerAdjustedCostPerHour:
+          yearToDate?.ownerAdjustedCostPerHour || null,
       },
       null,
       2,

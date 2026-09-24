@@ -6,12 +6,18 @@ import { createAdminClient } from '@/supabase/server'
 export async function GET() {
   try {
     await requireAnyRole(['admin', 'owner'])
-    const snapshots = await loadBusinessCostSnapshots(createAdminClient())
+    const supabase = createAdminClient()
+    const [weeklySnapshots, yearToDateSnapshots] = await Promise.all([
+      loadBusinessCostSnapshots(supabase, 'weekly'),
+      loadBusinessCostSnapshots(supabase, 'year_to_date', 1),
+    ])
     return NextResponse.json(
       {
-        snapshots,
+        weeklySnapshots,
+        yearToDate: yearToDateSnapshots.at(-1) || null,
         definition: {
-          windowDays: 28,
+          weeklyWindowDays: 7,
+          annualWindow: 'January 1 through the latest completed Wednesday.',
           bookCost:
             'Cash-basis QuickBooks P&L costs, excluding reconciliation discrepancies.',
           ownerAdjustedCost:

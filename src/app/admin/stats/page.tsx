@@ -1681,7 +1681,11 @@ export default function StatsPage() {
   const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
   const [discounts, setDiscounts] = useState<DiscountAnalytics | null>(null)
   const [history, setHistory] = useState<YearOverYear | null>(null)
-  const [businessCosts, setBusinessCosts] = useState<BusinessCostSnapshot[]>([])
+  const [weeklyBusinessCosts, setWeeklyBusinessCosts] = useState<
+    BusinessCostSnapshot[]
+  >([])
+  const [yearToDateBusinessCost, setYearToDateBusinessCost] =
+    useState<BusinessCostSnapshot | null>(null)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -2167,9 +2171,11 @@ export default function StatsPage() {
         })
         if (res.ok) {
           const json = (await res.json()) as {
-            snapshots?: BusinessCostSnapshot[]
+            weeklySnapshots?: BusinessCostSnapshot[]
+            yearToDate?: BusinessCostSnapshot | null
           }
-          setBusinessCosts(json.snapshots || [])
+          setWeeklyBusinessCosts(json.weeklySnapshots || [])
+          setYearToDateBusinessCost(json.yearToDate || null)
         }
       } catch {
         // Non-fatal — section hides
@@ -3138,7 +3144,10 @@ export default function StatsPage() {
       </div>
 
       {/* Revenue, cost, and tracked margin */}
-      <BusinessEconomicsChart snapshots={businessCosts} />
+      <BusinessEconomicsChart
+        weeklySnapshots={weeklyBusinessCosts}
+        yearToDate={yearToDateBusinessCost}
+      />
 
       {/* Potential Revenue - Money Left on Table */}
       <div className="mb-8">

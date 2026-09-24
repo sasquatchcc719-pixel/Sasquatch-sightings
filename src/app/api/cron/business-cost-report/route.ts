@@ -3,7 +3,8 @@ import {
   buildBusinessCostDigest,
   loadBusinessCostSnapshots,
   refreshBusinessCostSnapshots,
-  rollingCostWindowsSince,
+  weeklyCostWindowsSince,
+  yearToDateCostWindow,
 } from '@/lib/ops/business-economics'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
@@ -18,11 +19,20 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
-    const windows = rollingCostWindowsSince().slice(-8)
-    const refreshed = await refreshBusinessCostSnapshots(supabase, windows)
-    const snapshots = await loadBusinessCostSnapshots(supabase)
+    const windows = weeklyCostWindowsSince().slice(-8)
+    const refreshed = await refreshBusinessCostSnapshots(
+      supabase,
+      windows,
+      'weekly',
+    )
+    const [yearToDate] = await refreshBusinessCostSnapshots(
+      supabase,
+      [yearToDateCostWindow()],
+      'year_to_date',
+    )
+    const snapshots = await loadBusinessCostSnapshots(supabase, 'weekly')
     const sent = await sendTelegramNotification(
-      buildBusinessCostDigest(snapshots),
+      buildBusinessCostDigest(snapshots, yearToDate || null),
       { disablePreview: true },
     )
     if (!sent) {
@@ -35,6 +45,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       refreshed: refreshed.length,
       latestWindow: refreshed.at(-1)?.windowEnd || null,
+      yearToDateThrough: yearToDate?.windowEnd || null,
     })
   } catch (error) {
     const message =

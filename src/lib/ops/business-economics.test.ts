@@ -4,20 +4,29 @@ import {
   buildBusinessCostDigest,
   calculateBusinessCostSnapshot,
   latestCompletedWednesday,
-  rollingCostWindowsSince,
+  weeklyCostWindowsSince,
+  yearToDateCostWindow,
 } from './business-economics'
 
 describe('business economics', () => {
-  it('builds completed 28-day windows ending Wednesday', () => {
+  it('builds discrete Thursday-through-Wednesday weeks and a YTD window', () => {
     const now = new Date('2026-09-24T16:00:00Z')
     expect(latestCompletedWednesday(now)).toBe('2026-09-23')
-    const windows = rollingCostWindowsSince('2026-08-27', now)
-    expect(windows).toEqual([{ start: '2026-08-27', end: '2026-09-23' }])
+    const windows = weeklyCostWindowsSince('2026-09-10', now)
+    expect(windows).toEqual([
+      { start: '2026-09-10', end: '2026-09-16' },
+      { start: '2026-09-17', end: '2026-09-23' },
+    ])
+    expect(yearToDateCostWindow(now)).toEqual({
+      start: '2026-01-01',
+      end: '2026-09-23',
+    })
   })
 
   it('keeps book cost separate and adds only owner field replacement labor', () => {
     const snapshot = calculateBusinessCostSnapshot({
-      window: { start: '2026-08-27', end: '2026-09-23' },
+      periodKind: 'weekly',
+      window: { start: '2026-09-17', end: '2026-09-23' },
       revenue: 20000,
       productiveHours: 100,
       quickbooksCost: 6000,
@@ -37,7 +46,8 @@ describe('business economics', () => {
 
   it('states exactly what the Telegram report includes and excludes', () => {
     const previous = calculateBusinessCostSnapshot({
-      window: { start: '2026-08-20', end: '2026-09-16' },
+      periodKind: 'weekly',
+      window: { start: '2026-09-10', end: '2026-09-16' },
       revenue: 20000,
       productiveHours: 100,
       quickbooksCost: 5800,
@@ -46,7 +56,8 @@ describe('business economics', () => {
       expenseBreakdown: {},
     })
     const snapshot = calculateBusinessCostSnapshot({
-      window: { start: '2026-08-27', end: '2026-09-23' },
+      periodKind: 'weekly',
+      window: { start: '2026-09-17', end: '2026-09-23' },
       revenue: 20000,
       productiveHours: 100,
       quickbooksCost: 6000,
@@ -54,10 +65,24 @@ describe('business economics', () => {
       ownerFieldHours: 20,
       expenseBreakdown: {},
     })
-    const digest = buildBusinessCostDigest([previous, snapshot])
+    const yearToDate = calculateBusinessCostSnapshot({
+      periodKind: 'year_to_date',
+      window: { start: '2026-01-01', end: '2026-09-23' },
+      revenue: 170000,
+      productiveHours: 1000,
+      quickbooksCost: 70000,
+      excludedBookkeepingAdjustments: 0,
+      ownerFieldHours: 300,
+      expenseBreakdown: {},
+    })
+    const digest = buildBusinessCostDigest([previous, snapshot], yearToDate)
+    expect(digest).toContain('Weekly Business Cost Report')
+    expect(digest).toContain('Work completed: $20000.00 revenue')
     expect(digest).toContain('QuickBooks cost/hour: $60.00')
     expect(digest).toContain('Owner-adjusted cost/hour: $66.20')
     expect(digest).toContain('cost/hour +$2.00')
+    expect(digest).toContain('2026 YEAR-TO-DATE AVERAGE')
+    expect(digest).toContain('Owner-adjusted cost/hour: $79.30')
     expect(digest).toContain('No estimated depreciation')
     expect(digest).toContain('owner draws')
   })
