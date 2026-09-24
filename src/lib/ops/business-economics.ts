@@ -149,6 +149,7 @@ async function loadRevenueHourRows(
   const [
     { data: jobs, error: jobsError },
     { data: entries, error: entriesError },
+    { data: coverageEntries, error: coverageEntriesError },
   ] = await Promise.all([
     supabase
       .from('jobs')
@@ -160,19 +161,28 @@ async function loadRevenueHourRows(
         'invoice_amount, hours_worked, entry_date, drive_minutes, ops_invoice_id',
       )
       .gte('entry_date', earliestStart),
+    // Coverage cannot share the reporting cutoff. An older revenue entry can
+    // cover a job post published later; limiting this lookup caused April work
+    // batch-published in May to appear as zero-hour May revenue.
+    supabase
+      .from('revenue_entries')
+      .select('ops_invoice_id')
+      .not('ops_invoice_id', 'is', null),
   ])
   if (jobsError) throw jobsError
   if (entriesError) throw entriesError
+  if (coverageEntriesError) throw coverageEntriesError
 
   const supplement = await loadUtilizationSupplementRows(supabase)
   return [
-    ...excludeJobsCoveredByRevenueEntries(jobs || [], entries || []).map(
-      (row) => ({
-        date: mountainDateKey(row.created_at),
-        revenue: Number(row.invoice_amount || 0),
-        hours: Number(row.hours_worked || 0),
-      }),
-    ),
+    ...excludeJobsCoveredByRevenueEntries(
+      jobs || [],
+      coverageEntries || [],
+    ).map((row) => ({
+      date: mountainDateKey(row.created_at),
+      revenue: Number(row.invoice_amount || 0),
+      hours: Number(row.hours_worked || 0),
+    })),
     ...(entries || []).map((row) => ({
       date: String(row.entry_date).slice(0, 10),
       revenue: Number(row.invoice_amount || 0),
