@@ -268,7 +268,10 @@ describe('collapsible weekend schedule', () => {
 
     expect(warrantyCard.style.height).toBe('76px')
     expect(within(warrantyCard).getByText('Warranty Customer')).toBeVisible()
-    expect(within(warrantyCard).getByText('#Warranty clean')).toBeVisible()
+    expect(within(warrantyCard).getByText('#Warranty clean')).toHaveClass(
+      'bg-rose-100',
+      'text-rose-800',
+    )
     expect(within(warrantyCard).queryByText(/Lead:/)).not.toBeInTheDocument()
     expect(within(warrantyCard).queryByText(/Booked:/)).not.toBeInTheDocument()
     expect(within(warrantyCard).queryByText('$0.00')).not.toBeInTheDocument()

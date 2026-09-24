@@ -2638,7 +2638,7 @@ export function OperationsSchedule() {
             }}
           >
             {isWarranty ? (
-              <span className="w-fit rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-emerald-800">
+              <span className="w-fit rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-rose-800">
                 #Warranty clean
               </span>
             ) : null}
