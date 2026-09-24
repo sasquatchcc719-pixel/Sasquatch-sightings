@@ -21,7 +21,10 @@ import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
-import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
+import {
+  getWarrantyWorkDurationMinutes,
+  isWarrantyAppointment,
+} from '@/lib/ops/warranty-appointment'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -362,9 +365,15 @@ export async function POST(request: NextRequest) {
 
     // Calculate duration based on dollar amount (simple tier system)
     // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
+    const manualWarrantyDuration =
+      getWarrantyWorkDurationMinutes({
+        ops_appointment_line_items: normalizedLineItems,
+      }) ?? 60
     const appointmentDuration = isWarrantyReturn
       ? warrantyDurationMinutes
-      : calculateAppointmentDurationFromTotal(quotedSubtotal)
+      : isWarrantyWork
+        ? manualWarrantyDuration
+        : calculateAppointmentDurationFromTotal(quotedSubtotal)
     const totalMinutesWithBuffer = applyAppointmentBuffer(appointmentDuration)
 
     const appointmentDate = String(

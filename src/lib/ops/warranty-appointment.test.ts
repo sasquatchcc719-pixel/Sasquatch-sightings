@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getWarrantyWorkDurationMinutes,
   isWarrantyAppointment,
   isWarrantyLineItem,
 } from '@/lib/ops/warranty-appointment'
@@ -42,5 +43,34 @@ describe('warranty appointment classification', () => {
         ops_appointment_line_items: [{ name_snapshot: 'Free UV Inspection' }],
       }),
     ).toBe(false)
+  })
+
+  it('uses one hour by default while respecting a deliberately longer warranty visit', () => {
+    expect(
+      getWarrantyWorkDurationMinutes({
+        ops_appointment_line_items: [
+          { name_snapshot: 'Warranty Re-Clean', duration_minutes: 0 },
+        ],
+      }),
+    ).toBe(60)
+
+    expect(
+      getWarrantyWorkDurationMinutes({
+        ops_appointment_line_items: [
+          { name_snapshot: 'Warranty Return', duration_minutes: 90 },
+        ],
+      }),
+    ).toBe(90)
+
+    expect(
+      getWarrantyWorkDurationMinutes({
+        ops_appointment_line_items: [
+          {
+            name_snapshot: 'Complimentary Spot Cleaning',
+            duration_minutes: 30,
+          },
+        ],
+      }),
+    ).toBeNull()
   })
 })

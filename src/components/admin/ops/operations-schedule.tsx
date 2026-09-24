@@ -1687,6 +1687,7 @@ export function OperationsSchedule() {
     appointmentId: string
     originEndMinutes: number
     startMinutes: number
+    minDurationMinutes: number
     grabClientY: number
   }
   const [resizeSession, setResizeSession] = useState<ResizeSession | null>(null)
@@ -1710,6 +1711,7 @@ export function OperationsSchedule() {
         appointmentId: appointment.id,
         originEndMinutes: endM,
         startMinutes: startM,
+        minDurationMinutes: isWarrantyAppointment(appointment) ? 60 : 15,
         grabClientY: e.clientY,
       })
       resizeLiveEndRef.current = endM
@@ -1738,7 +1740,7 @@ export function OperationsSchedule() {
       const dy = e.clientY - resizeSession.grabClientY
       const delta = Math.round(dy / PX_PER_MINUTE / 15) * 15
       const next = Math.max(
-        resizeSession.startMinutes + 15,
+        resizeSession.startMinutes + resizeSession.minDurationMinutes,
         resizeSession.originEndMinutes + delta,
       )
       resizeLiveEndRef.current = next
@@ -2488,6 +2490,9 @@ export function OperationsSchedule() {
     return appts.map((appointment) => {
       const customer = unwrapRelation(appointment.ops_customers)
       const invoice = unwrapRelation(appointment.ops_invoices)
+      const customerLabel =
+        customer?.business_name || customer?.full_name || 'Customer'
+      const isWarranty = isWarrantyAppointment(appointment)
       const endOverride =
         resizeSession?.appointmentId === appointment.id &&
         resizeLiveEndMinutes != null
@@ -2534,6 +2539,7 @@ export function OperationsSchedule() {
           key={appointment.id}
           data-appointment-block
           data-appointment-id={appointment.id}
+          data-warranty-appointment={isWarranty ? 'true' : undefined}
           className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''} ${focusedAppointmentId === appointment.id ? 'ring-4 ring-amber-400/60 ring-offset-2' : ''}`}
           style={{
             top: placement.top + 6,
@@ -2570,12 +2576,12 @@ export function OperationsSchedule() {
             onPointerUp={(e) => void handleMovePointerUp(e)}
             onPointerCancel={(e) => void handleMovePointerUp(e)}
             style={{ touchAction: 'none' }}
-            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
-            title="Drag to move start time"
+            className="flex shrink-0 cursor-grab touch-none items-center gap-1.5 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
+            title={`Drag ${customerLabel} to move start time`}
           >
             <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
-            <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
-              Move
+            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight font-semibold tracking-tight text-slate-800 sm:text-[10px]">
+              {customerLabel}
             </span>
             {isMobile && view === 'day'
               ? otherStaff.map((staff) => (
@@ -2583,7 +2589,7 @@ export function OperationsSchedule() {
                     key={staff.id}
                     type="button"
                     draggable={false}
-                    className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md border border-slate-300 bg-white/80 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white/80 px-2 text-[10px] font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={reassigningAppointmentId === appointment.id}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
@@ -2625,39 +2631,37 @@ export function OperationsSchedule() {
           </div>
           <Link
             href={href}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
+            aria-label={`Open ${customerLabel}${isWarranty ? ' warranty clean' : ''}`}
+            className={`flex min-h-0 flex-1 flex-col overflow-hidden ${isWarranty ? 'justify-center px-2 py-1' : 'p-2 pt-1'}`}
             onClick={(e) => {
               if (didDragRef.current) e.preventDefault()
             }}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="line-clamp-1 flex min-w-0 flex-1 shrink-0 items-center gap-1.5 leading-tight font-semibold">
-                {isEstimate && (
-                  <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
-                )}
-                {!isEstimate && appointment.recurring_template_id && (
-                  <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
-                )}
-                {customer?.business_name || customer?.full_name || 'Customer'}
-                {appointment.is_repeat_customer && (
-                  <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                    Repeat
-                  </span>
-                )}
-              </div>
-            </div>
-            {isEstimate && (
+            {isWarranty ? (
+              <span className="w-fit rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-emerald-800">
+                #Warranty clean
+              </span>
+            ) : null}
+            {!isWarranty && appointment.is_repeat_customer && (
+              <span className="w-fit rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                Repeat
+              </span>
+            )}
+            {!isWarranty && isEstimate && (
               <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                 <Ruler className="h-2.5 w-2.5" />
                 Commercial walkthrough
               </span>
             )}
-            {isEstimate && customer?.business_name && customer.full_name ? (
+            {!isWarranty &&
+            isEstimate &&
+            customer?.business_name &&
+            customer.full_name ? (
               <div className="mt-1 line-clamp-1 shrink-0 text-[10px] text-slate-600">
                 Contact: {customer.full_name}
               </div>
             ) : null}
-            {isEstimate ? (
+            {!isWarranty && isEstimate ? (
               <div className="mt-0.5 line-clamp-2 shrink-0 text-[10px] leading-tight text-slate-600">
                 {(() => {
                   const address = unwrapRelation(
@@ -2672,74 +2676,86 @@ export function OperationsSchedule() {
                   : ''}
               </div>
             ) : null}
-            {!isEstimate && appointment.recurring_template_id && (
-              <a
-                href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
-              >
-                <Repeat className="h-2.5 w-2.5" />
-                Recurring
-              </a>
-            )}
-            <div className="mt-1 shrink-0 text-slate-700">
-              {placement.startLabel} - {placement.endLabel}
-            </div>
-            {(() => {
-              const address = unwrapRelation(appointment.ops_service_addresses)
-              const city = isEstimate ? null : address?.city
-              const { leadLabel, bookingLabel } =
-                getScheduleCardSources(appointment)
-              if (!isEstimate && (city || leadLabel || bookingLabel)) {
-                return (
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
-                    {city && <span>{city}</span>}
-                    {city && (leadLabel || bookingLabel) && <span>·</span>}
-                    {leadLabel && <span>Lead: {leadLabel}</span>}
-                    {leadLabel && bookingLabel && <span>·</span>}
-                    {bookingLabel && <span>Booked: {bookingLabel}</span>}
-                  </div>
-                )
-              }
-              return null
-            })()}
-            {!isEstimate ? (
-              <div className="mt-2 line-clamp-2 text-slate-800">
-                {appointment.ops_appointment_line_items
-                  .map((item) => item.name_snapshot)
-                  .join(', ')}
-              </div>
-            ) : appointment.ops_appointment_line_items.length === 0 ? (
-              <div className="mt-1 shrink-0 text-[10px] text-slate-600">
-                Measurements and pricing pending
+            {!isWarranty &&
+              !isEstimate &&
+              appointment.recurring_template_id && (
+                <a
+                  href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+                >
+                  <Repeat className="h-2.5 w-2.5" />
+                  Recurring
+                </a>
+              )}
+            {!isWarranty ? (
+              <div className="mt-1 shrink-0 text-slate-700">
+                {placement.startLabel} - {placement.endLabel}
               </div>
             ) : null}
-            {recurringLineItemDescriptionBoxes(appointment, false)}
-            <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-              {isEstimate ? (
-                <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
-                  {(appointment.estimate_status || 'draft').replace(
-                    /^./,
-                    (value) => value.toUpperCase(),
-                  )}
-                </span>
-              ) : (
-                <>
-                  <span>{paymentMethodChip(appointment)}</span>
-                  <span
-                    className={`text-right font-semibold tabular-nums ${
-                      appointment.status === 'completed'
-                        ? 'text-slate-600'
-                        : 'text-slate-800'
-                    }`}
-                  >
-                    ${calendarDisplayAmount(appointment)}
+            {!isWarranty &&
+              (() => {
+                const address = unwrapRelation(
+                  appointment.ops_service_addresses,
+                )
+                const city = isEstimate ? null : address?.city
+                const { leadLabel, bookingLabel } =
+                  getScheduleCardSources(appointment)
+                if (!isEstimate && (city || leadLabel || bookingLabel)) {
+                  return (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
+                      {city && <span>{city}</span>}
+                      {city && (leadLabel || bookingLabel) && <span>·</span>}
+                      {leadLabel && <span>Lead: {leadLabel}</span>}
+                      {leadLabel && bookingLabel && <span>·</span>}
+                      {bookingLabel && <span>Booked: {bookingLabel}</span>}
+                    </div>
+                  )
+                }
+                return null
+              })()}
+            {!isWarranty ? (
+              !isEstimate ? (
+                <div className="mt-2 line-clamp-2 text-slate-800">
+                  {appointment.ops_appointment_line_items
+                    .map((item) => item.name_snapshot)
+                    .join(', ')}
+                </div>
+              ) : appointment.ops_appointment_line_items.length === 0 ? (
+                <div className="mt-1 shrink-0 text-[10px] text-slate-600">
+                  Measurements and pricing pending
+                </div>
+              ) : null
+            ) : null}
+            {!isWarranty &&
+              recurringLineItemDescriptionBoxes(appointment, false)}
+            {!isWarranty ? (
+              <div className="mt-auto flex items-center justify-between gap-1 pt-2">
+                {isEstimate ? (
+                  <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+                    {(appointment.estimate_status || 'draft').replace(
+                      /^./,
+                      (value) => value.toUpperCase(),
+                    )}
                   </span>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <span>{paymentMethodChip(appointment)}</span>
+                    <span
+                      className={`text-right font-semibold tabular-nums ${
+                        appointment.status === 'completed'
+                          ? 'text-slate-600'
+                          : 'text-slate-800'
+                      }`}
+                    >
+                      ${calendarDisplayAmount(appointment)}
+                    </span>
+                  </>
+                )}
+              </div>
+            ) : null}
           </Link>
-          {!isEstimate && appointment.status !== 'completed' && (
+          {!isWarranty && !isEstimate && appointment.status !== 'completed' && (
             <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
               <button
                 type="button"
@@ -2771,7 +2787,7 @@ export function OperationsSchedule() {
             aria-label="Drag to change end time"
             title="Drag to extend or shorten"
             style={{ touchAction: 'none' }}
-            className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+            className="relative flex h-3 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
             onPointerDown={(e) => beginResize(e, appointment)}
           >
             <span

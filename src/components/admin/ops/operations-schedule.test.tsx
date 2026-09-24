@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OperationsSchedule } from './operations-schedule'
@@ -192,13 +193,26 @@ describe('collapsible weekend schedule', () => {
   })
 
   it('labels warranty returns without relabeling an ordinary unpaid $0 job', async () => {
-    mockSchedule(1, [
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    )
+    mockSchedule(2, [
       {
         ...saturdayJob,
         id: 'warranty-job',
+        kind: 'service',
+        restoration_project_id: null,
         start_time: '10:00:00',
         end_time: '11:00:00',
         status: 'completed',
+        assigned_staff_user_id: 'staff-0',
+        lead_source: 'Repeat Customer',
+        booking_channel: 'admin',
         service_concern_id: null,
         ops_customers: {
           full_name: 'Warranty Customer',
@@ -241,12 +255,38 @@ describe('collapsible weekend schedule', () => {
       },
     ])
 
-    render(<OperationsSchedule />)
-    await screen.findByTitle('2 on Saturday — click to open the day')
-    fireEvent.click(screen.getByRole('button', { name: /^day$/i }))
+    const { container } = render(<OperationsSchedule />)
 
-    expect(await screen.findByText('Warranty')).toBeInTheDocument()
+    expect(await screen.findByText('#Warranty clean')).toBeInTheDocument()
     expect(screen.getByText('Unpaid')).toBeInTheDocument()
+
+    const warrantyCard = container.querySelector(
+      '[data-warranty-appointment="true"]',
+    )
+    expect(warrantyCard).toBeInstanceOf(HTMLElement)
+    if (!(warrantyCard instanceof HTMLElement)) return
+
+    expect(warrantyCard.style.height).toBe('76px')
+    expect(within(warrantyCard).getByText('Warranty Customer')).toBeVisible()
+    expect(within(warrantyCard).getByText('#Warranty clean')).toBeVisible()
+    expect(within(warrantyCard).queryByText(/Lead:/)).not.toBeInTheDocument()
+    expect(within(warrantyCard).queryByText(/Booked:/)).not.toBeInTheDocument()
+    expect(within(warrantyCard).queryByText('$0.00')).not.toBeInTheDocument()
+    expect(
+      within(warrantyCard).getByRole('link', {
+        name: 'Open Warranty Customer warranty clean',
+      }),
+    ).toHaveAttribute('href', '/admin/operations/invoices/warranty-invoice')
+    expect(
+      within(warrantyCard).getByRole('button', {
+        name: 'Move job to Tech 2',
+      }),
+    ).toBeVisible()
+    expect(
+      within(warrantyCard).getByTitle(
+        'Drag Warranty Customer to move start time',
+      ),
+    ).toBeVisible()
   })
 })
 

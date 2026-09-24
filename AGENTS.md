@@ -236,6 +236,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Business economics must show a January-to-date benchmark separately from non-overlapping Thursday–Wednesday weekly movement and reporting; never use a rolling window as both.
 - Business economics charts need 30-day, 90-day, and calendar-year controls, straight point-to-point lines, and a persistent click-through breakdown for every weekly reading.
 - Keep admin-entered bookings unrestricted by the public minimum; Charles and Tiffany may deliberately schedule work at any price.
+- Default warranty cleans to a one-hour calendar block and keep their schedule cards compact: customer name in the draggable header, a warranty label, a usable detail tap target, and mobile technician reassignment.
 
 ---
 

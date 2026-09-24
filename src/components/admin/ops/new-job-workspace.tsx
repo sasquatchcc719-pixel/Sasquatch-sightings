@@ -23,6 +23,7 @@ import {
 import { DayTimePicker } from './day-time-picker'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
+import { getWarrantyWorkDurationMinutes } from '@/lib/ops/warranty-appointment'
 import { ResidentialEstimatePanel } from './residential-estimate-panel'
 
 type ServiceItem = {
@@ -796,6 +797,18 @@ export function NewJobWorkspace() {
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
   )
+  const manualWarrantyMinutes = getWarrantyWorkDurationMinutes({
+    ops_appointment_line_items: lineItems.map((item) => {
+      const service = servicesById.get(item.service_catalog_item_id)
+      return {
+        name_snapshot: item.name_snapshot,
+        duration_minutes: Number(
+          item.duration_minutes || service?.default_duration_minutes || 0,
+        ),
+        service_catalog_items: service ? { slug: service.slug } : null,
+      }
+    }),
+  })
   // The reserved calendar block is sized by the dollar subtotal (2h / 3h / 4h
   // tiers) — exactly what the server stores when it creates the appointment
   // (see calculateAppointmentDurationFromTotal in /api/admin/ops/appointments).
@@ -804,9 +817,11 @@ export function NewJobWorkspace() {
   // the next appointment (e.g. a 4-hour 9 AM job slotted in front of an 11 AM).
   const serviceMinutesForCurrentSelection = serviceConcernId
     ? warrantyDurationMinutes
-    : totalSelectedUnits > 0
-      ? calculateAppointmentDurationFromTotal(subtotalQuote)
-      : 0
+    : manualWarrantyMinutes != null
+      ? manualWarrantyMinutes
+      : totalSelectedUnits > 0
+        ? calculateAppointmentDurationFromTotal(subtotalQuote)
+        : 0
   const bufferMinutesForCurrentSelection =
     serviceMinutesForCurrentSelection > 0
       ? DEFAULT_APPOINTMENT_BUFFER_MINUTES
@@ -1973,8 +1988,8 @@ export function NewJobWorkspace() {
                     <option value={240}>4 hours</option>
                   </select>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    The calendar also reserves the normal 1-hour travel/setup
-                    buffer.
+                    Warranty returns default to one hour. Choose a longer visit
+                    only when the work needs it.
                   </p>
                 </div>
               ) : null}
