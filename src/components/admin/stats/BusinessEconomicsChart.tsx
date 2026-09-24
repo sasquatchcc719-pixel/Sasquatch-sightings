@@ -137,19 +137,37 @@ export function BusinessEconomicsChart({
     profitable: snapshot.revenuePerHour >= snapshot.ownerAdjustedCostPerHour,
   }))
   const gapColor = (profitable: boolean) => (profitable ? '#22c55e' : '#f43f5e')
+  const gapOpacity = (profitable: boolean) => (profitable ? 0.22 : 0.48)
   const gapStops = chartData.flatMap((point, index) => {
     if (index === 0) {
-      return [{ offset: 0, color: gapColor(point.profitable) }]
+      return [
+        {
+          offset: 0,
+          color: gapColor(point.profitable),
+          opacity: gapOpacity(point.profitable),
+        },
+      ]
     }
     const boundary = ((index - 0.5) / (chartData.length - 1)) * 100
     return [
       {
         offset: boundary,
         color: gapColor(chartData[index - 1].profitable),
+        opacity: gapOpacity(chartData[index - 1].profitable),
       },
-      { offset: boundary, color: gapColor(point.profitable) },
+      {
+        offset: boundary,
+        color: gapColor(point.profitable),
+        opacity: gapOpacity(point.profitable),
+      },
       ...(index === chartData.length - 1
-        ? [{ offset: 100, color: gapColor(point.profitable) }]
+        ? [
+            {
+              offset: 100,
+              color: gapColor(point.profitable),
+              opacity: gapOpacity(point.profitable),
+            },
+          ]
         : []),
     ]
   })
@@ -330,7 +348,7 @@ export function BusinessEconomicsChart({
                       key={`${stop.offset}-${index}`}
                       offset={`${stop.offset}%`}
                       stopColor={stop.color}
-                      stopOpacity={0.24}
+                      stopOpacity={stop.opacity}
                     />
                   ))}
                 </linearGradient>
