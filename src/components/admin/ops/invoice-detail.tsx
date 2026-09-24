@@ -45,6 +45,7 @@ import { SignatureModal } from './signature-modal'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
 import { lastPaymentText, type PaymentTextSend } from '@/lib/ops/payment-texts'
+import { fetchInvoiceWithRetry } from '@/lib/ops/invoice-loading'
 import {
   PaymentTextHistoryList,
   PaymentTextLastSent,
@@ -200,6 +201,7 @@ type OpsAppointment = {
   assigned_staff: OpsTechnician | OpsTechnician[] | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
   ops_service_addresses: OpsAddress | OpsAddress[] | null
+  ops_job_photos: JobPhoto[] | null
 }
 
 type InvoiceDetail = {
@@ -235,6 +237,19 @@ type InvoiceDetail = {
     unit_price: number
     line_total: number
   }>
+}
+
+type CustomerMessage = {
+  direction: 'inbound' | 'outbound'
+  content: string
+  timestamp: string | null
+  sentBy: string | null
+}
+
+type InvoiceLoadPayload = {
+  invoice: InvoiceDetail
+  customerMessages?: CustomerMessage[]
+  paymentTexts?: PaymentTextSend[]
 }
 
 type SendChannel = 'sms' | 'email'
@@ -384,12 +399,6 @@ export function InvoiceDetail({
   const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
     null,
   )
-  type CustomerMessage = {
-    direction: 'inbound' | 'outbound'
-    content: string
-    timestamp: string | null
-    sentBy: string | null
-  }
   const [customerMessages, setCustomerMessages] = useState<CustomerMessage[]>(
     [],
   )
@@ -566,13 +575,8 @@ export function InvoiceDetail({
       if (!opts?.silent) setLoading(true)
       setError(null)
       try {
-        const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
-          cache: 'no-store',
-        })
-        const result = await response.json()
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to load invoice')
-        }
+        const result =
+          await fetchInvoiceWithRetry<InvoiceLoadPayload>(invoiceId)
         setInvoice(result.invoice)
         setStatus(result.invoice.status)
         setDiscount(String(result.invoice.discount_amount || 0))
@@ -1454,7 +1458,14 @@ export function InvoiceDetail({
 
   if (!invoice) {
     return (
-      <div className="text-muted-foreground text-sm">Invoice not found.</div>
+      <Card className="mx-auto max-w-md space-y-4 p-5 text-center">
+        <p className="text-sm font-medium">
+          {error || 'This invoice could not be found.'}
+        </p>
+        <Button type="button" onClick={() => void loadInvoice()}>
+          Try again
+        </Button>
+      </Card>
     )
   }
 

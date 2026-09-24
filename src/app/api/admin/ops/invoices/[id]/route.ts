@@ -16,6 +16,9 @@ import {
 } from '@/lib/server/lead-sources'
 import { isBlacklisted } from '@/lib/blacklist'
 import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
+import { settleOptionalInvoiceLookup } from '@/lib/ops/invoice-loading'
+
+const OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS = 2_000
 
 const INVOICE_SELECT = `
   *,
@@ -182,10 +185,35 @@ export async function GET(
 
     if (error) throw error
 
-    const customerMessages = await loadCustomerMessages(supabase, data)
-    const paymentTexts = await loadInvoicePaymentTexts(supabase, id)
+    const [customerMessagesResult, paymentTextsResult] = await Promise.all([
+      settleOptionalInvoiceLookup(
+        loadCustomerMessages(supabase, data),
+        [],
+        OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS,
+      ),
+      settleOptionalInvoiceLookup(
+        loadInvoicePaymentTexts(supabase, id),
+        [],
+        OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS,
+      ),
+    ])
 
-    return NextResponse.json({ invoice: data, customerMessages, paymentTexts })
+    if (
+      customerMessagesResult.outcome !== 'complete' ||
+      paymentTextsResult.outcome !== 'complete'
+    ) {
+      console.warn('[ops/invoices/:id][GET] Optional history incomplete', {
+        invoiceId: id,
+        customerMessages: customerMessagesResult.outcome,
+        paymentTexts: paymentTextsResult.outcome,
+      })
+    }
+
+    return NextResponse.json({
+      invoice: data,
+      customerMessages: customerMessagesResult.value,
+      paymentTexts: paymentTextsResult.value,
+    })
   } catch (error) {
     console.error('[ops/invoices/:id][GET] Error:', error)
     return NextResponse.json(
