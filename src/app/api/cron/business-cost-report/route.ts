@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  buildBusinessCostReportCard,
   buildBusinessCostDigest,
   loadBusinessCostSnapshots,
   refreshBusinessCostSnapshots,
   weeklyCostWindowsSince,
   yearToDateCostWindow,
 } from '@/lib/ops/business-economics'
+import { deliverReportCard } from '@/lib/reports/telegram-report'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
 
@@ -31,11 +33,20 @@ export async function GET(request: NextRequest) {
       'year_to_date',
     )
     const snapshots = await loadBusinessCostSnapshots(supabase, 'weekly')
-    const sent = await sendTelegramNotification(
-      buildBusinessCostDigest(snapshots, yearToDate || null),
-      { disablePreview: true },
-    )
-    if (!sent) {
+    const digest = buildBusinessCostDigest(snapshots, yearToDate || null)
+    const report = buildBusinessCostReportCard(snapshots, yearToDate || null)
+    if (!report) {
+      throw new Error('No weekly business cost snapshot available')
+    }
+    const delivery = await deliverReportCard({
+      supabase,
+      slug: 'business-cost-weekly',
+      runKey: report.runKey,
+      card: report.card,
+      caption: report.caption,
+      text: digest,
+    })
+    if (!delivery.textSent) {
       return NextResponse.json(
         { error: 'Cost report built, but Telegram delivery failed' },
         { status: 502 },
@@ -46,6 +57,8 @@ export async function GET(request: NextRequest) {
       refreshed: refreshed.length,
       latestWindow: refreshed.at(-1)?.windowEnd || null,
       yearToDateThrough: yearToDate?.windowEnd || null,
+      imageSent: delivery.imageSent,
+      imageUrl: delivery.imageUrl,
     })
   } catch (error) {
     const message =

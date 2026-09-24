@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadProfitAndLossCost } from '@/lib/quickbooks-profit-loss'
 import { loadUtilizationSupplementRows } from '@/lib/ops/utilization-supplement'
+import type { ReportCardInput } from '@/lib/reports/report-card'
 import {
   excludeJobsCoveredByRevenueEntries,
   utilizationHoursFromAppointment,
@@ -409,4 +410,79 @@ export function buildBusinessCostDigest(
     '',
     `Owner field time valued at $${OWNER_FIELD_REPLACEMENT_RATE}/hour. No estimated depreciation, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.`,
   ].join('\n')
+}
+
+function shortDate(dateKey: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${dateKey}T12:00:00Z`))
+}
+
+export function buildBusinessCostReportCard(
+  weeklySnapshots: BusinessCostSnapshot[],
+  yearToDate: BusinessCostSnapshot | null,
+): { card: ReportCardInput; caption: string; runKey: string } | null {
+  const latest = weeklySnapshots[weeklySnapshots.length - 1]
+  if (!latest) return null
+
+  const gap = latest.revenuePerHour - latest.ownerAdjustedCostPerHour
+  const profitable = gap >= 0
+  const year = latest.windowEnd.slice(0, 4)
+  const card: ReportCardInput = {
+    eyebrow: 'Weekly Business Economics',
+    title: 'Income vs. cost',
+    subtitle: `${shortDate(latest.windowStart)}–${shortDate(latest.windowEnd)} · Thursday–Wednesday`,
+    verdict: {
+      text: profitable
+        ? `Income stayed $${gap.toFixed(0)}/hour above tracked cost.`
+        : `Tracked cost exceeded income by $${Math.abs(gap).toFixed(0)}/hour.`,
+      tone: profitable ? 'good' : 'bad',
+    },
+    metrics: [
+      {
+        label: 'Income / hour',
+        value: `$${latest.revenuePerHour.toFixed(0)}`,
+        note: `$${latest.revenue.toFixed(0)} total revenue`,
+        tone: 'good',
+      },
+      {
+        label: 'Cost / hour',
+        value: `$${latest.ownerAdjustedCostPerHour.toFixed(0)}`,
+        note: 'QuickBooks + owner field labor',
+        tone: profitable ? 'warn' : 'bad',
+      },
+      {
+        label: 'Tracked margin',
+        value: `${latest.ownerAdjustedMarginPct.toFixed(1)}%`,
+        note: `${latest.ownerAdjustedCostPct.toFixed(1)}% cost share`,
+        tone: profitable ? 'good' : 'bad',
+      },
+      {
+        label: `${year} YTD average`,
+        value: yearToDate
+          ? `$${yearToDate.revenuePerHour.toFixed(0)}/$${yearToDate.ownerAdjustedCostPerHour.toFixed(0)}`
+          : 'Pending',
+        note: yearToDate ? 'income / cost per hour' : 'No YTD snapshot',
+        tone: 'neutral',
+      },
+    ],
+    incomeCostSeries: {
+      label: 'Weekly dollars per productive hour',
+      points: weeklySnapshots.map((snapshot) => ({
+        label: shortDate(snapshot.windowEnd),
+        income: snapshot.revenuePerHour,
+        cost: snapshot.ownerAdjustedCostPerHour,
+      })),
+    },
+    footer:
+      'Owner field time is valued at $31/hour. Full definitions and exclusions are in the Telegram message.',
+  }
+
+  return {
+    card,
+    caption: `${year} income vs. tracked cost per productive hour · Latest margin ${latest.ownerAdjustedMarginPct.toFixed(1)}%`,
+    runKey: latest.windowEnd,
+  }
 }

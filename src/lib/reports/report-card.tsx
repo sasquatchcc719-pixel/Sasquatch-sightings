@@ -30,6 +30,11 @@ export type ReportCardSeries = {
   maxValue?: number
 }
 
+export type ReportCardIncomeCostSeries = {
+  label: string
+  points: Array<{ label: string; income: number; cost: number }>
+}
+
 export type ReportCardInput = {
   eyebrow: string
   title: string
@@ -37,11 +42,13 @@ export type ReportCardInput = {
   verdict?: { text: string; tone: ReportCardTone } | null
   metrics: ReportCardMetric[]
   series?: ReportCardSeries | null
+  incomeCostSeries?: ReportCardIncomeCostSeries | null
   footer?: string | null
 }
 
 const WIDTH = 900
 const HEIGHT = 1340
+const INCOME_COST_HEIGHT = 1450
 
 const COLORS = {
   background: '#0a1120',
@@ -300,6 +307,260 @@ function LineChart({ series }: { series: ReportCardSeries }) {
   )
 }
 
+function IncomeCostChart({ series }: { series: ReportCardIncomeCostSeries }) {
+  const values = series.points.flatMap((point) => [point.income, point.cost])
+  const max = Math.max(...values, 1)
+  const chartMax = Math.ceil((max * 1.08) / 25) * 25
+  const plotWidth = CHART_WIDTH - CHART_MARGIN.left - CHART_MARGIN.right
+  const plotHeight = CHART_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom
+  const xFor = (index: number) =>
+    CHART_MARGIN.left +
+    (series.points.length === 1
+      ? plotWidth / 2
+      : (index / (series.points.length - 1)) * plotWidth)
+  const yFor = (value: number) =>
+    CHART_MARGIN.top + plotHeight - (value / chartMax) * plotHeight
+  const pathFor = (key: 'income' | 'cost') =>
+    series.points
+      .map(
+        (point, index) =>
+          `${index === 0 ? 'M' : 'L'} ${xFor(index).toFixed(1)} ${yFor(point[key]).toFixed(1)}`,
+      )
+      .join(' ')
+  const labelEvery = Math.max(1, Math.ceil(series.points.length / 6))
+  const yTicks = [0, chartMax / 2, chartMax]
+
+  const gapSegments = series.points.slice(0, -1).flatMap((point, index) => {
+    const next = series.points[index + 1]
+    const startX = xFor(index)
+    const endX = xFor(index + 1)
+    const startDiff = point.income - point.cost
+    const endDiff = next.income - next.cost
+    const polygon = (
+      key: string,
+      x0: number,
+      income0: number,
+      cost0: number,
+      x1: number,
+      income1: number,
+      cost1: number,
+      profitable: boolean,
+    ) => ({
+      key,
+      profitable,
+      path: `M ${x0.toFixed(1)} ${yFor(income0).toFixed(1)} L ${x1.toFixed(1)} ${yFor(income1).toFixed(1)} L ${x1.toFixed(1)} ${yFor(cost1).toFixed(1)} L ${x0.toFixed(1)} ${yFor(cost0).toFixed(1)} Z`,
+    })
+
+    if (startDiff * endDiff >= 0) {
+      return [
+        polygon(
+          `gap-${index}`,
+          startX,
+          point.income,
+          point.cost,
+          endX,
+          next.income,
+          next.cost,
+          startDiff + endDiff >= 0,
+        ),
+      ]
+    }
+
+    const crossingRatio =
+      Math.abs(startDiff) / (Math.abs(startDiff) + Math.abs(endDiff))
+    const crossingX = startX + (endX - startX) * crossingRatio
+    const crossingValue =
+      point.income + (next.income - point.income) * crossingRatio
+    return [
+      polygon(
+        `gap-${index}-before`,
+        startX,
+        point.income,
+        point.cost,
+        crossingX,
+        crossingValue,
+        crossingValue,
+        startDiff >= 0,
+      ),
+      polygon(
+        `gap-${index}-after`,
+        crossingX,
+        crossingValue,
+        crossingValue,
+        endX,
+        next.income,
+        next.cost,
+        endDiff >= 0,
+      ),
+    ]
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 20,
+            letterSpacing: 1.4,
+            textTransform: 'uppercase',
+            color: COLORS.textMuted,
+          }}
+        >
+          {series.label}
+        </div>
+        <div style={{ display: 'flex', gap: 20, fontSize: 18 }}>
+          <div
+            style={{ display: 'flex', alignItems: 'center', color: '#34d399' }}
+          >
+            <span style={{ display: 'flex', marginRight: 7 }}>—</span> Income
+          </div>
+          <div
+            style={{ display: 'flex', alignItems: 'center', color: '#fb923c' }}
+          >
+            <span style={{ display: 'flex', marginRight: 7 }}>—</span> Cost
+          </div>
+        </div>
+      </div>
+      <div
+        role="img"
+        aria-label="Weekly income and cost per hour line graph"
+        style={{
+          display: 'flex',
+          position: 'relative',
+          width: CHART_WIDTH,
+          height: CHART_HEIGHT,
+          marginTop: 12,
+        }}
+      >
+        <svg
+          width={CHART_WIDTH}
+          height={CHART_HEIGHT}
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          style={{ position: 'absolute', left: 0, top: 0 }}
+        >
+          {yTicks.map((tick) => {
+            const y = yFor(tick)
+            return (
+              <line
+                key={`income-cost-grid-${tick}`}
+                x1={CHART_MARGIN.left}
+                y1={y}
+                x2={CHART_WIDTH - CHART_MARGIN.right}
+                y2={y}
+                stroke={COLORS.panelEdge}
+                strokeWidth={2}
+              />
+            )
+          })}
+
+          {gapSegments.map((segment) => (
+            <path
+              key={segment.key}
+              d={segment.path}
+              fill={
+                segment.profitable
+                  ? 'rgba(52, 211, 153, 0.24)'
+                  : 'rgba(248, 113, 113, 0.76)'
+              }
+            />
+          ))}
+
+          <path
+            d={pathFor('income')}
+            fill="none"
+            stroke="#34d399"
+            strokeWidth={6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={pathFor('cost')}
+            fill="none"
+            stroke="#fb923c"
+            strokeWidth={6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+
+        {yTicks.map((tick) => (
+          <div
+            key={`income-cost-y-${tick}`}
+            style={{
+              display: 'flex',
+              position: 'absolute',
+              left: 0,
+              top: yFor(tick) - 11,
+              width: CHART_MARGIN.left - 12,
+              justifyContent: 'flex-end',
+              fontSize: 17,
+              color: COLORS.textMuted,
+            }}
+          >
+            ${Math.round(tick)}
+          </div>
+        ))}
+
+        {series.points.map((point, index) => {
+          const isCurrent = index === series.points.length - 1
+          if (index % labelEvery !== 0 && !isCurrent) return null
+          const labelWidth = 82
+          return (
+            <div
+              key={`income-cost-x-${point.label}-${index}`}
+              style={{
+                display: 'flex',
+                position: 'absolute',
+                left: Math.max(
+                  CHART_MARGIN.left,
+                  Math.min(
+                    CHART_WIDTH - CHART_MARGIN.right - labelWidth,
+                    xFor(index) - labelWidth / 2,
+                  ),
+                ),
+                top: CHART_HEIGHT - 30,
+                width: labelWidth,
+                justifyContent:
+                  index === 0
+                    ? 'flex-start'
+                    : isCurrent
+                      ? 'flex-end'
+                      : 'center',
+                fontSize: 16,
+                color: isCurrent ? COLORS.textPrimary : COLORS.textMuted,
+              }}
+            >
+              {point.label}
+            </div>
+          )
+        })}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 18,
+          marginTop: 4,
+          fontSize: 16,
+          color: COLORS.textMuted,
+        }}
+      >
+        <div style={{ display: 'flex', color: '#34d399' }}>
+          Green = profit gap
+        </div>
+        <div style={{ display: 'flex', color: '#f87171' }}>Red = loss gap</div>
+      </div>
+    </div>
+  )
+}
+
 function ReportCard({ input }: { input: ReportCardInput }) {
   const tone = TONES[input.verdict?.tone ?? 'neutral']
   const rows: ReportCardMetric[][] = []
@@ -313,7 +574,7 @@ function ReportCard({ input }: { input: ReportCardInput }) {
         display: 'flex',
         flexDirection: 'column',
         width: WIDTH,
-        height: HEIGHT,
+        height: input.incomeCostSeries ? INCOME_COST_HEIGHT : HEIGHT,
         backgroundColor: COLORS.background,
       }}
     >
@@ -412,7 +673,9 @@ function ReportCard({ input }: { input: ReportCardInput }) {
 
         <div style={{ display: 'flex', flexGrow: 1 }} />
 
-        {input.series && input.series.points.length > 0 ? (
+        {input.incomeCostSeries && input.incomeCostSeries.points.length > 0 ? (
+          <IncomeCostChart series={input.incomeCostSeries} />
+        ) : input.series && input.series.points.length > 0 ? (
           <LineChart series={input.series} />
         ) : null}
 
@@ -437,9 +700,10 @@ function ReportCard({ input }: { input: ReportCardInput }) {
 export async function renderReportCardPng(
   input: ReportCardInput,
 ): Promise<Buffer> {
+  const height = input.incomeCostSeries ? INCOME_COST_HEIGHT : HEIGHT
   const response = new ImageResponse(<ReportCard input={input} />, {
     width: WIDTH,
-    height: HEIGHT,
+    height,
   })
   return Buffer.from(await response.arrayBuffer())
 }

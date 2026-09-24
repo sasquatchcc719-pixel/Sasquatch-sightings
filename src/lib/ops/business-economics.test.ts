@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
+  buildBusinessCostReportCard,
   buildBusinessCostDigest,
   calculateBusinessCostSnapshot,
   latestCompletedWednesday,
@@ -85,5 +86,13 @@ describe('business economics', () => {
     expect(digest).toContain('Owner-adjusted cost/hour: $79.30')
     expect(digest).toContain('No estimated depreciation')
     expect(digest).toContain('owner draws')
+
+    const report = buildBusinessCostReportCard([previous, snapshot], yearToDate)
+    expect(report?.card.title).toBe('Income vs. cost')
+    expect(report?.card.incomeCostSeries?.points).toEqual([
+      { label: 'Sep 16', income: 200, cost: 64.2 },
+      { label: 'Sep 23', income: 200, cost: 66.2 },
+    ])
+    expect(report?.caption).toContain('Latest margin 66.9%')
   })
 })
