@@ -243,14 +243,29 @@ describe('collapsible weekend schedule', () => {
         ...saturdayJob,
         id: 'ordinary-job',
         start_time: '11:00:00',
-        end_time: '12:00:00',
+        end_time: '13:00:00',
         status: 'completed',
         quoted_total: 0,
+        lead_source: 'Google',
+        booking_channel: 'admin',
         service_concern_id: null,
         ops_customers: {
           full_name: 'Ordinary Customer',
           business_name: null,
         },
+        ops_service_addresses: {
+          street_1: '456 Main Street',
+          city: 'Monument',
+          state: 'CO',
+          zip_code: '80132',
+        },
+        ops_appointment_line_items: [
+          {
+            id: 'ordinary-line',
+            name_snapshot: 'Carpet Cleaning',
+            service_catalog_items: null,
+          },
+        ],
         ops_invoices: {
           id: 'ordinary-invoice',
           status: 'ready',
@@ -297,6 +312,21 @@ describe('collapsible weekend schedule', () => {
         'Drag Warranty Customer to move start time',
       ),
     ).toBeVisible()
+
+    const ordinaryCard = container.querySelector(
+      '[data-appointment-id="ordinary-job"]',
+    )
+    expect(ordinaryCard).toBeInstanceOf(HTMLElement)
+    if (!(ordinaryCard instanceof HTMLElement)) return
+
+    expect(ordinaryCard.style.height).toBe('160px')
+    expect(within(ordinaryCard).getByText('11:00 - 13:00')).toBeVisible()
+    expect(
+      within(ordinaryCard).getByText('456 Main Street, Monument'),
+    ).toBeVisible()
+    expect(within(ordinaryCard).getByText('Carpet Cleaning')).toBeVisible()
+    expect(within(ordinaryCard).getByText('Lead: Google')).toBeVisible()
+    expect(within(ordinaryCard).getByText('Booked: Admin')).toBeVisible()
   })
 })
 

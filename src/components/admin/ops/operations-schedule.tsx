@@ -2494,6 +2494,7 @@ export function OperationsSchedule() {
         customer?.business_name || customer?.full_name || 'Customer'
       const isWarranty = isWarrantyAppointment(appointment)
       const serviceAddress = unwrapRelation(appointment.ops_service_addresses)
+      const { leadLabel, bookingLabel } = getScheduleCardSources(appointment)
       const endOverride =
         resizeSession?.appointmentId === appointment.id &&
         resizeLiveEndMinutes != null
@@ -2650,114 +2651,101 @@ export function OperationsSchedule() {
                 ) : null}
               </div>
             ) : null}
-            {!isWarranty && appointment.is_repeat_customer && (
-              <span className="w-fit rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                Repeat
-              </span>
-            )}
-            {!isWarranty && isEstimate && (
-              <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                <Ruler className="h-2.5 w-2.5" />
-                Commercial walkthrough
-              </span>
-            )}
-            {!isWarranty &&
-            isEstimate &&
-            customer?.business_name &&
-            customer.full_name ? (
-              <div className="mt-1 line-clamp-1 shrink-0 text-[10px] text-slate-600">
-                Contact: {customer.full_name}
-              </div>
-            ) : null}
             {!isWarranty && isEstimate ? (
-              <div className="mt-0.5 line-clamp-2 shrink-0 text-[10px] leading-tight text-slate-600">
-                {(() => {
-                  const address = unwrapRelation(
-                    appointment.ops_service_addresses,
-                  )
-                  return address
-                    ? `${address.street_1}, ${address.city}`
-                    : 'Address pending'
-                })()}
-                {assignedStaff?.display_name
-                  ? ` · Tech: ${assignedStaff.display_name}`
-                  : ''}
-              </div>
-            ) : null}
-            {!isWarranty &&
-              !isEstimate &&
-              appointment.recurring_template_id && (
-                <a
-                  href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
-                >
-                  <Repeat className="h-2.5 w-2.5" />
-                  Recurring
-                </a>
-              )}
-            {!isWarranty ? (
-              <div className="mt-1 shrink-0 text-slate-700">
-                {placement.startLabel} - {placement.endLabel}
-              </div>
-            ) : null}
-            {!isWarranty &&
-              (() => {
-                const city = isEstimate ? null : serviceAddress?.city
-                const { leadLabel, bookingLabel } =
-                  getScheduleCardSources(appointment)
-                if (!isEstimate && (city || leadLabel || bookingLabel)) {
-                  return (
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
-                      {city && <span>{city}</span>}
-                      {city && (leadLabel || bookingLabel) && <span>·</span>}
-                      {leadLabel && <span>Lead: {leadLabel}</span>}
-                      {leadLabel && bookingLabel && <span>·</span>}
-                      {bookingLabel && <span>Booked: {bookingLabel}</span>}
-                    </div>
-                  )
-                }
-                return null
-              })()}
-            {!isWarranty ? (
-              !isEstimate ? (
-                <div className="mt-2 line-clamp-2 text-slate-800">
-                  {appointment.ops_appointment_line_items
-                    .map((item) => item.name_snapshot)
-                    .join(', ')}
+              <>
+                {appointment.is_repeat_customer ? (
+                  <span className="w-fit rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                    Repeat
+                  </span>
+                ) : null}
+                <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                  <Ruler className="h-2.5 w-2.5" />
+                  Commercial walkthrough
+                </span>
+                {customer?.business_name && customer.full_name ? (
+                  <div className="mt-1 line-clamp-1 shrink-0 text-[10px] text-slate-600">
+                    Contact: {customer.full_name}
+                  </div>
+                ) : null}
+                <div className="mt-0.5 line-clamp-2 shrink-0 text-[10px] leading-tight text-slate-600">
+                  {serviceAddress
+                    ? `${serviceAddress.street_1}, ${serviceAddress.city}`
+                    : 'Address pending'}
+                  {assignedStaff?.display_name
+                    ? ` · Tech: ${assignedStaff.display_name}`
+                    : ''}
                 </div>
-              ) : appointment.ops_appointment_line_items.length === 0 ? (
-                <div className="mt-1 shrink-0 text-[10px] text-slate-600">
-                  Measurements and pricing pending
+                <div className="mt-1 shrink-0 text-slate-700">
+                  {placement.startLabel} - {placement.endLabel}
                 </div>
-              ) : null
-            ) : null}
-            {!isWarranty &&
-              recurringLineItemDescriptionBoxes(appointment, false)}
-            {!isWarranty ? (
-              <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-                {isEstimate ? (
+                {appointment.ops_appointment_line_items.length === 0 ? (
+                  <div className="mt-1 shrink-0 text-[10px] text-slate-600">
+                    Measurements and pricing pending
+                  </div>
+                ) : null}
+                <div className="mt-auto flex items-center justify-between gap-1 pt-2">
                   <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
                     {(appointment.estimate_status || 'draft').replace(
                       /^./,
                       (value) => value.toUpperCase(),
                     )}
                   </span>
-                ) : (
-                  <>
-                    <span>{paymentMethodChip(appointment)}</span>
-                    <span
-                      className={`text-right font-semibold tabular-nums ${
-                        appointment.status === 'completed'
-                          ? 'text-slate-600'
-                          : 'text-slate-800'
-                      }`}
-                    >
-                      ${calendarDisplayAmount(appointment)}
+                </div>
+              </>
+            ) : null}
+            {!isWarranty && !isEstimate ? (
+              <>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0 font-semibold text-slate-700 tabular-nums">
+                    {placement.startLabel} - {placement.endLabel}
+                  </span>
+                  {appointment.is_repeat_customer ? (
+                    <span className="shrink-0 rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                      Repeat
                     </span>
-                  </>
-                )}
-              </div>
+                  ) : null}
+                  {appointment.recurring_template_id ? (
+                    <a
+                      href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-100"
+                    >
+                      <Repeat className="h-2.5 w-2.5" />
+                      Recurring
+                    </a>
+                  ) : null}
+                  <span
+                    className={`ml-auto shrink-0 text-right font-semibold tabular-nums ${
+                      appointment.status === 'completed'
+                        ? 'text-slate-600'
+                        : 'text-slate-800'
+                    }`}
+                  >
+                    ${calendarDisplayAmount(appointment)}
+                  </span>
+                </div>
+                <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                  <span className="truncate text-[10px] font-medium text-slate-600">
+                    {serviceAddress
+                      ? `${serviceAddress.street_1}, ${serviceAddress.city}`
+                      : 'Address pending'}
+                  </span>
+                  <span>{paymentMethodChip(appointment)}</span>
+                </div>
+                <div className="mt-1.5 line-clamp-2 leading-tight font-medium text-slate-800">
+                  {appointment.ops_appointment_line_items
+                    .map((item) => item.name_snapshot)
+                    .join(', ')}
+                </div>
+                {recurringLineItemDescriptionBoxes(appointment, false)}
+                {leadLabel || bookingLabel ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[10px] leading-tight text-slate-500">
+                    {leadLabel ? <span>Lead: {leadLabel}</span> : null}
+                    {leadLabel && bookingLabel ? <span>·</span> : null}
+                    {bookingLabel ? <span>Booked: {bookingLabel}</span> : null}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </Link>
           {!isWarranty && !isEstimate && appointment.status !== 'completed' && (
