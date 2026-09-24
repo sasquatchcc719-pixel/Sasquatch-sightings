@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { propertyForUrl, isPingable } from './gsc-index-sweep'
+import { coverageBucket, propertyForUrl } from './gsc-index-sweep'
 import { GSC_WWW_PROPERTY, GSC_SIGHTINGS_PROPERTY } from './gsc'
 
 describe('propertyForUrl', () => {
@@ -19,26 +19,21 @@ describe('propertyForUrl', () => {
   })
 })
 
-describe('isPingable', () => {
-  it('pings crawl-budget-starved pages (not indexed)', () => {
-    expect(isPingable('Discovered - currently not indexed')).toBe(true)
-    expect(isPingable('Crawled - currently not indexed')).toBe(true)
+describe('coverageBucket', () => {
+  it('groups pages Google knows about but has not indexed yet', () => {
+    expect(coverageBucket('Discovered - currently not indexed')).toBe('waiting')
+    expect(coverageBucket('Crawled - currently not indexed')).toBe('waiting')
   })
 
-  it('skips already-indexed pages', () => {
-    expect(isPingable('Submitted and indexed')).toBe(false)
-    expect(isPingable('Indexed, not submitted in sitemap')).toBe(false)
+  it('groups indexed pages', () => {
+    expect(coverageBucket('Submitted and indexed')).toBe('indexed')
+    expect(coverageBucket('Indexed, not submitted in sitemap')).toBe('indexed')
   })
 
-  it('skips hard problems a ping cannot fix', () => {
-    expect(isPingable('Page with redirect')).toBe(false)
-    expect(isPingable('Blocked by robots.txt')).toBe(false)
-    expect(isPingable('Excluded by ‘noindex’ tag')).toBe(false)
-    expect(isPingable('Not found (404)')).toBe(false)
-  })
-
-  it('handles null/empty coverage safely', () => {
-    expect(isPingable(null)).toBe(false)
-    expect(isPingable('')).toBe(false)
+  it('groups unknown, redirected, excluded, and empty statuses as other', () => {
+    expect(coverageBucket('URL is unknown to Google')).toBe('other')
+    expect(coverageBucket('Page with redirect')).toBe('other')
+    expect(coverageBucket('Excluded by ‘noindex’ tag')).toBe('other')
+    expect(coverageBucket(null)).toBe('other')
   })
 })

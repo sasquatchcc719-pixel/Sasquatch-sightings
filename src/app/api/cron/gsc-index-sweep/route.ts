@@ -1,12 +1,13 @@
 /**
- * Cron: weekly GSC Index Sweep.
- * Inspects sitemap pages, fires Google Indexing API pings at the ones that
- * aren't indexed (crawl-budget starved), and sends Charles a progress digest.
+ * Cron: Thursday Google index check.
+ * Inspects sitemap pages, stores the results, and sends Charles a concise
+ * progress digest. This route never requests a crawl or indexing action.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { runGscIndexSweep } from '@/lib/gsc-index-sweep'
+import { runGscIndexCheck } from '@/lib/gsc-index-sweep'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { createAdminClient } from '@/supabase/server'
 
 export const maxDuration = 300
 
@@ -17,26 +18,28 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await runGscIndexSweep()
+    const result = await runGscIndexCheck(createAdminClient())
     return NextResponse.json({
       success: true,
       inspected: result.inspected,
       indexed: result.indexed,
-      notIndexed: result.notIndexed,
-      pinged: result.pinged.length,
-      pingFailed: result.pingFailed,
+      waiting: result.waiting,
+      other: result.other,
+      unavailable: result.unavailable,
+      newlyIndexed: result.newlyIndexed.length,
+      droppedFromIndex: result.droppedFromIndex.length,
     })
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Index sweep failed'
-    console.error('[cron/gsc-index-sweep] Error:', error)
+      error instanceof Error ? error.message : 'Index check failed'
+    console.error('[cron/gsc-index-check] Error:', error)
     await sendTelegramNotification(
-      `🚨 GSC Index Sweep FAILED — no force-crawl run this week.\n` +
+      `⚠️ Thursday Google Index Check could not run.\n` +
         `Error: ${message}\n` +
-        `Check GOOGLE_INDEXING_SA_JSON / GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN in Vercel.`,
+        `Check the Search Console connection in Vercel.`,
     ).catch((notifyErr) =>
       console.error(
-        '[cron/gsc-index-sweep] failure-alert send failed:',
+        '[cron/gsc-index-check] failure-alert send failed:',
         notifyErr,
       ),
     )

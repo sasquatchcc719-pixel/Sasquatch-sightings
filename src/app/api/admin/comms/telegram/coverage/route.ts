@@ -87,16 +87,27 @@ export async function GET() {
     }
 
     const indexed = latest.filter((r) => INDEXED.has(r.coverage || '')).length
+    const waiting = latest.filter(
+      (r) =>
+        !INDEXED.has(r.coverage || '') && /not indexed/i.test(r.coverage || ''),
+    ).length
+    const other = latest.length - indexed - waiting
     const notIndexed = latest.filter((r) => !INDEXED.has(r.coverage || ''))
     const lines = [
-      'GSC Weekly Watch',
-      `Index coverage (${latest.length} pages checked): ${indexed} indexed · ${notIndexed.length} not indexed`,
-      newlyIndexed.length
-        ? `Newly indexed: ${newlyIndexed.slice(0, 8).map(shortPath).join(', ')}`
-        : null,
-      dropped.length
-        ? `DROPPED FROM INDEX: ${dropped.slice(0, 8).map(shortPath).join(', ')}`
-        : null,
+      '🔎 Google Index Check',
+      '',
+      `${indexed} of ${latest.length} checked pages can appear in Google Search.`,
+      '',
+      `✅ Indexed: ${indexed}`,
+      `⏳ Waiting on Google: ${waiting}`,
+      `ℹ️ Unknown or excluded: ${other}`,
+      '',
+      newlyIndexed.length || dropped.length
+        ? `Since the last check: ${newlyIndexed.length} newly indexed${
+            dropped.length ? ` · ${dropped.length} no longer indexed` : ''
+          }`
+        : 'Since the last check: no indexing changes',
+      'Monitoring only — no recrawl requests were sent.',
     ].filter(Boolean)
 
     return NextResponse.json({
@@ -104,6 +115,8 @@ export async function GET() {
       digest: lines.join('\n'),
       buckets,
       indexed,
+      waiting,
+      other,
       checked: latest.length,
       dropped: dropped.map(shortPath),
       newlyIndexed: newlyIndexed.map(shortPath),
@@ -116,8 +129,7 @@ export async function GET() {
       constants: {
         maxInspections: 80,
         staleSitemapDays: 7,
-        sweepMaxInspections: 100,
-        sweepMaxPings: 90,
+        indexCheckMaxInspections: 250,
       },
     })
   } catch (err) {

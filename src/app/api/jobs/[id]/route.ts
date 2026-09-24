@@ -5,7 +5,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
-import { buildJobUrl, notifyGoogleIndexing } from '@/lib/google-indexing'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -79,14 +78,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         { error: 'Failed to update job' },
         { status: 500 },
       )
-    }
-
-    // When a job is published, ping Google to index the main-domain page immediately
-    if (updates.status === 'published' && job.city && job.slug) {
-      const jobUrl = buildJobUrl(job.city, job.slug)
-      notifyGoogleIndexing(jobUrl).catch(() => {
-        /* already logged inside helper */
-      })
     }
 
     return NextResponse.json({ success: true, job })

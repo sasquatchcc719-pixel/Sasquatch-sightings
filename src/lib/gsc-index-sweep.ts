@@ -1,20 +1,12 @@
 /**
- * GSC Index Sweep — force-crawl campaign for a large, crawl-budget-starved site.
+ * Thursday Google index check.
  *
- * Sasquatch has far more pages (40+ marketing pages + hundreds of job/sightings
- * pages) than its authority earns in Google crawl budget, so deep pages sit at
- * "Discovered – currently not indexed" and never get crawled. This sweep:
- *   1. pulls every URL from our sitemaps (marketing first, then job pages)
- *   2. inspects each page's real index status (URL Inspection API)
- *   3. fires Indexing API pings at the pages that are NOT indexed, to force a
- *      crawl (capped under the daily quota; only un-indexed pages, never spam)
- *   4. sends Charles a Telegram progress report
- *
- * Re-runs keep nudging stuck pages and stop pinging once they index. The
- * Indexing API is officially for job-posting pages; for other pages it's an
- * effective crawl nudge, not a guarantee — pair with internal linking.
+ * Inspects up to 250 unique sitemap URLs, stores the results for trend
+ * reporting, and sends Charles a plain-language Telegram summary. This monitor
+ * is deliberately read-only: it never asks Google to crawl or index a URL.
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   getSearchConsoleClient,
   inspectUrl,
@@ -23,7 +15,6 @@ import {
   GSC_SIGHTINGS_PROPERTY,
   type GscInspection,
 } from '@/lib/gsc'
-import { pingGoogleIndexing } from '@/lib/google-indexing'
 import { sendTelegramNotification } from '@/lib/telegram'
 
 /** Sitemaps in priority order — marketing money pages first, jobs last. */
@@ -32,29 +23,23 @@ const SITEMAPS = [
   'https://www.sasquatchcarpet.com/sitemap-jobs.xml',
   'https://sightings.sasquatchcarpet.com/sitemap.xml',
 ]
-/**
- * URL Inspection is slow (~6s/page observed) so the run cap is set by the 300s
- * cron window, not the API quota (2000/day, 600/min). At concurrency 8, ~100
- * inspections (~80s) + pings fits comfortably. Marketing pages sit first in the
- * sitemap order, so they're always covered; deeper job pages rotate across runs.
- */
-const MAX_INSPECTIONS = 100
+const MAX_INSPECTIONS = 250
 const INSPECT_CONCURRENCY = 8
-/** Indexing API publish quota defaults to 200/day — stay under it. */
-const MAX_PINGS = 90
-/** Coverage states that count as "live in Google's index". */
 const INDEXED_STATES = new Set([
   'Submitted and indexed',
   'Indexed, not submitted in sitemap',
 ])
 
-export type IndexSweepResult = {
+export type CoverageBucket = 'indexed' | 'waiting' | 'other'
+
+export type IndexCheckResult = {
   inspected: number
   indexed: number
-  notIndexed: number
-  pinged: string[]
-  pingFailed: number
-  stillStuck: string[]
+  waiting: number
+  other: number
+  unavailable: number
+  newlyIndexed: string[]
+  droppedFromIndex: string[]
   digest: string
 }
 
@@ -71,16 +56,10 @@ export function propertyForUrl(url: string): string {
     : GSC_WWW_PROPERTY
 }
 
-/**
- * A page is worth pinging when Google has it on file but hasn't indexed it —
- * the crawl-budget symptom ("Discovered/Crawled – currently not indexed").
- * We deliberately skip hard problems (blocked, redirect, noindex, 404): a ping
- * won't fix those, so pinging them just burns quota.
- */
-export function isPingable(coverage: string | null): boolean {
-  if (!coverage) return false
-  if (INDEXED_STATES.has(coverage)) return false
-  return /not indexed/i.test(coverage)
+export function coverageBucket(coverage: string | null): CoverageBucket {
+  if (INDEXED_STATES.has(coverage || '')) return 'indexed'
+  if (/not indexed/i.test(coverage || '')) return 'waiting'
+  return 'other'
 }
 
 async function collectTargets(): Promise<string[]> {
@@ -93,35 +72,59 @@ async function collectTargets(): Promise<string[]> {
     } catch {
       /* a failed sitemap fetch just narrows coverage this run */
     }
-    for (const u of urls) {
-      if (u.endsWith('llms.txt')) continue
-      if (!seen.has(u)) {
-        seen.add(u)
-        ordered.push(u)
+    for (const url of urls) {
+      if (url.endsWith('llms.txt')) continue
+      if (!seen.has(url)) {
+        seen.add(url)
+        ordered.push(url)
       }
     }
   }
   return ordered.slice(0, MAX_INSPECTIONS)
 }
 
-export async function runGscIndexSweep(
+async function previousCoverage(
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('gsc_page_snapshots')
+    .select('url, coverage, checked_at')
+    .order('checked_at', { ascending: false })
+    .limit(2000)
+
+  if (error) {
+    console.error('[index-check] previous snapshot load failed:', error)
+    return new Map()
+  }
+
+  const latestByUrl = new Map<string, string>()
+  for (const row of data || []) {
+    if (!latestByUrl.has(row.url)) {
+      latestByUrl.set(row.url, row.coverage || '')
+    }
+  }
+  return latestByUrl
+}
+
+export async function runGscIndexCheck(
+  supabase: SupabaseClient,
   options: {
     notifyOwner?: (text: string) => Promise<unknown>
     skipNotify?: boolean
-    /** Override target URLs (tests pass a tiny list). */
+    /** Override target URLs (tests and diagnostics pass a tiny list). */
     targets?: string[]
-    /** Disable the actual Indexing API calls (dry run). */
+    /** Inspect without storing results. */
     dryRun?: boolean
   } = {},
-): Promise<IndexSweepResult> {
+): Promise<IndexCheckResult> {
   const notifyOwner =
     options.notifyOwner ??
     ((text: string) => sendTelegramNotification(text, { disablePreview: true }))
 
+  const prior = await previousCoverage(supabase)
   const sc = getSearchConsoleClient()
   const targets = options.targets ?? (await collectTargets())
 
-  // Inspect with modest concurrency (quota: 600/min, 2000/day per property).
   const results: GscInspection[] = []
   let cursor = 0
   async function worker() {
@@ -130,59 +133,85 @@ export async function runGscIndexSweep(
       try {
         results.push(await inspectUrl(sc, propertyForUrl(url), url))
       } catch (err) {
-        console.error(`[index-sweep] inspect failed for ${url}:`, err)
+        console.error(`[index-check] inspect failed for ${url}:`, err)
       }
     }
   }
   await Promise.all(Array.from({ length: INSPECT_CONCURRENCY }, worker))
 
-  const indexed = results.filter((r) => INDEXED_STATES.has(r.coverage || ''))
-  const pingable = results.filter((r) => isPingable(r.coverage))
+  const indexed = results.filter(
+    (r) => coverageBucket(r.coverage) === 'indexed',
+  )
+  const waiting = results.filter(
+    (r) => coverageBucket(r.coverage) === 'waiting',
+  )
+  const other = results.filter((r) => coverageBucket(r.coverage) === 'other')
+  const unavailable = targets.length - results.length
 
-  // Force-crawl the stuck pages (marketing-first ordering preserved), capped.
-  const toPing = pingable.slice(0, MAX_PINGS)
-  const pinged: string[] = []
-  let pingFailed = 0
-  if (!options.dryRun) {
-    for (const r of toPing) {
-      const res = await pingGoogleIndexing(r.url)
-      if (res.ok) pinged.push(r.url)
-      else pingFailed += 1
-    }
+  const newlyIndexed: string[] = []
+  const droppedFromIndex: string[] = []
+  for (const result of results) {
+    const oldCoverage = prior.get(result.url)
+    if (oldCoverage === undefined) continue
+    const wasIndexed = coverageBucket(oldCoverage) === 'indexed'
+    const isIndexed = coverageBucket(result.coverage) === 'indexed'
+    if (!wasIndexed && isIndexed) newlyIndexed.push(shortPath(result.url))
+    if (wasIndexed && !isIndexed) droppedFromIndex.push(shortPath(result.url))
   }
-  const stillStuck = pingable.slice(MAX_PINGS).map((r) => r.url)
+
+  if (!options.dryRun && results.length > 0) {
+    const { error } = await supabase.from('gsc_page_snapshots').insert(
+      results.map((result) => ({
+        property: result.property,
+        url: result.url,
+        coverage: result.coverage,
+        verdict: result.verdict,
+        last_crawl_at: result.lastCrawlAt,
+      })),
+    )
+    if (error) console.error('[index-check] snapshot insert failed:', error)
+  }
+
+  const changeLine =
+    newlyIndexed.length || droppedFromIndex.length
+      ? `Since the last check: ${newlyIndexed.length} newly indexed${
+          droppedFromIndex.length
+            ? ` · ${droppedFromIndex.length} no longer indexed`
+            : ''
+        }`
+      : prior.size
+        ? 'Since the last check: no indexing changes'
+        : null
 
   const lines = [
-    `🛰️ GSC Index Sweep`,
-    `Checked ${results.length} pages: ✅ ${indexed.length} indexed · 🚧 ${pingable.length} not indexed`,
-    options.dryRun
-      ? `(dry run — no pings fired)`
-      : `📡 Force-crawl pings sent: ${pinged.length}${pingFailed ? ` (${pingFailed} failed)` : ''}`,
-    pinged.length
-      ? `Pinged: ${pinged.slice(0, 12).map(shortPath).join(', ')}${pinged.length > 12 ? ` +${pinged.length - 12} more` : ''}`
-      : null,
-    stillStuck.length
-      ? `⏳ Over daily ping cap, will retry next run: ${stillStuck.length}`
-      : null,
-    pingable.length === 0
-      ? `🎉 Every page checked is indexed.`
-      : `These were nudged — re-checks next run; indexing can take days.`,
-  ].filter((l): l is string => Boolean(l))
+    '🔎 Thursday Google Index Check',
+    '',
+    `${indexed.length} of ${results.length} checked pages can appear in Google Search.`,
+    '',
+    `✅ Indexed: ${indexed.length}`,
+    `⏳ Waiting on Google: ${waiting.length}`,
+    `ℹ️ Unknown or excluded: ${other.length}`,
+    unavailable ? `⚠️ Could not check: ${unavailable}` : null,
+    '',
+    changeLine,
+    'Monitoring only — no recrawl requests were sent.',
+  ].filter((line): line is string => line !== null)
   const digest = lines.join('\n')
 
   if (!options.skipNotify) {
     await notifyOwner(digest).catch((err) =>
-      console.error('[index-sweep] owner notify failed:', err),
+      console.error('[index-check] owner notify failed:', err),
     )
   }
 
   return {
     inspected: results.length,
     indexed: indexed.length,
-    notIndexed: pingable.length,
-    pinged,
-    pingFailed,
-    stillStuck,
+    waiting: waiting.length,
+    other: other.length,
+    unavailable,
+    newlyIndexed,
+    droppedFromIndex,
     digest,
   }
 }

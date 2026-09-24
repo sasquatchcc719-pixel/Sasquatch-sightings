@@ -9,7 +9,6 @@ import {
 } from '@/lib/ops/utilization-metrics'
 import { enqueue } from '@/lib/echo/enqueue'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
-import { buildJobUrl, notifyGoogleIndexing } from '@/lib/google-indexing'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import sharp from 'sharp'
 
@@ -306,13 +305,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       .from('revenue_entries')
       .delete()
       .eq('ops_invoice_id', invoiceId)
-
-    // Ping Google's Indexing API so the new public page gets crawled promptly.
-    // (Previously only the legacy /api/jobs/[id] PATCH route did this, so jobs
-    // published through this flow were never announced to Google.)
-    if (job.city && job.slug) {
-      notifyGoogleIndexing(buildJobUrl(job.city, job.slug)).catch(() => {})
-    }
 
     // Hand off to Echo for editorial decision + distribution.
     // Echo reads echo_settings, decides skip / map_only / draft / auto_post,
