@@ -2493,6 +2493,7 @@ export function OperationsSchedule() {
       const customerLabel =
         customer?.business_name || customer?.full_name || 'Customer'
       const isWarranty = isWarrantyAppointment(appointment)
+      const serviceAddress = unwrapRelation(appointment.ops_service_addresses)
       const endOverride =
         resizeSession?.appointmentId === appointment.id &&
         resizeLiveEndMinutes != null
@@ -2638,9 +2639,16 @@ export function OperationsSchedule() {
             }}
           >
             {isWarranty ? (
-              <span className="w-fit rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-rose-800">
-                #Warranty clean
-              </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-rose-800">
+                  #Warranty clean
+                </span>
+                {serviceAddress?.city ? (
+                  <span className="truncate text-[10px] leading-tight font-semibold text-slate-600">
+                    {serviceAddress.city}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
             {!isWarranty && appointment.is_repeat_customer && (
               <span className="w-fit rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
@@ -2695,10 +2703,7 @@ export function OperationsSchedule() {
             ) : null}
             {!isWarranty &&
               (() => {
-                const address = unwrapRelation(
-                  appointment.ops_service_addresses,
-                )
-                const city = isEstimate ? null : address?.city
+                const city = isEstimate ? null : serviceAddress?.city
                 const { leadLabel, bookingLabel } =
                   getScheduleCardSources(appointment)
                 if (!isEstimate && (city || leadLabel || bookingLabel)) {

@@ -214,6 +214,12 @@ describe('collapsible weekend schedule', () => {
         lead_source: 'Repeat Customer',
         booking_channel: 'admin',
         service_concern_id: null,
+        ops_service_addresses: {
+          street_1: '123 Warranty Way',
+          city: 'Palmer Lake',
+          state: 'CO',
+          zip_code: '80133',
+        },
         ops_customers: {
           full_name: 'Warranty Customer',
           business_name: null,
@@ -272,6 +278,7 @@ describe('collapsible weekend schedule', () => {
       'bg-rose-100',
       'text-rose-800',
     )
+    expect(within(warrantyCard).getByText('Palmer Lake')).toBeVisible()
     expect(within(warrantyCard).queryByText(/Lead:/)).not.toBeInTheDocument()
     expect(within(warrantyCard).queryByText(/Booked:/)).not.toBeInTheDocument()
     expect(within(warrantyCard).queryByText('$0.00')).not.toBeInTheDocument()
