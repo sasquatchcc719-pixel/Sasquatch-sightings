@@ -232,7 +232,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Commercial estimate scheduling must reuse the Book Job calendar, technician, and live slot picker; keep the workflows distinct while sharing the availability primitive, and never replace no-capacity navigation with a dead-end message.
 - New estimate discount rows must start with neutral editable values; never hardcode one customer's discount name or amount into every future estimate.
 - Keep production-backed `*.integration.test.*` files out of default test runs; require the gated integration config, and keep production browser verification to read-only navigation and screenshots without submitting forms.
-- Business cost reporting must separate QuickBooks-booked cost, owner field replacement labor, and speculative economic adjustments; never collapse them into one headline cost per hour.
+- Business cost reporting must use actual QuickBooks-booked dollars only; do not surface owner-labor replacement or other hypothetical adjustments unless Charles explicitly requests them.
 - Business economics must show a January-to-date benchmark separately from non-overlapping Thursday–Wednesday weekly movement and reporting; never use a rolling window as both.
 - Business economics charts need 30-day, 90-day, and calendar-year controls, straight point-to-point lines, and a persistent click-through breakdown for every weekly reading.
 

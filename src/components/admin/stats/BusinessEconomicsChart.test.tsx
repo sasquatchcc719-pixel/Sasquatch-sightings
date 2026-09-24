@@ -15,14 +15,9 @@ function snapshot(windowEnd: string): BusinessCostSnapshot {
     productiveHours: 10,
     quickbooksCost: 400,
     excludedBookkeepingAdjustments: 0,
-    ownerFieldHours: 0,
-    ownerReplacementCost: 0,
     revenuePerHour: 100,
     bookCostPerHour: 40,
-    ownerAdjustedCostPerHour: 40,
     bookCostPct: 40,
-    ownerAdjustedCostPct: 40,
-    ownerAdjustedMarginPct: 60,
     expenseBreakdown: {},
   }
 }

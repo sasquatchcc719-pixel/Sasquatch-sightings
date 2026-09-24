@@ -45,7 +45,7 @@ describe('business economics', () => {
     expect(snapshot.ownerAdjustedMarginPct).toBe(66.9)
   })
 
-  it('states exactly what the Telegram report includes and excludes', () => {
+  it('uses only actual QuickBooks costs in the Telegram report', () => {
     const previous = calculateBusinessCostSnapshot({
       periodKind: 'weekly',
       window: { start: '2026-09-10', end: '2026-09-16' },
@@ -80,19 +80,20 @@ describe('business economics', () => {
     expect(digest).toContain('Weekly Business Cost Report')
     expect(digest).toContain('Work completed: $20000.00 revenue')
     expect(digest).toContain('QuickBooks cost/hour: $60.00')
-    expect(digest).toContain('Owner-adjusted cost/hour: $66.20')
     expect(digest).toContain('cost/hour +$2.00')
     expect(digest).toContain('2026 YEAR-TO-DATE AVERAGE')
-    expect(digest).toContain('Owner-adjusted cost/hour: $79.30')
-    expect(digest).toContain('No estimated depreciation')
+    expect(digest).toContain('QuickBooks cost/hour: $70.00')
+    expect(digest).toContain('No owner-labor estimate')
     expect(digest).toContain('owner draws')
+    expect(digest).not.toContain('Owner-adjusted')
 
     const report = buildBusinessCostReportCard([previous, snapshot], yearToDate)
     expect(report?.card.title).toBe('Income vs. cost')
     expect(report?.card.incomeCostSeries?.points).toEqual([
-      { label: 'Sep 16', income: 200, cost: 64.2 },
-      { label: 'Sep 23', income: 200, cost: 66.2 },
+      { label: 'Sep 16', income: 200, cost: 58 },
+      { label: 'Sep 23', income: 200, cost: 60 },
     ])
-    expect(report?.caption).toContain('Latest margin 66.9%')
+    expect(report?.caption).toContain('Latest margin 70.0%')
+    expect(report?.card.footer).not.toContain('$31')
   })
 })

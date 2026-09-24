@@ -384,11 +384,12 @@ export function buildBusinessCostDigest(
   if (!latest) return 'Business Cost Report — no productive hours available.'
   const previous = weeklySnapshots[weeklySnapshots.length - 2]
   const costDelta = previous
-    ? latest.ownerAdjustedCostPerHour - previous.ownerAdjustedCostPerHour
+    ? latest.bookCostPerHour - previous.bookCostPerHour
     : null
   const marginDelta = previous
-    ? latest.ownerAdjustedMarginPct - previous.ownerAdjustedMarginPct
+    ? previous.bookCostPct - latest.bookCostPct
     : null
+  const latestMarginPct = 100 - latest.bookCostPct
 
   return [
     'Weekly Business Cost Report',
@@ -398,9 +399,8 @@ export function buildBusinessCostDigest(
     '',
     `Revenue/hour: $${latest.revenuePerHour.toFixed(2)}`,
     `QuickBooks cost/hour: $${latest.bookCostPerHour.toFixed(2)}`,
-    `Owner-adjusted cost/hour: $${latest.ownerAdjustedCostPerHour.toFixed(2)}`,
-    `Cost share: ${latest.ownerAdjustedCostPct.toFixed(1)}%`,
-    `Margin after tracked costs: ${latest.ownerAdjustedMarginPct.toFixed(1)}%`,
+    `Cost share: ${latest.bookCostPct.toFixed(1)}%`,
+    `Margin after QuickBooks costs: ${latestMarginPct.toFixed(1)}%`,
     ...(costDelta === null
       ? []
       : [
@@ -412,13 +412,13 @@ export function buildBusinessCostDigest(
           '',
           `${yearToDate.windowEnd.slice(0, 4)} YEAR-TO-DATE AVERAGE`,
           `Revenue/hour: $${yearToDate.revenuePerHour.toFixed(2)}`,
-          `Owner-adjusted cost/hour: $${yearToDate.ownerAdjustedCostPerHour.toFixed(2)}`,
-          `Cost share: ${yearToDate.ownerAdjustedCostPct.toFixed(1)}%`,
-          `Tracked margin: ${yearToDate.ownerAdjustedMarginPct.toFixed(1)}%`,
+          `QuickBooks cost/hour: $${yearToDate.bookCostPerHour.toFixed(2)}`,
+          `Cost share: ${yearToDate.bookCostPct.toFixed(1)}%`,
+          `Margin after QuickBooks costs: ${(100 - yearToDate.bookCostPct).toFixed(1)}%`,
         ]
       : []),
     '',
-    `Owner field time valued at $${OWNER_FIELD_REPLACEMENT_RATE}/hour. No estimated depreciation, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.`,
+    'Costs are actual cash-basis QuickBooks P&L expenses with reconciliation discrepancies removed. No owner-labor estimate, depreciation estimate, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.',
   ].join('\n')
 }
 
@@ -437,8 +437,9 @@ export function buildBusinessCostReportCard(
   const latest = weeklySnapshots[weeklySnapshots.length - 1]
   if (!latest) return null
 
-  const gap = latest.revenuePerHour - latest.ownerAdjustedCostPerHour
+  const gap = latest.revenuePerHour - latest.bookCostPerHour
   const profitable = gap >= 0
+  const latestMarginPct = 100 - latest.bookCostPct
   const year = latest.windowEnd.slice(0, 4)
   const card: ReportCardInput = {
     eyebrow: 'Weekly Business Economics',
@@ -446,8 +447,8 @@ export function buildBusinessCostReportCard(
     subtitle: `${shortDate(latest.windowStart)}–${shortDate(latest.windowEnd)} · Thursday–Wednesday`,
     verdict: {
       text: profitable
-        ? `Income stayed $${gap.toFixed(0)}/hour above tracked cost.`
-        : `Tracked cost exceeded income by $${Math.abs(gap).toFixed(0)}/hour.`,
+        ? `Income stayed $${gap.toFixed(0)}/hour above QuickBooks cost.`
+        : `QuickBooks cost exceeded income by $${Math.abs(gap).toFixed(0)}/hour.`,
       tone: profitable ? 'good' : 'bad',
     },
     metrics: [
@@ -459,20 +460,20 @@ export function buildBusinessCostReportCard(
       },
       {
         label: 'Cost / hour',
-        value: `$${latest.ownerAdjustedCostPerHour.toFixed(0)}`,
-        note: 'QuickBooks + owner field labor',
+        value: `$${latest.bookCostPerHour.toFixed(0)}`,
+        note: 'Actual QuickBooks expenses',
         tone: profitable ? 'warn' : 'bad',
       },
       {
-        label: 'Tracked margin',
-        value: `${latest.ownerAdjustedMarginPct.toFixed(1)}%`,
-        note: `${latest.ownerAdjustedCostPct.toFixed(1)}% cost share`,
+        label: 'Margin after costs',
+        value: `${latestMarginPct.toFixed(1)}%`,
+        note: `${latest.bookCostPct.toFixed(1)}% cost share`,
         tone: profitable ? 'good' : 'bad',
       },
       {
         label: `${year} YTD average`,
         value: yearToDate
-          ? `$${yearToDate.revenuePerHour.toFixed(0)}/$${yearToDate.ownerAdjustedCostPerHour.toFixed(0)}`
+          ? `$${yearToDate.revenuePerHour.toFixed(0)}/$${yearToDate.bookCostPerHour.toFixed(0)}`
           : 'Pending',
         note: yearToDate ? 'income / cost per hour' : 'No YTD snapshot',
         tone: 'neutral',
@@ -483,16 +484,16 @@ export function buildBusinessCostReportCard(
       points: weeklySnapshots.map((snapshot) => ({
         label: shortDate(snapshot.windowEnd),
         income: snapshot.revenuePerHour,
-        cost: snapshot.ownerAdjustedCostPerHour,
+        cost: snapshot.bookCostPerHour,
       })),
     },
     footer:
-      'Owner field time is valued at $31/hour. Full definitions and exclusions are in the Telegram message.',
+      'Costs are actual cash-basis QuickBooks expenses. No owner-labor estimate is added.',
   }
 
   return {
     card,
-    caption: `${year} income vs. tracked cost per productive hour · Latest margin ${latest.ownerAdjustedMarginPct.toFixed(1)}%`,
+    caption: `${year} income vs. QuickBooks cost per productive hour · Latest margin ${latestMarginPct.toFixed(1)}%`,
     runKey: latest.windowEnd,
   }
 }

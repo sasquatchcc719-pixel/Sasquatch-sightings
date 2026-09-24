@@ -23,14 +23,9 @@ export type BusinessCostSnapshot = {
   productiveHours: number
   quickbooksCost: number
   excludedBookkeepingAdjustments: number
-  ownerFieldHours: number
-  ownerReplacementCost: number
   revenuePerHour: number
   bookCostPerHour: number
-  ownerAdjustedCostPerHour: number
   bookCostPct: number
-  ownerAdjustedCostPct: number
-  ownerAdjustedMarginPct: number
   expenseBreakdown: Record<string, number>
 }
 
@@ -138,20 +133,16 @@ function EconomicsTooltip({
           <strong>{money(point.revenuePerHour)}</strong>
         </div>
         <div className="flex justify-between gap-5 text-orange-400">
-          <span>Owner-adjusted cost</span>
-          <strong>{money(point.ownerAdjustedCostPerHour)}</strong>
-        </div>
-        <div className="text-muted-foreground flex justify-between gap-5">
-          <span>QuickBooks cost</span>
+          <span>QuickBooks cost/hour</span>
           <strong>{money(point.bookCostPerHour)}</strong>
         </div>
         <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
           <span>Cost share</span>
-          <strong>{point.ownerAdjustedCostPct.toFixed(1)}%</strong>
+          <strong>{point.bookCostPct.toFixed(1)}%</strong>
         </div>
         <div className="flex justify-between gap-5">
-          <span>Tracked margin</span>
-          <strong>{point.ownerAdjustedMarginPct.toFixed(1)}%</strong>
+          <span>Margin after costs</span>
+          <strong>{(100 - point.bookCostPct).toFixed(1)}%</strong>
         </div>
       </div>
     </div>
@@ -180,11 +171,10 @@ export function BusinessEconomicsChart({
         ...snapshot,
         timestamp: dateTimestamp(snapshot.windowEnd),
         hourlyGapRange: [
-          Math.min(snapshot.revenuePerHour, snapshot.ownerAdjustedCostPerHour),
-          Math.max(snapshot.revenuePerHour, snapshot.ownerAdjustedCostPerHour),
+          Math.min(snapshot.revenuePerHour, snapshot.bookCostPerHour),
+          Math.max(snapshot.revenuePerHour, snapshot.bookCostPerHour),
         ],
-        profitable:
-          snapshot.revenuePerHour >= snapshot.ownerAdjustedCostPerHour,
+        profitable: snapshot.revenuePerHour >= snapshot.bookCostPerHour,
       })),
     [filteredSnapshots],
   )
@@ -198,7 +188,7 @@ export function BusinessEconomicsChart({
     ) ||
     filteredSnapshots.at(-1) ||
     latest
-  const costShare = Math.max(0, Math.min(100, selected.ownerAdjustedCostPct))
+  const costShare = Math.max(0, Math.min(100, selected.bookCostPct))
   const marginShare = Math.max(0, 100 - costShare)
   const topExpenses = Object.entries(selected.expenseBreakdown)
     .filter(([label, amount]) =>
@@ -290,7 +280,7 @@ export function BusinessEconomicsChart({
               Big-picture operating benchmark
             </p>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
             <div>
               <p className="text-muted-foreground text-xs">Revenue/hour</p>
               <p className="mt-1 text-3xl font-bold text-emerald-300">
@@ -307,19 +297,13 @@ export function BusinessEconomicsChart({
             </div>
             <div>
               <p className="text-muted-foreground text-xs">
-                Owner-adjusted cost/hour
+                Margin after costs
               </p>
-              <p className="mt-1 text-3xl font-bold text-orange-300">
-                {money(yearToDate.ownerAdjustedCostPerHour)}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Tracked margin</p>
               <p className="mt-1 text-3xl font-bold text-violet-300">
-                {yearToDate.ownerAdjustedMarginPct.toFixed(1)}%
+                {(100 - yearToDate.bookCostPct).toFixed(1)}%
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                {yearToDate.ownerAdjustedCostPct.toFixed(1)}% cost share
+                {yearToDate.bookCostPct.toFixed(1)}% cost share
               </p>
             </div>
           </div>
@@ -338,7 +322,7 @@ export function BusinessEconomicsChart({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Card className="border-emerald-500/25 bg-emerald-500/[0.05] p-4">
           <p className="text-muted-foreground text-xs">Revenue/hour</p>
           <p className="mt-1 text-2xl font-bold text-emerald-300">
@@ -348,9 +332,9 @@ export function BusinessEconomicsChart({
             <Trend value={latest.revenuePerHour - previous.revenuePerHour} />
           )}
         </Card>
-        <Card className="border-slate-500/25 bg-slate-500/[0.05] p-4">
+        <Card className="border-orange-500/25 bg-orange-500/[0.05] p-4">
           <p className="text-muted-foreground text-xs">QuickBooks cost/hour</p>
-          <p className="mt-1 text-2xl font-bold text-slate-200">
+          <p className="mt-1 text-2xl font-bold text-orange-300">
             {money(latest.bookCostPerHour)}
           </p>
           {previous && (
@@ -360,34 +344,13 @@ export function BusinessEconomicsChart({
             />
           )}
         </Card>
-        <Card className="border-orange-500/25 bg-orange-500/[0.05] p-4">
-          <p className="text-muted-foreground text-xs">
-            Owner-adjusted cost/hour
-          </p>
-          <p className="mt-1 text-2xl font-bold text-orange-300">
-            {money(latest.ownerAdjustedCostPerHour)}
-          </p>
-          {previous && (
-            <Trend
-              value={
-                latest.ownerAdjustedCostPerHour -
-                previous.ownerAdjustedCostPerHour
-              }
-              inverse
-            />
-          )}
-        </Card>
         <Card className="border-violet-500/25 bg-violet-500/[0.05] p-4">
-          <p className="text-muted-foreground text-xs">Tracked margin</p>
+          <p className="text-muted-foreground text-xs">Margin after costs</p>
           <p className="mt-1 text-2xl font-bold text-violet-300">
-            {latest.ownerAdjustedMarginPct.toFixed(1)}%
+            {(100 - latest.bookCostPct).toFixed(1)}%
           </p>
           {previous && (
-            <Trend
-              value={
-                latest.ownerAdjustedMarginPct - previous.ownerAdjustedMarginPct
-              }
-            />
+            <Trend value={previous.bookCostPct - latest.bookCostPct} />
           )}
         </Card>
       </div>
@@ -400,7 +363,8 @@ export function BusinessEconomicsChart({
                 <span className="h-0.5 w-5 bg-emerald-400" /> Revenue/hour
               </span>
               <span className="flex items-center gap-2 text-orange-400">
-                <span className="h-0.5 w-5 bg-orange-400" /> Owner-adjusted cost
+                <span className="h-0.5 w-5 bg-orange-400" /> QuickBooks
+                cost/hour
               </span>
               <span className="flex items-center gap-2 text-emerald-400">
                 <span className="h-2.5 w-5 rounded-sm bg-emerald-500/25" />
@@ -527,7 +491,7 @@ export function BusinessEconomicsChart({
               <Line
                 yAxisId="dollars"
                 type="linear"
-                dataKey="ownerAdjustedCostPerHour"
+                dataKey="bookCostPerHour"
                 stroke="#fb923c"
                 strokeWidth={3}
                 dot={{
@@ -564,7 +528,7 @@ export function BusinessEconomicsChart({
               productive hours
             </p>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-3">
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
                 Total revenue
@@ -591,14 +555,6 @@ export function BusinessEconomicsChart({
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                Owner-adjusted cost/hour
-              </p>
-              <p className="mt-1 text-xl font-bold text-orange-300">
-                {money(selected.ownerAdjustedCostPerHour)}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-[11px] uppercase">
                 QuickBooks cost
               </p>
               <p className="mt-1 text-base font-semibold text-slate-100">
@@ -607,35 +563,24 @@ export function BusinessEconomicsChart({
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                Owner field adjustment
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-100">
-                {money(selected.ownerReplacementCost)}
-              </p>
-              <p className="text-muted-foreground text-[11px]">
-                {selected.ownerFieldHours.toFixed(1)} hours at $31
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-[11px] uppercase">
                 Cost share
               </p>
               <p className="mt-1 text-base font-semibold text-orange-300">
-                {selected.ownerAdjustedCostPct.toFixed(1)}%
+                {selected.bookCostPct.toFixed(1)}%
               </p>
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                Tracked margin
+                Margin after costs
               </p>
               <p
                 className={`mt-1 text-base font-semibold ${
-                  selected.ownerAdjustedMarginPct >= 0
+                  100 - selected.bookCostPct >= 0
                     ? 'text-emerald-300'
                     : 'text-rose-300'
                 }`}
               >
-                {selected.ownerAdjustedMarginPct.toFixed(1)}%
+                {(100 - selected.bookCostPct).toFixed(1)}%
               </p>
             </div>
           </div>
@@ -644,10 +589,10 @@ export function BusinessEconomicsChart({
         <div className="mt-4">
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-medium text-orange-300">
-              {selected.ownerAdjustedCostPct.toFixed(1)}% cost
+              {selected.bookCostPct.toFixed(1)}% cost
             </span>
             <span className="font-medium text-emerald-300">
-              {selected.ownerAdjustedMarginPct.toFixed(1)}% tracked margin
+              {(100 - selected.bookCostPct).toFixed(1)}% margin after costs
             </span>
           </div>
           <div className="bg-muted flex h-3 overflow-hidden rounded-full">
@@ -681,13 +626,13 @@ export function BusinessEconomicsChart({
         )}
 
         <p className="text-muted-foreground mt-4 text-[11px] leading-relaxed">
-          Both views use the cash-basis QuickBooks P&amp;L and remove
-          reconciliation discrepancies. Owner-adjusted cost adds recorded owner
-          field hours at $31/hour. They do not guess at depreciation, Square
-          fees, loan principal, owner draws, income-tax payments, or untracked
-          office time. The calendar-year chart leaves January through early May
-          blank because reliable week-level time records begin May 7; the YTD
-          benchmark above still includes January onward.
+          Both views use actual cash-basis QuickBooks P&amp;L expenses and
+          remove reconciliation discrepancies. No estimate is added for owner
+          labor, depreciation, Square fees, loan principal, owner draws,
+          income-tax payments, or untracked office time. The calendar-year chart
+          leaves January through early May blank because reliable week-level
+          time records begin May 7; the YTD benchmark above still includes
+          January onward.
         </p>
       </Card>
     </section>

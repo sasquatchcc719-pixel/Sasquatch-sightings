@@ -20,8 +20,6 @@ export async function GET() {
           annualWindow: 'January 1 through the latest completed Wednesday.',
           bookCost:
             'Cash-basis QuickBooks P&L costs, excluding reconciliation discrepancies.',
-          ownerAdjustedCost:
-            'Book cost plus recorded owner field hours at $31/hour.',
         },
       },
       { headers: { 'Cache-Control': 'private, no-store' } },
