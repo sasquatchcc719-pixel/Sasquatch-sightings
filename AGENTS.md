@@ -232,6 +232,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Commercial estimate scheduling must reuse the Book Job calendar, technician, and live slot picker; keep the workflows distinct while sharing the availability primitive, and never replace no-capacity navigation with a dead-end message.
 - New estimate discount rows must start with neutral editable values; never hardcode one customer's discount name or amount into every future estimate.
 - Keep production-backed `*.integration.test.*` files out of default test runs; require the gated integration config, and keep production browser verification to read-only navigation and screenshots without submitting forms.
+- Business cost reporting must separate QuickBooks-booked cost, owner field replacement labor, and speculative economic adjustments; never collapse them into one headline cost per hour.
 
 ---
 

@@ -38,7 +38,12 @@ import {
   YAxis,
 } from 'recharts'
 import { LeadSourceRevenuePanel } from '@/components/admin/stats/LeadSourceRevenuePanel'
+import {
+  BusinessEconomicsChart,
+  type BusinessCostSnapshot,
+} from '@/components/admin/stats/BusinessEconomicsChart'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
+import { excludeJobsCoveredByRevenueEntries } from '@/lib/ops/utilization-metrics'
 
 type OpsStats = {
   weekStart: string
@@ -1676,6 +1681,7 @@ export default function StatsPage() {
   const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
   const [discounts, setDiscounts] = useState<DiscountAnalytics | null>(null)
   const [history, setHistory] = useState<YearOverYear | null>(null)
+  const [businessCosts, setBusinessCosts] = useState<BusinessCostSnapshot[]>([])
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -1845,7 +1851,7 @@ export default function StatsPage() {
       // Fetch jobs data
       const { data: jobs, error: jobsError } = await supabase
         .from('jobs')
-        .select('invoice_amount, hours_worked, created_at')
+        .select('invoice_amount, hours_worked, created_at, ops_invoice_id')
         .not('invoice_amount', 'is', null)
         .not('hours_worked', 'is', null)
         .order('created_at', { ascending: false })
@@ -1855,7 +1861,9 @@ export default function StatsPage() {
       // Fetch revenue entries (drive_minutes adds to utilization hours from on-my-way)
       const { data: entries, error: entriesError } = await supabase
         .from('revenue_entries')
-        .select('invoice_amount, hours_worked, entry_date, drive_minutes')
+        .select(
+          'invoice_amount, hours_worked, entry_date, drive_minutes, ops_invoice_id',
+        )
         .eq('user_id', user.id)
         .order('entry_date', { ascending: false })
 
@@ -1896,7 +1904,9 @@ export default function StatsPage() {
 
       // Combine jobs, manual/quick entries, and completed ops not yet in jobs/revenue_entries
       const allRevenue = [
-        ...(jobs || []).map((j) => ({ ...j, date: j.created_at })),
+        ...excludeJobsCoveredByRevenueEntries(jobs || [], entries || []).map(
+          (j) => ({ ...j, date: j.created_at }),
+        ),
         ...(entries || []).map((e) => ({
           ...e,
           // Append T00:00:00 (no Z) so bare date strings are parsed as local
@@ -2150,10 +2160,26 @@ export default function StatsPage() {
         // Non-fatal — section hides
       }
     }
+    async function fetchBusinessCosts() {
+      try {
+        const res = await fetch('/api/admin/stats/business-economics', {
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const json = (await res.json()) as {
+            snapshots?: BusinessCostSnapshot[]
+          }
+          setBusinessCosts(json.snapshots || [])
+        }
+      } catch {
+        // Non-fatal — section hides
+      }
+    }
     void fetchSourceRevenue()
     void fetchFunnel()
     void fetchDiscounts()
     void fetchHistory()
+    void fetchBusinessCosts()
     const liveStatsInterval = window.setInterval(() => {
       void fetchFunnel()
       void fetchDiscounts()
@@ -3110,6 +3136,9 @@ export default function StatsPage() {
           </Card>
         </div>
       </div>
+
+      {/* Revenue, cost, and tracked margin */}
+      <BusinessEconomicsChart snapshots={businessCosts} />
 
       {/* Potential Revenue - Money Left on Table */}
       <div className="mb-8">

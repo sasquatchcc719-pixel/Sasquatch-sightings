@@ -3,6 +3,7 @@ import {
   appointmentDisplayRevenue,
   appointmentScheduleRevenue,
   effectiveInvoiceAmount,
+  excludeJobsCoveredByRevenueEntries,
 } from './utilization-metrics'
 
 describe('effectiveInvoiceAmount', () => {
@@ -55,6 +56,22 @@ describe('effectiveInvoiceAmount', () => {
         kind: 'restoration',
       }),
     ).toBe(4052.46)
+  })
+})
+
+describe('excludeJobsCoveredByRevenueEntries', () => {
+  it('counts a linked invoice once and keeps unrelated or legacy jobs', () => {
+    const jobs = [
+      { id: 'duplicate', ops_invoice_id: 'invoice-1' },
+      { id: 'unique', ops_invoice_id: 'invoice-2' },
+      { id: 'legacy', ops_invoice_id: null },
+    ]
+    const entries = [{ ops_invoice_id: 'invoice-1' }]
+
+    expect(excludeJobsCoveredByRevenueEntries(jobs, entries)).toEqual([
+      { id: 'unique', ops_invoice_id: 'invoice-2' },
+      { id: 'legacy', ops_invoice_id: null },
+    ])
   })
 })
 

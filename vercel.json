@@ -81,6 +81,10 @@
       "schedule": "30 15 * * 1"
     },
     {
+      "path": "/api/cron/business-cost-report",
+      "schedule": "30 16 * * 4"
+    },
+    {
       "path": "/api/cron/inventory-alerts",
       "schedule": "0 14 * * *"
     },

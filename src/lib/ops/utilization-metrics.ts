@@ -1,6 +1,24 @@
 /** Max hours for a single job in one stretch (sanity cap for bad clocks). */
 const MAX_SINGLE_JOB_HOURS = 18
 
+/**
+ * A published job and a revenue entry can point to the same ops invoice.
+ * Revenue entries carry the better duration (including drive time), so keep
+ * them and remove only the overlapping jobs before totals are calculated.
+ */
+export function excludeJobsCoveredByRevenueEntries<
+  TJob extends { ops_invoice_id?: string | null },
+>(jobs: TJob[], entries: Array<{ ops_invoice_id?: string | null }>): TJob[] {
+  const coveredInvoiceIds = new Set(
+    entries
+      .map((entry) => entry.ops_invoice_id)
+      .filter((id): id is string => Boolean(id)),
+  )
+  return jobs.filter(
+    (job) => !job.ops_invoice_id || !coveredInvoiceIds.has(job.ops_invoice_id),
+  )
+}
+
 function slotHours(
   startTime: string | null | undefined,
   endTime: string | null | undefined,

@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { loadScheduleCapacity } from '@/lib/ops/capacity'
 import { loadUtilizationSupplementRows } from '@/lib/ops/utilization-supplement'
+import { excludeJobsCoveredByRevenueEntries } from '@/lib/ops/utilization-metrics'
 
 const DEFAULT_SETTINGS = {
   annual_revenue_goal: 150000,
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
     // Jobs with revenue/hours
     const { data: jobs } = await supabase
       .from('jobs')
-      .select('invoice_amount, hours_worked, created_at')
+      .select('invoice_amount, hours_worked, created_at, ops_invoice_id')
       .not('invoice_amount', 'is', null)
       .not('hours_worked', 'is', null)
       .order('created_at', { ascending: false })
@@ -61,7 +62,9 @@ export async function GET(request: Request) {
     // entries included), plus completed ops jobs not covered by either.
     const { data: rev } = await supabase
       .from('revenue_entries')
-      .select('invoice_amount, hours_worked, entry_date, drive_minutes')
+      .select(
+        'invoice_amount, hours_worked, entry_date, drive_minutes, ops_invoice_id',
+      )
       .order('entry_date', { ascending: false })
     const entries = rev ?? []
 
@@ -70,7 +73,7 @@ export async function GET(request: Request) {
     )
 
     const allRevenue = [
-      ...(jobs || []).map((j) => ({
+      ...excludeJobsCoveredByRevenueEntries(jobs || [], entries).map((j) => ({
         invoice_amount: j.invoice_amount as number,
         hours_worked: j.hours_worked as number,
         date: j.created_at,
