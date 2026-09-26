@@ -4,36 +4,9 @@ import Link from 'next/link'
 import { createClient } from '@/supabase/server'
 import { isUnknownCity } from '@/lib/geocode'
 import { buildJobUrl } from '@/lib/google-indexing'
+import { areaPagesForJob, servicePageUrl } from '@/lib/public-areas'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-
-// Cities with a dedicated service-area page on the marketing site. Job pages
-// link into these (absolute www URLs — these pages are served on both the
-// sightings subdomain and the www /sightings/* proxy, so relative links would
-// 404 on one host).
-const SERVICE_AREA_SLUGS = new Set([
-  'monument',
-  'palmer-lake',
-  'woodmoor',
-  'black-forest',
-  'gleneagle',
-  'colorado-springs',
-  'larkspur',
-  'castle-rock',
-  'castle-pines',
-  'falcon',
-  'flying-horse',
-])
-
-function serviceAreaUrl(city: string | null): string | null {
-  const slug = String(city || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return SERVICE_AREA_SLUGS.has(slug)
-    ? `https://www.sasquatchcarpet.com/service-areas/${slug}`
-    : null
-}
 
 interface PageProps {
   params: Promise<{
@@ -57,7 +30,9 @@ async function getJob(slug: string) {
       ai_description,
       created_at,
       published_at,
-      service:services(name)
+      gps_fuzzy_lat,
+      gps_fuzzy_lng,
+      service:services(name, slug)
     `,
     )
     .eq('slug', slug)
@@ -80,6 +55,12 @@ function getServiceName(job: { service: unknown }): string {
   const svc = job.service as { name?: string } | { name?: string }[] | null
   if (Array.isArray(svc)) return svc[0]?.name || 'Carpet Cleaning'
   return svc?.name || 'Carpet Cleaning'
+}
+
+function getServiceSlug(job: { service: unknown }): string | null {
+  const svc = job.service as { slug?: string } | { slug?: string }[] | null
+  if (Array.isArray(svc)) return svc[0]?.slug ?? null
+  return svc?.slug ?? null
 }
 
 /** Other recent published jobs in the same city (for internal links). */
@@ -187,7 +168,13 @@ export default async function JobPage({ params }: PageProps) {
   const publishedDate = formatDate(job.published_at)
 
   const canonicalUrl = buildJobUrl(job.city ?? 'Colorado', job.slug)
-  const areaPageUrl = serviceAreaUrl(job.city)
+  // Marketing-site pages this job links back to: its town (or city) page,
+  // plus the neighborhood page when the job is inside one in Colorado Springs.
+  const { city: areaPage, neighborhood: neighborhoodPage } =
+    areaPagesForJob(job)
+  const areaPageUrl = areaPage?.pageUrl ?? null
+  const areaName = areaPage?.name ?? cityDisplay
+  const serviceUrl = servicePageUrl(getServiceSlug(job))
   const relatedJobs = await getRelatedJobs(job.city, job.id)
 
   // JSON-LD: the completed job as a Service performed by the business.
@@ -221,33 +208,23 @@ export default async function JobPage({ params }: PageProps) {
     },
   }
 
+  const breadcrumbTrail = [
+    { name: 'Sightings', item: 'https://www.sasquatchcarpet.com/sightings' },
+    ...(areaPageUrl ? [{ name: areaName, item: areaPageUrl }] : []),
+    ...(neighborhoodPage?.pageUrl
+      ? [{ name: neighborhoodPage.name, item: neighborhoodPage.pageUrl }]
+      : []),
+    { name: `${serviceName} in ${location}`, item: canonicalUrl },
+  ]
   const breadcrumbLd = {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
-    itemListElement: [
-      {
-        '@type': 'ListItem',
-        position: 1,
-        name: 'Sightings',
-        item: 'https://www.sasquatchcarpet.com/sightings',
-      },
-      ...(areaPageUrl
-        ? [
-            {
-              '@type': 'ListItem',
-              position: 2,
-              name: cityDisplay,
-              item: areaPageUrl,
-            },
-          ]
-        : []),
-      {
-        '@type': 'ListItem',
-        position: areaPageUrl ? 3 : 2,
-        name: `${serviceName} in ${location}`,
-        item: canonicalUrl,
-      },
-    ],
+    itemListElement: breadcrumbTrail.map((crumb, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: crumb.name,
+      item: crumb.item,
+    })),
   }
 
   return (
@@ -292,13 +269,26 @@ export default async function JobPage({ params }: PageProps) {
             {' / '}
             {areaPageUrl ? (
               <a href={areaPageUrl} className="hover:text-green-600">
-                {cityDisplay}
+                {areaName}
               </a>
             ) : (
               <span>{cityDisplay}</span>
             )}
+            {neighborhoodPage?.pageUrl && (
+              <>
+                {' / '}
+                <a
+                  href={neighborhoodPage.pageUrl}
+                  className="hover:text-green-600"
+                >
+                  {neighborhoodPage.name}
+                </a>
+              </>
+            )}
             {' / '}
-            <span className="text-gray-900">{serviceName}</span>
+            <a href={serviceUrl} className="text-gray-900 hover:text-green-600">
+              {serviceName}
+            </a>
           </nav>
 
           <Card className="overflow-hidden bg-white">
@@ -332,6 +322,17 @@ export default async function JobPage({ params }: PageProps) {
                 </div>
               )}
 
+              <p className="mb-8 text-gray-700">
+                Learn more about our{' '}
+                <a
+                  href={serviceUrl}
+                  className="font-medium text-green-700 hover:underline"
+                >
+                  {serviceName.toLowerCase()} service
+                </a>
+                .
+              </p>
+
               {/* CTA Section */}
               <div className="mt-8 border-t pt-8">
                 <div className="rounded-lg bg-green-50 p-6 text-center">
@@ -340,12 +341,23 @@ export default async function JobPage({ params }: PageProps) {
                   </h2>
                   <p className="mb-6 text-gray-600">
                     Serving{' '}
+                    {neighborhoodPage?.pageUrl && (
+                      <>
+                        <a
+                          href={neighborhoodPage.pageUrl}
+                          className="font-medium text-green-700 hover:underline"
+                        >
+                          {neighborhoodPage.name}
+                        </a>
+                        ,{' '}
+                      </>
+                    )}
                     {areaPageUrl ? (
                       <a
                         href={areaPageUrl}
                         className="font-medium text-green-700 hover:underline"
                       >
-                        {cityDisplay}
+                        {areaName}
                       </a>
                     ) : (
                       cityDisplay
@@ -374,27 +386,57 @@ export default async function JobPage({ params }: PageProps) {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Standard Carpet Cleaning</span>
+                    <a
+                      href={servicePageUrl('standard-carpet-cleaning')}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Standard Carpet Cleaning
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Urine Treatment</span>
+                    <a
+                      href={servicePageUrl('urine-treatment')}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Urine Treatment
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Deep Carpet Restoration</span>
+                    <a
+                      href={servicePageUrl('deep-carpet-restoration')}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Deep Carpet Restoration
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Upholstery Cleaning</span>
+                    <a
+                      href={servicePageUrl('fabric-furniture-cleaning')}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Upholstery Cleaning
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Tile & Grout Cleaning</span>
+                    <a
+                      href={servicePageUrl('tile-grout-cleaning')}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Tile & Grout Cleaning
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
-                    <span>Commercial Services</span>
+                    <a
+                      href={servicePageUrl(null)}
+                      className="hover:text-green-700 hover:underline"
+                    >
+                      Commercial Services
+                    </a>
                   </div>
                 </div>
               </div>
