@@ -107,10 +107,6 @@
     {
       "path": "/api/cron/gbp-review-watch",
       "schedule": "10 12 * * *"
-    },
-    {
-      "path": "/api/cron/website-rebuild",
-      "schedule": "0 11 * * *"
     }
   ],
   "redirects": []
