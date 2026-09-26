@@ -30,6 +30,9 @@ export async function GET() {
       excludedNoEmailCountResult,
       excludedDuplicateCountResult,
       postJobDripCountResult,
+      templateResultsResult,
+      trackingSinceResult,
+      recentClicksResult,
     ] = await Promise.all([
       supabase
         .from('reactivation_settings')
@@ -128,6 +131,29 @@ export async function GET() {
         .from('reactivation_campaign_enrollments')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'post_job_drip'),
+      supabase.from('reactivation_template_results').select('*'),
+      supabase
+        .from('reactivation_email_log')
+        .select('sent_at')
+        .not('click_token', 'is', null)
+        .order('sent_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('reactivation_email_clicks')
+        .select(
+          `
+          id,
+          customer_id,
+          template_key,
+          clicked_at,
+          ops_customers ( full_name ),
+          ops_appointments ( id, status, quoted_total, appointment_date )
+        `,
+        )
+        .eq('is_bot', false)
+        .order('clicked_at', { ascending: false })
+        .limit(25),
     ])
 
     if (settingsResult.error) throw settingsResult.error
@@ -154,6 +180,9 @@ export async function GET() {
       throw excludedDuplicateCountResult.error
     }
     if (postJobDripCountResult.error) throw postJobDripCountResult.error
+    if (templateResultsResult.error) throw templateResultsResult.error
+    if (trackingSinceResult.error) throw trackingSinceResult.error
+    if (recentClicksResult.error) throw recentClicksResult.error
 
     const stats = {
       active: activeCountResult.count || 0,
@@ -175,6 +204,11 @@ export async function GET() {
       enrollments: enrollmentsResult.data || [],
       log: logResult.data || [],
       stats,
+      results: {
+        tracking_since: trackingSinceResult.data?.sent_at || null,
+        templates: templateResultsResult.data || [],
+        recent_clicks: recentClicksResult.data || [],
+      },
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'Not authorized') {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { Resend } from 'resend'
 import { generateUnsubscribeToken } from '@/lib/ops/drip-campaign'
 import { createAdminClient } from '@/supabase/server'
@@ -10,6 +11,8 @@ import {
 const BOOK_URL = 'https://www.sasquatchcarpet.com'
 const UNSUB_BASE =
   'https://sightings.sasquatchcarpet.com/api/public/unsubscribe'
+const CLICK_BASE =
+  'https://sightings.sasquatchcarpet.com/api/public/reactivation-click'
 const NON_DELIVERABLE_DOMAINS = new Set(['import.local'])
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
@@ -184,6 +187,50 @@ function unsubscribeUrl(customerId: string): string {
   return `${UNSUB_BASE}?cid=${customerId}&token=${token}`
 }
 
+/** The tracked link the BOOK ONLINE button points at for one send. */
+export function reactivationClickUrl(clickToken: string): string {
+  return `${CLICK_BASE}/${encodeURIComponent(clickToken)}`
+}
+
+/**
+ * Where a click lands. UTM tags let the website's analytics see the visit
+ * too; the click itself is already recorded before the redirect.
+ */
+export function reactivationBookingUrl(templateKey?: string | null): string {
+  const url = new URL(BOOK_URL)
+  url.searchParams.set('utm_source', 'reactivation')
+  url.searchParams.set('utm_medium', 'email')
+  if (templateKey) url.searchParams.set('utm_campaign', templateKey)
+  return url.toString()
+}
+
+const LINK_SCANNER_PATTERN =
+  /bot|crawl|spider|preview|scan|safelinks|proofpoint|mimecast|barracuda|headless|python-requests|curl|wget|go-http-client|okhttp|java\//i
+
+/**
+ * Mail security scanners open every link in an email before the customer
+ * does. Their clicks are stored but flagged so they never count as interest.
+ */
+export function isLikelyLinkScanner(userAgent: string | null): boolean {
+  if (!userAgent || !userAgent.trim()) return true
+  return LINK_SCANNER_PATTERN.test(userAgent)
+}
+
+/**
+ * Scanners that present a normal browser user agent still give themselves
+ * away by opening the link seconds after delivery. No customer reads, decides
+ * and taps that fast often enough to be worth the false positives.
+ */
+export function clickedTooSoonAfterSend(
+  sentAt: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (!sentAt) return false
+  const sent = new Date(sentAt).getTime()
+  if (Number.isNaN(sent)) return false
+  return now.getTime() - sent < 2 * 60 * 1000
+}
+
 /**
  * The real reactivation email, wrapper and all.
  *
@@ -196,7 +243,10 @@ function unsubscribeUrl(customerId: string): string {
 export function buildReactivationEmailHtml(
   body: string,
   customerId: string,
+  /** Omit (e.g. admin preview) for a plain link that records no click. */
+  clickToken?: string | null,
 ): string {
+  const bookHref = clickToken ? reactivationClickUrl(clickToken) : BOOK_URL
   const paragraphs = body
     .replace(/\\n/g, '\n')
     .split(/\n{2,}/)
@@ -225,7 +275,7 @@ export function buildReactivationEmailHtml(
             ${paragraphs}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
               <tr><td align="center">
-                <a href="${BOOK_URL}" style="display:inline-block;padding:14px 32px;background:#1a73e8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">BOOK ONLINE</a>
+                <a href="${escapeHtml(bookHref)}" style="display:inline-block;padding:14px 32px;background:#1a73e8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">BOOK ONLINE</a>
               </td></tr>
             </table>
           </td>
@@ -826,7 +876,8 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
     const ctx = contextForCustomer(customer, settings)
     const subject = renderTemplate(template.subject_template, ctx)
     const body = renderTemplate(template.body_template, ctx)
-    const html = buildReactivationEmailHtml(body, customer.id)
+    const clickToken = randomUUID()
+    const html = buildReactivationEmailHtml(body, customer.id, clickToken)
     const sendNumber = enrollment.messages_sent + 1
 
     // Resend rate-limits at a few requests/second — the June 2026 blast
@@ -855,6 +906,7 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
         subject,
         body_text: body,
         to_email: normalizedEmail(customer.email),
+        click_token: clickToken,
         status: 'failed',
         error_message: emailResult.error.message,
       })
@@ -871,6 +923,7 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
       body_text: body,
       to_email: normalizedEmail(customer.email),
       resend_id: emailResult.data?.id || null,
+      click_token: clickToken,
       status: 'sent',
     })
 

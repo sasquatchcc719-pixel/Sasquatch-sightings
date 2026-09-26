@@ -25,7 +25,8 @@ export async function GET(
         return new NextResponse('Email log entry not found', { status: 404 })
       }
       // The same builder the sender uses, so the preview cannot drift from
-      // what actually goes out.
+      // what actually goes out. No click token: an admin clicking BOOK ONLINE
+      // in the preview must not count as the customer's click.
       const html = buildReactivationEmailHtml(
         data.body_text || `(body not stored)\n\nSubject: ${data.subject || ''}`,
         data.customer_id || '',

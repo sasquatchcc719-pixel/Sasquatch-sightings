@@ -22,6 +22,10 @@ import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  ReactivationResultsCard,
+  type ReactivationResults,
+} from '@/components/admin/reactivation-results-card'
 
 type Settings = {
   engine_enabled: boolean
@@ -104,6 +108,7 @@ type ReactivationData = {
   enrollments: Enrollment[]
   log: LogEntry[]
   stats: Record<string, number>
+  results?: ReactivationResults
 }
 
 function unwrap<T>(value: T | T[] | null | undefined): T | null {
@@ -187,6 +192,17 @@ export function ReactivationControlCenter() {
         (enrollment) => enrollment.customer_id === selectedCustomerId,
       ),
     [data?.enrollments, selectedCustomerId],
+  )
+
+  const templateLabels = useMemo(
+    () =>
+      new Map(
+        (data?.templates || []).map((template) => [
+          template.template_key,
+          template.label,
+        ]),
+      ),
+    [data?.templates],
   )
 
   const filteredEnrollments = useMemo(() => {
@@ -589,6 +605,11 @@ export function ReactivationControlCenter() {
           </div>
         </div>
       </Card>
+
+      <ReactivationResultsCard
+        results={data?.results}
+        templateLabels={templateLabels}
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="p-5">
