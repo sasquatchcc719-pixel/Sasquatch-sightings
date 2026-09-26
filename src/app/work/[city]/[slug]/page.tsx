@@ -191,8 +191,9 @@ export default async function JobPage({ params }: PageProps) {
   const relatedJobs = await getRelatedJobs(job.city, job.id)
 
   // JSON-LD: the completed job as a Service performed by the business.
-  // Business identity fields (phone, base address, url) match the marketing
-  // site's LocalBusiness schema so Google entity-resolves them together.
+  // The provider carries the marketing site's business @id plus matching
+  // identity fields (phone, base address, url) so Google resolves every job
+  // page to the same single business entity.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Service',
@@ -204,7 +205,8 @@ export default async function JobPage({ params }: PageProps) {
     url: canonicalUrl,
     areaServed: { '@type': 'City', name: cityDisplay },
     provider: {
-      '@type': 'LocalBusiness',
+      '@type': 'HomeAndConstructionBusiness',
+      '@id': 'https://www.sasquatchcarpet.com/#business',
       name: 'Sasquatch Carpet Cleaning',
       telephone: '+1-719-249-8791',
       url: 'https://www.sasquatchcarpet.com',
