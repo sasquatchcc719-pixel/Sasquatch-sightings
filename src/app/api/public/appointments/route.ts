@@ -25,7 +25,10 @@ import {
   computeTieredDiscountAmount,
 } from '@/lib/promo-discount'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
-import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
+import {
+  cancelReactivationForCustomer,
+  describeReactivationTouch,
+} from '@/lib/ops/reactivation-campaign'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -524,7 +527,8 @@ export async function POST(request: NextRequest) {
         assigned_staff_user_id: assignedStaffUserId,
         partner_id: partnerId,
       })
-      .select('id')
+      // reactivation_click_id is filled by a DB trigger on insert.
+      .select('id, reactivation_click_id')
       .single()
 
     if (appointmentError) throw appointmentError
@@ -668,10 +672,16 @@ export async function POST(request: NextRequest) {
       source: 'website',
       bookingChannel: 'website',
     })
+    const reactivationTouch = await describeReactivationTouch({
+      supabase,
+      customerId,
+      reactivationClickId: appointment.reactivation_click_id ?? null,
+    })
     const adminMsg = [
       adminHeading,
       `${fullName} — $${total.toFixed(2)}`,
       `Lead source: ${notificationLeadSource}`,
+      ...(reactivationTouch ? [`Reactivation: ${reactivationTouch}`] : []),
       `Booking method: ${notificationBookingMethod}`,
       `Technician schedule: ${technicianSchedule}`,
       `${serviceNames}`,
@@ -704,7 +714,7 @@ export async function POST(request: NextRequest) {
         await resend.emails.send({
           from: fromEmail,
           to: adminEmail,
-          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}`,
+          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}${reactivationTouch?.startsWith('YES') ? ' · from reactivation email' : ''}`,
           html: `
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
   <h2 style="color:${appointmentStatus === 'pending_approval' ? '#f59e0b' : '#16a34a'};margin:0 0 16px;">New Job Booked${statusLabel}</h2>
@@ -717,6 +727,7 @@ export async function POST(request: NextRequest) {
     <tr><td style="color:#6b7280;padding-right:12px;">Date</td><td>${appointmentDate} at ${startTime.slice(0, 5)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Lead source</td><td>${escapeHtml(notificationLeadSource)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Booking method</td><td>${escapeHtml(notificationBookingMethod)}</td></tr>
+    ${reactivationTouch ? `<tr><td style="color:#6b7280;padding-right:12px;">Reactivation</td><td><strong>${escapeHtml(reactivationTouch)}</strong></td></tr>` : ''}
     <tr><td style="color:#6b7280;padding-right:12px;">Technician schedule</td><td>${escapeHtml(technicianSchedule)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Services</td><td>${serviceNames}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Total</td><td><strong>$${total.toFixed(2)}</strong></td></tr>

@@ -1062,3 +1062,72 @@ export async function manualReactivationOverride(params: {
     metadata: { reason: params.reason || null, action: params.action },
   })
 }
+
+function formatDenverDate(value: string): string {
+  return new Date(value).toLocaleDateString('en-US', {
+    timeZone: 'America/Denver',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/**
+ * One line for the new-booking alert saying whether this customer came in
+ * through the reactivation campaign, or null when they didn't. A click on
+ * the tracked button is the strong signal; an email in the last 30 days
+ * without a click is still worth knowing (they may have just typed the URL).
+ * Never throws — the booking alert must go out regardless.
+ */
+export async function describeReactivationTouch(params: {
+  supabase: SupabaseAdmin
+  customerId: string
+  reactivationClickId: string | null
+}): Promise<string | null> {
+  const { supabase, customerId, reactivationClickId } = params
+  try {
+    let templateKey: string | null = null
+    let line: (label: string) => string
+
+    if (reactivationClickId) {
+      const { data: click } = await supabase
+        .from('reactivation_email_clicks')
+        .select('template_key, clicked_at')
+        .eq('id', reactivationClickId)
+        .maybeSingle()
+      if (!click) return null
+      templateKey = click.template_key
+      line = (label) =>
+        `YES: clicked the "${label}" reactivation email on ${formatDenverDate(click.clicked_at)}`
+    } else {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      const { data: sent } = await supabase
+        .from('reactivation_email_log')
+        .select('template_key, sent_at')
+        .eq('customer_id', customerId)
+        .eq('event_type', 'email')
+        .eq('status', 'sent')
+        .gte('sent_at', since.toISOString())
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!sent) return null
+      templateKey = sent.template_key
+      line = (label) =>
+        `LIKELY: got the "${label}" reactivation email on ${formatDenverDate(sent.sent_at)} (no tracked click)`
+    }
+
+    let label = templateKey || 'unknown'
+    if (templateKey) {
+      const { data: template } = await supabase
+        .from('reactivation_email_templates')
+        .select('label')
+        .eq('template_key', templateKey)
+        .maybeSingle()
+      if (template?.label) label = template.label
+    }
+    return line(label)
+  } catch (error) {
+    console.error('[reactivation] describeReactivationTouch failed:', error)
+    return null
+  }
+}
