@@ -54,7 +54,7 @@
     },
     {
       "path": "/api/cron/review-requests",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/gsc-watch",

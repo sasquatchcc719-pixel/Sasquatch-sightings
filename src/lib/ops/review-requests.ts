@@ -25,8 +25,8 @@ export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
 export const GOOGLE_REVIEW_URL =
   process.env.GOOGLE_REVIEW_URL || 'https://g.page/r/CVAp5EYpgMFLEBM/review'
 
-/** How long after completion before the ask goes out. */
-const ASK_DELAY_MINUTES = 90
+/** Send as soon as the completion scanner picks up the finished job. */
+const ASK_DELAY_MINUTES = 0
 /** Only completions newer than this are considered (keeps asks fresh). */
 const LOOKBACK_HOURS = 48
 /** Never ask the same customer twice within this window. */
