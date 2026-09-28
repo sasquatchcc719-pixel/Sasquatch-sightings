@@ -82,6 +82,39 @@ beforeEach(() => {
               max_uses: null,
               use_count: 0,
             },
+            {
+              id: 'partner-promo',
+              code: 'PARTNER10',
+              discount_type: 'percent',
+              discount_amount: 10,
+              description: 'Referral partner discount',
+              active: true,
+              expires_at: null,
+              max_uses: null,
+              use_count: 0,
+            },
+            {
+              id: 'glam-promo',
+              code: 'GLAM20',
+              discount_type: 'flat',
+              discount_amount: 20,
+              description: 'Glamour Salon partner discount',
+              active: true,
+              expires_at: null,
+              max_uses: null,
+              use_count: 0,
+            },
+            {
+              id: 'expired-promo',
+              code: 'OLD20',
+              discount_type: 'flat',
+              discount_amount: 20,
+              description: 'Expired discount',
+              active: true,
+              expires_at: '2020-01-01T00:00:00.000Z',
+              max_uses: null,
+              use_count: 0,
+            },
           ],
         }
       } else if (url.startsWith('/api/public/promo-preview?')) {
@@ -132,6 +165,37 @@ async function enterEstimate() {
 }
 
 describe('Book Job residential estimate mode', () => {
+  it('shows every available coupon as a one-tap calculation button', async () => {
+    render(<NewJobWorkspace />)
+
+    expect(
+      await screen.findByRole('button', { name: 'GLAM20 $20 off' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'MILITARY $10 off' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'PARTNER10 10% off' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /OLD20/ }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('More coupon codes')).not.toBeInTheDocument()
+
+    fireEvent.change(
+      screen.getByRole('spinbutton', {
+        name: 'Room Carpet Cleaning quantity',
+      }),
+      { target: { value: '2' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'PARTNER10 10% off' }))
+
+    expect(
+      await screen.findByText('PARTNER10 applied — $10.00 off.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('$90.00').length).toBeGreaterThan(0)
+  })
+
   it('opens without creating records and blocks implicit form submission', async () => {
     const { container } = render(<NewJobWorkspace />)
     await screen.findByRole('spinbutton', {
@@ -227,7 +291,7 @@ describe('Book Job residential estimate mode', () => {
   it('passes a selected coupon without applying its displayed discount twice', async () => {
     render(<NewJobWorkspace />)
     await enterEstimate()
-    fireEvent.click(screen.getByRole('button', { name: 'MILITARY' }))
+    fireEvent.click(screen.getByRole('button', { name: 'MILITARY $10 off' }))
     await screen.findByText('MILITARY applied — $10.00 off.')
 
     fireEvent.click(

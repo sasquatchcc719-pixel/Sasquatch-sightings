@@ -190,15 +190,6 @@ const WARRANTY_CATEGORY_LABELS: Record<string, string> = {
   other: 'Other Concern',
 }
 
-const QUICK_PROMO_CODES = [
-  'MILITARY',
-  'PET',
-  'SCC20',
-  'FIRSTCLEAN',
-  'NEXT20',
-  'DOOR20',
-] as const
-
 function formatPastJobDate(dateKey: string): string {
   return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
     weekday: 'short',
@@ -840,33 +831,16 @@ export function NewJobWorkspace() {
 
   const availablePromoCodes = useMemo(() => {
     const now = Date.now()
-    return promoCodes.filter((promo) => {
-      if (!promo.active) return false
-      if (promo.expires_at && new Date(promo.expires_at).getTime() < now) {
-        return false
-      }
-      return promo.max_uses === null || promo.use_count < promo.max_uses
-    })
-  }, [promoCodes])
-
-  const quickPromoCodes = useMemo(() => {
-    const byCode = new Map(
-      availablePromoCodes.map((promo) => [promo.code, promo]),
-    )
-    return QUICK_PROMO_CODES.map((code) => byCode.get(code)).filter(
-      (promo): promo is PromoCode => Boolean(promo),
-    )
-  }, [availablePromoCodes])
-
-  const otherPromoCodes = useMemo(() => {
-    const quickCodes = new Set(QUICK_PROMO_CODES)
-    return availablePromoCodes
-      .filter(
-        (promo) =>
-          !quickCodes.has(promo.code as (typeof QUICK_PROMO_CODES)[number]),
-      )
+    return promoCodes
+      .filter((promo) => {
+        if (!promo.active) return false
+        if (promo.expires_at && new Date(promo.expires_at).getTime() < now) {
+          return false
+        }
+        return promo.max_uses === null || promo.use_count < promo.max_uses
+      })
       .sort((a, b) => a.code.localeCompare(b.code))
-  }, [availablePromoCodes])
+  }, [promoCodes])
 
   useEffect(() => {
     if (!selectedPromoCode) {
@@ -1837,14 +1811,18 @@ export function NewJobWorkspace() {
               <div className="border-border/60 mt-3 rounded-xl border p-3">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Tag className="h-4 w-4 text-emerald-500" />
-                  Quick coupon
+                  Coupon codes
                 </div>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Tap a code to calculate and track its discount.
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {quickPromoCodes.map((promo) => (
+                  {availablePromoCodes.map((promo) => (
                     <Button
                       key={promo.id}
                       type="button"
                       size="sm"
+                      className="h-auto min-h-10 flex-col gap-0 px-3 py-1.5"
                       variant={
                         selectedPromoCode === promo.code ? 'default' : 'outline'
                       }
@@ -1856,33 +1834,16 @@ export function NewJobWorkspace() {
                         if (!next) setDiscount('0')
                       }}
                     >
-                      {promo.code}
+                      <span>{promo.code}</span>
+                      <span className="text-[10px] font-normal opacity-70">
+                        {promo.discount_type === 'flat'
+                          ? `$${Number(promo.discount_amount).toFixed(0)} off`
+                          : promo.discount_type === 'percent'
+                            ? `${Number(promo.discount_amount).toFixed(0)}% off`
+                            : 'Tiered discount'}
+                      </span>
                     </Button>
                   ))}
-                  {otherPromoCodes.length > 0 ? (
-                    <select
-                      aria-label="More coupon codes"
-                      className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-                      value={
-                        otherPromoCodes.some(
-                          (promo) => promo.code === selectedPromoCode,
-                        )
-                          ? selectedPromoCode
-                          : ''
-                      }
-                      onChange={(event) => {
-                        setSelectedPromoCode(event.target.value)
-                        if (!event.target.value) setDiscount('0')
-                      }}
-                    >
-                      <option value="">More coupons…</option>
-                      {otherPromoCodes.map((promo) => (
-                        <option key={promo.id} value={promo.code}>
-                          {promo.code}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
                 </div>
                 {selectedPromoCode ? (
                   <p className="text-muted-foreground mt-2 text-xs">
