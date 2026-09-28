@@ -885,7 +885,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -934,7 +934,10 @@ export async function DELETE(
       ? appointment.ops_service_addresses[0]
       : appointment.ops_service_addresses
 
-    if (customer) {
+    const notifyCustomer =
+      request.nextUrl.searchParams.get('notify_customer') !== 'false'
+
+    if (customer && notifyCustomer) {
       const firstName =
         customer.first_name || customer.full_name?.split(' ')[0] || 'there'
       const dateStr = appointment.appointment_date

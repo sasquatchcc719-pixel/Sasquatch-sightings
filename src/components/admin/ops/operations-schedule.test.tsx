@@ -400,3 +400,76 @@ describe('commercial estimate scheduling', () => {
     expect(cardLink).toHaveTextContent('Draft')
   })
 })
+
+describe('unscheduled job deletion', () => {
+  it('deletes a parked job without a confirmation or customer notification', async () => {
+    const confirmMock = vi.fn()
+    vi.stubGlobal('confirm', confirmMock)
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (url: string, options?: RequestInit) => {
+        if (
+          url ===
+            '/api/admin/ops/appointments/parked-job?notify_customer=false' &&
+          options?.method === 'DELETE'
+        ) {
+          return { ok: true, json: async () => ({ success: true }) }
+        }
+        if (url === '/api/admin/ops/restoration/projects') {
+          return { ok: true, json: async () => ({ projects: [] }) }
+        }
+        if (url === '/api/admin/ops/schedule/parked') {
+          return {
+            ok: true,
+            json: async () => ({
+              appointments: [
+                {
+                  id: 'parked-job',
+                  duration_minutes: 60,
+                  ops_customers: {
+                    full_name: 'Judy Brown',
+                    business_name: null,
+                  },
+                  ops_service_addresses: {
+                    street_1: '7711 Barkway Ct',
+                    city: 'Lone Tree',
+                  },
+                },
+              ],
+            }),
+          }
+        }
+        if (url.startsWith('/api/admin/ops/schedule?')) {
+          return {
+            ok: true,
+            json: async () => ({
+              appointments: [],
+              events: [],
+              staff: [],
+              currentUserRole: 'owner',
+            }),
+          }
+        }
+        return { ok: true, json: async () => ({ templates: [] }) }
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<OperationsSchedule />)
+
+    expect(await screen.findByText('Judy Brown')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Delete Judy Brown from unscheduled jobs',
+      }),
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByText('Judy Brown')).not.toBeInTheDocument(),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/ops/appointments/parked-job?notify_customer=false',
+      { method: 'DELETE' },
+    )
+    expect(confirmMock).not.toHaveBeenCalled()
+  })
+})

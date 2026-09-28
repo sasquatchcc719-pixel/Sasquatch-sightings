@@ -17,6 +17,7 @@ import {
   Repeat,
   Ruler,
   ShieldBan,
+  Trash2,
   Truck,
   UserRoundCog,
   Droplets,
@@ -1075,6 +1076,9 @@ export function OperationsSchedule() {
   // tapping a slot — which works across days, weeks, and month view.
   const [queuedVisits, setQueuedVisits] = useState<QueuedVisit[]>([])
   const [armedVisit, setArmedVisit] = useState<QueuedVisit | null>(null)
+  const [deletingQueuedVisitId, setDeletingQueuedVisitId] = useState<
+    string | null
+  >(null)
 
   const loadQueuedVisits = useCallback(async () => {
     try {
@@ -1155,6 +1159,34 @@ export function OperationsSchedule() {
   useEffect(() => {
     void loadQueuedVisits()
   }, [loadQueuedVisits])
+
+  const deleteQueuedVisit = async (visit: QueuedVisit) => {
+    setDeletingQueuedVisitId(visit.id)
+    setError(null)
+    try {
+      const url =
+        visit.source === 'appointment'
+          ? `/api/admin/ops/appointments/${visit.id}?notify_customer=false`
+          : `/api/admin/ops/restoration/queue/${visit.id}`
+      const response = await fetch(url, { method: 'DELETE' })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        throw new Error(result.error || 'Failed to delete unscheduled job')
+      }
+      setQueuedVisits((current) =>
+        current.filter((queued) => queued.id !== visit.id),
+      )
+      setArmedVisit((current) => (current?.id === visit.id ? null : current))
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Failed to delete unscheduled job',
+      )
+    } finally {
+      setDeletingQueuedVisitId(null)
+    }
+  }
 
   const loadSchedule = useCallback(async () => {
     setLoading(true)
@@ -3121,9 +3153,8 @@ export function OperationsSchedule() {
             ) : null}
             <div className="flex flex-wrap gap-2">
               {queuedVisits.map((visit) => (
-                <button
+                <div
                   key={visit.id}
-                  type="button"
                   draggable
                   onDragStart={(e) => {
                     e.dataTransfer.setData('queuedVisitId', visit.id)
@@ -3135,28 +3166,50 @@ export function OperationsSchedule() {
                     // Clear any armed card so a drag and a tap cannot both fire.
                     setArmedVisit(null)
                   }}
-                  onClick={() =>
-                    setArmedVisit((current) =>
-                      current?.id === visit.id ? null : visit,
-                    )
-                  }
-                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                  className={`flex overflow-hidden rounded-lg border text-sm transition ${
                     armedVisit?.id === visit.id
                       ? 'border-sky-600 bg-sky-600 text-white'
                       : 'border-sky-300 bg-white text-slate-800 hover:bg-sky-100'
                   }`}
                 >
-                  <span className="font-medium">{visit.label}</span>
-                  {visit.place ? (
-                    <span className="block text-xs opacity-70">
-                      {visit.place}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setArmedVisit((current) =>
+                        current?.id === visit.id ? null : visit,
+                      )
+                    }
+                    className="min-w-0 flex-1 px-3 py-2 text-left"
+                  >
+                    <span className="font-medium">{visit.label}</span>
+                    {visit.place ? (
+                      <span className="block text-xs opacity-70">
+                        {visit.place}
+                      </span>
+                    ) : null}
+                    <span className="block text-xs opacity-80">
+                      {visit.visitType}
+                      {visit.sequence ? ` ${visit.sequence}` : ''} · 1 hr
                     </span>
-                  ) : null}
-                  <span className="block text-xs opacity-80">
-                    {visit.visitType}
-                    {visit.sequence ? ` ${visit.sequence}` : ''} · 1 hr
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${visit.label} from unscheduled jobs`}
+                    disabled={deletingQueuedVisitId === visit.id}
+                    onClick={() => void deleteQueuedVisit(visit)}
+                    className={`flex min-h-11 w-11 shrink-0 items-center justify-center border-l transition disabled:cursor-wait disabled:opacity-60 ${
+                      armedVisit?.id === visit.id
+                        ? 'border-white/30 text-white hover:bg-white/15'
+                        : 'border-sky-200 text-red-600 hover:bg-red-50 hover:text-red-700'
+                    }`}
+                  >
+                    {deletingQueuedVisitId === visit.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
