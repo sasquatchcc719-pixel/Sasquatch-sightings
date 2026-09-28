@@ -237,6 +237,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Business economics charts need 30-day, 90-day, and calendar-year controls, straight point-to-point lines, and a persistent click-through breakdown for every weekly reading.
 - Keep admin-entered bookings unrestricted by the public minimum; Charles and Tiffany may deliberately schedule work at any price.
 - Default warranty cleans to a one-hour calendar block and keep their schedule cards compact: customer name in the draggable header, warranty label plus city, a usable detail tap target, and mobile technician reassignment.
+- Coupon-code entry during an on-site walkthrough belongs in the existing invoice editor beside Dollar Discount; the Book Job picker is the separate phone-booking workflow.
 
 ---
 

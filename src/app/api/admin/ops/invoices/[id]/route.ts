@@ -17,6 +17,10 @@ import {
 import { isBlacklisted } from '@/lib/blacklist'
 import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
 import { settleOptionalInvoiceLookup } from '@/lib/ops/invoice-loading'
+import {
+  computePromoDiscountAmount,
+  computeTieredDiscountAmount,
+} from '@/lib/promo-discount'
 
 const OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS = 2_000
 
@@ -522,10 +526,131 @@ export async function PATCH(
       (sum, item) => sum + Number(item.line_total || 0),
       0,
     )
-    const discountAmount =
+    const promoCodeInBody = Object.prototype.hasOwnProperty.call(
+      body,
+      'promo_code',
+    )
+    const requestedPromoCode = promoCodeInBody
+      ? String(body.promo_code || '')
+          .toUpperCase()
+          .trim()
+      : ''
+    const currentDiscountMetadata =
+      current.discount_metadata &&
+      typeof current.discount_metadata === 'object' &&
+      !Array.isArray(current.discount_metadata)
+        ? (current.discount_metadata as Record<string, unknown>)
+        : {}
+    const currentPromo =
+      currentDiscountMetadata.promo &&
+      typeof currentDiscountMetadata.promo === 'object' &&
+      !Array.isArray(currentDiscountMetadata.promo)
+        ? (currentDiscountMetadata.promo as Record<string, unknown>)
+        : null
+    const currentPromoCode = String(currentPromo?.code || '')
+      .toUpperCase()
+      .trim()
+    let discountAmount =
       body.discount_amount !== undefined
         ? Math.max(0, Number(body.discount_amount || 0))
         : Number(current.discount_amount || 0)
+    let discountMetadata: Record<string, unknown> = currentDiscountMetadata
+    let promoCodeIdToIncrement: string | null = null
+
+    if (promoCodeInBody) {
+      if (!requestedPromoCode) {
+        discountMetadata = { ...currentDiscountMetadata }
+        delete discountMetadata.promo
+      } else {
+        const { data: promo, error: promoError } = await supabase
+          .from('promo_codes')
+          .select(
+            'id, code, discount_type, discount_amount, active, expires_at, max_uses, use_count',
+          )
+          .eq('code', requestedPromoCode)
+          .maybeSingle()
+
+        if (promoError) throw promoError
+        if (!promo) {
+          return NextResponse.json(
+            { error: `Coupon code "${requestedPromoCode}" was not found.` },
+            { status: 400 },
+          )
+        }
+
+        const alreadyApplied = requestedPromoCode === currentPromoCode
+        if (!alreadyApplied && !promo.active) {
+          return NextResponse.json(
+            { error: `Coupon code "${requestedPromoCode}" is not active.` },
+            { status: 400 },
+          )
+        }
+        if (
+          !alreadyApplied &&
+          promo.expires_at &&
+          new Date(promo.expires_at) < new Date()
+        ) {
+          return NextResponse.json(
+            { error: `Coupon code "${requestedPromoCode}" has expired.` },
+            { status: 400 },
+          )
+        }
+        if (
+          !alreadyApplied &&
+          promo.max_uses !== null &&
+          promo.use_count >= promo.max_uses
+        ) {
+          return NextResponse.json(
+            {
+              error: `Coupon code "${requestedPromoCode}" has reached its usage limit.`,
+            },
+            { status: 400 },
+          )
+        }
+
+        if (promo.discount_type === 'tiered') {
+          const { data: tiers, error: tiersError } = await supabase
+            .from('promo_code_tiers')
+            .select('min_spend, discount_amount')
+            .eq('promo_code_id', promo.id)
+          if (tiersError) throw tiersError
+          discountAmount = computeTieredDiscountAmount(
+            subtotal,
+            (tiers || []).map((tier) => ({
+              min_spend: Number(tier.min_spend),
+              discount_amount: Number(tier.discount_amount),
+            })),
+          )
+        } else {
+          discountAmount = computePromoDiscountAmount(
+            subtotal,
+            String(promo.discount_type),
+            Number(promo.discount_amount),
+          )
+        }
+
+        if (discountAmount <= 0) {
+          return NextResponse.json(
+            {
+              error: `The current $${subtotal.toFixed(2)} subtotal does not qualify for coupon code "${requestedPromoCode}".`,
+            },
+            { status: 400 },
+          )
+        }
+
+        discountAmount = Number(discountAmount.toFixed(2))
+        discountMetadata = {
+          ...currentDiscountMetadata,
+          promo: {
+            code: promo.code,
+            type: promo.discount_type,
+            amount: discountAmount,
+            applied_subtotal: Number(subtotal.toFixed(2)),
+          },
+        }
+        if (!alreadyApplied) promoCodeIdToIncrement = promo.id
+      }
+    }
     const percentageDiscountAmount =
       body.percentage_discount_amount !== undefined
         ? Math.max(0, Number(body.percentage_discount_amount || 0))
@@ -546,6 +671,7 @@ export async function PATCH(
         subtotal: Number(subtotal.toFixed(2)),
         total,
         discount_amount: discountAmount,
+        discount_metadata: discountMetadata,
         percentage_discount_amount: percentageDiscountAmount,
         percentage_discount_label:
           body.percentage_discount_label !== undefined
@@ -578,6 +704,19 @@ export async function PATCH(
       .single()
 
     if (invoiceError) throw invoiceError
+
+    if (promoCodeIdToIncrement) {
+      const { error: promoCountError } = await supabase.rpc(
+        'increment_promo_use_count',
+        { promo_id: promoCodeIdToIncrement },
+      )
+      if (promoCountError) {
+        console.error(
+          '[ops/invoices/:id][PATCH] Promo use_count increment failed:',
+          promoCountError,
+        )
+      }
+    }
 
     const requestedPaymentUpdate =
       body.payment_status !== undefined || body.status === 'paid'

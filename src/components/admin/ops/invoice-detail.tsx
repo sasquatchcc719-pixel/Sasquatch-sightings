@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   Image as ImageIcon,
   Loader2,
   Mail,
@@ -16,6 +17,7 @@ import {
   PenTool,
   Phone,
   Sparkles,
+  Tag,
   Trash2,
   UserRoundCheck,
   X,
@@ -239,6 +241,18 @@ type InvoiceDetail = {
   }>
 }
 
+type PromoCode = {
+  id: string
+  code: string
+  discount_type: 'flat' | 'percent' | 'tiered'
+  discount_amount: number
+  description: string | null
+  active: boolean
+  expires_at: string | null
+  max_uses: number | null
+  use_count: number
+}
+
 type CustomerMessage = {
   direction: 'inbound' | 'outbound'
   content: string
@@ -340,6 +354,12 @@ export function InvoiceDetail({
   const [status, setStatus] = useState('pending')
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const [discount, setDiscount] = useState('0')
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([])
+  const [selectedPromoCode, setSelectedPromoCode] = useState('')
+  const [couponCodesOpen, setCouponCodesOpen] = useState(false)
+  const [promoSelectionDirty, setPromoSelectionDirty] = useState(false)
+  const [promoPreviewLoading, setPromoPreviewLoading] = useState(false)
+  const [promoMessage, setPromoMessage] = useState<string | null>(null)
   const [sendLoading, setSendLoading] = useState<SendChannel | null>(null)
   const [sendFeedback, setSendFeedback] = useState<{
     channel: SendChannel
@@ -409,6 +429,19 @@ export function InvoiceDetail({
   const [fiberGateAllowed, setFiberGateAllowed] = useState(true)
   const [fiberRefreshKey, setFiberRefreshKey] = useState(0)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
+
+  const availablePromoCodes = useMemo(() => {
+    const now = Date.now()
+    return promoCodes
+      .filter((promo) => {
+        if (!promo.active) return false
+        if (promo.expires_at && new Date(promo.expires_at).getTime() < now) {
+          return false
+        }
+        return promo.max_uses === null || promo.use_count < promo.max_uses
+      })
+      .sort((a, b) => a.code.localeCompare(b.code))
+  }, [promoCodes])
 
   const [editingCustomer, setEditingCustomer] = useState(false)
   const [customerSaving, setCustomerSaving] = useState(false)
@@ -580,6 +613,11 @@ export function InvoiceDetail({
         setInvoice(result.invoice)
         setStatus(result.invoice.status)
         setDiscount(String(result.invoice.discount_amount || 0))
+        setSelectedPromoCode(
+          String(result.invoice.discount_metadata?.promo?.code || '').trim(),
+        )
+        setPromoSelectionDirty(false)
+        setPromoMessage(null)
         setPaymentMethod(result.invoice.payment_method ?? null)
         setCustomerMessages(
           Array.isArray(result.customerMessages) ? result.customerMessages : [],
@@ -757,6 +795,74 @@ export function InvoiceDetail({
       })
   }, [])
 
+  useEffect(() => {
+    fetch('/api/admin/promo-codes', { cache: 'no-store' })
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : Promise.reject(new Error('Failed to load coupon codes')),
+      )
+      .then((data) => {
+        if (Array.isArray(data.promo_codes)) {
+          setPromoCodes(data.promo_codes)
+        }
+      })
+      .catch(() => {
+        setPromoCodes([])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!promoSelectionDirty || !selectedPromoCode) return
+
+    const controller = new AbortController()
+    const subtotal = lineItems.reduce(
+      (sum, item) => sum + item.quantity * Number(item.unit_price || 0),
+      0,
+    )
+    setPromoPreviewLoading(true)
+    setPromoMessage(null)
+
+    fetch(
+      `/api/public/promo-preview?code=${encodeURIComponent(selectedPromoCode)}&subtotal=${encodeURIComponent(String(subtotal))}`,
+      { cache: 'no-store', signal: controller.signal },
+    )
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok || !result.applied) {
+          throw new Error(
+            'This coupon cannot be applied to the current invoice.',
+          )
+        }
+        const amount = Math.max(0, Number(result.discount_amount || 0))
+        setDiscount(amount.toFixed(2))
+        setPromoMessage(
+          amount > 0
+            ? `${selectedPromoCode} applied — $${amount.toFixed(2)} off.`
+            : `${selectedPromoCode} selected — increase the subtotal to unlock its first discount tier.`,
+        )
+      })
+      .catch((previewError) => {
+        if (
+          previewError instanceof DOMException &&
+          previewError.name === 'AbortError'
+        ) {
+          return
+        }
+        setDiscount('0')
+        setPromoMessage(
+          previewError instanceof Error
+            ? previewError.message
+            : 'This coupon cannot be applied to the current invoice.',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPromoPreviewLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [lineItems, promoSelectionDirty, selectedPromoCode])
+
   const handleSave = async () => {
     setSaving(true)
     setError(null)
@@ -767,6 +873,7 @@ export function InvoiceDetail({
         body: JSON.stringify({
           status,
           payment_method: paymentMethod,
+          promo_code: selectedPromoCode || null,
           discount_amount: Number(discount || 0),
           percentage_discount_amount: percentageDiscountAmount,
           percentage_discount_label: invoice?.percentage_discount_label ?? null,
@@ -785,6 +892,16 @@ export function InvoiceDetail({
       const result = await response.json()
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update invoice')
+      }
+      if (result.invoice) {
+        setInvoice((current) =>
+          current ? { ...current, ...result.invoice } : current,
+        )
+        setDiscount(String(result.invoice.discount_amount || 0))
+        setSelectedPromoCode(
+          String(result.invoice.discount_metadata?.promo?.code || '').trim(),
+        )
+        setPromoSelectionDirty(false)
       }
       router.refresh()
       // Line items may have been added or removed — reload the fiber gate.
@@ -1478,9 +1595,6 @@ export function InvoiceDetail({
     0,
   )
   const discountAmount = Math.max(0, Number(discount || 0))
-  const appliedPromoCode = String(
-    invoice.discount_metadata?.promo?.code || '',
-  ).trim()
   const percentageDiscountAmount = Math.max(
     0,
     Number(invoice.percentage_discount_amount || 0),
@@ -2609,6 +2723,87 @@ export function InvoiceDetail({
               <span className="tabular-nums">${subtotalCalc.toFixed(2)}</span>
             </div>
           ) : null}
+          <div className="flex justify-end">
+            <div className="border-border/60 w-full rounded-xl border p-3 sm:max-w-md">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-between gap-3 p-0 hover:bg-transparent"
+                aria-expanded={couponCodesOpen}
+                aria-controls="invoice-coupon-codes"
+                onClick={() => setCouponCodesOpen((open) => !open)}
+              >
+                <span className="flex min-w-0 items-center gap-2 text-left">
+                  <Tag className="h-4 w-4 shrink-0 text-emerald-500" />
+                  <span>
+                    <span className="block text-sm font-medium">
+                      Coupon codes
+                    </span>
+                    <span className="text-muted-foreground block text-xs font-normal">
+                      {selectedPromoCode
+                        ? `${selectedPromoCode} selected`
+                        : discountAmount > 0
+                          ? `$${discountAmount.toFixed(2)} custom discount`
+                          : `${availablePromoCodes.length} available`}
+                    </span>
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`text-muted-foreground h-4 w-4 shrink-0 transition-transform ${
+                    couponCodesOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </Button>
+              {couponCodesOpen ? (
+                <div id="invoice-coupon-codes">
+                  <p className="text-muted-foreground mt-3 text-xs">
+                    Tap a code to calculate and track its discount.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {availablePromoCodes.map((promo) => (
+                      <Button
+                        key={promo.id}
+                        type="button"
+                        size="sm"
+                        className="h-auto min-h-10 flex-col gap-0 px-3 py-1.5"
+                        variant={
+                          selectedPromoCode === promo.code
+                            ? 'default'
+                            : 'outline'
+                        }
+                        title={promo.description || promo.code}
+                        onClick={() => {
+                          const next =
+                            selectedPromoCode === promo.code ? '' : promo.code
+                          setSelectedPromoCode(next)
+                          setPromoSelectionDirty(Boolean(next))
+                          setPromoMessage(null)
+                          if (!next) setDiscount('0')
+                        }}
+                      >
+                        <span>{promo.code}</span>
+                        <span className="text-[10px] font-normal opacity-70">
+                          {promo.discount_type === 'flat'
+                            ? `$${Number(promo.discount_amount).toFixed(0)} off`
+                            : promo.discount_type === 'percent'
+                              ? `${Number(promo.discount_amount).toFixed(0)}% off`
+                              : 'Tiered discount'}
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedPromoCode ? (
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      {promoPreviewLoading
+                        ? `Calculating ${selectedPromoCode}…`
+                        : promoMessage ||
+                          `${selectedPromoCode} is saved on this invoice.`}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div className="flex items-center justify-end gap-4">
             <div className="flex items-center gap-2">
               <Label
@@ -2616,7 +2811,7 @@ export function InvoiceDetail({
                 className="text-sm whitespace-nowrap text-slate-500"
               >
                 Dollar Discount
-                {appliedPromoCode ? ` · ${appliedPromoCode}` : ''}
+                {selectedPromoCode ? ` · ${selectedPromoCode}` : ''}
               </Label>
               <Input
                 id="invoice-discount"
@@ -2625,7 +2820,12 @@ export function InvoiceDetail({
                 step="0.01"
                 value={discount}
                 className="h-8 w-24 text-right text-sm"
-                onChange={(e) => setDiscount(e.target.value)}
+                onChange={(e) => {
+                  setSelectedPromoCode('')
+                  setPromoSelectionDirty(false)
+                  setPromoMessage(null)
+                  setDiscount(e.target.value)
+                }}
               />
             </div>
           </div>
