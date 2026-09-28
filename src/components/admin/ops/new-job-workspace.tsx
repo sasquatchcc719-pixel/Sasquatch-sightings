@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Check, Loader2, Minus, Plus, Search, Tag, Trash2 } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Loader2,
+  Minus,
+  Plus,
+  Search,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -374,6 +383,7 @@ export function NewJobWorkspace() {
   const [discount, setDiscount] = useState('0')
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([])
   const [selectedPromoCode, setSelectedPromoCode] = useState('')
+  const [couponCodesOpen, setCouponCodesOpen] = useState(false)
   const [promoPreviewLoading, setPromoPreviewLoading] = useState(false)
   const [promoMessage, setPromoMessage] = useState<string | null>(null)
   const [leadSource, setLeadSource] = useState('')
@@ -1809,69 +1819,100 @@ export function NewJobWorkspace() {
                 </div>
               </div>
               <div className="border-border/60 mt-3 rounded-xl border p-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Tag className="h-4 w-4 text-emerald-500" />
-                  Coupon codes
-                </div>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Tap a code to calculate and track its discount.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {availablePromoCodes.map((promo) => (
-                    <Button
-                      key={promo.id}
-                      type="button"
-                      size="sm"
-                      className="h-auto min-h-10 flex-col gap-0 px-3 py-1.5"
-                      variant={
-                        selectedPromoCode === promo.code ? 'default' : 'outline'
-                      }
-                      title={promo.description || promo.code}
-                      onClick={() => {
-                        const next =
-                          selectedPromoCode === promo.code ? '' : promo.code
-                        setSelectedPromoCode(next)
-                        if (!next) setDiscount('0')
-                      }}
-                    >
-                      <span>{promo.code}</span>
-                      <span className="text-[10px] font-normal opacity-70">
-                        {promo.discount_type === 'flat'
-                          ? `$${Number(promo.discount_amount).toFixed(0)} off`
-                          : promo.discount_type === 'percent'
-                            ? `${Number(promo.discount_amount).toFixed(0)}% off`
-                            : 'Tiered discount'}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-auto w-full justify-between gap-3 p-0 hover:bg-transparent"
+                  aria-expanded={couponCodesOpen}
+                  aria-controls="new-job-coupon-codes"
+                  onClick={() => setCouponCodesOpen((open) => !open)}
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-left">
+                    <Tag className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        Coupon codes
                       </span>
-                    </Button>
-                  ))}
-                </div>
-                {selectedPromoCode ? (
-                  <p className="text-muted-foreground mt-2 text-xs">
-                    {promoPreviewLoading
-                      ? `Calculating ${selectedPromoCode}…`
-                      : promoMessage}
-                  </p>
-                ) : null}
-                <div className="mt-3 flex items-center gap-2 border-t pt-3">
-                  <label
-                    htmlFor="new-job-discount"
-                    className="text-sm whitespace-nowrap text-slate-500"
-                  >
-                    Custom discount ($)
-                  </label>
-                  <input
-                    id="new-job-discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={discount}
-                    onChange={(e) => {
-                      setSelectedPromoCode('')
-                      setDiscount(e.target.value)
-                    }}
-                    className="border-input bg-background h-8 w-24 rounded-md border px-2 text-right text-sm"
+                      <span className="text-muted-foreground block text-xs font-normal">
+                        {selectedPromoCode
+                          ? `${selectedPromoCode} selected`
+                          : discountAmount > 0
+                            ? `$${discountAmount.toFixed(2)} custom discount`
+                            : `${availablePromoCodes.length} available`}
+                      </span>
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={`text-muted-foreground h-4 w-4 shrink-0 transition-transform ${
+                      couponCodesOpen ? 'rotate-180' : ''
+                    }`}
                   />
-                </div>
+                </Button>
+                {couponCodesOpen ? (
+                  <div id="new-job-coupon-codes">
+                    <p className="text-muted-foreground mt-3 text-xs">
+                      Tap a code to calculate and track its discount.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {availablePromoCodes.map((promo) => (
+                        <Button
+                          key={promo.id}
+                          type="button"
+                          size="sm"
+                          className="h-auto min-h-10 flex-col gap-0 px-3 py-1.5"
+                          variant={
+                            selectedPromoCode === promo.code
+                              ? 'default'
+                              : 'outline'
+                          }
+                          title={promo.description || promo.code}
+                          onClick={() => {
+                            const next =
+                              selectedPromoCode === promo.code ? '' : promo.code
+                            setSelectedPromoCode(next)
+                            if (!next) setDiscount('0')
+                          }}
+                        >
+                          <span>{promo.code}</span>
+                          <span className="text-[10px] font-normal opacity-70">
+                            {promo.discount_type === 'flat'
+                              ? `$${Number(promo.discount_amount).toFixed(0)} off`
+                              : promo.discount_type === 'percent'
+                                ? `${Number(promo.discount_amount).toFixed(0)}% off`
+                                : 'Tiered discount'}
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                    {selectedPromoCode ? (
+                      <p className="text-muted-foreground mt-2 text-xs">
+                        {promoPreviewLoading
+                          ? `Calculating ${selectedPromoCode}…`
+                          : promoMessage}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex items-center gap-2 border-t pt-3">
+                      <label
+                        htmlFor="new-job-discount"
+                        className="text-sm whitespace-nowrap text-slate-500"
+                      >
+                        Custom discount ($)
+                      </label>
+                      <input
+                        id="new-job-discount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={discount}
+                        onChange={(e) => {
+                          setSelectedPromoCode('')
+                          setDiscount(e.target.value)
+                        }}
+                        className="border-input bg-background h-8 w-24 rounded-md border px-2 text-right text-sm"
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
               {unpricedLineItems > 0 ? (
                 <p className="text-muted-foreground mt-2 text-xs">

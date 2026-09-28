@@ -164,12 +164,29 @@ async function enterEstimate() {
   )
 }
 
+async function openCouponCodes() {
+  const toggle = await screen.findByRole('button', { name: /^Coupon codes/ })
+  if (toggle.getAttribute('aria-expanded') === 'false') {
+    fireEvent.click(toggle)
+  }
+}
+
 describe('Book Job residential estimate mode', () => {
   it('shows every available coupon as a one-tap calculation button', async () => {
     render(<NewJobWorkspace />)
 
+    const couponToggle = await screen.findByRole('button', {
+      name: 'Coupon codes 3 available',
+    })
+    expect(couponToggle).toHaveAttribute('aria-expanded', 'false')
     expect(
-      await screen.findByRole('button', { name: 'GLAM20 $20 off' }),
+      screen.queryByRole('button', { name: 'GLAM20 $20 off' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(couponToggle)
+    expect(couponToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('button', { name: 'GLAM20 $20 off' }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'MILITARY $10 off' }),
@@ -193,6 +210,7 @@ describe('Book Job residential estimate mode', () => {
     expect(
       await screen.findByText('PARTNER10 applied — $10.00 off.'),
     ).toBeInTheDocument()
+    expect(couponToggle).toHaveAccessibleName('Coupon codes PARTNER10 selected')
     expect(screen.getAllByText('$90.00').length).toBeGreaterThan(0)
   })
 
@@ -229,6 +247,7 @@ describe('Book Job residential estimate mode', () => {
   it('previews and sends selected services and custom discount using only an email address', async () => {
     render(<NewJobWorkspace />)
     await enterEstimate()
+    await openCouponCodes()
     fireEvent.change(screen.getByLabelText('Custom discount ($)'), {
       target: { value: '15' },
     })
@@ -291,6 +310,7 @@ describe('Book Job residential estimate mode', () => {
   it('passes a selected coupon without applying its displayed discount twice', async () => {
     render(<NewJobWorkspace />)
     await enterEstimate()
+    await openCouponCodes()
     fireEvent.click(screen.getByRole('button', { name: 'MILITARY $10 off' }))
     await screen.findByText('MILITARY applied — $10.00 off.')
 
@@ -310,6 +330,7 @@ describe('Book Job residential estimate mode', () => {
   it('restores scheduling and booking validation while keeping the quote when switching back', async () => {
     render(<NewJobWorkspace />)
     await enterEstimate()
+    await openCouponCodes()
     fireEvent.change(screen.getByLabelText('Custom discount ($)'), {
       target: { value: '15' },
     })
