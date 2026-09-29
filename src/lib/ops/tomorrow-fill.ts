@@ -223,6 +223,7 @@ async function loadCandidates(params: {
   const [
     customersResult,
     appointmentHistoryResult,
+    pastUnresolvedAppointmentsResult,
     futureAppointmentsResult,
     recipientHistoryResult,
     consentResult,
@@ -246,6 +247,13 @@ async function loadCandidates(params: {
     supabase
       .from('ops_appointments')
       .select('customer_id')
+      .lt('appointment_date', today)
+      .eq('kind', 'service')
+      .in('status', ACTIVE_APPOINTMENT_STATUSES)
+      .limit(10000),
+    supabase
+      .from('ops_appointments')
+      .select('customer_id')
       .gte('appointment_date', today)
       .in('status', ACTIVE_APPOINTMENT_STATUSES)
       .limit(10000),
@@ -263,6 +271,7 @@ async function loadCandidates(params: {
   for (const result of [
     customersResult,
     appointmentHistoryResult,
+    pastUnresolvedAppointmentsResult,
     futureAppointmentsResult,
     recipientHistoryResult,
     consentResult,
@@ -291,6 +300,9 @@ async function loadCandidates(params: {
 
   const futureCustomerIds = new Set(
     (futureAppointmentsResult.data || []).map((row) => row.customer_id),
+  )
+  const unresolvedPastCustomerIds = new Set(
+    (pastUnresolvedAppointmentsResult.data || []).map((row) => row.customer_id),
   )
   const consentByCustomer = new Map(
     (consentResult.data || []).map((row) => [row.customer_id, row.status]),
@@ -339,6 +351,10 @@ async function loadCandidates(params: {
     }
     if (futureCustomerIds.has(customer.id)) {
       exclude('future_booking')
+      continue
+    }
+    if (unresolvedPastCustomerIds.has(customer.id)) {
+      exclude('unresolved_past_booking')
       continue
     }
 

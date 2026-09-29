@@ -625,14 +625,17 @@ export async function loadCustomerValueIndex(
     if (!id) continue
     const e = entry(id)
     e.doNotContact = e.doNotContact || !!h.do_not_contact
-    // QB already contains HCP-era invoices — only use the snapshot when the
-    // customer has no QuickBooks history.
-    if (!qbCovered.has(id) && h.last_service_date_hcp) {
-      applyVisit(
-        id,
-        String(h.last_service_date_hcp),
-        Number(h.lifetime_value || 0),
-      )
+    if (h.last_service_date_hcp) {
+      const hcpDate = String(h.last_service_date_hcp)
+      // QB already contains HCP-era invoice dollars, so do not double-count
+      // lifetime value. The HCP last-service snapshot is still an independent
+      // freshness signal and must be allowed to advance the service date.
+      if (!qbCovered.has(id)) {
+        e.lifetimeValue += Number(h.lifetime_value || 0)
+      }
+      if (!e.lastKnownService || hcpDate > e.lastKnownService) {
+        e.lastKnownService = hcpDate
+      }
     }
   }
 

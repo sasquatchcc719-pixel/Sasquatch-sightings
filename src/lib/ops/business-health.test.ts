@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeRetention } from './business-health'
+import { computeRetention, loadCustomerValueIndex } from './business-health'
 
 const job = (
   customer_id: string,
@@ -212,5 +212,77 @@ describe('computeRetention', () => {
     )
     expect(r.dueList).toEqual([])
     expect(r.customers).toBe(2) // both still count as customers
+  })
+})
+
+describe('loadCustomerValueIndex', () => {
+  it('uses the latest HCP service date without double-counting QB revenue', async () => {
+    const mockClient = {
+      from(table: string) {
+        if (table === 'ops_appointments') {
+          return {
+            select: () => ({
+              eq: async () => ({ data: [] }),
+            }),
+          }
+        }
+        if (table === 'hcp_customer_history') {
+          return {
+            select: async () => ({
+              data: [
+                {
+                  hcp_id: 'hcp-1',
+                  customer_name: 'Pam Example',
+                  last_service_date_hcp: '2022-12-27',
+                  lifetime_value: 188,
+                  ops_customer_id: 'customer-1',
+                  do_not_contact: false,
+                },
+              ],
+            }),
+          }
+        }
+        if (table === 'qb_historical_transactions') {
+          return {
+            select: () => ({
+              not: async () => ({
+                data: [
+                  {
+                    txn_date: '2022-12-14',
+                    total: 188,
+                    qb_customer_id: 'qb-1',
+                    customer_name: 'Pam Example',
+                  },
+                ],
+              }),
+            }),
+          }
+        }
+        return {
+          select: async () => ({
+            data: [
+              {
+                id: 'customer-1',
+                quickbooks_customer_id: 'qb-1',
+                full_name: 'Pam Example',
+                first_name: 'Pam',
+                last_name: 'Example',
+                business_name: null,
+              },
+            ],
+          }),
+        }
+      },
+    }
+
+    const index = await loadCustomerValueIndex(
+      mockClient as unknown as Parameters<typeof loadCustomerValueIndex>[0],
+    )
+
+    expect(index.get('customer-1')).toEqual({
+      lastKnownService: '2022-12-27',
+      lifetimeValue: 188,
+      doNotContact: false,
+    })
   })
 })
