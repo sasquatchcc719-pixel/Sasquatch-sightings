@@ -594,7 +594,7 @@ export function TomorrowFillControlCenter() {
                       <th className="px-5 py-3">Rank</th>
                       <th className="px-3 py-3">Customer</th>
                       <th className="px-3 py-3">ZIP</th>
-                      <th className="px-3 py-3">Last clean</th>
+                      <th className="px-3 py-3">Latest recorded clean</th>
                       <th className="px-3 py-3">LTV</th>
                       <th className="px-3 py-3">Funnel</th>
                     </tr>

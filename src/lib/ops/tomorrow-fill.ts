@@ -485,7 +485,7 @@ function scanTelegramMessage(params: {
     .slice(0, 5)
     .map(
       (candidate, index) =>
-        `${index + 1}. ${candidate.fullName} · ${candidate.zip} · last clean ${candidate.lastCleanDate}`,
+        `${index + 1}. ${candidate.fullName} · ${candidate.zip} · latest recorded clean ${candidate.lastCleanDate}`,
     )
     .join('\n')
   const suppressed = Object.values(params.exclusions).reduce(
