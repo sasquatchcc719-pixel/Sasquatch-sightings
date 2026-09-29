@@ -31,7 +31,7 @@ interface CartItem {
   quantity: number
 }
 
-interface CustomerForm {
+export interface BookingCustomerPrefill {
   first_name: string
   last_name: string
   email: string
@@ -55,13 +55,21 @@ export interface NfcBookingWidgetProps {
   appearance?: 'forest'
   couponCode: string
   cardId: string | null
-  onTrackClick: (buttonType: string) => void
+  onTrackClick?: (buttonType: string) => void
   /** Where this booking came from, for stats — e.g. a partner location name.
    *  Falls back to the NFC card id, then a generic label. */
   leadSourceDetail?: string
   /** Partner location id — stamps partner_id on the booking for per-vendor
    *  attribution. */
   partnerId?: string
+  /** Prefill a returning customer's details without making them retype them. */
+  initialCustomer?: Partial<BookingCustomerPrefill>
+  /** Used by Tomorrow Fill links to open directly on the offered day. */
+  preferredDate?: string
+  /** Server-validated campaign token. Required for protected campaign offers. */
+  campaignToken?: string
+  /** Override the attribution key for non-NFC booking entry points. */
+  leadSourceKey?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -730,6 +738,10 @@ export function NfcBookingWidget({
   cardId,
   onTrackClick,
   leadSourceDetail,
+  initialCustomer,
+  preferredDate,
+  campaignToken,
+  leadSourceKey,
 }: NfcBookingWidgetProps) {
   const [step, setStep] = useState(1)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -756,22 +768,22 @@ export function NfcBookingWidget({
   const [rugUpsellQuantity, setRugUpsellQuantity] = useState(1)
 
   // Schedule
-  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedDate, setSelectedDate] = useState(preferredDate || '')
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
 
   // Customer info
-  const [form, setForm] = useState<CustomerForm>({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    street_1: '',
-    city: '',
-    state: 'CO',
-    zip_code: '',
-    notes: '',
+  const [form, setForm] = useState<BookingCustomerPrefill>({
+    first_name: initialCustomer?.first_name || '',
+    last_name: initialCustomer?.last_name || '',
+    email: initialCustomer?.email || '',
+    phone: initialCustomer?.phone || '',
+    street_1: initialCustomer?.street_1 || '',
+    city: initialCustomer?.city || '',
+    state: initialCustomer?.state || 'CO',
+    zip_code: initialCustomer?.zip_code || '',
+    notes: initialCustomer?.notes || '',
   })
 
   // Submit
@@ -864,9 +876,9 @@ export function NfcBookingWidget({
     })
   }
 
-  function setField<K extends keyof CustomerForm>(
+  function setField<K extends keyof BookingCustomerPrefill>(
     key: K,
-    value: CustomerForm[K],
+    value: BookingCustomerPrefill[K],
   ) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -947,6 +959,7 @@ export function NfcBookingWidget({
     const u = new URL('/api/public/promo-preview', window.location.origin)
     u.searchParams.set('code', couponCode.trim().toUpperCase())
     u.searchParams.set('subtotal', String(subtotal))
+    if (campaignToken) u.searchParams.set('tomorrow_fill_token', campaignToken)
     void fetch(u.toString(), { signal: ac.signal })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
@@ -965,7 +978,7 @@ export function NfcBookingWidget({
         }
       })
     return () => ac.abort()
-  }, [step, couponCode, subtotal])
+  }, [step, couponCode, subtotal, campaignToken])
 
   function validateStep3(): string {
     if (!form.first_name.trim() || !form.last_name.trim())
@@ -1019,7 +1032,7 @@ export function NfcBookingWidget({
       appointment: {
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
-        lead_source_key: 'nfc_partner',
+        lead_source_key: leadSourceKey || 'nfc_partner',
         lead_source_detail: leadSourceDetail || cardId || 'NFC card',
         partner_id: partnerId || undefined,
       },
@@ -1033,6 +1046,7 @@ export function NfcBookingWidget({
             }
           : undefined,
       promo_code: couponCode || undefined,
+      tomorrow_fill_token: campaignToken || undefined,
     }
 
     try {
@@ -1049,7 +1063,7 @@ export function NfcBookingWidget({
       } else {
         setResult(data)
         setStep(5)
-        onTrackClick('booking_widget_submit')
+        onTrackClick?.('booking_widget_submit')
       }
     } catch {
       setSubmitError('Network error. Please call (719) 249-8791.')

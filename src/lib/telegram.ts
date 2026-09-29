@@ -12,6 +12,17 @@ interface TelegramMessage {
   disable_web_page_preview?: boolean
 }
 
+export type TelegramInlineButton = {
+  text: string
+  callback_data?: string
+  url?: string
+}
+
+type TelegramSendResult = {
+  message_id: number
+  chat: { id: number }
+}
+
 /**
  * Send a notification to Charles's Telegram
  */
@@ -69,6 +80,98 @@ export async function sendTelegramNotification(
     console.error('Failed to send Telegram notification:', error)
     return false
   }
+}
+
+/**
+ * Send an owner action card and return its Telegram identity so the approval
+ * can be audited and its keyboard removed after one decision.
+ */
+export async function sendTelegramActionMessage(
+  message: string,
+  buttons: TelegramInlineButton[][],
+): Promise<{ chatId: number; messageId: number } | null> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn('Telegram credentials not configured, skipping action card')
+    return null
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          disable_web_page_preview: true,
+          reply_markup: { inline_keyboard: buttons },
+        }),
+      },
+    )
+    const payload = (await response.json()) as {
+      ok: boolean
+      result?: TelegramSendResult
+      description?: string
+    }
+    if (!response.ok || !payload.ok || !payload.result) {
+      console.error(
+        'Telegram action-card error:',
+        payload.description || response.statusText,
+      )
+      return null
+    }
+    return {
+      chatId: payload.result.chat.id,
+      messageId: payload.result.message_id,
+    }
+  } catch (error) {
+    console.error('Failed to send Telegram action card:', error)
+    return null
+  }
+}
+
+export async function answerTelegramCallback(
+  callbackQueryId: string,
+  text: string,
+  showAlert = false,
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return
+  await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text.slice(0, 200),
+        show_alert: showAlert,
+      }),
+    },
+  ).catch((error) => {
+    console.error('Failed to answer Telegram callback:', error)
+  })
+}
+
+export async function clearTelegramActionButtons(params: {
+  chatId: number
+  messageId: number
+}): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return
+  await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: params.chatId,
+        message_id: params.messageId,
+        reply_markup: { inline_keyboard: [] },
+      }),
+    },
+  ).catch((error) => {
+    console.error('Failed to clear Telegram action buttons:', error)
+  })
 }
 
 /**

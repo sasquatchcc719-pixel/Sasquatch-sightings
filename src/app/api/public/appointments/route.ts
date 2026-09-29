@@ -36,6 +36,12 @@ import {
 import { createCustomerPhotoUploadToken } from '@/lib/ops/customer-photo-upload-token'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
+import {
+  finalizeTomorrowFillBooking,
+  releaseTomorrowFillOffer,
+  reserveTomorrowFillOffer,
+  validateTomorrowFillPromoToken,
+} from '@/lib/ops/tomorrow-fill'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -82,6 +88,8 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
+  let tomorrowFillReservation: { recipient_id: string } | null = null
+  let tomorrowFillAppointmentCreated = false
   try {
     // Validate booking secret
     const secret = request.headers.get('x-booking-secret')
@@ -254,9 +262,27 @@ export async function POST(request: NextRequest) {
 
     // --- Validate & apply promo code ---
     let discountAmount = 0
-    const promoCode = body.promo_code
+    let promoCode = body.promo_code
       ? String(body.promo_code).toUpperCase().trim()
       : null
+    const tomorrowFillToken = String(body.tomorrow_fill_token || '').trim()
+    const tomorrowFillOffer = tomorrowFillToken
+      ? await validateTomorrowFillPromoToken(tomorrowFillToken)
+      : null
+
+    if (tomorrowFillToken && !tomorrowFillOffer) {
+      return NextResponse.json(
+        { error: 'This private offer is no longer available.' },
+        { status: 409, headers: CORS },
+      )
+    }
+    if (tomorrowFillOffer) promoCode = tomorrowFillOffer.offerCode
+    if (promoCode === 'TF35' && !tomorrowFillOffer) {
+      return NextResponse.json(
+        { error: 'A valid private offer link is required for TF35.' },
+        { status: 409, headers: CORS },
+      )
+    }
     let promoCodeId: string | null = null
     let appliedPromoCode: string | null = null
 
@@ -422,6 +448,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (
+      tomorrowFillOffer &&
+      subtotal < Number(tomorrowFillOffer.minimumSubtotal)
+    ) {
+      return NextResponse.json(
+        {
+          error: `This offer applies to cleanings of $${tomorrowFillOffer.minimumSubtotal} or more.`,
+        },
+        { status: 400, headers: CORS },
+      )
+    }
+
     // --- Calculate end time based on dollar amount ---
     // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
     const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
@@ -485,6 +523,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (tomorrowFillOffer) {
+      tomorrowFillReservation = await reserveTomorrowFillOffer({
+        token: tomorrowFillToken,
+        phone,
+      })
+      if (!tomorrowFillReservation) {
+        return NextResponse.json(
+          { error: 'This limited offer was just claimed by another customer.' },
+          { status: 409, headers: CORS },
+        )
+      }
+    }
+
     const assignedStaffUserId = staffResult?.staffUserId ?? null
     let technicianSchedule = 'Unassigned'
     if (assignedStaffUserId) {
@@ -520,18 +571,23 @@ export async function POST(request: NextRequest) {
         status: appointmentStatus,
         payment_status: 'unpaid',
         quoted_total: total,
-        booking_channel: 'website',
+        booking_channel: tomorrowFillReservation
+          ? 'tomorrow_fill_sms'
+          : 'website',
         source: 'website',
         ...leadSourceUpdatePayload(normalizedLeadSource.source),
         kind: 'service',
         assigned_staff_user_id: assignedStaffUserId,
         partner_id: partnerId,
+        tomorrow_fill_recipient_id:
+          tomorrowFillReservation?.recipient_id || null,
       })
       // reactivation_click_id is filled by a DB trigger on insert.
       .select('id, reactivation_click_id')
       .single()
 
     if (appointmentError) throw appointmentError
+    tomorrowFillAppointmentCreated = true
     await cancelReactivationForCustomer(customerId, 'booked_job')
 
     // --- Create invoice ---
@@ -607,6 +663,16 @@ export async function POST(request: NextRequest) {
 
     await supabase.from('ops_appointment_line_items').insert(appointmentLines)
 
+    if (tomorrowFillReservation) {
+      await finalizeTomorrowFillBooking({
+        recipientId: tomorrowFillReservation.recipient_id,
+        appointmentId: appointment.id,
+        bookingTotal: total,
+        appointmentMinutes: appointmentDuration,
+        appointmentDate,
+      })
+    }
+
     // --- Status events ---
     const statusNotes = serviceAreaCheck.requiresApproval
       ? 'Appointment created via sasquatch.com booking widget (pending approval for extended service area)'
@@ -670,7 +736,7 @@ export async function POST(request: NextRequest) {
     })
     const notificationBookingMethod = formatBookingMethodForNotification({
       source: 'website',
-      bookingChannel: 'website',
+      bookingChannel: tomorrowFillReservation ? 'tomorrow_fill_sms' : 'website',
     })
     const reactivationTouch = await describeReactivationTouch({
       supabase,
@@ -771,6 +837,16 @@ export async function POST(request: NextRequest) {
       { headers: CORS },
     )
   } catch (error) {
+    if (tomorrowFillReservation && !tomorrowFillAppointmentCreated) {
+      await releaseTomorrowFillOffer(
+        tomorrowFillReservation.recipient_id,
+      ).catch((releaseError) =>
+        console.error(
+          '[public/appointments] Failed to release Tomorrow Fill claim:',
+          releaseError,
+        ),
+      )
+    }
     console.error('[public/appointments] Error:', error)
     return NextResponse.json(
       { error: 'Failed to create appointment. Please call (719) 249-8791.' },

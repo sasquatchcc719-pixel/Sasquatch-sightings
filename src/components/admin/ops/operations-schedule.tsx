@@ -77,6 +77,23 @@ type Appointment = {
   booking_channel: string | null
   source: string | null
   is_repeat_customer?: boolean
+  tomorrow_fill_recipient_id?: string | null
+  tomorrow_fill_recipients?:
+    | {
+        id: string
+        tomorrow_fill_campaigns:
+          | { target_date: string; offer_code: string }
+          | Array<{ target_date: string; offer_code: string }>
+          | null
+      }
+    | Array<{
+        id: string
+        tomorrow_fill_campaigns:
+          | { target_date: string; offer_code: string }
+          | Array<{ target_date: string; offer_code: string }>
+          | null
+      }>
+    | null
   assigned_staff_user_id?: string | null
   ops_customers:
     | {
@@ -638,6 +655,23 @@ function customerNameOf(appointment: Appointment): string {
     ? appointment.ops_customers[0]
     : appointment.ops_customers
   return customer?.business_name || customer?.full_name || 'Visit'
+}
+
+function tomorrowFillBadge(appointment: Appointment, compact = false) {
+  if (!appointment.tomorrow_fill_recipient_id) return null
+  const recipient = unwrapRelation(appointment.tomorrow_fill_recipients)
+  const campaign = unwrapRelation(recipient?.tomorrow_fill_campaigns)
+  const rescheduled =
+    Boolean(campaign?.target_date) &&
+    campaign?.target_date !== appointment.appointment_date
+  const label = `FILL-IN · ${campaign?.offer_code || 'TF35'}${rescheduled ? ' · RESCHEDULED' : ''}`
+  return (
+    <span
+      className={`inline-flex w-fit items-center rounded-full border border-amber-400/70 bg-amber-100 font-black tracking-wide text-amber-900 ${compact ? 'px-1.5 py-0.5 text-[8px]' : 'px-2 py-0.5 text-[9px]'}`}
+    >
+      {label}
+    </span>
+  )
 }
 
 function WeekendSliver({
@@ -2756,6 +2790,7 @@ export function OperationsSchedule() {
                     ${calendarDisplayAmount(appointment)}
                   </span>
                 </div>
+                {tomorrowFillBadge(appointment)}
                 <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="truncate text-[10px] font-medium text-slate-600">
                     {serviceAddress
@@ -4084,6 +4119,7 @@ export function OperationsSchedule() {
                               : appointment.ops_appointment_line_items[0]
                                   ?.name_snapshot || 'Service'}
                           </div>
+                          {tomorrowFillBadge(appointment, true)}
                           {recurringLineItemDescriptionBoxes(appointment, true)}
                           {(() => {
                             const address = unwrapRelation(

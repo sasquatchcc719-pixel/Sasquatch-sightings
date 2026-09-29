@@ -63,6 +63,12 @@ const navSections: NavSection[] = [
     icon: Truck,
     items: [
       {
+        name: 'Tomorrow Fill',
+        href: '/admin/operations/tomorrow-fill',
+        icon: Send,
+        description: 'Fill tomorrow’s route gaps',
+      },
+      {
         name: 'Commercial Accounts',
         href: '/admin/operations/commercial',
         icon: Briefcase,

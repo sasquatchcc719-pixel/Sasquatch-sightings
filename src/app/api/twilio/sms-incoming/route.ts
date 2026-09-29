@@ -27,6 +27,7 @@ import {
   buildApplicantReplyTelegramMessage,
   sendRangerTelegramMessage,
 } from '@/lib/ranger/telegram'
+import { recordTomorrowFillReply } from '@/lib/ops/tomorrow-fill'
 
 export const maxDuration = 60
 
@@ -679,6 +680,16 @@ export async function POST(request: NextRequest) {
       )
       return emptyTwiml
     }
+
+    // Attribute interest and persist marketing opt-outs before the message is
+    // forwarded. Telegram remains the human reply surface; this only updates
+    // the deterministic Tomorrow Fill ledger.
+    await recordTomorrowFillReply({
+      customerId: linkedCustomerId,
+      phone: normalizedPhone,
+      message: rawMessageBody,
+      twilioSid,
+    })
 
     // ── Telegram relay ───────────────────────────────────────────────────────
     // Forward every inbound message into the customer's Telegram topic. Stored

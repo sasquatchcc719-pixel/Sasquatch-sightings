@@ -4,6 +4,7 @@ import {
   computePromoDiscountAmount,
   computeTieredDiscountAmount,
 } from '@/lib/promo-discount'
+import { validateTomorrowFillPromoToken } from '@/lib/ops/tomorrow-fill'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,12 +28,25 @@ export async function GET(request: NextRequest) {
       .toUpperCase()
       .trim()
     const subtotal = Number(searchParams.get('subtotal') || 0)
+    const tomorrowFillToken = String(
+      searchParams.get('tomorrow_fill_token') || '',
+    ).trim()
 
     if (!code || !Number.isFinite(subtotal) || subtotal < 0) {
       return NextResponse.json(
         { error: 'code and a valid subtotal are required' },
         { status: 400, headers: CORS },
       )
+    }
+
+    if (code === 'TF35') {
+      const offer = await validateTomorrowFillPromoToken(tomorrowFillToken)
+      if (!offer || offer.offerCode !== code) {
+        return NextResponse.json(
+          { error: 'This private offer is no longer available.' },
+          { status: 409, headers: CORS },
+        )
+      }
     }
 
     const { data: promo, error } = await supabase

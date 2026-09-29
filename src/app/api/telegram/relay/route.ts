@@ -7,6 +7,7 @@ import {
   rememberRelayGroup,
   relayTopicReplyToSms,
 } from '@/lib/telegram/relay'
+import { handleTomorrowFillTelegramCallback } from '@/lib/ops/tomorrow-fill'
 
 export const maxDuration = 30
 
@@ -90,6 +91,20 @@ export async function POST(request: NextRequest) {
 
     const callback = update.callback_query
     const callbackMessage = callback?.message
+    if (
+      callback?.data &&
+      callbackMessage &&
+      typeof callbackMessage.message_id === 'number'
+    ) {
+      const handled = await handleTomorrowFillTelegramCallback({
+        callbackQueryId: callback.id,
+        callbackData: callback.data,
+        userId: callback.from.id,
+        chatId: callbackMessage.chat.id,
+        messageId: callbackMessage.message_id,
+      })
+      if (handled) return ok
+    }
     if (
       callback?.data &&
       callbackMessage?.chat.type === 'supergroup' &&

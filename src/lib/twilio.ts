@@ -35,6 +35,8 @@ export function normalizeSmsBody(message: string): string {
 export type CustomerSmsMeta = {
   invoiceId?: string
   sentBy?: string
+  customerId?: string
+  tomorrowFillRecipientId?: string
 }
 
 /**
@@ -47,6 +49,8 @@ async function logSMS(params: {
   partnerId?: string
   invoiceId?: string
   sentBy?: string
+  customerId?: string
+  tomorrowFillRecipientId?: string
   recipientPhone: string
   messageType: string
   messageContent: string
@@ -60,6 +64,8 @@ async function logSMS(params: {
       partner_id: params.partnerId || null,
       invoice_id: params.invoiceId || null,
       sent_by: params.sentBy?.trim() || null,
+      customer_id: params.customerId || null,
+      tomorrow_fill_recipient_id: params.tomorrowFillRecipientId || null,
       recipient_phone: params.recipientPhone,
       message_type: params.messageType,
       message_content: params.messageContent,
@@ -212,6 +218,8 @@ export async function sendCustomerSMS(
       leadId: meta?.invoiceId ? undefined : leadId,
       invoiceId: meta?.invoiceId,
       sentBy: meta?.sentBy,
+      customerId: meta?.customerId,
+      tomorrowFillRecipientId: meta?.tomorrowFillRecipientId,
       recipientPhone: toE164(customerPhone),
       messageType,
       messageContent: normalizedMessage,
@@ -281,6 +289,8 @@ export async function sendCustomerSMSWithResult(
     leadId: meta?.invoiceId ? undefined : leadId,
     invoiceId: meta?.invoiceId,
     sentBy: meta?.sentBy,
+    customerId: meta?.customerId,
+    tomorrowFillRecipientId: meta?.tomorrowFillRecipientId,
     recipientPhone: toPhone,
     messageType,
     messageContent: normalizedMessage,

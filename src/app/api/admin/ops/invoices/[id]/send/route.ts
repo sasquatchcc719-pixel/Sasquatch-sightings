@@ -48,6 +48,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Failed to send invoice'
 }
 
+function invoiceDiscountLabel(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return 'Discount'
+  }
+  const promo = (metadata as Record<string, unknown>).promo
+  if (!promo || typeof promo !== 'object' || Array.isArray(promo)) {
+    return 'Discount'
+  }
+  const code = String((promo as Record<string, unknown>).code || '').trim()
+  if (!code) return 'Discount'
+  return code === 'TF35' ? 'TF35 · Tomorrow Fill offer' : `Promo · ${code}`
+}
+
 function buildSmsBody(
   customerName: string,
   address: string,
@@ -92,6 +105,9 @@ function buildEmailHtml(
     unit_price: number
     line_total: number
   }>,
+  subtotal: number,
+  discountAmount: number,
+  discountLabel: string,
   total: number,
   venmoUrl: string,
   photoUrls: string[] = [],
@@ -151,6 +167,7 @@ function buildEmailHtml(
           ${itemRows}
         </tbody>
         <tfoot>
+          ${discountAmount > 0 ? `<tr><td colspan="3" style="padding:12px 12px 0;text-align:right;color:#6b7280;">Subtotal</td><td style="padding:12px 12px 0;text-align:right;color:#374151;">$${subtotal.toFixed(2)}</td></tr><tr><td colspan="3" style="padding:6px 12px 0;text-align:right;font-weight:600;color:#166534;">${discountLabel}</td><td style="padding:6px 12px 0;text-align:right;font-weight:600;color:#16a34a;">−$${discountAmount.toFixed(2)}</td></tr>` : ''}
           <tr>
             <td colspan="3" style="padding:12px 12px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">${totalLabel}</td>
             <td style="padding:12px 12px 0;text-align:right;font-weight:700;color:#16a34a;font-size:15px;">$${total.toFixed(2)}</td>
@@ -229,6 +246,7 @@ export async function POST(
         total,
         subtotal,
         discount_amount,
+        discount_metadata,
         percentage_discount_amount,
         quickbooks_invoice_id,
         ops_appointments (
@@ -588,6 +606,9 @@ export async function POST(
           const subtotal = Number(
             (invoice as { subtotal?: number }).subtotal || total,
           )
+          const discountLabel = invoiceDiscountLabel(
+            (invoice as { discount_metadata?: unknown }).discount_metadata,
+          )
 
           const isReceipt = type === 'receipt'
           const pdfBuffer = await generateInvoicePDF({
@@ -598,6 +619,7 @@ export async function POST(
             serviceDate,
             lineItems,
             discountAmount,
+            discountLabel,
             subtotal,
             total,
             venmoUrl,
@@ -617,6 +639,9 @@ export async function POST(
                 addressText,
                 serviceDate,
                 lineItems,
+                subtotal,
+                discountAmount,
+                discountLabel,
                 total,
                 venmoUrl,
                 photoUrls,

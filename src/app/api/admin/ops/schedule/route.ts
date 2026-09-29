@@ -46,6 +46,13 @@ const APPOINTMENT_SELECT = `
     subtotal,
     total,
     quickbooks_invoice_id
+  ),
+  tomorrow_fill_recipients!ops_appointments_tomorrow_fill_recipient_id_fkey (
+    id,
+    tomorrow_fill_campaigns (
+      target_date,
+      offer_code
+    )
   )
 `
 

@@ -49,6 +49,10 @@
       "schedule": "30 15 * * *"
     },
     {
+      "path": "/api/cron/tomorrow-fill",
+      "schedule": "0 15,16 * * *"
+    },
+    {
       "path": "/api/cron/gps-cleanup",
       "schedule": "0 3 * * *"
     },

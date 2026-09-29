@@ -872,6 +872,12 @@ export async function PATCH(
             serviceDate: apptRow?.appointment_date ?? '',
             lineItems,
             discountAmount: discountAmount + percentageDiscountAmount,
+            discountLabel:
+              currentPromoCode === 'TF35'
+                ? 'TF35 · Tomorrow Fill offer'
+                : currentPromoCode
+                  ? `Promo · ${currentPromoCode}`
+                  : null,
             subtotal: Number(subtotal.toFixed(2)),
             total,
           })

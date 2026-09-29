@@ -22,6 +22,7 @@ import {
   Fuel,
   ShieldCheck,
   Ruler,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -41,6 +42,12 @@ type NavItem = {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  {
+    href: '/admin/operations/tomorrow-fill',
+    label: 'Tomorrow Fill',
+    description: 'Fill route openings with controlled customer text waves',
+    icon: Sparkles,
+  },
   {
     href: '/admin/operations/commercial',
     label: 'Commercial Accounts',

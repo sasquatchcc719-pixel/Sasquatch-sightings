@@ -17,6 +17,7 @@ export type InvoicePDFData = {
   serviceDate: string
   lineItems: InvoiceLineItem[]
   discountAmount: number
+  discountLabel?: string | null
   subtotal: number
   total: number
   venmoUrl?: string | null
@@ -368,7 +369,9 @@ export function InvoicePDF({ data }: { data: InvoicePDFData }) {
                   <Text style={styles.totalValue}>{fmt(data.subtotal)}</Text>
                 </View>
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Discount</Text>
+                  <Text style={styles.totalLabel}>
+                    {data.discountLabel || 'Discount'}
+                  </Text>
                   <Text style={[styles.totalValue, { color: GREEN }]}>
                     -{fmt(data.discountAmount)}
                   </Text>
