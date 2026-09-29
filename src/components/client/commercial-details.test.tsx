@@ -68,20 +68,32 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
-  it('reveals server-held ACH instructions only when the customer asks for them', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        instructions: {
-          beneficiaryName: 'Example Cleaning Company',
-          bankName: 'Example Bank',
-          routingNumber: '123456789',
-          accountNumber: '123456789012',
-          accountType: 'Checking',
-          remittanceEmail: 'billing@example.com',
-        },
-      }),
-    })
+  it('reveals server-held ACH instructions only after Telegram approval', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          request_id: '11111111-1111-4111-8111-111111111111',
+          status: 'pending',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'revealed',
+          instructions: {
+            beneficiaryName: 'Example Cleaning Company',
+            bankName: 'Example Bank',
+            routingNumber: '123456789',
+            accountNumber: '123456789012',
+            accountType: 'Checking',
+            remittanceEmail: 'billing@example.com',
+          },
+        }),
+      })
     vi.stubGlobal('fetch', fetchMock)
     render(<ClientCommercialDetails initialData={data} />)
 
@@ -90,14 +102,20 @@ describe('commercial customer experience', () => {
       screen.getByText(/ACH is preferred for commercial invoices/i),
     ).toBeInTheDocument()
     fireEvent.click(
-      screen.getByRole('button', { name: 'View ACH payment details' }),
+      screen.getByRole('button', { name: 'Request ACH payment details' }),
     )
 
     expect(await screen.findByText('123456789012')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls[0][0]).toBe(
       '/api/client/commercial/payment-instructions',
-      expect.objectContaining({ method: 'GET' }),
     )
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock.mock.calls[1][0]).toContain(
+      '/api/client/commercial/payment-instructions?request_id=',
+    )
+    expect(fetchMock.mock.calls[1][1]).toEqual({ cache: 'no-store' })
     expect(screen.getByText(/verify them with Sasquatch/i)).toBeInTheDocument()
   })
 

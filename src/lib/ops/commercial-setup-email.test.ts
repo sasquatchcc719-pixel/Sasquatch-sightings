@@ -31,6 +31,7 @@ describe('buildCommercialSetupEmailDraft', () => {
     expect(draft.body).toContain('ACH is our preferred payment method')
     expect(draft.body).toContain('must pay by check or another method')
     expect(draft.body).toContain('Open Payment options')
+    expect(draft.body).toContain('approves each request in Telegram')
     expect(draft.body).not.toContain('Routing number')
     expect(draft.body).not.toContain('Account number')
     expect(draft.body).toContain('Where invoices should be submitted')

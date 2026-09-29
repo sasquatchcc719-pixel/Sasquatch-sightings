@@ -8,6 +8,7 @@ import {
   relayTopicReplyToSms,
 } from '@/lib/telegram/relay'
 import { handleTomorrowFillTelegramCallback } from '@/lib/ops/tomorrow-fill'
+import { handleCommercialAchTelegramCallback } from '@/lib/ops/commercial-ach-approval'
 
 export const maxDuration = 30
 
@@ -96,6 +97,15 @@ export async function POST(request: NextRequest) {
       callbackMessage &&
       typeof callbackMessage.message_id === 'number'
     ) {
+      const achHandled = await handleCommercialAchTelegramCallback({
+        callbackQueryId: callback.id,
+        callbackData: callback.data,
+        userId: callback.from.id,
+        chatId: callbackMessage.chat.id,
+        messageId: callbackMessage.message_id,
+      })
+      if (achHandled) return ok
+
       const handled = await handleTomorrowFillTelegramCallback({
         callbackQueryId: callback.id,
         callbackData: callback.data,

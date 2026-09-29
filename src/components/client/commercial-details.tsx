@@ -170,8 +170,50 @@ export function ProfileForm({
 export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
   const [instructions, setInstructions] =
     useState<CommercialAchInstructions | null>(null)
+  const [requestId, setRequestId] = useState<string | null>(null)
+  const [requestStatus, setRequestStatus] = useState<
+    'idle' | 'pending' | 'denied' | 'expired' | 'failed'
+  >('idle')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!requestId || requestStatus !== 'pending' || instructions) return
+    let active = true
+    const checkApproval = async () => {
+      try {
+        const response = await fetch(
+          `/api/client/commercial/payment-instructions?request_id=${encodeURIComponent(requestId)}`,
+          { cache: 'no-store' },
+        )
+        const result = await response.json()
+        if (!active) return
+        if (response.ok && result.instructions) {
+          setInstructions(result.instructions)
+          setRequestStatus('idle')
+          setError('')
+          return
+        }
+        if (response.status === 202) return
+        if (result.status === 'denied') setRequestStatus('denied')
+        else if (result.status === 'expired' || result.status === 'revealed')
+          setRequestStatus('expired')
+        else setRequestStatus('failed')
+        setError(result.error || 'Unable to check ACH approval.')
+      } catch {
+        if (active) {
+          setRequestStatus('failed')
+          setError('Unable to check ACH approval. Please try again.')
+        }
+      }
+    }
+    void checkApproval()
+    const timer = window.setInterval(checkApproval, 3000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [instructions, requestId, requestStatus])
 
   const fields: { label: string; value: string }[] = instructions
     ? [
@@ -195,13 +237,15 @@ export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
       </h2>
       <p className="mt-2 text-sm text-slate-300">
         ACH is preferred for commercial invoices. Your accounts-payable team can
-        reveal the secure banking details here whenever needed. If your company
-        must pay by check or another method, specify it in Payment method and
-        terms above.
+        request the secure banking details here whenever needed. Charles reviews
+        each request in Telegram before the details can be revealed. If your
+        company must pay by check or another method, specify it in Payment
+        method and terms above.
       </p>
       {readOnly ? (
         <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-400">
-          ACH banking details are available only after the customer signs in.
+          ACH banking details are available only after the customer signs in and
+          Charles approves that user’s request in Telegram.
         </p>
       ) : instructions ? (
         <>
@@ -223,32 +267,50 @@ export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
             249-8791.
           </p>
         </>
-      ) : (
-        <Button
-          type="button"
-          className="mt-4"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true)
-            setError('')
-            try {
-              const result = await commercialFetch(
-                '/api/client/commercial/payment-instructions',
-              )
-              setInstructions(result.instructions)
-            } catch (caught) {
-              setError(
-                caught instanceof Error
-                  ? caught.message
-                  : 'Unable to load ACH details.',
-              )
-            } finally {
-              setBusy(false)
-            }
-          }}
+      ) : requestStatus === 'pending' ? (
+        <div
+          role="status"
+          className="mt-4 rounded-xl border border-cyan-400/25 bg-cyan-400/10 p-4 text-sm text-cyan-100"
         >
-          {busy ? 'Loading…' : 'View ACH payment details'}
-        </Button>
+          Request sent to Charles in Telegram. Keep this page open—your approved
+          one-time access will appear here automatically and will be valid for
+          15 minutes.
+        </div>
+      ) : (
+        <div>
+          <Button
+            type="button"
+            className="mt-4"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                const result = await commercialFetch(
+                  '/api/client/commercial/payment-instructions',
+                  'POST',
+                )
+                setRequestId(result.request_id)
+                setRequestStatus('pending')
+              } catch (caught) {
+                setRequestStatus('failed')
+                setError(
+                  caught instanceof Error
+                    ? caught.message
+                    : 'Unable to request ACH access.',
+                )
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {busy
+              ? 'Sending request…'
+              : requestStatus === 'idle'
+                ? 'Request ACH payment details'
+                : 'Request ACH access again'}
+          </Button>
+        </div>
       )}
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-300">
