@@ -12,7 +12,7 @@ vi.mock('@/supabase/server', () => ({
   createAdminClient: vi.fn(),
 }))
 
-import { createQBInvoice } from './quickbooks-api'
+import { createQBInvoice, quickBooksInvoiceDocNumber } from './quickbooks-api'
 
 const params = {
   qbCustomerId: '724',
@@ -43,10 +43,19 @@ describe('createQBInvoice', () => {
     vi.restoreAllMocks()
   })
 
+  it('uses a dedicated QuickBooks document-number namespace', () => {
+    expect(quickBooksInvoiceDocNumber(18311)).toBe('SASQ-18311')
+    expect(quickBooksInvoiceDocNumber('SASQ-18311')).toBe('SASQ-18311')
+    expect(quickBooksInvoiceDocNumber(null)).toBe('')
+    expect(() => quickBooksInvoiceDocNumber('1'.repeat(17))).toThrow(
+      'exceeds 21 characters',
+    )
+  })
+
   it('recovers when another worker creates the same invoice during the request', async () => {
     let queryCount = 0
     const fetchMock = vi.fn(
-      async (input: string | URL | Request, _init?: RequestInit) => {
+      async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input)
         if (url.includes('/query?')) {
           queryCount++
@@ -58,7 +67,7 @@ describe('createQBInvoice', () => {
               Invoice: [
                 {
                   Id: '6254',
-                  DocNumber: '18311',
+                  DocNumber: 'SASQ-18311',
                   CustomerRef: { value: '724', name: 'Charlie Hayes' },
                   TxnDate: '2026-07-28',
                   TotalAmt: 298,
@@ -68,6 +77,10 @@ describe('createQBInvoice', () => {
           })
         }
 
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          DocNumber: 'SASQ-18311',
+        })
+
         return jsonResponse(
           {
             Fault: {
@@ -75,7 +88,7 @@ describe('createQBInvoice', () => {
                 {
                   Message: 'Duplicate Document Number Error',
                   Detail:
-                    'DocNumber=18311 is assigned to TxnType=Invoice with TxnId=6254',
+                    'DocNumber=SASQ-18311 is assigned to TxnType=Invoice with TxnId=6254',
                   code: '6140',
                 },
               ],
@@ -101,7 +114,7 @@ describe('createQBInvoice', () => {
           Invoice: [
             {
               Id: '6000',
-              DocNumber: '18311',
+              DocNumber: 'SASQ-18311',
               CustomerRef: { value: '999', name: 'Another Customer' },
               TxnDate: '2026-07-27',
               TotalAmt: 125,
@@ -113,7 +126,7 @@ describe('createQBInvoice', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(createQBInvoice(params)).rejects.toThrow(
-      '18311 already belongs to Another Customer',
+      'SASQ-18311 already belongs to Another Customer',
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

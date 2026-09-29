@@ -187,6 +187,29 @@ type QBInvoiceMatch = {
   total: number | null
 }
 
+export const QUICKBOOKS_INVOICE_PREFIX = 'SASQ-'
+
+/**
+ * Keep Sightings-created invoices in a dedicated QuickBooks DocNumber
+ * namespace. QuickBooks and Sightings each maintain their own sequence, so a
+ * plain numeric DocNumber can be independently claimed by both systems. The
+ * customer-facing invoice number remains unchanged; only QuickBooks receives
+ * the namespaced reference.
+ */
+export function quickBooksInvoiceDocNumber(
+  invoiceNumber: string | number | null | undefined,
+): string {
+  if (invoiceNumber === null || invoiceNumber === undefined) return ''
+  const value = String(invoiceNumber).trim()
+  if (!value) return ''
+  const docNumber = value.startsWith(QUICKBOOKS_INVOICE_PREFIX)
+    ? value
+    : `${QUICKBOOKS_INVOICE_PREFIX}${value}`
+  if (docNumber.length > 21)
+    throw new Error('QuickBooks invoice DocNumber exceeds 21 characters')
+  return docNumber
+}
+
 function qbEscape(value: string): string {
   return value.replace(/'/g, "\\'")
 }
@@ -379,10 +402,7 @@ export async function createQBInvoice(params: {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
 
-  const docNumber =
-    params.docNumber !== undefined && params.docNumber !== null
-      ? String(params.docNumber).trim()
-      : ''
+  const docNumber = quickBooksInvoiceDocNumber(params.docNumber)
   const expectedTotal = sumInvoiceTotal(params.lineItems, params.discountAmount)
 
   if (docNumber) {
