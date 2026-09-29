@@ -393,6 +393,7 @@ export async function POST(request: NextRequest) {
     const fromPhone = String(formData.get('From') || '').trim()
     const toNumber = String(formData.get('To') || '').trim() // number they texted (866 vs 719) – reply from this so thread stays correct
     const rawMessageBody = String(formData.get('Body') || '').trim()
+    const optOutType = String(formData.get('OptOutType') || '').trim()
     const inboundMedia = parseTwilioInboundMedia(formData)
     const messageBody = inboundMessageContent(rawMessageBody, inboundMedia)
     const twilioSid = String(formData.get('MessageSid') || '').trim()
@@ -689,6 +690,7 @@ export async function POST(request: NextRequest) {
       phone: normalizedPhone,
       message: rawMessageBody,
       twilioSid,
+      optOutType,
     })
 
     // ── Telegram relay ───────────────────────────────────────────────────────
