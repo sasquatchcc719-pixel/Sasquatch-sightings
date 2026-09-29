@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appointmentArrivalNote,
   buildEmailHtml,
   dayBeforeTemplateKey,
   formatCustomerServiceSummary,
   getOpsTemplateKeysForEvent,
 } from '@/lib/ops/communications'
+
+describe('appointment arrival expectations', () => {
+  it('keeps morning arrival wording direct', () => {
+    expect(appointmentArrivalNote('09:00:00')).toBe(
+      "We'll let you know if anything changes.",
+    )
+  })
+
+  it('explains why an afternoon arrival can occasionally shift', () => {
+    expect(appointmentArrivalNote('13:00:00')).toBe(
+      "Earlier jobs can occasionally affect afternoon arrival times, but we'll let you know if anything changes.",
+    )
+  })
+})
 
 describe('buildEmailHtml actions', () => {
   it('renders both scheduling choices in an accepted-estimate owner email', () => {

@@ -68,6 +68,7 @@ type TemplateContext = {
   appointment_date: string
   start_time: string
   end_time: string
+  arrival_note: string
   service_summary: string
   address_line: string
   tech_name: string
@@ -235,6 +236,13 @@ function toLocalTimeString(timeValue: string): string {
   } catch {
     return timeValue.slice(0, 5)
   }
+}
+
+export function appointmentArrivalNote(timeValue: string): string {
+  const startHour = Number(timeValue.slice(0, 2))
+  return startHour >= 12
+    ? "Earlier jobs can occasionally affect afternoon arrival times, but we'll let you know if anything changes."
+    : "We'll let you know if anything changes."
 }
 
 function renderTemplate(
@@ -535,6 +543,7 @@ async function getAppointmentContext(
     appointment_date: toLocalDateString(appointment.appointment_date),
     start_time: toLocalTimeString(String(appointment.start_time)),
     end_time: toLocalTimeString(String(appointment.end_time)),
+    arrival_note: appointmentArrivalNote(String(appointment.start_time)),
     service_summary: formatCustomerServiceSummary(
       appointment.ops_appointment_line_items || [],
     ),
