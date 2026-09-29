@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildCommercialSetupEmailDraft } from './commercial-setup-email'
 
 describe('buildCommercialSetupEmailDraft', () => {
-  it('explains recurring approval, one-time service, and the customer steps', () => {
+  it('requests payment and scope details without implying future commitment', () => {
     const draft = buildCommercialSetupEmailDraft({
       businessName: 'Saltgrass Colorado Springs',
       contactName: 'Alex Manager',
@@ -14,15 +14,18 @@ describe('buildCommercialSetupEmailDraft', () => {
     expect(draft.subject).toContain('Saltgrass Colorado Springs')
     expect(draft.body).toContain('Hi Alex,')
     expect(draft.body).toContain('alex@example.com')
-    expect(draft.body).toContain(
-      'Before we set up recurring service, please review and electronically sign',
-    )
-    expect(draft.body).toContain('monthly invoicing')
-    expect(draft.body).toContain('only the approved one-time service')
-    expect(draft.body).toContain('save your business details')
-    expect(draft.body).toContain('not yet a recurring commitment')
+    expect(draft.subject).toContain('payment setup')
+    expect(draft.body).toContain('This is not a contract')
+    expect(draft.body).toContain('No signature is required')
+    expect(draft.body).toContain('How Sasquatch should receive payment')
+    expect(draft.body).toContain('Where invoices should be submitted')
+    expect(draft.body).toContain('exact areas and cleaning services')
+    expect(draft.body).toContain('Building access, service-window')
+    expect(draft.body).toContain('Download our completed W-9')
     expect(draft.body).toContain('Use the Appointments tab')
     expect(draft.body).toContain('does not schedule anything automatically')
+    expect(draft.body).toContain('commitment to future cleaning')
+    expect(draft.body).not.toContain('please review and electronically sign')
   })
   it.each(['New Estimate', 'Saltgrass Colorado Springs'])(
     'does not greet a placeholder name (%s)',

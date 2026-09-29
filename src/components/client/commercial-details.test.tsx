@@ -42,6 +42,7 @@ const data: CommercialData = {
   profile: { ...emptyProfile },
   addresses: [],
   agreements: [],
+  documents: [],
 }
 const schedule = { appointments: [], templates: [], requests: [] }
 const agreement = (status: CommercialAgreement['status']) =>
@@ -253,6 +254,36 @@ describe('commercial customer experience', () => {
       .closest('details')
     expect(profile).toHaveAttribute('open')
   })
+  it('keeps the W-9 available through customer-scoped view and download links', () => {
+    render(
+      <ClientCommercialDetails
+        initialData={{
+          ...data,
+          documents: [
+            {
+              id: 'document-a',
+              title: 'Sasquatch Carpet Cleaning W-9',
+              description: 'Completed and signed Form W-9.',
+              filename: 'Sasquatch-Carpet-Cleaning-W9-2026.pdf',
+              mime_type: 'application/pdf',
+              published_at: '2026-09-16T00:00:00Z',
+            },
+          ],
+        }}
+      />,
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Documents for your records.' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View' })).toHaveAttribute(
+      'href',
+      '/api/client/commercial/documents/document-a',
+    )
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      '/api/client/commercial/documents/document-a?download=1',
+    )
+  })
   it('prioritizes a published agreement and opens its terms without signing', () => {
     render(
       <ClientCommercialDetails
@@ -310,7 +341,7 @@ describe('commercial customer experience', () => {
         }}
       />,
     )
-    expect(screen.getByText('No agreement to sign yet.')).toBeInTheDocument()
+    expect(screen.getByText('No service summary yet.')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Add business details' }),
     ).not.toBeInTheDocument()

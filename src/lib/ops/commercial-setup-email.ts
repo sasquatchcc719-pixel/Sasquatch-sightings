@@ -18,17 +18,17 @@ export function buildCommercialSetupEmailDraft(params: {
   ).split(/\s+/)[0]
 
   return {
-    subject: `${params.businessName} service agreement and customer portal`,
+    subject: `${params.businessName} payment setup, service scope, and customer portal`,
     body: [
       firstName ? `Hi ${firstName},` : 'Hello,',
-      `Thank you for choosing Sasquatch Carpet Cleaning. We created a secure customer portal for ${params.businessName} so your service agreement and confirmed appointments stay together in one place.`,
+      `Thank you for choosing Sasquatch Carpet Cleaning. We created a secure customer portal for ${params.businessName} so your vendor information, current service scope, W-9, and confirmed appointments stay together in one place.`,
       `Your portal login email is ${params.contactEmail}. Use the secure button below, then select Continue to your account. On your first visit you will choose your own password. Use that email and password for future visits. If the one-time link has expired, use the password recovery option on that page or reply for a new link.`,
-      `Agreement ready for review: ${params.agreementTitle}, version ${params.agreementVersion}.`,
-      `A PDF copy of this exact published agreement is attached for your records. The secure portal is where you can send a note or sign it.`,
-      `Before we set up recurring service, please review and electronically sign the service agreement. This is similar to approving the estimate: it records the services and terms you approve, including pricing and monthly invoicing. Any optional maintenance or frequency marked “to be agreed” is not yet a recurring commitment. We will confirm those details with you and send updated terms for approval before scheduling that work.`,
-      `If you would rather move forward with only the approved one-time service, that is completely fine. You do not need to approve recurring work. Reply to this email or call or text us at (719) 249-8791 and we will schedule only that visit.`,
-      `How to complete your setup:\n- Open the secure customer portal using the button below.\n- Choose your own password.\n- Confirm and save your business details, billing contact, and access instructions in the Agreement tab. You can leave anything that does not apply blank.\n- Review the agreement and services listed. Send us a note if anything needs to change.\n- Sign with your full name, title, and password when everything is correct.\n- Use the Appointments tab to see confirmed service dates after we schedule them.`,
-      `Reviewing the agreement does not schedule anything automatically. We will confirm the actual service dates with you.`,
+      `Current service summary ready for review: ${params.agreementTitle}, version ${params.agreementVersion}. A PDF copy of that exact published summary is attached for your records.`,
+      `This is not a contract requiring ${params.businessName} to use us for future or recurring cleaning. It does not reserve future dates, and no future work will be performed unless your team separately approves the scope, price, and appointment.`,
+      `For vendor setup, we only need to confirm:\n- How Sasquatch should receive payment for work your team approves, including payment method and terms.\n- Where invoices should be submitted, plus any vendor-portal, purchase-order, or reference requirements.\n- The exact areas and cleaning services approved for the current work.\n- Building access, service-window, and on-site expectations.\n- Who we should contact if the scope or price needs approval.`,
+      `No signature is required to give us this setup information. If ${params.businessName} does not sign vendor setup forms, simply reply to this email or send a note in the portal with the requested details and any corrections.`,
+      `How to complete your setup:\n- Open the secure customer portal using the button below and choose your password.\n- Confirm and save the billing contact, payment process, invoice-submission instructions, purchase-order requirements, building access, and service expectations. Leave anything that does not apply blank.\n- Review the listed areas, services, pricing, and payment terms. Send us a note if anything needs to change.\n- Download our completed W-9 from Vendor paperwork whenever your accounts-payable team needs it.\n- Use the Appointments tab to see confirmed service dates after we schedule them.`,
+      `Reviewing the service summary does not schedule anything automatically or create a commitment to future cleaning. We will confirm every actual service date with you.`,
       `Thank you,\nCharles\nSasquatch Carpet Cleaning\n(719) 249-8791`,
     ].join('\n\n'),
   }

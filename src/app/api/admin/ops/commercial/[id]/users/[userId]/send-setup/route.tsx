@@ -195,7 +195,7 @@ export async function POST(request: NextRequest, { params }: Context) {
           subject: body.subject,
           html: buildEmailHtml(body.body, 'commercial_portal_setup', {
             cta: {
-              label: 'Open portal and review agreement',
+              label: 'Open secure customer portal',
               url: setupUrl.toString(),
             },
           }),

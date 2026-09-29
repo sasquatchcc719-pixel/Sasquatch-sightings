@@ -53,12 +53,17 @@ export async function loadCommercialData(
       )
       .order('created_at', { ascending: false }),
     db
+      .from('ops_commercial_documents')
+      .select('id,title,description,filename,mime_type,published_at')
+      .eq('customer_id', customerId)
+      .order('published_at', { ascending: false }),
+    db
       .from('ops_service_addresses')
       .select('id,label,street_1,city,state,zip_code')
       .eq('customer_id', customerId),
   ])
   for (const result of queries) if (result.error) throw result.error
-  const [customer, profile, agreements, addresses] = queries
+  const [customer, profile, agreements, documents, addresses] = queries
   const businessName = customer.data!.business_name || customer.data!.full_name
   const contactName = commercialContactName(
     customer.data!.full_name,
@@ -82,6 +87,7 @@ export async function loadCommercialData(
       billing_email: savedProfile.billing_email || customer.data!.email || '',
     },
     agreements: agreements.data || [],
+    documents: documents.data || [],
     addresses: addresses.data || [],
   } as CommercialData
 }

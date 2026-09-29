@@ -14,6 +14,8 @@ export const commercialProfileSchema = z.object({
   legal_name: text,
   billing_contact: text,
   billing_email: z.union([z.email(), z.literal('')]),
+  payment_process: text,
+  invoice_submission: text,
   purchase_order: text,
   access_instructions: text,
   service_windows: text,
@@ -24,6 +26,8 @@ export const emptyProfile: CommercialProfile = {
   legal_name: '',
   billing_contact: '',
   billing_email: '',
+  payment_process: '',
+  invoice_submission: '',
   purchase_order: '',
   access_instructions: '',
   service_windows: '',
@@ -101,6 +105,14 @@ export type CommercialData = {
   customerContact?: { display_name: string; email: string; phone?: string }
   profile: CommercialProfile
   agreements: CommercialAgreement[]
+  documents: {
+    id: string
+    title: string
+    description: string
+    filename: string
+    mime_type: string
+    published_at: string
+  }[]
   businessName: string
   addresses: {
     id: string

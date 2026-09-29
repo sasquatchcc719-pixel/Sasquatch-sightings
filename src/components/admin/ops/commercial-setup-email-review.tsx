@@ -140,9 +140,9 @@ export function CommercialSetupEmailReview({
               Customer setup email sent
             </h3>
             <p className="mt-2 text-slate-300">
-              Sent the agreement PDF, setup instructions, and secure portal link
-              to {contact.email}. They choose their password, save business
-              details, and sign in their own account.
+              Sent the current service summary, setup instructions, and secure
+              portal link to {contact.email}. They can save payment and vendor
+              details, review the scope, and download the W-9 in their account.
             </p>
             {warning && (
               <p role="status" className="mt-3 text-amber-300">
@@ -209,7 +209,7 @@ export function CommercialSetupEmailReview({
                     {body || 'Email message'}
                   </div>
                   <div className="mt-6 rounded-lg bg-[#2d6a4f] px-5 py-3 text-center font-semibold text-white">
-                    Open portal and review agreement
+                    Open secure customer portal
                   </div>
                   <p className="mt-3 text-center text-xs text-slate-500">
                     A secure one-time sign-in link is created only when you
@@ -225,8 +225,8 @@ export function CommercialSetupEmailReview({
           <div className="flex flex-col gap-3 border-t border-white/10 bg-slate-900/80 px-6 py-4 sm:flex-row sm:items-center">
             <p className="flex flex-1 items-center gap-2 text-xs text-slate-400">
               <ShieldCheck className="h-4 w-4 text-cyan-300" />
-              Sending authorizes this recipient to sign for this business. Their
-              legal name and consent are collected at signing.
+              Sending creates secure portal access and attaches the current
+              service summary. It does not schedule or commit future work.
             </p>
             {error && <p className="text-sm text-red-300">{error}</p>}
             <Button variant="outline" onClick={onClose} disabled={busy}>

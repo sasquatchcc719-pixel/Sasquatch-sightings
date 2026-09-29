@@ -5,7 +5,9 @@ import styles from './commercial-experience.module.css'
 import {
   Building2,
   FileCheck2,
+  FileText,
   Download,
+  ExternalLink,
   Printer,
   ShieldCheck,
   ChevronDown,
@@ -66,6 +68,8 @@ const PROFILE_LABELS: Record<keyof CommercialProfile, string> = {
   legal_name: 'Legal business name',
   billing_contact: 'Billing contact',
   billing_email: 'Billing email',
+  payment_process: 'Payment method and terms',
+  invoice_submission: 'Invoice submission / vendor portal instructions',
   purchase_order: 'Purchase order / vendor reference',
   access_instructions: 'Access and preparation instructions',
   service_windows: 'Preferred service windows',
@@ -111,6 +115,8 @@ export function ProfileForm({
             <Field key={key} label={PROFILE_LABELS[key]}>
               {[
                 'access_instructions',
+                'payment_process',
+                'invoice_submission',
                 'service_windows',
                 'site_notes',
               ].includes(key) ? (
@@ -668,8 +674,9 @@ export function ClientCommercialDetails({
             </p>
             <h1 className={styles.title}>{data.businessName}</h1>
             <p className={styles.heroCopy}>
-              Review and sign your agreement, update business details, and check
-              confirmed appointments—all right here.
+              Review your service scope, update vendor and payment details,
+              download account documents, and check confirmed appointments—all
+              right here.
             </p>
             {address && (
               <p className={styles.address}>
@@ -697,9 +704,9 @@ export function ClientCommercialDetails({
             <div>
               <strong>Business details & access instructions</strong>
               <small>
-                Start here: confirm your billing and building access details,
-                then save and review your agreement below. Leave anything that
-                does not apply blank.
+                Start here: confirm how invoices and payment should be handled,
+                plus building access and service expectations. Leave anything
+                that does not apply blank.
               </small>
             </div>
             <ChevronDown size={18} className={styles.chevron} />
@@ -719,6 +726,48 @@ export function ClientCommercialDetails({
             }}
           />
         </details>
+        {data.documents.length > 0 && (
+          <section
+            className={styles.documents}
+            aria-labelledby="portal-documents-title"
+          >
+            <div>
+              <p className={`${styles.eyebrow} ${styles.overline}`}>
+                Vendor paperwork
+              </p>
+              <h2 id="portal-documents-title">Documents for your records.</h2>
+              <p>
+                These stay in your secure portal so your accounts-payable team
+                can view or download them whenever needed.
+              </p>
+            </div>
+            <div className={styles.documentList}>
+              {data.documents.map((document) => (
+                <article key={document.id} className={styles.documentCard}>
+                  <FileText size={25} strokeWidth={1.5} />
+                  <div>
+                    <strong>{document.title}</strong>
+                    <small>{document.description}</small>
+                  </div>
+                  <div className={styles.documentActions}>
+                    <a
+                      href={`/api/client/commercial/documents/${document.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink size={15} /> View
+                    </a>
+                    <a
+                      href={`/api/client/commercial/documents/${document.id}?download=1`}
+                    >
+                      <Download size={15} /> Download
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         <section id="commercial-care">
           <div className={styles.intro}>
             <div>
@@ -774,12 +823,12 @@ export function ClientCommercialDetails({
                 <p className={`${styles.eyebrow} ${styles.overline}`}>
                   02 / Clear from the start
                 </p>
-                <h2 className={styles.sectionTitle}>Your service agreement.</h2>
+                <h2 className={styles.sectionTitle}>Service scope & terms.</h2>
                 <p className={styles.sub}>
-                  Open your agreement and review the services, prices, and
-                  terms. Have a question or want something changed? Send Charles
-                  a note inside the agreement. Only sign when everything looks
-                  right.
+                  Review the services, areas, prices, payment terms, and site
+                  expectations currently on file. Send Charles a note if
+                  anything is missing or needs to change. This summary does not
+                  commit you to future work or schedule a visit.
                 </p>
               </div>
             </div>
@@ -792,11 +841,11 @@ export function ClientCommercialDetails({
                 />
                 <div>
                   <span className={styles.tag}>Preparation in progress</span>
-                  <h3>No agreement to sign yet.</h3>
+                  <h3>No service summary yet.</h3>
                   <p className={styles.sub}>
-                    We’re preparing your service agreement. Once published, you
-                    can review the full scope, send Charles a note, download a
-                    copy, and sign when everything looks right.
+                    We’re preparing your service scope and terms. Once
+                    published, you can review the full scope, send Charles a
+                    note, and download a copy for your records.
                   </p>
                 </div>
               </div>
@@ -818,7 +867,7 @@ export function ClientCommercialDetails({
                     <small>
                       Version {a.version} ·{' '}
                       {a.status === 'published'
-                        ? 'Review · Send a note · Sign'
+                        ? 'Review · Send a note · Sign only if requested'
                         : a.status === 'signed'
                           ? 'Signed agreement'
                           : 'Withdrawn · For your records'}
@@ -851,8 +900,9 @@ export function ClientCommercialDetails({
                       />
                     ) : (
                       <p className="mt-5 text-sm text-amber-300">
-                        An authorized signer for your business can accept this
-                        agreement. Contact Sasquatch to update signing access.
+                        No portal signature is required to complete vendor
+                        setup. Review the scope and send a note with any changes
+                        or missing payment instructions.
                       </p>
                     ))}
                 </div>

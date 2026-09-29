@@ -215,7 +215,7 @@ describe('commercial customer setup delivery', () => {
       'commercial_portal_setup',
       {
         cta: {
-          label: 'Open portal and review agreement',
+          label: 'Open secure customer portal',
           url: expect.stringContaining(
             '/auth/portal-access?token_hash=secure-hash',
           ),
