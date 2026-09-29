@@ -560,18 +560,6 @@ export async function scanTomorrowFill(params?: {
   const openMinutes = openings.length * 120
   if (openings.length === 0 || selectedZips.length === 0) {
     const reason = openings.length === 0 ? 'no_open_capacity' : 'no_route_zip'
-    const telegramSent =
-      params?.notifyTelegram === false
-        ? false
-        : await sendTelegramNotification(
-            [
-              `TOMORROW FILL · ${targetDate}`,
-              '',
-              reason === 'no_open_capacity'
-                ? 'No route-fill campaign: tomorrow has no two-hour openings.'
-                : 'No route-fill campaign: tomorrow has no qualifying residential route ZIP.',
-            ].join('\n'),
-          )
     return {
       skipped: true,
       reason,
@@ -579,7 +567,7 @@ export async function scanTomorrowFill(params?: {
       openMinutes,
       selectedZips,
       eligibleCount: 0,
-      telegramSent,
+      telegramSent: false,
     }
   }
 
@@ -672,19 +660,6 @@ export async function scanTomorrowFill(params?: {
   })
 
   let telegramSent = false
-  if (audienceBelowMinimum && params?.notifyTelegram !== false) {
-    telegramSent = await sendTelegramNotification(
-      [
-        `TOMORROW FILL · ${targetDate}`,
-        '',
-        'No text wave created.',
-        `${candidates.length} eligible customers is below the minimum audience of ${settings.minimum_audience_size}.`,
-        `Route ZIPs: ${selectedZips.join(', ')}`,
-        `${ADMIN_BASE_URL}/admin/operations/tomorrow-fill?campaign=${campaign.id}`,
-      ].join('\n'),
-      { disablePreview: true },
-    )
-  }
   if (!audienceBelowMinimum && params?.notifyTelegram !== false) {
     const message = scanTelegramMessage({
       targetDate,
@@ -1048,14 +1023,15 @@ export async function recordTomorrowFillReply(params: {
   phone: string
   message: string
   twilioSid: string
+  optOutType?: string
 }) {
   const supabase = createAdminClient()
   const phone = normalizeFillPhone(params.phone)
   if (!phone) return
   const normalizedMessage = params.message.trim().toLowerCase()
-  const isOptOut = /^(stop|stopall|unsubscribe|cancel|end|quit)$/i.test(
-    normalizedMessage,
-  )
+  const isOptOut =
+    params.optOutType?.trim().toUpperCase() === 'STOP' ||
+    /^(stop|stopall|unsubscribe|cancel|end|quit)$/i.test(normalizedMessage)
 
   if (params.customerId && isOptOut) {
     await supabase.from('sms_marketing_consents').upsert(
@@ -1099,6 +1075,16 @@ export async function recordTomorrowFillReply(params: {
     actor: 'customer_sms',
     detail: { twilio_sid: params.twilioSid },
   })
+  if (isOptOut) {
+    await sendTelegramNotification(
+      [
+        'TOMORROW FILL OPT-OUT',
+        `${phone} opted out and will not receive future Tomorrow Fill offers.`,
+        `${ADMIN_BASE_URL}/admin/operations/tomorrow-fill?campaign=${data.campaign_id}`,
+      ].join('\n'),
+      { disablePreview: true },
+    )
+  }
 }
 
 export async function loadPublicTomorrowFillOffer(token: string) {
