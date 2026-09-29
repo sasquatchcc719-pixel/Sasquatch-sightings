@@ -7,6 +7,8 @@ import {
   previewDates,
   type RecurrenceRule,
 } from '@/lib/ops/recurring'
+import { previewRecurringSchedule } from '@/lib/ops/recurring-schedule-preview'
+import { applyAppointmentBuffer } from '@/lib/ops/availability'
 
 /**
  * GET /api/admin/ops/recurring
@@ -84,7 +86,26 @@ export async function POST(request: NextRequest) {
 
     if (body.preview_only && body.rules) {
       const dates = previewDates(body.rules as RecurrenceRule[], 10)
-      return NextResponse.json({ preview_dates: dates })
+      const scheduleInput = body.schedule
+      if (
+        scheduleInput?.assigned_staff_user_id &&
+        scheduleInput.is_subcontracted !== true
+      ) {
+        const schedule = await previewRecurringSchedule(supabase, {
+          dates,
+          startTime: String(scheduleInput.start_time || '09:00'),
+          durationMinutes: applyAppointmentBuffer(
+            Number(scheduleInput.scheduled_duration_minutes) || 120,
+          ),
+          staffUserId: String(scheduleInput.assigned_staff_user_id),
+        })
+        return NextResponse.json({
+          preview_dates: dates,
+          occurrences: schedule.occurrences,
+          staff: schedule.staff,
+        })
+      }
+      return NextResponse.json({ preview_dates: dates, occurrences: [] })
     }
 
     const tpl = body.template
@@ -108,6 +129,31 @@ export async function POST(request: NextRequest) {
         { error: 'At least one recurrence rule is required' },
         { status: 400 },
       )
+    }
+
+    if (tpl.assigned_staff_user_id && tpl.is_subcontracted !== true) {
+      const allDates = previewDates(rules as RecurrenceRule[], 400)
+      const schedule = await previewRecurringSchedule(supabase, {
+        dates: allDates,
+        startTime: String(tpl.start_time || '09:00'),
+        durationMinutes: applyAppointmentBuffer(
+          Number(tpl.scheduled_duration_minutes) || 120,
+        ),
+        staffUserId: String(tpl.assigned_staff_user_id),
+      })
+      const conflicts = schedule.occurrences.filter(
+        (occurrence) => occurrence.status === 'conflict',
+      )
+      if (conflicts.length > 0) {
+        return NextResponse.json(
+          {
+            error: `${conflicts.length} planned visit${conflicts.length === 1 ? '' : 's'} overlap work already on ${schedule.staff.display_name}'s calendar. Preview the dates and choose a different time, date, or technician.`,
+            code: 'recurring_schedule_conflict',
+            occurrences: schedule.occurrences,
+          },
+          { status: 409 },
+        )
+      }
     }
 
     const { data: template, error: tplErr } = await supabase
@@ -182,7 +228,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[recurring][POST]', error)
     return NextResponse.json(
-      { error: 'Failed to create recurring template' },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to create recurring template',
+      },
       { status: 500 },
     )
   }

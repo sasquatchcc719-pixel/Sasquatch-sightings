@@ -1452,17 +1452,31 @@ export function EstimateDetail({
         {isConverted ? (
           <div className="relative mt-5 rounded-xl border border-violet-300/40 bg-violet-500/15 p-3 text-sm text-violet-100">
             <p className="font-semibold">Converted to a service appointment.</p>
-            <Button
-              variant="link"
-              className="h-auto p-0 text-violet-200"
-              onClick={() =>
-                router.push(
-                  `/admin/operations/appointments/${estimate.converted_appointment_id}`,
-                )
-              }
-            >
-              Open the service job <ArrowRight className="ml-1 h-3 w-3" />
-            </Button>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+              <Button
+                variant="link"
+                className="h-auto p-0 text-violet-200"
+                onClick={() =>
+                  router.push(
+                    `/admin/operations/appointments/${estimate.converted_appointment_id}`,
+                  )
+                }
+              >
+                Open the service job <ArrowRight className="ml-1 h-3 w-3" />
+              </Button>
+              <Button
+                variant="link"
+                className="h-auto p-0 font-semibold text-cyan-200"
+                onClick={() =>
+                  router.push(
+                    `/admin/operations/recurring?sourceAppointment=${estimate.converted_appointment_id}`,
+                  )
+                }
+              >
+                Set up recurring visits{' '}
+                <CalendarClock className="ml-1 h-3 w-3" />
+              </Button>
+            </div>
           </div>
         ) : null}
       </Card>

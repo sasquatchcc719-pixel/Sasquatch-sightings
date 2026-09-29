@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Calendar,
+  AlertTriangle,
   CheckCircle,
   ChevronDown,
   ChevronLeft,
@@ -62,6 +63,54 @@ type LineItemForm = {
   quantity: string
   unit_price: string
   duration_minutes: string
+  buffer_minutes?: string
+  pricing_unit_snapshot?: string | null
+  length_value?: number | null
+  width_value?: number | null
+  area_segments?: unknown
+}
+
+type SchedulingStaff = {
+  id: string
+  display_name: string
+}
+
+type SourceAppointment = {
+  id: string
+  customer_id: string
+  service_address_id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  assigned_staff_user_id: string | null
+  internal_notes: string | null
+  ops_customers: CustomerResult | CustomerResult[] | null
+  ops_service_addresses: CustomerAddress | CustomerAddress[] | null
+  ops_appointment_line_items: Array<{
+    service_catalog_item_id: string | null
+    name_snapshot: string
+    notes: string | null
+    quantity: number
+    unit_price: number
+    duration_minutes: number
+    buffer_minutes: number
+    pricing_unit_snapshot?: string | null
+    length_value?: number | null
+    width_value?: number | null
+    area_segments?: unknown
+  }>
+}
+
+type PreviewOccurrence = {
+  date: string
+  start_time: string
+  end_time: string
+  status: 'clear' | 'conflict'
+  conflict: null | {
+    label: string
+    start_time: string
+    end_time: string
+  }
 }
 
 type RuleForm = {
@@ -81,6 +130,7 @@ type Template = {
   is_active: boolean
   invoice_mode: string
   start_time: string
+  assigned_staff_user_id?: string | null
   scheduled_duration_minutes: number
   discount_amount: number
   internal_notes: string | null
@@ -192,9 +242,13 @@ function ordinal(n: number): string {
 
 // ─── Component ──────────────────────────────────────────────────────────
 
-export function RecurringManager() {
+export function RecurringManager({
+  sourceAppointmentId,
+}: {
+  sourceAppointmentId?: string
+}) {
   const [view, setView] = useState<'list' | 'create' | 'edit' | 'detail'>(
-    'list',
+    sourceAppointmentId ? 'create' : 'list',
   )
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
@@ -246,7 +300,12 @@ export function RecurringManager() {
   }
 
   if (view === 'create') {
-    return <CreateTemplateForm onBack={handleBackToList} />
+    return (
+      <CreateTemplateForm
+        onBack={handleBackToList}
+        sourceAppointmentId={sourceAppointmentId}
+      />
+    )
   }
 
   if (view === 'edit' && detail) {
@@ -1573,17 +1632,54 @@ function MonthEndBillingSection() {
 
 // ─── Create / Edit Form ─────────────────────────────────────────────────
 
+function nextMonthlyOccurrence(sourceDate: string, today = new Date()): string {
+  const sourceDay = Number(sourceDate.slice(8, 10))
+  const inMonth = (year: number, month: number) => {
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+    return new Date(Date.UTC(year, month, Math.min(sourceDay, lastDay), 12))
+  }
+
+  let year = today.getUTCFullYear()
+  let month = today.getUTCMonth()
+  let cursor = inMonth(year, month)
+  if (cursor <= today) {
+    month += 1
+    if (month > 11) {
+      month = 0
+      year += 1
+    }
+    cursor = inMonth(year, month)
+  }
+  return cursor.toISOString().slice(0, 10)
+}
+
+function appointmentDurationMinutes(
+  startTime: string,
+  endTime: string,
+): number {
+  const [startHour, startMinute] = startTime.slice(0, 5).split(':').map(Number)
+  const [endHour, endMinute] = endTime.slice(0, 5).split(':').map(Number)
+  let elapsed = endHour * 60 + endMinute - (startHour * 60 + startMinute)
+  if (elapsed <= 0) elapsed += 24 * 60
+  return Math.max(15, Math.ceil(elapsed / 15) * 15)
+}
+
 function CreateTemplateForm({
   onBack,
   initialData,
+  sourceAppointmentId,
 }: {
   onBack: () => void
   initialData?: TemplateDetail
+  sourceAppointmentId?: string
 }) {
   const isEditing = !!initialData
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadingSource, setLoadingSource] = useState(!!sourceAppointmentId)
+  const [sourceAppointment, setSourceAppointment] =
+    useState<SourceAppointment | null>(null)
 
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
   const [catalogCategories, setCatalogCategories] = useState<string[]>([])
@@ -1592,6 +1688,10 @@ function CreateTemplateForm({
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [staff, setStaff] = useState<SchedulingStaff[]>([])
+  const [assignedStaffUserId, setAssignedStaffUserId] = useState(
+    initialData?.assigned_staff_user_id ?? '',
+  )
 
   // When editing, pre-populate the selected customer from initialData
   const [selectedCustomer, setSelectedCustomer] =
@@ -1661,6 +1761,7 @@ function CreateTemplateForm({
             quantity: '1',
             unit_price: '',
             duration_minutes: '60',
+            buffer_minutes: '0',
           },
         ],
   )
@@ -1693,6 +1794,9 @@ function CreateTemplateForm({
   )
 
   const [previewDates, setPreviewDates] = useState<string[]>([])
+  const [previewOccurrences, setPreviewOccurrences] = useState<
+    PreviewOccurrence[]
+  >([])
   const [loadingPreview, setLoadingPreview] = useState(false)
 
   useEffect(() => {
@@ -1709,6 +1813,134 @@ function CreateTemplateForm({
         /* silent */
       })
   }, [])
+
+  useEffect(() => {
+    fetch('/api/admin/ops/staff')
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Failed to load staff')
+        return data
+      })
+      .then((data) => {
+        const nextStaff = (data.staff || []) as SchedulingStaff[]
+        setStaff(nextStaff)
+        setAssignedStaffUserId((current) => current || nextStaff[0]?.id || '')
+      })
+      .catch(() => {
+        /* surfaced by required technician validation */
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!sourceAppointmentId || initialData) return
+    const controller = new AbortController()
+    let ignore = false
+
+    async function loadSourceAppointment() {
+      setLoadingSource(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/appointments/${sourceAppointmentId}`,
+          { cache: 'no-store', signal: controller.signal },
+        )
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load the source job')
+        }
+        if (ignore) return
+
+        const appointment = data.appointment as SourceAppointment
+        const customer = unwrap(appointment.ops_customers)
+        const address = unwrap(appointment.ops_service_addresses)
+        if (!customer || !address) {
+          throw new Error('The source job is missing its customer or address.')
+        }
+        if (!appointment.ops_appointment_line_items?.length) {
+          throw new Error('The source job has no services to copy.')
+        }
+
+        const customerWithAddress: CustomerResult = {
+          id: customer.id,
+          full_name: customer.full_name || 'Customer',
+          business_name: customer.business_name || null,
+          phone: customer.phone || '',
+          email: customer.email || null,
+          ops_service_addresses: [address],
+        }
+        const firstDate = nextMonthlyOccurrence(appointment.appointment_date)
+
+        setSourceAppointment(appointment)
+        setSelectedCustomer(customerWithAddress)
+        setSelectedAddressId(address.id)
+        setLabel(
+          `${customer.business_name || customer.full_name || 'Customer'} recurring cleaning`,
+        )
+        setStartTime(appointment.start_time.slice(0, 5))
+        setScheduledDuration(
+          String(
+            appointmentDurationMinutes(
+              appointment.start_time,
+              appointment.end_time,
+            ),
+          ),
+        )
+        setInvoiceMode(customer.business_name ? 'batch_monthly' : 'per_visit')
+        setAssignedStaffUserId(appointment.assigned_staff_user_id || '')
+        setInternalNotes(
+          [
+            `Recurring plan copied from service job ${appointment.id}.`,
+            appointment.internal_notes,
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        )
+        setLineItems(
+          appointment.ops_appointment_line_items.map((line) => ({
+            service_catalog_item_id: line.service_catalog_item_id || '',
+            name_snapshot: line.name_snapshot,
+            notes: line.notes || '',
+            quantity: String(line.quantity),
+            unit_price: String(line.unit_price),
+            duration_minutes: String(line.duration_minutes),
+            buffer_minutes: String(line.buffer_minutes || 0),
+            pricing_unit_snapshot: line.pricing_unit_snapshot || null,
+            length_value: line.length_value ?? null,
+            width_value: line.width_value ?? null,
+            area_segments: line.area_segments ?? null,
+          })),
+        )
+        setRules([
+          {
+            frequency: 'monthly',
+            day_of_week: '',
+            week_of_month: '',
+            day_of_month: String(Number(appointment.appointment_date.slice(8))),
+            interval_days: '',
+            effective_from: firstDate,
+            effective_until: '',
+            override_start_time: '',
+          },
+        ])
+      } catch (cause) {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Failed to load the source job',
+          )
+        }
+      } finally {
+        if (!ignore) setLoadingSource(false)
+      }
+    }
+
+    void loadSourceAppointment()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [initialData, sourceAppointmentId])
 
   const filteredCatalog = selectedCategory
     ? catalog.filter((s) => s.category === selectedCategory)
@@ -1799,12 +2031,28 @@ function CreateTemplateForm({
       const res = await fetch('/api/admin/ops/recurring', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preview_only: true, rules: rulesPayload }),
+        body: JSON.stringify({
+          preview_only: true,
+          rules: rulesPayload,
+          schedule: {
+            start_time: startTime,
+            scheduled_duration_minutes: Number(scheduledDuration) || 120,
+            assigned_staff_user_id: assignedStaffUserId || null,
+            is_subcontracted: isSubcontracted,
+          },
+        }),
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to preview schedule')
       setPreviewDates(data.preview_dates || [])
-    } catch {
-      /* ignore */
+      setPreviewOccurrences(data.occurrences || [])
+      setError(null)
+    } catch (cause) {
+      setPreviewDates([])
+      setPreviewOccurrences([])
+      setError(
+        cause instanceof Error ? cause.message : 'Failed to preview schedule',
+      )
     } finally {
       setLoadingPreview(false)
     }
@@ -1824,6 +2072,9 @@ function CreateTemplateForm({
     (s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0),
     0,
   )
+  const previewConflicts = previewOccurrences.filter(
+    (occurrence) => occurrence.status === 'conflict',
+  )
 
   const handleSave = async () => {
     if (!selectedCustomer || !selectedAddressId || !label.trim()) {
@@ -1838,6 +2089,10 @@ function CreateTemplateForm({
       setError('At least one recurrence rule is required')
       return
     }
+    if (!isSubcontracted && !assignedStaffUserId) {
+      setError('Choose the technician who will own these recurring visits')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -1850,13 +2105,19 @@ function CreateTemplateForm({
         quantity: Number(l.quantity) || 1,
         unit_price: Number(l.unit_price) || 0,
         duration_minutes: Number(l.duration_minutes) || 60,
+        buffer_minutes: Number(l.buffer_minutes) || 0,
         service_catalog_item_id: l.service_catalog_item_id || null,
+        pricing_unit_snapshot: l.pricing_unit_snapshot || null,
+        length_value: l.length_value ?? null,
+        width_value: l.width_value ?? null,
+        area_segments: l.area_segments ?? null,
       })),
       start_time: startTime,
       scheduled_duration_minutes: Number(scheduledDuration) || 120,
       discount_amount: Number(discountAmount) || 0,
       internal_notes: internalNotes || null,
       invoice_mode: invoiceMode,
+      assigned_staff_user_id: assignedStaffUserId || null,
       is_subcontracted: isSubcontracted,
       subcontractor_name: isSubcontracted
         ? subcontractorName.trim() || null
@@ -1921,8 +2182,18 @@ function CreateTemplateForm({
 
         const data = await res.json()
         if (data.generation) {
+          const generationErrors = Array.isArray(data.generation.errors)
+            ? data.generation.errors
+            : []
           alert(
-            `Template created! Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
+            [
+              `Recurring plan created. Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
+              generationErrors.length
+                ? `${generationErrors.length} visit${generationErrors.length === 1 ? '' : 's'} need attention: ${generationErrors.join(' ')}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('\n'),
           )
         }
 
@@ -1958,6 +2229,37 @@ function CreateTemplateForm({
       {error && (
         <Card className="border-destructive bg-destructive/10 p-4 shadow-sm">
           <p className="text-destructive text-sm font-medium">{error}</p>
+        </Card>
+      )}
+
+      {sourceAppointmentId && (
+        <Card className="border-cyan-500/30 bg-cyan-500/10 p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            {loadingSource ? (
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-cyan-400" />
+            ) : (
+              <Repeat className="mt-0.5 h-5 w-5 shrink-0 text-cyan-400" />
+            )}
+            <div>
+              <p className="font-semibold">
+                {loadingSource
+                  ? 'Copying the completed service job…'
+                  : 'Recurring setup copied from the service job'}
+              </p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                The customer, address, services, technician, time, and monthly
+                date are prefilled. Review the scope and price before creating
+                the series; this staff workflow does not require a customer
+                agreement signature.
+              </p>
+              {sourceAppointment ? (
+                <p className="mt-2 text-xs text-cyan-300">
+                  Source visit {sourceAppointment.appointment_date} ·{' '}
+                  {sourceAppointment.start_time.slice(0, 5)}
+                </p>
+              ) : null}
+            </div>
+          </div>
         </Card>
       )}
 
@@ -2114,6 +2416,30 @@ function CreateTemplateForm({
               onChange={(e) => setStartTime(e.target.value)}
               className="mt-1"
             />
+          </div>
+          <div>
+            <Label>Assigned Technician</Label>
+            <select
+              className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+              value={assignedStaffUserId}
+              onChange={(event) => {
+                setAssignedStaffUserId(event.target.value)
+                setPreviewOccurrences([])
+              }}
+              disabled={isSubcontracted}
+            >
+              <option value="">
+                {staff.length ? 'Choose a technician' : 'Loading technicians…'}
+              </option>
+              {staff.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.display_name}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Used to check every generated visit against the live calendar.
+            </p>
           </div>
           <div>
             <Label>Scheduled Duration (minutes)</Label>
@@ -2568,7 +2894,7 @@ function CreateTemplateForm({
             ) : (
               <Calendar className="mr-2 h-4 w-4" />
             )}
-            Preview Dates
+            Preview Dates & Conflicts
           </Button>
 
           {previewDates.length > 0 && (
@@ -2588,6 +2914,36 @@ function CreateTemplateForm({
                   </Badge>
                 ))}
               </div>
+              {previewOccurrences.length > 0 && (
+                <div
+                  className={`mt-3 rounded-lg border p-3 ${
+                    previewConflicts.length
+                      ? 'border-amber-500/40 bg-amber-500/10'
+                      : 'border-emerald-500/40 bg-emerald-500/10'
+                  }`}
+                >
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    {previewConflicts.length ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4 text-emerald-500" />
+                    )}
+                    {previewConflicts.length
+                      ? `${previewConflicts.length} calendar conflict${previewConflicts.length === 1 ? '' : 's'} found`
+                      : `All ${previewOccurrences.length} checked visits are clear`}
+                  </p>
+                  {previewConflicts.map((occurrence) => (
+                    <p key={occurrence.date} className="mt-2 text-xs">
+                      {occurrence.date} · planned{' '}
+                      {occurrence.start_time.slice(0, 5)}–
+                      {occurrence.end_time.slice(0, 5)} overlaps{' '}
+                      {occurrence.conflict?.label} ·{' '}
+                      {occurrence.conflict?.start_time.slice(0, 5)}–
+                      {occurrence.conflict?.end_time.slice(0, 5)}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2598,9 +2954,18 @@ function CreateTemplateForm({
         <Button variant="outline" onClick={onBack}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving}>
+        <Button
+          onClick={handleSave}
+          disabled={
+            saving ||
+            loadingSource ||
+            (!isEditing &&
+              !isSubcontracted &&
+              (previewOccurrences.length === 0 || previewConflicts.length > 0))
+          }
+        >
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? 'Save Changes' : 'Create & Generate Jobs'}
+          {isEditing ? 'Save Changes' : 'Create Recurring Plan & Jobs'}
         </Button>
       </div>
     </div>

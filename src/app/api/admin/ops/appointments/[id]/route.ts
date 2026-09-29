@@ -96,6 +96,9 @@ const APPOINTMENT_SELECT = `
     line_total,
     notes,
     pricing_unit_snapshot,
+    length_value,
+    width_value,
+    area_segments,
     service_catalog_items ( slug )
   ),
   ops_invoices (

@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const routerPush = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPush, refresh: vi.fn() }),
 }))
 vi.mock('@/components/ops/street-view-card', () => ({
   StreetViewCard: () => null,
@@ -19,11 +20,14 @@ let requests: Array<{
 }>
 let saveSucceeds: boolean
 let estimateStatus: string
+let convertedAppointmentId: string | null
 afterEach(() => vi.unstubAllGlobals())
 beforeEach(() => {
   requests = []
   saveSucceeds = false
   estimateStatus = 'accepted'
+  convertedAppointmentId = null
+  routerPush.mockClear()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -67,7 +71,7 @@ beforeEach(() => {
             status: 'confirmed',
             estimate_status: estimateStatus,
             lead_source_key: 'google',
-            converted_appointment_id: null,
+            converted_appointment_id: convertedAppointmentId,
             ops_customers: {
               id: 'customer-a',
               first_name: 'Test',
@@ -243,5 +247,19 @@ describe('estimate editor send integration', () => {
     )
     expect(screen.queryByText('Mark sent (no email)')).not.toBeInTheDocument()
     expect(screen.getByText(/Estimated service time: 2 hours/)).toBeVisible()
+  })
+
+  it('opens recurring setup from the converted service job', async () => {
+    estimateStatus = 'converted'
+    convertedAppointmentId = 'service-job-a'
+    render(<EstimateDetail estimateId="estimate-a" />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Set up recurring visits' }),
+    )
+
+    expect(routerPush).toHaveBeenCalledWith(
+      '/admin/operations/recurring?sourceAppointment=service-job-a',
+    )
   })
 })
