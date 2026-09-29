@@ -114,6 +114,12 @@ type PreviewOccurrence = {
   }
 }
 
+type PreviewDateDetail = {
+  date: string
+  original_date: string
+  shifted: boolean
+}
+
 type RuleForm = {
   frequency: 'weekly' | 'biweekly' | 'monthly' | 'custom'
   day_of_week: string
@@ -1795,6 +1801,9 @@ function CreateTemplateForm({
   )
 
   const [previewDates, setPreviewDates] = useState<string[]>([])
+  const [previewDateDetails, setPreviewDateDetails] = useState<
+    PreviewDateDetail[]
+  >([])
   const [previewOccurrences, setPreviewOccurrences] = useState<
     PreviewOccurrence[]
   >([])
@@ -2048,10 +2057,12 @@ function CreateTemplateForm({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to preview schedule')
       setPreviewDates(data.preview_dates || [])
+      setPreviewDateDetails(data.preview_date_details || [])
       setPreviewOccurrences(data.occurrences || [])
       setError(null)
     } catch (cause) {
       setPreviewDates([])
+      setPreviewDateDetails([])
       setPreviewOccurrences([])
       setError(
         cause instanceof Error ? cause.message : 'Failed to preview schedule',
@@ -2399,8 +2410,7 @@ function CreateTemplateForm({
                 <span className="text-muted-foreground block text-xs">
                   An outside crew does this job. It stays off the schedule lanes
                   and never blocks your or David&apos;s availability, but it
-                  still invoices the customer normally. Weekend dates move to
-                  the next Monday.
+                  still invoices the customer normally.
                 </span>
               </span>
             </label>
@@ -2891,6 +2901,12 @@ function CreateTemplateForm({
         </div>
 
         <div className="mt-4">
+          <p className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
+            Recurring cleaning is scheduled on weekdays only. Any rule date that
+            lands on Saturday or Sunday automatically moves to the following
+            Monday before conflicts are checked. If Monday is occupied, the
+            generated visit advances to the next open weekday.
+          </p>
           <Button
             variant="outline"
             size="sm"
@@ -2911,16 +2927,37 @@ function CreateTemplateForm({
                 Next {previewDates.length} dates:
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {previewDates.map((d) => (
-                  <Badge key={d} variant="outline">
-                    {new Date(d + 'T12:00:00').toLocaleDateString('en-US', {
+                {(previewDateDetails.length > 0
+                  ? previewDateDetails
+                  : previewDates.map((date) => ({
+                      date,
+                      original_date: date,
+                      shifted: false,
+                    }))
+                ).map((item, index) => {
+                  const formatPreviewDate = (date: string) =>
+                    new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric',
-                    })}
-                  </Badge>
-                ))}
+                    })
+                  return (
+                    <Badge
+                      key={`${item.original_date}-${index}`}
+                      variant="outline"
+                      className={
+                        item.shifted
+                          ? 'border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                          : undefined
+                      }
+                    >
+                      {item.shifted
+                        ? `${formatPreviewDate(item.original_date)} → ${formatPreviewDate(item.date)}`
+                        : formatPreviewDate(item.date)}
+                    </Badge>
+                  )
+                })}
               </div>
               {previewOccurrences.length > 0 && (
                 <div

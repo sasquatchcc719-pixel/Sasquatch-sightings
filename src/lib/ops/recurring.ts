@@ -172,18 +172,36 @@ function formatDate(d: Date): string {
 }
 
 /**
- * Push a Saturday or Sunday date to the following Monday.
- * A fixed interval (e.g. every 90 days) drifts across the week and eventually
- * lands on a weekend; subcontracted work gets nudged to the next business day
- * so nobody has to fix it by hand each cycle. The nominal rule date is still
- * stored as original_recurring_date, so regeneration stays idempotent.
+ * Push a Saturday or Sunday recurring date to the following Monday.
+ * The nominal rule date is still stored as original_recurring_date, so
+ * regeneration remains idempotent even when the visible appointment moves.
  */
-function nudgeOffWeekend(ymd: string): string {
+export function moveRecurringDateToWeekday(ymd: string): string {
   const d = new Date(ymd + 'T12:00:00')
   const dow = d.getDay()
   if (dow !== 0 && dow !== 6) return ymd
   d.setDate(d.getDate() + (dow === 6 ? 2 : 1))
   return formatDate(d)
+}
+
+function addCalendarDays(ymd: string, amount: number): string {
+  const date = new Date(ymd + 'T12:00:00')
+  date.setDate(date.getDate() + amount)
+  return formatDate(date)
+}
+
+function nextWeekdayOnOrAfter(ymd: string): string {
+  let candidate = ymd
+  while ([0, 6].includes(new Date(candidate + 'T12:00:00').getDay())) {
+    candidate = addCalendarDays(candidate, 1)
+  }
+  return candidate
+}
+
+export type RecurringPreviewDate = {
+  date: string
+  original_date: string
+  shifted: boolean
 }
 
 function monthKeyFromYmd(ymd: string): string {
@@ -206,6 +224,7 @@ function mondayKeyFromYmd(ymd: string): string {
  */
 function shouldSkipRecurringSlot(args: {
   candidateDate: string
+  scheduledDate: string
   rule: RecurrenceRule
   templateDates: Set<string>
   /** true when this YYYY-MM has only one rule-generated date in the whole horizon. */
@@ -217,6 +236,7 @@ function shouldSkipRecurringSlot(args: {
 }): boolean {
   const {
     candidateDate,
+    scheduledDate,
     rule,
     templateDates,
     monthIsSingleInstance,
@@ -225,7 +245,9 @@ function shouldSkipRecurringSlot(args: {
   } = args
   if (
     extraBlockedDates.has(candidateDate) ||
+    extraBlockedDates.has(scheduledDate) ||
     templateDates.has(candidateDate) ||
+    templateDates.has(scheduledDate) ||
     originalRecurringDates.has(candidateDate)
   ) {
     return true
@@ -270,6 +292,18 @@ export function previewDates(
   count: number = 10,
   fromDate?: Date,
 ): string[] {
+  return previewDateDetails(rules, count, fromDate).map((item) => item.date)
+}
+
+/**
+ * Preview the dates customers and staff will actually see on the calendar,
+ * while retaining the nominal rule date so weekend shifts are explicit.
+ */
+export function previewDateDetails(
+  rules: RecurrenceRule[],
+  count: number = 10,
+  fromDate?: Date,
+): RecurringPreviewDate[] {
   const start = fromDate || new Date()
   const end = new Date(start)
   end.setFullYear(end.getFullYear() + 1)
@@ -279,11 +313,17 @@ export function previewDates(
     allDates.push(...expandRule(rule, start, end))
   }
 
-  const uniqueSorted = [...new Set(allDates.map((d) => formatDate(d)))]
+  return [...new Set(allDates.map((d) => formatDate(d)))]
     .sort()
     .slice(0, count)
-
-  return uniqueSorted
+    .map((originalDate) => {
+      const date = moveRecurringDateToWeekday(originalDate)
+      return {
+        date,
+        original_date: originalDate,
+        shifted: date !== originalDate,
+      }
+    })
 }
 
 // ─── Generation ─────────────────────────────────────────────────────────
@@ -395,6 +435,9 @@ export async function generateRecurringAppointments(
 
   const rangeStartStr = formatDate(rangeStart)
   const rangeEndStr = formatDate(rangeEnd)
+  const scheduledCandidateDates = [
+    ...new Set(uniqueDates.map(({ date }) => moveRecurringDateToWeekday(date))),
+  ]
 
   const [
     { data: templateInRange },
@@ -421,10 +464,7 @@ export async function generateRecurringAppointments(
       .select('appointment_date, quoted_total')
       .eq('customer_id', template.customer_id)
       .is('recurring_template_id', null)
-      .in(
-        'appointment_date',
-        uniqueDates.map((d) => d.date),
-      ),
+      .in('appointment_date', scheduledCandidateDates),
   ])
 
   const allTemplateRows = [
@@ -517,11 +557,13 @@ export async function generateRecurringAppointments(
       result.errors.push(`${date}: missing recurrence rule (internal)`)
       continue
     }
+    let scheduledDate = moveRecurringDateToWeekday(date)
     const monthIsSingleInstance =
       (countDatesPerMonth.get(monthKeyFromYmd(date)) || 0) === 1
     if (
       shouldSkipRecurringSlot({
         candidateDate: date,
+        scheduledDate,
         rule,
         templateDates: templateDateSet,
         monthIsSingleInstance,
@@ -537,27 +579,33 @@ export async function generateRecurringAppointments(
       const normalizedStart = `${startTime}:00`.slice(0, 8)
       const endTime = addMinutesToTimeWithinDay(startTime, bufferedMinutes)
 
-      // Subcontracted work is done by an outside crew, so a fixed interval
-      // landing on a weekend is only a paperwork problem — move it to Monday.
-      const scheduledDate = template.is_subcontracted
-        ? nudgeOffWeekend(date)
-        : date
-
       // Recurring generation used to write straight onto the calendar with
       // no conflict check, which is how overlapping evening jobs got booked.
       // Subcontracted visits occupy no truck, so they neither take nor yield
       // a slot — checking them would block our own crew for someone else's job.
       if (!template.is_subcontracted) {
-        const conflict = await findAppointmentConflict(supabase, {
-          date: scheduledDate,
-          startTime: normalizedStart,
-          endTime,
-          staffUserId: template.assigned_staff_user_id || undefined,
-          staffAuthUserId: assignedStaffAuthUserId,
-        })
+        const movedOffWeekend = scheduledDate !== date
+        let conflict: Awaited<ReturnType<typeof findAppointmentConflict>> = null
+        let attempts = 0
+        while (attempts < (movedOffWeekend ? 15 : 1)) {
+          conflict = await findAppointmentConflict(supabase, {
+            date: scheduledDate,
+            startTime: normalizedStart,
+            endTime,
+            staffUserId: template.assigned_staff_user_id || undefined,
+            staffAuthUserId: assignedStaffAuthUserId,
+          })
+          if (!conflict) break
+          attempts += 1
+          if (movedOffWeekend && attempts < 15) {
+            scheduledDate = nextWeekdayOnOrAfter(
+              addCalendarDays(scheduledDate, 1),
+            )
+          }
+        }
         if (conflict) {
           result.errors.push(
-            `${date}: skipped — would overlap an existing appointment (${String(conflict.start_time).slice(0, 5)}–${String(conflict.end_time).slice(0, 5)}). Resolve the conflict and regenerate.`,
+            `${date}: skipped — no open weekday was found without overlapping an existing appointment (${String(conflict.start_time).slice(0, 5)}–${String(conflict.end_time).slice(0, 5)}). Resolve the conflict and regenerate.`,
           )
           continue
         }

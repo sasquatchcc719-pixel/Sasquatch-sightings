@@ -4,6 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 import {
   generateRecurringAppointments,
   generateAllRecurring,
+  previewDateDetails,
   previewDates,
   type RecurrenceRule,
 } from '@/lib/ops/recurring'
@@ -85,7 +86,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.preview_only && body.rules) {
-      const dates = previewDates(body.rules as RecurrenceRule[], 10)
+      const dateDetails = previewDateDetails(body.rules as RecurrenceRule[], 10)
+      const dates = dateDetails.map((item) => item.date)
       const scheduleInput = body.schedule
       if (
         scheduleInput?.assigned_staff_user_id &&
@@ -101,11 +103,16 @@ export async function POST(request: NextRequest) {
         })
         return NextResponse.json({
           preview_dates: dates,
+          preview_date_details: dateDetails,
           occurrences: schedule.occurrences,
           staff: schedule.staff,
         })
       }
-      return NextResponse.json({ preview_dates: dates, occurrences: [] })
+      return NextResponse.json({
+        preview_dates: dates,
+        preview_date_details: dateDetails,
+        occurrences: [],
+      })
     }
 
     const tpl = body.template
