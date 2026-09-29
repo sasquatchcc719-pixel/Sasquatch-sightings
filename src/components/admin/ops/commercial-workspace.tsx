@@ -738,10 +738,11 @@ export function CommercialAccount({
               Review everything before it reaches the customer
             </h3>
             <p className="mt-2 max-w-3xl text-sm text-slate-300">
-              The email explains the portal, the recurring agreement, the
-              one-time-service option, and what happens after signing. You can
-              edit the exact message before sending it with the agreement copy
-              and secure sign-in button.
+              The email explains the secure portal, payment and invoice setup,
+              the current service scope, W-9 access, and that no future-cleaning
+              commitment or signature is required. You can edit the exact
+              message before sending it with the current service summary and
+              secure portal button.
             </p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs">
               <span
@@ -755,7 +756,7 @@ export function CommercialAccount({
                 className={`rounded-full border px-3 py-1.5 ${authorizedContacts.length ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/30 bg-amber-400/10 text-amber-200'}`}
               >
                 {authorizedContacts.length
-                  ? `Ready: ${authorizedContacts.length} signing contact${authorizedContacts.length === 1 ? '' : 's'}`
+                  ? `Ready: ${authorizedContacts.length} portal contact${authorizedContacts.length === 1 ? '' : 's'}`
                   : setupContactEmail
                     ? 'Ready: saved customer email'
                     : 'Needed: customer email'}

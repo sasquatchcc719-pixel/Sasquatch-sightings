@@ -144,9 +144,9 @@ export function ProfileForm({
         )}
       </div>
       <p className="mt-3 text-xs text-slate-400">
-        These details update your business profile, not the text of an agreement
-        already published or signed. If the business name or service terms in
-        your agreement need changing, send Charles a note before signing.
+        These details update your business profile, not a service summary that
+        was already published. If the business name, service scope, or terms
+        need changing, send Charles a note before approving or scheduling work.
       </p>
       {!readOnly && (
         <Button className="mt-4" disabled={busy}>
