@@ -30,7 +30,8 @@
     "analyze": "ANALYZE=true pnpm build",
     "backfill-locations": "tsx scripts/backfill-sighting-locations.ts",
     "backfill-job-cities": "tsx scripts/backfill-job-cities.ts",
-    "ranger:gmail-auth": "node scripts/ranger-gmail-auth.mjs"
+    "ranger:gmail-auth": "node scripts/ranger-gmail-auth.mjs",
+    "telegram:setup-relay-webhook": "tsx scripts/setup-telegram-relay-webhook.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.9",
