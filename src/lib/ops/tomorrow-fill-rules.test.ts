@@ -4,6 +4,7 @@ import {
   normalizeFillPhone,
   normalizeFillZip,
   selectNonOverlappingOpenings,
+  tomorrowFillWaveLimit,
 } from './tomorrow-fill-rules'
 
 describe('tomorrow fill rules', () => {
@@ -11,6 +12,14 @@ describe('tomorrow fill rules', () => {
     expect(normalizeFillPhone('(719) 555-0123')).toBe('+17195550123')
     expect(normalizeFillPhone('123')).toBeNull()
     expect(normalizeFillZip('80921-4412')).toBe('80921')
+  })
+
+  it('caps staged sends at five customers per opening and fifteen overall', () => {
+    expect(tomorrowFillWaveLimit(0)).toBe(0)
+    expect(tomorrowFillWaveLimit(1)).toBe(5)
+    expect(tomorrowFillWaveLimit(2)).toBe(10)
+    expect(tomorrowFillWaveLimit(3)).toBe(15)
+    expect(tomorrowFillWaveLimit(8)).toBe(15)
   })
 
   it('enforces the 14-day cooldown', () => {

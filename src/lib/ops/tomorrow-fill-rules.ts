@@ -25,6 +25,11 @@ export function normalizeFillZip(value: string | null | undefined) {
   return match?.[1] || null
 }
 
+export function tomorrowFillWaveLimit(openingCount: number) {
+  if (!Number.isFinite(openingCount) || openingCount < 1) return 0
+  return Math.min(15, Math.floor(openingCount) * 5)
+}
+
 export function normalizeHouseholdKey(params: {
   street: string | null | undefined
   zip: string | null | undefined

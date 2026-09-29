@@ -17,6 +17,7 @@ import {
   normalizeHouseholdKey,
   renderFillMessage,
   selectNonOverlappingOpenings,
+  tomorrowFillWaveLimit,
   type FillContact,
   type FillOpening,
 } from '@/lib/ops/tomorrow-fill-rules'
@@ -482,6 +483,7 @@ function scanTelegramMessage(params: {
     `Route ZIPs: ${params.selectedZips.join(', ')}`,
     `${params.candidates.length} customers are safe to contact · ${suppressed} excluded`,
     '',
+    `Top ${Math.min(5, params.candidates.length)} of ${params.candidates.length} eligible customers:`,
     top || 'No customers qualified.',
     '',
     `Offer: $${params.settings.offer_amount} off $${params.settings.minimum_subtotal}+ · ${params.settings.offer_code}`,
@@ -680,19 +682,19 @@ export async function scanTomorrowFill(params?: {
       text: 'Review customers & settings',
       url: `${ADMIN_BASE_URL}/admin/operations/tomorrow-fill?campaign=${campaign.id}`,
     }
+    const safeWaveLimit = tomorrowFillWaveLimit(openings.length)
+    const sendButtons = [5, 10, 15]
+      .filter((amount) => amount <= safeWaveLimit)
+      .map((amount) => ({
+        text: `Send ${amount}`,
+        callback_data: `tf:${amount}:${campaign.id}`,
+      }))
     const action = await sendTelegramActionMessage(
       message,
       settings.send_enabled
         ? [
-            [
-              { text: 'Send 5', callback_data: `tf:5:${campaign.id}` },
-              { text: 'Send 10', callback_data: `tf:10:${campaign.id}` },
-              { text: 'Send 15', callback_data: `tf:15:${campaign.id}` },
-            ],
-            [
-              { text: 'Send all', callback_data: `tf:all:${campaign.id}` },
-              { text: 'Skip today', callback_data: `tf:skip:${campaign.id}` },
-            ],
+            sendButtons,
+            [{ text: 'Skip today', callback_data: `tf:skip:${campaign.id}` }],
             [reviewButton],
           ]
         : [
@@ -760,7 +762,7 @@ async function revalidateRecipient(
 
 export async function sendTomorrowFillWave(params: {
   campaignId: string
-  amount: number | 'all'
+  amount: number
   actor: string
 }) {
   const supabase = createAdminClient()
@@ -785,6 +787,16 @@ export async function sendTomorrowFillWave(params: {
     throw new Error('This campaign has expired.')
   }
 
+  const openingCount = Array.isArray(campaign.openings)
+    ? campaign.openings.length
+    : 0
+  const waveLimit = tomorrowFillWaveLimit(openingCount)
+  if (![5, 10, 15].includes(params.amount) || params.amount > waveLimit) {
+    throw new Error(
+      `This route is limited to ${waveLimit} customers per staged wave.`,
+    )
+  }
+
   const remainingBookings = Math.max(
     0,
     Number(campaign.max_discounted_bookings) - Number(campaign.booked_count),
@@ -799,8 +811,7 @@ export async function sendTomorrowFillWave(params: {
     .eq('campaign_id', campaign.id)
     .eq('status', 'eligible')
     .order('rank', { ascending: true })
-  if (params.amount !== 'all') query = query.limit(Math.max(1, params.amount))
-  else query = query.limit(100)
+  query = query.limit(params.amount)
   const { data: recipients, error: recipientsError } = await query
   if (recipientsError) throw recipientsError
   if (!recipients?.length)
@@ -962,7 +973,7 @@ export async function handleTomorrowFillTelegramCallback(params: {
   messageId: number
 }) {
   const match = params.callbackData.match(
-    /^tf:(5|10|15|all|skip):([0-9a-f-]{36})$/i,
+    /^tf:(5|10|15|skip):([0-9a-f-]{36})$/i,
   )
   if (!match) return false
   if (!allowedTelegramUser(params.userId)) {
@@ -990,7 +1001,7 @@ export async function handleTomorrowFillTelegramCallback(params: {
 
     const result = await sendTomorrowFillWave({
       campaignId,
-      amount: action === 'all' ? 'all' : Number(action),
+      amount: Number(action),
       actor: `telegram:${params.userId}`,
     })
     await answerTelegramCallback(

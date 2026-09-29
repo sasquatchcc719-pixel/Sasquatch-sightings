@@ -77,5 +77,12 @@ describe('TomorrowFillControlCenter', () => {
     expect(await screen.findByText('Tomorrow Fill')).toBeInTheDocument()
     expect(screen.getByText('4:00 PM–6:00 PM · David Gonzalez')).toBeVisible()
     expect(screen.getByText('29 eligible')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Send 5' })).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: 'Send 10' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Send all' }),
+    ).not.toBeInTheDocument()
   })
 })

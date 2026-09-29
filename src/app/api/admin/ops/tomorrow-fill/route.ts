@@ -186,10 +186,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
     if (action === 'send') {
-      const amount = body.amount === 'all' ? 'all' : Number(body.amount)
-      if (amount !== 'all' && ![5, 10, 15].includes(amount)) {
+      const amount = Number(body.amount)
+      if (![5, 10, 15].includes(amount)) {
         return NextResponse.json(
-          { error: 'Choose 5, 10, 15, or all.' },
+          { error: 'Choose a staged wave of 5, 10, or 15.' },
           { status: 400 },
         )
       }

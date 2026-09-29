@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { tomorrowFillWaveLimit } from '@/lib/ops/tomorrow-fill-rules'
 
 type Settings = {
   engine_enabled: boolean
@@ -186,9 +187,7 @@ export function TomorrowFillControlCenter() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(
     null,
   )
-  const [reviewAmount, setReviewAmount] = useState<5 | 10 | 15 | 'all' | null>(
-    null,
-  )
+  const [reviewAmount, setReviewAmount] = useState<5 | 10 | 15 | null>(null)
 
   const load = useCallback(async (campaignId?: string | null) => {
     setLoading(true)
@@ -234,9 +233,7 @@ export function TomorrowFillControlCenter() {
     const eligible = data.recipients.filter(
       (recipient) => recipient.status === 'eligible',
     )
-    return reviewAmount === 'all'
-      ? eligible.slice(0, 100)
-      : eligible.slice(0, reviewAmount)
+    return eligible.slice(0, reviewAmount)
   }, [data, reviewAmount])
 
   async function mutate(body: Record<string, unknown>, successMessage: string) {
@@ -294,6 +291,9 @@ export function TomorrowFillControlCenter() {
     (recipient) => recipient.replied_at,
   ).length
   const capacityHours = Number(selectedCampaign?.open_minutes || 0) / 60
+  const safeWaveLimit = tomorrowFillWaveLimit(
+    selectedCampaign?.openings?.length || 0,
+  )
 
   return (
     <div className="max-w-full min-w-0 space-y-6 overflow-x-hidden pb-16">
@@ -538,28 +538,30 @@ export function TomorrowFillControlCenter() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {([5, 10, 15, 'all'] as const).map((amount) => (
-                        <Button
-                          key={amount}
-                          size="sm"
-                          variant={
-                            amount === draft.default_wave_size
-                              ? 'default'
-                              : 'outline'
-                          }
-                          disabled={
-                            !draft.send_enabled ||
-                            remaining === 0 ||
-                            ['filled', 'skipped', 'failed'].includes(
-                              selectedCampaign.status,
-                            )
-                          }
-                          onClick={() => setReviewAmount(amount)}
-                        >
-                          <Send className="mr-1.5 h-3.5 w-3.5" />
-                          {amount === 'all' ? 'Send all' : `Send ${amount}`}
-                        </Button>
-                      ))}
+                      {([5, 10, 15] as const)
+                        .filter((amount) => amount <= safeWaveLimit)
+                        .map((amount) => (
+                          <Button
+                            key={amount}
+                            size="sm"
+                            variant={
+                              amount === draft.default_wave_size
+                                ? 'default'
+                                : 'outline'
+                            }
+                            disabled={
+                              !draft.send_enabled ||
+                              remaining === 0 ||
+                              ['filled', 'skipped', 'failed'].includes(
+                                selectedCampaign.status,
+                              )
+                            }
+                            onClick={() => setReviewAmount(amount)}
+                          >
+                            <Send className="mr-1.5 h-3.5 w-3.5" />
+                            Send {amount}
+                          </Button>
+                        ))}
                     </div>
                   </div>
                   {!draft.send_enabled && (
