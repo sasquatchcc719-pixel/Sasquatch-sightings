@@ -328,6 +328,38 @@ describe('commercial customer experience', () => {
       screen.queryByText('Sign and accept agreement'),
     ).not.toBeInTheDocument()
   })
+  it('lets staff safely preview the ACH request and Telegram approval workflow', () => {
+    render(
+      <ClientCommercialDetails
+        initialData={data}
+        readOnly
+        previewAchWorkflow
+      />,
+    )
+
+    expect(screen.getByText('Admin workflow preview')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Preview customer ACH request' }),
+    )
+    expect(
+      screen.getByText(/Request sent to Charles in Telegram/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Telegram approval card preview'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Example Business requested ACH payment details.'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Approve for 15 minutes' }),
+    )
+    expect(
+      screen.getByText(/receives one-time access for 15 minutes/),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('•••••••••').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/\d{8,}/)).not.toBeInTheDocument()
+  })
   it('uses the website logo and keeps business details directly accessible', () => {
     render(<ClientCommercialDetails initialData={data} />)
     expect(

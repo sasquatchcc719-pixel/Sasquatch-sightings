@@ -109,6 +109,7 @@ export function CommercialClientPreview({
         mustChangePassword={false}
         canSign={false}
         readOnly
+        previewAchWorkflow
       />
     </>
   )

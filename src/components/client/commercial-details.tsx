@@ -167,7 +167,15 @@ export function ProfileForm({
     </form>
   )
 }
-export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
+export function PaymentOptions({
+  readOnly = false,
+  previewWorkflow = false,
+  previewBusinessName = 'This customer',
+}: {
+  readOnly?: boolean
+  previewWorkflow?: boolean
+  previewBusinessName?: string
+}) {
   const [instructions, setInstructions] =
     useState<CommercialAchInstructions | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
@@ -176,6 +184,9 @@ export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
   >('idle')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [previewStatus, setPreviewStatus] = useState<
+    'idle' | 'pending' | 'approved' | 'denied'
+  >('idle')
 
   useEffect(() => {
     if (!requestId || requestStatus !== 'pending' || instructions) return
@@ -242,7 +253,106 @@ export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
         company must pay by check or another method, specify it in Payment
         method and terms above.
       </p>
-      {readOnly ? (
+      {readOnly && previewWorkflow ? (
+        <div className="mt-4 space-y-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm">
+          <div>
+            <strong className="text-amber-100">Admin workflow preview</strong>
+            <p className="mt-1 text-slate-300">
+              This walkthrough is simulated. It does not send Telegram messages,
+              create an access request, or reveal the real banking details.
+            </p>
+          </div>
+          {previewStatus === 'idle' && (
+            <Button type="button" onClick={() => setPreviewStatus('pending')}>
+              Preview customer ACH request
+            </Button>
+          )}
+          {previewStatus === 'pending' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-cyan-400/25 bg-cyan-400/10 p-3 text-cyan-100">
+                Request sent to Charles in Telegram. The customer keeps this
+                page open while it checks for approval automatically.
+              </div>
+              <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3">
+                <p className="text-xs tracking-wide text-slate-400 uppercase">
+                  Telegram approval card preview
+                </p>
+                <p className="mt-2 text-slate-100">
+                  {previewBusinessName} requested ACH payment details.
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  The real card identifies the signed-in requester by name and
+                  email and records the request time.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => setPreviewStatus('approved')}
+                  >
+                    Approve for 15 minutes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPreviewStatus('denied')}
+                  >
+                    Deny
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          {previewStatus === 'approved' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-emerald-100">
+                Approved. The signed-in customer receives one-time access for 15
+                minutes and the approval is recorded.
+              </div>
+              <dl className="grid gap-3 rounded-lg border border-white/10 bg-slate-950/60 p-3 sm:grid-cols-2">
+                {[
+                  ['Beneficiary', 'Sasquatch Carpet Cleaning'],
+                  ['Bank', 'Shown after real approval'],
+                  ['Routing number', '•••••••••'],
+                  ['Account number', '••••••••••'],
+                  ['Account type', 'Business checking'],
+                  ['Remittance email', 'Shown after real approval'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs tracking-wide text-slate-500 uppercase">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 font-mono text-sm text-slate-100">
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPreviewStatus('idle')}
+              >
+                Restart preview
+              </Button>
+            </div>
+          )}
+          {previewStatus === 'denied' && (
+            <div className="space-y-3">
+              <p className="rounded-lg border border-red-400/25 bg-red-400/10 p-3 text-red-100">
+                Request denied. No banking details are revealed, and the
+                customer can submit a new request if needed.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPreviewStatus('idle')}
+              >
+                Restart preview
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : readOnly ? (
         <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-400">
           ACH banking details are available only after the customer signs in and
           Charles approves that user’s request in Telegram.
@@ -768,10 +878,12 @@ export function ClientCommercialDetails({
   initialData,
   readOnly = false,
   canSign = false,
+  previewAchWorkflow = false,
 }: {
   initialData?: CommercialData
   readOnly?: boolean
   canSign?: boolean
+  previewAchWorkflow?: boolean
 }) {
   const [data, setData] = useState<
     (CommercialData & { canSign?: boolean }) | null
@@ -983,7 +1095,11 @@ export function ClientCommercialDetails({
             }}
           />
         </details>
-        <PaymentOptions readOnly={readOnly} />
+        <PaymentOptions
+          readOnly={readOnly}
+          previewWorkflow={previewAchWorkflow}
+          previewBusinessName={data.businessName}
+        />
         <SmsReminderForm
           preferences={data.smsPreferences || emptyCommercialSmsPreferences}
           readOnly={readOnly}

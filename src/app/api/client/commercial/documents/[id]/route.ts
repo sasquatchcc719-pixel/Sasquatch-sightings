@@ -1,20 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireClientManager } from '@/lib/auth'
+import { getUserWithRole, isOperationalRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 
 type Context = { params: Promise<{ id: string }> }
 
 export async function GET(request: NextRequest, { params }: Context) {
   try {
-    const { client } = await requireClientManager()
+    const identity = await getUserWithRole()
+    const isClientManager =
+      identity.role === 'client_manager' && Boolean(identity.client)
+    if (
+      !identity.user ||
+      (!isClientManager && !isOperationalRole(identity.role))
+    )
+      throw new Error('Document access denied')
+
     const { id } = await params
     const db = createAdminClient()
-    const { data: document, error } = await db
+    let documentQuery = db
       .from('ops_commercial_documents')
       .select('filename,mime_type,storage_bucket,storage_path')
       .eq('id', id)
-      .eq('customer_id', client.customer_id)
-      .maybeSingle()
+    if (isClientManager && identity.client)
+      documentQuery = documentQuery.eq(
+        'customer_id',
+        identity.client.customer_id,
+      )
+    const { data: document, error } = await documentQuery.maybeSingle()
 
     if (error) throw error
     if (!document)
@@ -46,7 +58,7 @@ export async function GET(request: NextRequest, { params }: Context) {
       error instanceof Error ? error.message : 'Unable to download document'
     return NextResponse.json(
       { error: 'Unable to download document' },
-      { status: message === 'Not a client manager' ? 403 : 500 },
+      { status: message === 'Document access denied' ? 403 : 500 },
     )
   }
 }

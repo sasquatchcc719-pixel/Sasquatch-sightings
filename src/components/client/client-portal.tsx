@@ -43,6 +43,7 @@ type Props = {
   initialCommercialData: CommercialData
   canSign: boolean
   readOnly?: boolean
+  previewAchWorkflow?: boolean
 }
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -79,6 +80,7 @@ export function ClientPortal({
   initialCommercialData,
   canSign,
   readOnly = false,
+  previewAchWorkflow = false,
 }: Props) {
   const [data, setData] = useState<ClientPortalData>(initialData)
   const [tab, setTab] = useState<'schedule' | 'business'>('business')
@@ -199,6 +201,7 @@ export function ClientPortal({
           initialData={initialCommercialData}
           canSign={canSign}
           readOnly={readOnly}
+          previewAchWorkflow={previewAchWorkflow}
         />
       </div>
       <div className="space-y-6" hidden={tab !== 'schedule'}>

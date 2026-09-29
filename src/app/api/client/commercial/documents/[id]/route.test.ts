@@ -2,13 +2,15 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireClientManager: vi.fn(),
+  getUserWithRole: vi.fn(),
   maybeSingle: vi.fn(),
   download: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
-  requireClientManager: mocks.requireClientManager,
+  getUserWithRole: mocks.getUserWithRole,
+  isOperationalRole: (role: string | null) =>
+    ['admin', 'owner', 'dispatcher', 'tech', 'marketing'].includes(role || ''),
 }))
 
 const query = {
@@ -27,7 +29,9 @@ import { GET } from './route'
 describe('commercial portal document download', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.requireClientManager.mockResolvedValue({
+    mocks.getUserWithRole.mockResolvedValue({
+      user: { id: 'user-a', email: 'client@example.com' },
+      role: 'client_manager',
       client: { customer_id: 'customer-a' },
     })
     mocks.maybeSingle.mockResolvedValue({
@@ -82,10 +86,32 @@ describe('commercial portal document download', () => {
     expect(mocks.download).not.toHaveBeenCalled()
   })
 
-  it('requires an active client manager', async () => {
-    mocks.requireClientManager.mockRejectedValue(
-      new Error('Not a client manager'),
+  it('allows authenticated operations staff to verify a portal document', async () => {
+    mocks.getUserWithRole.mockResolvedValue({
+      user: { id: 'staff-a', email: 'staff@example.com' },
+      role: 'owner',
+      client: null,
+    })
+
+    const response = await GET(
+      new NextRequest(
+        'https://example.com/api/client/commercial/documents/document-a',
+      ),
+      { params: Promise.resolve({ id: 'document-a' }) },
     )
+
+    expect(response.status).toBe(200)
+    expect(query.eq).toHaveBeenCalledTimes(1)
+    expect(query.eq).toHaveBeenCalledWith('id', 'document-a')
+    expect(mocks.download).toHaveBeenCalledWith('customer-a/w9.pdf')
+  })
+
+  it('rejects users without client or operations access', async () => {
+    mocks.getUserWithRole.mockResolvedValue({
+      user: { id: 'partner-a', email: 'partner@example.com' },
+      role: 'partner',
+      client: null,
+    })
     const response = await GET(
       new NextRequest(
         'https://example.com/api/client/commercial/documents/document-a',
