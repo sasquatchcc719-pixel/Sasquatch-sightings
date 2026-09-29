@@ -49,7 +49,14 @@ type Campaign = {
   target_date: string
   status: string
   selected_zips: string[]
-  openings: { start_time: string; end_time: string; staff_name?: string }[]
+  openings: {
+    startTime?: string
+    endTime?: string
+    staffName?: string
+    start_time?: string
+    end_time?: string
+    staff_name?: string
+  }[]
   exclusion_counts: Record<string, number>
   open_minutes: number
   booked_minutes: number
@@ -117,7 +124,8 @@ function dateLabel(value: string) {
   })
 }
 
-function timeLabel(value: string) {
+function timeLabel(value?: string) {
+  if (!value || !/^\d{1,2}:\d{2}/.test(value)) return 'Time unavailable'
   const [hours, minutes] = value.split(':').map(Number)
   return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -458,17 +466,23 @@ export function TomorrowFillControlCenter() {
 
                   {selectedCampaign.openings?.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {selectedCampaign.openings.map((opening, index) => (
-                        <span
-                          key={`${opening.start_time}-${index}`}
-                          className="bg-background rounded-full border px-3 py-1.5 text-xs font-medium"
-                        >
-                          <Clock3 className="mr-1.5 inline h-3.5 w-3.5 text-emerald-600" />
-                          {timeLabel(opening.start_time)}–
-                          {timeLabel(opening.end_time)}
-                          {opening.staff_name ? ` · ${opening.staff_name}` : ''}
-                        </span>
-                      ))}
+                      {selectedCampaign.openings.map((opening, index) => {
+                        const startTime =
+                          opening.startTime || opening.start_time
+                        const endTime = opening.endTime || opening.end_time
+                        const staffName =
+                          opening.staffName || opening.staff_name
+                        return (
+                          <span
+                            key={`${startTime || 'opening'}-${index}`}
+                            className="bg-background rounded-full border px-3 py-1.5 text-xs font-medium"
+                          >
+                            <Clock3 className="mr-1.5 inline h-3.5 w-3.5 text-emerald-600" />
+                            {timeLabel(startTime)}–{timeLabel(endTime)}
+                            {staffName ? ` · ${staffName}` : ''}
+                          </span>
+                        )
+                      })}
                     </div>
                   )}
 
