@@ -82,6 +82,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('early schedule hours', () => {
+  it('starts at 9 AM by default and reveals 7 AM when toggled', async () => {
+    mockSchedule(1)
+    render(<OperationsSchedule />)
+
+    await screen.findByRole('link', { name: /Saturday Customer/ })
+    const earlyHoursToggle = screen.getByRole('switch', {
+      name: 'Show schedule from 7 AM',
+    })
+
+    expect(earlyHoursToggle).toHaveAttribute('aria-checked', 'false')
+    expect(
+      screen.queryByRole('button', { name: /at 07:00$/ }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(earlyHoursToggle)
+
+    expect(earlyHoursToggle).toHaveAttribute('aria-checked', 'true')
+    expect(
+      screen.getAllByRole('button', { name: /at 07:00$/ }).length,
+    ).toBeGreaterThan(0)
+  })
+})
+
 describe('collapsible weekend schedule', () => {
   it.each([0, 1, 2])(
     'opens and collapses weekends independently with %i staff',

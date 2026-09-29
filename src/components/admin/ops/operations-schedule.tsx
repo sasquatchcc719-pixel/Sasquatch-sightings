@@ -205,8 +205,9 @@ type BusinessHoursRow = {
   end_time: string
 }
 
-// Grid runs 9am–midnight — work starts at 9, so the earlier rows are dead space.
-const HOURS = Array.from({ length: 15 }, (_, index) => 9 + index)
+const STANDARD_START_HOUR = 9
+const EARLY_START_HOUR = 7
+const END_HOUR = 24
 const HOUR_HEIGHT = 84
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const STAFF_LANE_COLORS = [
@@ -375,7 +376,7 @@ function formatDateKey(date: Date): string {
 }
 
 function parseMinutes(timeValue: string | null | undefined): number {
-  if (!timeValue) return HOURS[0] * 60
+  if (!timeValue) return STANDARD_START_HOUR * 60
   const [hours, minutes] = timeValue.slice(0, 5).split(':').map(Number)
   return hours * 60 + minutes
 }
@@ -575,9 +576,10 @@ function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
 function getBlockPlacement(
   event: CalendarEvent,
   endMinutesOverride?: number | null,
+  gridStartHour = STANDARD_START_HOUR,
 ) {
-  const workdayStart = HOURS[0] * 60
-  const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
+  const workdayStart = gridStartHour * 60
+  const workdayEnd = END_HOUR * 60
   const startMinutes = event.is_all_day
     ? workdayStart
     : Math.max(parseMinutes(event.start_time), workdayStart)
@@ -594,8 +596,9 @@ function getBlockPlacement(
 function getAppointmentPlacement(
   appointment: Appointment,
   endMinutesOverride?: number | null,
+  gridStartHour = STANDARD_START_HOUR,
 ) {
-  const workdayStart = HOURS[0] * 60
+  const workdayStart = gridStartHour * 60
   const startMinutes = Math.max(
     parseMinutes(appointment.start_time),
     workdayStart,
@@ -682,6 +685,7 @@ function WeekendSliver({
   onDragOver,
   onDragLeave,
   onDrop,
+  gridStartHour,
 }: {
   dateKey: string
   dayName: 'Sunday' | 'Saturday'
@@ -690,6 +694,7 @@ function WeekendSliver({
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void
   onDragLeave: () => void
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void
+  gridStartHour: number
 }) {
   return (
     <div
@@ -706,7 +711,11 @@ function WeekendSliver({
       onDrop={onDrop}
     >
       {appointments.map((appointment) => {
-        const placement = getAppointmentPlacement(appointment)
+        const placement = getAppointmentPlacement(
+          appointment,
+          null,
+          gridStartHour,
+        )
         return (
           <Link
             key={appointment.id}
@@ -854,9 +863,10 @@ function getBusinessDayRanges(templates: AvailabilityTemplate[]) {
 
 function getOffHourSegmentsForGrid(
   ranges: Array<{ start: number; end: number }>,
+  gridStartHour: number,
 ): Array<{ start: number; end: number }> {
-  const workdayStart = HOURS[0] * 60
-  const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
+  const workdayStart = gridStartHour * 60
+  const workdayEnd = END_HOUR * 60
   if (ranges.length === 0) {
     return [{ start: workdayStart, end: workdayEnd }]
   }
@@ -901,6 +911,16 @@ export function OperationsSchedule() {
     const requested = searchParams.get('view')
     return requested === 'day' || requested === 'month' ? requested : 'week'
   })
+  const [showEarlyHours, setShowEarlyHours] = useState(false)
+  const gridStartHour = showEarlyHours ? EARLY_START_HOUR : STANDARD_START_HOUR
+  const hours = useMemo(
+    () =>
+      Array.from(
+        { length: END_HOUR - gridStartHour },
+        (_, index) => gridStartHour + index,
+      ),
+    [gridStartHour],
+  )
   const focusedAppointmentId = searchParams.get('appointment')
   const [anchorDate, setAnchorDate] = useState(() => {
     const dateParam = searchParams.get('date')
@@ -1736,7 +1756,7 @@ export function OperationsSchedule() {
   }
 
   const PX_PER_MINUTE = HOUR_HEIGHT / 60
-  const GRID_START_MINUTES = HOURS[0] * 60
+  const GRID_START_MINUTES = gridStartHour * 60
 
   const snapToMinutes = (rawMinutes: number): number => {
     const snapped = Math.round(rawMinutes / 15) * 15
@@ -2566,7 +2586,11 @@ export function OperationsSchedule() {
         resizeLiveEndMinutes != null
           ? resizeLiveEndMinutes
           : null
-      const placement = getAppointmentPlacement(appointment, endOverride)
+      const placement = getAppointmentPlacement(
+        appointment,
+        endOverride,
+        gridStartHour,
+      )
       const isEstimate = appointment.kind === 'estimate'
       const isRestoration = appointment.kind === 'restoration'
       const href = isRestoration
@@ -3100,6 +3124,27 @@ export function OperationsSchedule() {
               </Button>
             ))}
           </div>
+
+          {view !== 'month' ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showEarlyHours}
+              aria-label="Show schedule from 7 AM"
+              onClick={() => setShowEarlyHours((current) => !current)}
+              className="border-border ml-1 flex h-9 items-center gap-2 rounded-xl border bg-white/70 px-3 text-sm font-medium text-slate-700 transition hover:bg-white"
+            >
+              <span>7 AM start</span>
+              <span
+                aria-hidden
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${showEarlyHours ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              >
+                <span
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showEarlyHours ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+                />
+              </span>
+            </button>
+          ) : null}
 
           <div className="flex-1" />
 
@@ -4403,7 +4448,7 @@ export function OperationsSchedule() {
                         })}
 
                     <div className="relative border-r border-slate-200 bg-slate-50">
-                      {HOURS.map((hour) => (
+                      {hours.map((hour) => (
                         <div
                           key={hour}
                           className="border-b border-slate-200 px-3 pt-2 text-xs text-slate-500"
@@ -4434,8 +4479,10 @@ export function OperationsSchedule() {
                           )
                           const dayRanges =
                             businessDayRanges.get(anchorDate.getDay()) || []
-                          const offHourSegments =
-                            getOffHourSegmentsForGrid(dayRanges)
+                          const offHourSegments = getOffHourSegmentsForGrid(
+                            dayRanges,
+                            gridStartHour,
+                          )
                           const laneIsOpen = isStaffOpenForDate(
                             staff.id,
                             dateKey,
@@ -4464,6 +4511,8 @@ export function OperationsSchedule() {
                                     const ghostPlacement =
                                       getAppointmentPlacement(
                                         draggingAppointment,
+                                        null,
+                                        gridStartHour,
                                       )
                                     const ghostTop =
                                       ((dragPreview.snappedMinutes -
@@ -4481,7 +4530,7 @@ export function OperationsSchedule() {
                                     )
                                   })()
                                 : null}
-                              {HOURS.map((hour) => (
+                              {hours.map((hour) => (
                                 <button
                                   key={`${dateKey}-${hour}`}
                                   type="button"
@@ -4495,7 +4544,7 @@ export function OperationsSchedule() {
                                 />
                               ))}
                               {offHourSegments.map((segment, index) => {
-                                const gridStartMinutes = HOURS[0] * 60
+                                const gridStartMinutes = gridStartHour * 60
                                 const top =
                                   ((segment.start - gridStartMinutes) / 60) *
                                   HOUR_HEIGHT
@@ -4526,6 +4575,7 @@ export function OperationsSchedule() {
                                   const placement = getBlockPlacement(
                                     event,
                                     endOverride,
+                                    gridStartHour,
                                   )
                                   const isDraggingThis =
                                     draggingEvent?.id === event.id
@@ -4599,8 +4649,7 @@ export function OperationsSchedule() {
                               {dateKey === todayKey &&
                               nowMinutes != null &&
                               nowMinutes >= GRID_START_MINUTES &&
-                              nowMinutes <=
-                                (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                              nowMinutes <= END_HOUR * 60 ? (
                                 <div
                                   className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
                                   style={{
@@ -4646,6 +4695,7 @@ export function OperationsSchedule() {
                                   onDrop={(e) =>
                                     void handleDrop(e, dateKey, null)
                                   }
+                                  gridStartHour={gridStartHour}
                                 />
                               )
                             }
@@ -4656,8 +4706,10 @@ export function OperationsSchedule() {
                             )
                             const dayRanges =
                               businessDayRanges.get(date.getDay()) || []
-                            const offHourSegments =
-                              getOffHourSegmentsForGrid(dayRanges)
+                            const offHourSegments = getOffHourSegmentsForGrid(
+                              dayRanges,
+                              gridStartHour,
+                            )
                             return (
                               <div
                                 key={dateKey}
@@ -4699,6 +4751,8 @@ export function OperationsSchedule() {
                                             const ghostPlacement =
                                               getAppointmentPlacement(
                                                 draggingAppointment,
+                                                null,
+                                                gridStartHour,
                                               )
                                             const ghostTop =
                                               ((dragPreview.snappedMinutes -
@@ -4717,7 +4771,7 @@ export function OperationsSchedule() {
                                             )
                                           })()
                                         : null}
-                                      {HOURS.map((hour) => (
+                                      {hours.map((hour) => (
                                         <button
                                           key={`${dateKey}-${staff.id}-${hour}`}
                                           type="button"
@@ -4736,7 +4790,8 @@ export function OperationsSchedule() {
                                         />
                                       ))}
                                       {offHourSegments.map((segment, index) => {
-                                        const gridStartMinutes = HOURS[0] * 60
+                                        const gridStartMinutes =
+                                          gridStartHour * 60
                                         const top =
                                           ((segment.start - gridStartMinutes) /
                                             60) *
@@ -4770,6 +4825,7 @@ export function OperationsSchedule() {
                                           const placement = getBlockPlacement(
                                             event,
                                             endOverride,
+                                            gridStartHour,
                                           )
                                           const isDraggingThis =
                                             draggingEvent?.id === event.id
@@ -4857,8 +4913,7 @@ export function OperationsSchedule() {
                                       dateKey === todayKey &&
                                       nowMinutes != null &&
                                       nowMinutes >= GRID_START_MINUTES &&
-                                      nowMinutes <=
-                                        (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                      nowMinutes <= END_HOUR * 60 ? (
                                         <div
                                           className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
                                           style={{
@@ -4909,6 +4964,7 @@ export function OperationsSchedule() {
                                   onDrop={(e) =>
                                     void handleDrop(e, dateKey, null)
                                   }
+                                  gridStartHour={gridStartHour}
                                 />
                               )
                             }
@@ -4927,8 +4983,10 @@ export function OperationsSchedule() {
                             )
                             const dayRanges =
                               businessDayRanges.get(date.getDay()) || []
-                            const offHourSegments =
-                              getOffHourSegmentsForGrid(dayRanges)
+                            const offHourSegments = getOffHourSegmentsForGrid(
+                              dayRanges,
+                              gridStartHour,
+                            )
                             return (
                               <div
                                 key={dateKey}
@@ -4947,6 +5005,8 @@ export function OperationsSchedule() {
                                       const ghostPlacement =
                                         getAppointmentPlacement(
                                           draggingAppointment,
+                                          null,
+                                          gridStartHour,
                                         )
                                       const ghostTop =
                                         ((dragPreview.snappedMinutes -
@@ -4964,7 +5024,7 @@ export function OperationsSchedule() {
                                       )
                                     })()
                                   : null}
-                                {HOURS.map((hour) => (
+                                {hours.map((hour) => (
                                   <button
                                     key={`${dateKey}-${hour}`}
                                     type="button"
@@ -4978,7 +5038,7 @@ export function OperationsSchedule() {
                                   />
                                 ))}
                                 {offHourSegments.map((segment, index) => {
-                                  const gridStartMinutes = HOURS[0] * 60
+                                  const gridStartMinutes = gridStartHour * 60
                                   const top =
                                     ((segment.start - gridStartMinutes) / 60) *
                                     HOUR_HEIGHT
@@ -5002,6 +5062,7 @@ export function OperationsSchedule() {
                                   const placement = getBlockPlacement(
                                     event,
                                     endOverride,
+                                    gridStartHour,
                                   )
                                   const isDraggingThis =
                                     draggingEvent?.id === event.id
@@ -5075,8 +5136,7 @@ export function OperationsSchedule() {
                                 {dateKey === todayKey &&
                                 nowMinutes != null &&
                                 nowMinutes >= GRID_START_MINUTES &&
-                                nowMinutes <=
-                                  (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                nowMinutes <= END_HOUR * 60 ? (
                                   <div
                                     className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
                                     style={{
