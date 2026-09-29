@@ -19,6 +19,7 @@ import {
   ReceiptText,
   Leaf,
   MessageSquareText,
+  Landmark,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,7 @@ import {
   type CommercialAgreement,
   type CommercialProfile,
   type CommercialSmsPreferences,
+  type CommercialAchInstructions,
   emptyCommercialSmsPreferences,
   SCHEDULING_SMS_CONSENT,
   SIGNATURE_CONSENT,
@@ -72,7 +74,7 @@ const PROFILE_LABELS: Record<keyof CommercialProfile, string> = {
   legal_name: 'Legal business name',
   billing_contact: 'Billing contact',
   billing_email: 'Billing email',
-  payment_process: 'Payment method and terms',
+  payment_process: 'Payment method and terms (if not paying by ACH)',
   invoice_submission: 'Invoice submission / vendor portal instructions',
   purchase_order: 'Purchase order / vendor reference',
   access_instructions: 'Access and preparation instructions',
@@ -163,6 +165,97 @@ export function ProfileForm({
         </p>
       )}
     </form>
+  )
+}
+export function PaymentOptions({ readOnly = false }: { readOnly?: boolean }) {
+  const [instructions, setInstructions] =
+    useState<CommercialAchInstructions | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const fields: { label: string; value: string }[] = instructions
+    ? [
+        { label: 'Beneficiary', value: instructions.beneficiaryName },
+        { label: 'Bank', value: instructions.bankName },
+        { label: 'Routing number', value: instructions.routingNumber },
+        { label: 'Account number', value: instructions.accountNumber },
+        { label: 'Account type', value: instructions.accountType },
+        { label: 'Remittance email', value: instructions.remittanceEmail },
+      ]
+    : []
+
+  return (
+    <section className={panelClass} aria-labelledby="payment-options-title">
+      <h2
+        id="payment-options-title"
+        className="flex items-center gap-2 text-lg font-semibold"
+      >
+        <Landmark className="h-5 w-5 text-cyan-400" />
+        Payment options
+      </h2>
+      <p className="mt-2 text-sm text-slate-300">
+        ACH is preferred for commercial invoices. Your accounts-payable team can
+        reveal the secure banking details here whenever needed. If your company
+        must pay by check or another method, specify it in Payment method and
+        terms above.
+      </p>
+      {readOnly ? (
+        <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-400">
+          ACH banking details are available only after the customer signs in.
+        </p>
+      ) : instructions ? (
+        <>
+          <dl className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-slate-950/50 p-4 sm:grid-cols-2">
+            {fields.map((field) => (
+              <div key={field.label}>
+                <dt className="text-xs tracking-wide text-slate-500 uppercase">
+                  {field.label}
+                </dt>
+                <dd className="mt-1 font-mono text-sm break-all text-slate-100">
+                  {field.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-amber-200">
+            Before the first transfer, or if these instructions ever appear to
+            change, verify them with Sasquatch Carpet Cleaning at (719)
+            249-8791.
+          </p>
+        </>
+      ) : (
+        <Button
+          type="button"
+          className="mt-4"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            setError('')
+            try {
+              const result = await commercialFetch(
+                '/api/client/commercial/payment-instructions',
+              )
+              setInstructions(result.instructions)
+            } catch (caught) {
+              setError(
+                caught instanceof Error
+                  ? caught.message
+                  : 'Unable to load ACH details.',
+              )
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy ? 'Loading…' : 'View ACH payment details'}
+        </Button>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 export function SmsReminderForm({
@@ -828,6 +921,7 @@ export function ClientCommercialDetails({
             }}
           />
         </details>
+        <PaymentOptions readOnly={readOnly} />
         <SmsReminderForm
           preferences={data.smsPreferences || emptyCommercialSmsPreferences}
           readOnly={readOnly}

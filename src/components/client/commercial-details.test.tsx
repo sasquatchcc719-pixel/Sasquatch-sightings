@@ -68,6 +68,39 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
+  it('reveals server-held ACH instructions only when the customer asks for them', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        instructions: {
+          beneficiaryName: 'Example Cleaning Company',
+          bankName: 'Example Bank',
+          routingNumber: '123456789',
+          accountNumber: '123456789012',
+          accountType: 'Checking',
+          remittanceEmail: 'billing@example.com',
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ClientCommercialDetails initialData={data} />)
+
+    expect(screen.queryByText('123456789012')).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/ACH is preferred for commercial invoices/i),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View ACH payment details' }),
+    )
+
+    expect(await screen.findByText('123456789012')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/client/commercial/payment-instructions',
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(screen.getByText(/verify them with Sasquatch/i)).toBeInTheDocument()
+  })
+
   it('lets the customer authorize scheduling texts to a mobile number', async () => {
     const fetchMock = vi
       .fn()

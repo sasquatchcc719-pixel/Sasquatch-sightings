@@ -67,6 +67,14 @@ export type CommercialSmsPreferences = {
   consentAt: string | null
   optedOutAt: string | null
 }
+export type CommercialAchInstructions = {
+  beneficiaryName: string
+  bankName: string
+  routingNumber: string
+  accountNumber: string
+  accountType: string
+  remittanceEmail: string
+}
 export const emptyCommercialSmsPreferences: CommercialSmsPreferences = {
   phone: '',
   enabled: false,
