@@ -41,9 +41,31 @@ export type CalendarPipelineResponse = {
   currentMonth: number // 1-12
   totalCompleted: number
   totalBooked: number
+  rollingBooked: {
+    startDate: string
+    endDate: string
+    revenue: number
+    jobCount: number
+  }
   months: CalendarPipelineMonth[]
   /** null when the projection could not be computed. */
   projection: RevenueProjection | null
+}
+
+export function addOneCalendarYear(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(year + 1, month, 0),
+  ).getUTCDate()
+  return new Date(
+    Date.UTC(year + 1, month - 1, Math.min(day, lastDayOfTargetMonth)),
+  )
+    .toISOString()
+    .slice(0, 10)
+}
+
+export function mountainDateKey(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
 }
 
 /** Pull the effective invoice amount off an appointment's joined invoice/lines. */
@@ -76,11 +98,13 @@ export async function GET() {
     const supabase = createAdminClient()
 
     const now = new Date()
-    const year = now.getFullYear()
-    const currentMonth = now.getMonth() + 1 // 1-indexed
-    const today = now.toISOString().slice(0, 10)
+    const today = mountainDateKey(now)
+    const year = Number(today.slice(0, 4))
+    const currentMonth = Number(today.slice(5, 7))
     const yearStart = `${year}-01-01`
     const yearEnd = `${year}-12-31`
+    const rollingEnd = addOneCalendarYear(today)
+    const openAppointmentEnd = rollingEnd > yearEnd ? rollingEnd : yearEnd
 
     const apptSelect = `
       appointment_date,
@@ -93,12 +117,13 @@ export async function GET() {
       )
     `
 
-    // Booked (scheduled, not-yet-done): current-month upcoming + all future.
+    // Open appointments through the next 12 months. Current-year buckets and
+    // the rolling booked total are derived from this one read below.
     const { data: booked, error: bookedErr } = await supabase
       .from('ops_appointments')
       .select(apptSelect)
       .gte('appointment_date', yearStart)
-      .lte('appointment_date', yearEnd)
+      .lte('appointment_date', openAppointmentEnd)
       .not('status', 'eq', 'cancelled')
       .not('status', 'eq', 'completed')
       .order('appointment_date', { ascending: true })
@@ -184,8 +209,27 @@ export async function GET() {
       buckets[m].completedJobCount += 1
     }
 
-    // Booked jobs → current-month upcoming + future months only.
+    let rollingBookedRevenue = 0
+    let rollingBookedJobCount = 0
+
+    // Booked jobs → current-month upcoming + future months only. The same
+    // open-appointment read also supplies the rolling 12-month total.
     for (const appt of booked ?? []) {
+      if (
+        appt.appointment_date >= today &&
+        appt.appointment_date <= rollingEnd
+      ) {
+        rollingBookedRevenue += apptAmount(appt)
+        rollingBookedJobCount += 1
+      }
+
+      if (
+        appt.appointment_date < yearStart ||
+        appt.appointment_date > yearEnd
+      ) {
+        continue
+      }
+
       const apptMonth =
         new Date(appt.appointment_date + 'T12:00:00').getMonth() + 1
       const isCurrentMonthUpcoming =
@@ -226,6 +270,12 @@ export async function GET() {
       currentMonth,
       totalCompleted,
       totalBooked,
+      rollingBooked: {
+        startDate: today,
+        endDate: rollingEnd,
+        revenue: rollingBookedRevenue,
+        jobCount: rollingBookedJobCount,
+      },
       months: buckets,
       projection,
     } satisfies CalendarPipelineResponse)

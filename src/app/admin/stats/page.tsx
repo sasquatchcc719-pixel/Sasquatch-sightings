@@ -86,6 +86,12 @@ type CalendarPipeline = {
   currentMonth: number
   totalCompleted: number
   totalBooked: number
+  rollingBooked: {
+    startDate: string
+    endDate: string
+    revenue: number
+    jobCount: number
+  }
   months: CalendarPipelineMonth[]
   projection: RevenueProjectionData | null
 }
@@ -1162,7 +1168,7 @@ function BookingErrorPanel({
           <CalendarCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
           <div>
             <h4 className="text-sm font-semibold text-emerald-300">
-              Booking Tool Errors — none detected
+              Customer Booking Incidents — none detected
             </h4>
             <p className="text-muted-foreground mt-1 text-xs">
               No blocking customer errors have been recorded in the last{' '}
@@ -1181,11 +1187,13 @@ function BookingErrorPanel({
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
           <div>
             <h4 className="text-sm font-semibold text-red-300">
-              Booking Tool Errors
+              Customer Booking Incident History
             </h4>
             <p className="text-muted-foreground mt-1 text-xs">
-              Blocking failures only. Telegram alerts on the first incident;
-              repeats are logged without flooding your phone.
+              Browser-reported failures that blocked a customer session. This is
+              incident history, not a live-outage indicator. Telegram alerts on
+              the first incident; repeats are logged without flooding your
+              phone.
             </p>
           </div>
         </div>
@@ -1205,7 +1213,7 @@ function BookingErrorPanel({
         {[
           ['Last 24 hours', summary.last24Hours],
           ['Affected sessions', summary.affectedSessions],
-          ['Still unresolved', summary.unresolvedSessions],
+          ['Sessions not completed', summary.unresolvedSessions],
           ['Total failures', summary.totalEvents],
         ].map(([label, value]) => (
           <div
@@ -1239,7 +1247,11 @@ function BookingErrorPanel({
                 <p className="font-semibold">{event.stageLabel}</p>
                 <p className="text-muted-foreground mt-0.5">
                   {event.errorMessage}
-                  {event.httpStatus ? ` (HTTP ${event.httpStatus})` : ''}
+                  {event.httpStatus !== null
+                    ? event.httpStatus === 0
+                      ? ' (no HTTP response reached the browser)'
+                      : ` (HTTP ${event.httpStatus})`
+                    : ''}
                 </p>
               </div>
               <span
@@ -1250,8 +1262,8 @@ function BookingErrorPanel({
                 }
               >
                 {event.recoveredAt
-                  ? 'Recovered — customer booked'
-                  : 'Unresolved'}
+                  ? 'Customer later booked'
+                  : 'Customer did not complete booking'}
               </span>
             </div>
             <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
@@ -2727,7 +2739,7 @@ export default function StatsPage() {
             return (
               <div className="space-y-4">
                 {/* Summary cards */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <Card className="card-interactive animate-slide-up border-blue-500/30 bg-blue-950/30 p-4 backdrop-blur">
                     <p className="mb-1 text-sm font-medium tracking-wide text-blue-300/80 uppercase">
                       Full Year Value
@@ -2759,6 +2771,17 @@ export default function StatsPage() {
                     </p>
                     <p className="text-muted-foreground mt-1 text-xs">
                       still booked on the calendar
+                    </p>
+                  </Card>
+                  <Card className="card-interactive animate-slide-up-delay-3 border-cyan-500/30 bg-cyan-950/25 p-4 backdrop-blur">
+                    <p className="mb-1 text-sm font-medium tracking-wide text-cyan-300/80 uppercase">
+                      Booked Next 12 Months
+                    </p>
+                    <p className="stat-value text-3xl font-bold text-cyan-300">
+                      {formatCurrency(pipeline?.rollingBooked?.revenue ?? 0)}
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {pipeline?.rollingBooked?.jobCount ?? 0} scheduled visits
                     </p>
                   </Card>
                 </div>
@@ -3957,7 +3980,10 @@ export default function StatsPage() {
               return (
                 <>
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">Projected Annual Revenue</p>
+                    <p className="font-medium">
+                      Projected {pipeline?.year ?? new Date().getFullYear()}{' '}
+                      Revenue
+                    </p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(projected)}
                     </p>
