@@ -28,6 +28,7 @@ import {
   sendRangerTelegramMessage,
 } from '@/lib/ranger/telegram'
 import { recordTomorrowFillReply } from '@/lib/ops/tomorrow-fill'
+import { recordCommercialSmsOptOut } from '@/lib/ops/commercial-sms'
 
 export const maxDuration = 60
 
@@ -690,6 +691,12 @@ export async function POST(request: NextRequest) {
       phone: normalizedPhone,
       message: rawMessageBody,
       twilioSid,
+      optOutType,
+    })
+    await recordCommercialSmsOptOut(supabase, {
+      customerId: linkedCustomerId,
+      phone: normalizedPhone,
+      message: rawMessageBody,
       optOutType,
     })
 

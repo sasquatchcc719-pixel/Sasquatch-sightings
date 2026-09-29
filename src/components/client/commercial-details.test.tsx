@@ -68,6 +68,39 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
+  it('lets the customer authorize scheduling texts to a mobile number', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => data })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ClientCommercialDetails initialData={data} />)
+
+    fireEvent.change(
+      screen.getByLabelText('Mobile number for scheduling texts'),
+      { target: { value: '(719) 555-0100' } },
+    )
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /Authorize scheduling text messages/i,
+      }),
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save text preferences' }),
+    )
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/client/commercial/sms-preferences',
+    )
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      phone: '(719) 555-0100',
+      enabled: true,
+      consentAcknowledged: true,
+    })
+    expect(screen.getByText(/Reply STOP to opt out/i)).toBeInTheDocument()
+  })
+
   it('saves customer-entered business and access details before opening the agreement', async () => {
     const fetchMock = vi
       .fn()
@@ -393,7 +426,9 @@ describe('commercial customer experience', () => {
       screen.getByText('Private agreement', { selector: 'strong' }),
     )
     expect(screen.getByLabelText('Confirm your portal password')).toBeRequired()
-    expect(screen.getByRole('checkbox')).toBeRequired()
+    expect(
+      screen.getByRole('checkbox', { name: /I am authorized to sign/i }),
+    ).toBeRequired()
     expect(
       screen.getByRole('button', { name: 'Sign and accept agreement' }),
     ).toBeDisabled()

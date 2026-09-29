@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   emptyProfile,
+  commercialProfileSchema,
   commercialContactName,
   newAgreementContent,
   type AgreementContent,
@@ -69,7 +70,16 @@ export async function loadCommercialData(
     customer.data!.full_name,
     businessName,
   )
-  const savedProfile = { ...emptyProfile, ...profile.data }
+  const savedProfile = commercialProfileSchema.parse({
+    ...emptyProfile,
+    ...profile.data,
+  })
+  const savedSmsPreferences = profile.data as {
+    scheduling_sms_phone?: string | null
+    scheduling_sms_enabled?: boolean | null
+    scheduling_sms_consent_at?: string | null
+    scheduling_sms_opted_out_at?: string | null
+  } | null
   return {
     businessName,
     customerContact: {
@@ -88,9 +98,16 @@ export async function loadCommercialData(
     },
     agreements: agreements.data || [],
     documents: documents.data || [],
+    smsPreferences: {
+      phone: savedSmsPreferences?.scheduling_sms_phone || '',
+      enabled: savedSmsPreferences?.scheduling_sms_enabled === true,
+      consentAt: savedSmsPreferences?.scheduling_sms_consent_at || null,
+      optedOutAt: savedSmsPreferences?.scheduling_sms_opted_out_at || null,
+    },
     addresses: addresses.data || [],
   } as CommercialData
 }
+
 export async function contentFromEstimate(
   db: SupabaseClient,
   customerId: string,

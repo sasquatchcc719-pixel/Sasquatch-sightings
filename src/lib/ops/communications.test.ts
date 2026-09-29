@@ -5,7 +5,61 @@ import {
   dayBeforeTemplateKey,
   formatCustomerServiceSummary,
   getOpsTemplateKeysForEvent,
+  schedulingSmsRecipient,
+  withSchedulingSmsOptOut,
 } from '@/lib/ops/communications'
+
+describe('commercial scheduling text consent', () => {
+  const customer = {
+    full_name: 'Example Business',
+    first_name: null,
+    business_name: 'Example Business',
+    email: 'manager@example.com',
+    phone: '7195550000',
+    email_opt_out: false,
+  }
+
+  it('uses the authorized portal number and includes the opt-out instruction', () => {
+    const recipient = schedulingSmsRecipient({
+      ...customer,
+      ops_commercial_profiles: {
+        scheduling_sms_phone: '+17195550100',
+        scheduling_sms_enabled: true,
+        scheduling_sms_consent_at: '2026-09-29T18:00:00.000Z',
+      },
+    })
+    expect(recipient).toEqual({
+      phone: '+17195550100',
+      portalOptIn: true,
+    })
+    expect(withSchedulingSmsOptOut('Appointment confirmed.', true)).toBe(
+      'Appointment confirmed.\n\nReply STOP to unsubscribe.',
+    )
+  })
+
+  it('suppresses commercial texts until the portal authorization is active', () => {
+    expect(
+      schedulingSmsRecipient({
+        ...customer,
+        ops_commercial_profiles: {
+          scheduling_sms_phone: '+17195550100',
+          scheduling_sms_enabled: false,
+          scheduling_sms_consent_at: null,
+        },
+      }),
+    ).toEqual({ phone: '', portalOptIn: false })
+  })
+
+  it('keeps the existing customer phone flow for non-commercial customers', () => {
+    expect(
+      schedulingSmsRecipient({
+        ...customer,
+        business_name: null,
+        ops_commercial_profiles: null,
+      }),
+    ).toEqual({ phone: '7195550000', portalOptIn: false })
+  })
+})
 
 describe('appointment arrival expectations', () => {
   it('keeps morning arrival wording direct', () => {

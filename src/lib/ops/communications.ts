@@ -83,6 +83,22 @@ type TechnicianEmailProfile = {
   imageUrl: string | null
 }
 
+type SchedulingSmsProfile = {
+  scheduling_sms_phone: string | null
+  scheduling_sms_enabled: boolean | null
+  scheduling_sms_consent_at: string | null
+}
+
+type AppointmentCustomer = {
+  full_name: string
+  first_name: string | null
+  business_name: string | null
+  email: string | null
+  phone: string | null
+  email_opt_out: boolean | null
+  ops_commercial_profiles: SchedulingSmsProfile | SchedulingSmsProfile[] | null
+}
+
 type AppointmentWithRelations = {
   id: string
   customer_id: string
@@ -91,24 +107,7 @@ type AppointmentWithRelations = {
   end_time: string
   internal_notes: string | null
   service_concern_id?: string | null
-  ops_customers:
-    | {
-        full_name: string
-        first_name: string | null
-        business_name: string | null
-        email: string | null
-        phone: string | null
-        email_opt_out: boolean | null
-      }
-    | {
-        full_name: string
-        first_name: string | null
-        business_name: string | null
-        email: string | null
-        phone: string | null
-        email_opt_out: boolean | null
-      }[]
-    | null
+  ops_customers: AppointmentCustomer | AppointmentCustomer[] | null
   ops_service_addresses:
     | {
         street_1: string
@@ -189,7 +188,12 @@ const APPOINTMENT_SELECT = `
     business_name,
     email,
     phone,
-    email_opt_out
+    email_opt_out,
+    ops_commercial_profiles (
+      scheduling_sms_phone,
+      scheduling_sms_enabled,
+      scheduling_sms_consent_at
+    )
   ),
   ops_service_addresses (
     street_1,
@@ -209,6 +213,36 @@ const APPOINTMENT_SELECT = `
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
+}
+
+export function schedulingSmsRecipient(customer: AppointmentCustomer | null): {
+  phone: string
+  portalOptIn: boolean
+} {
+  if (!customer) return { phone: '', portalOptIn: false }
+  const profile = unwrapRelation(customer.ops_commercial_profiles)
+  if (!profile) {
+    return { phone: customer.phone?.trim() || '', portalOptIn: false }
+  }
+  if (
+    profile.scheduling_sms_enabled === true &&
+    profile.scheduling_sms_consent_at &&
+    profile.scheduling_sms_phone?.trim()
+  ) {
+    return {
+      phone: profile.scheduling_sms_phone.trim(),
+      portalOptIn: true,
+    }
+  }
+  return { phone: '', portalOptIn: false }
+}
+
+export function withSchedulingSmsOptOut(
+  body: string,
+  portalOptIn: boolean,
+): string {
+  if (!portalOptIn || /reply\s+stop\b/i.test(body)) return body
+  return `${body.trim()}\n\nReply STOP to unsubscribe.`
 }
 
 function toLocalDateString(dateValue: string): string {
@@ -931,7 +965,8 @@ export async function sendOpsLifecycleCommunications(params: {
   if (templates.length === 0) return { sent: [] }
 
   const customer = unwrapRelation(appointment.ops_customers)
-  const customerPhone = customer?.phone || ''
+  const smsRecipient = schedulingSmsRecipient(customer)
+  const customerPhone = smsRecipient.phone
   const customerEmail = isDeliverableCustomerEmail(customer?.email)
     ? customer.email
     : ''
@@ -985,7 +1020,7 @@ export async function sendOpsLifecycleCommunications(params: {
           : sendCustomerSMS
       await sendSms(
         customerPhone,
-        body,
+        withSchedulingSmsOptOut(body, smsRecipient.portalOptIn),
         undefined,
         `ops_${template.template_key}`,
         twilioFrom,
@@ -993,7 +1028,7 @@ export async function sendOpsLifecycleCommunications(params: {
       sent.push({
         template_key: template.template_key,
         channel: 'sms',
-        body,
+        body: withSchedulingSmsOptOut(body, smsRecipient.portalOptIn),
         actually_sent: true,
       })
       continue
@@ -1386,7 +1421,8 @@ export async function sendDayBeforeReminderSms(params?: {
     }
 
     const customer = unwrapRelation(appointment.ops_customers)
-    const customerPhone = customer?.phone?.trim() || ''
+    const smsRecipient = schedulingSmsRecipient(customer)
+    const customerPhone = smsRecipient.phone
     if (!customerPhone) {
       skippedNoPhone++
       continue
@@ -1409,7 +1445,10 @@ export async function sendDayBeforeReminderSms(params?: {
 
     const { context } = await getAppointmentContext(supabase, appointment.id)
     if (!context) continue
-    const body = renderTemplate(template.body_template, context)
+    const body = withSchedulingSmsOptOut(
+      renderTemplate(template.body_template, context),
+      smsRecipient.portalOptIn,
+    )
     if (!body.trim()) continue
 
     const dedupeKey = `day_before_sms_${appointment.id}_${tomorrowDate}`

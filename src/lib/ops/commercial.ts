@@ -33,6 +33,52 @@ export const emptyProfile: CommercialProfile = {
   service_windows: '',
   site_notes: '',
 }
+export const SCHEDULING_SMS_CONSENT =
+  'I agree to receive automated scheduling and service text messages from Sasquatch Carpet Cleaning at the mobile number provided. Messages may include appointment confirmations, date or service changes, reminders, and on-the-way updates. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is optional and is not a condition of receiving service.'
+export const commercialSmsPreferenceSchema = z
+  .object({
+    phone: z.string().trim().max(30),
+    enabled: z.boolean(),
+    consentAcknowledged: z.boolean(),
+  })
+  .superRefine((value, context) => {
+    if (!value.enabled) return
+    const digits = value.phone.replace(/\D/g, '')
+    const validPhone =
+      digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
+    if (!validPhone) {
+      context.addIssue({
+        code: 'custom',
+        path: ['phone'],
+        message: 'Enter a valid 10-digit US mobile number.',
+      })
+    }
+    if (!value.consentAcknowledged) {
+      context.addIssue({
+        code: 'custom',
+        path: ['consentAcknowledged'],
+        message: 'Authorization is required to turn on scheduling texts.',
+      })
+    }
+  })
+export type CommercialSmsPreferences = {
+  phone: string
+  enabled: boolean
+  consentAt: string | null
+  optedOutAt: string | null
+}
+export const emptyCommercialSmsPreferences: CommercialSmsPreferences = {
+  phone: '',
+  enabled: false,
+  consentAt: null,
+  optedOutAt: null,
+}
+export function normalizeCommercialSmsPhone(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return ''
+}
 export const scopeLineSchema = z.object({
   id: z.uuid(),
   name: z.string().trim().min(1).max(300),
@@ -113,6 +159,7 @@ export type CommercialData = {
     mime_type: string
     published_at: string
   }[]
+  smsPreferences?: CommercialSmsPreferences
   businessName: string
   addresses: {
     id: string

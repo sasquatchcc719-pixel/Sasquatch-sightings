@@ -19,6 +19,10 @@ describe('buildCommercialSetupEmailDraft', () => {
       'one place to see every confirmed cleaning appointment',
     )
     expect(draft.body).toContain('services planned for each visit')
+    expect(draft.body).toContain(
+      'enter the mobile number that should receive scheduling texts',
+    )
+    expect(draft.body).toContain('check the authorization box')
     expect(draft.body.indexOf('confirmed cleaning appointment')).toBeLessThan(
       draft.body.indexOf('payment and invoice instructions'),
     )

@@ -18,6 +18,7 @@ import {
   LockKeyhole,
   ReceiptText,
   Leaf,
+  MessageSquareText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,9 @@ import {
   type CommercialData,
   type CommercialAgreement,
   type CommercialProfile,
+  type CommercialSmsPreferences,
+  emptyCommercialSmsPreferences,
+  SCHEDULING_SMS_CONSENT,
   SIGNATURE_CONSENT,
   lineAmount,
   commercialUnit,
@@ -151,6 +155,104 @@ export function ProfileForm({
       {!readOnly && (
         <Button className="mt-4" disabled={busy}>
           {busy ? 'Saving…' : 'Save business details'}
+        </Button>
+      )}
+      {message && (
+        <p role="status" className="mt-3 text-sm text-cyan-300">
+          {message}
+        </p>
+      )}
+    </form>
+  )
+}
+export function SmsReminderForm({
+  preferences,
+  onSave,
+  readOnly = false,
+}: {
+  preferences: CommercialSmsPreferences
+  onSave: (preferences: {
+    phone: string
+    enabled: boolean
+    consentAcknowledged: boolean
+  }) => Promise<void>
+  readOnly?: boolean
+}) {
+  const [phone, setPhone] = useState(preferences.phone)
+  const [enabled, setEnabled] = useState(preferences.enabled)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+
+  return (
+    <form
+      className={panelClass}
+      onSubmit={async (event) => {
+        event.preventDefault()
+        setBusy(true)
+        setMessage('')
+        try {
+          await onSave({
+            phone,
+            enabled,
+            consentAcknowledged: enabled,
+          })
+          setMessage(
+            enabled
+              ? 'Scheduling text reminders are on.'
+              : 'Scheduling text reminders are off.',
+          )
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : 'Save failed')
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        <MessageSquareText className="h-5 w-5 text-cyan-400" />
+        Scheduling text reminders
+      </h2>
+      <p className="mt-2 text-sm text-slate-300">
+        Add the mobile number that should receive appointment confirmations,
+        date or service changes, day-before reminders, and on-the-way updates.
+        Messages can include the scheduled date and the services planned for
+        that visit.
+      </p>
+      <div className="mt-4 max-w-xl">
+        <Field label="Mobile number for scheduling texts">
+          <Input
+            type="tel"
+            autoComplete="tel"
+            inputMode="tel"
+            className={fieldClass}
+            disabled={readOnly}
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="(719) 555-0123"
+            required={enabled}
+          />
+        </Field>
+      </div>
+      <label className="mt-4 flex items-start gap-3 rounded-xl border border-cyan-300/20 bg-cyan-400/5 p-4 text-sm text-slate-200">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 accent-cyan-400"
+          disabled={readOnly}
+          checked={enabled}
+          onChange={(event) => setEnabled(event.target.checked)}
+        />
+        <span>
+          <strong className="block text-slate-100">
+            Authorize scheduling text messages
+          </strong>
+          <span className="mt-1 block text-xs leading-5 text-slate-400">
+            {SCHEDULING_SMS_CONSENT}
+          </span>
+        </span>
+      </label>
+      {!readOnly && (
+        <Button className="mt-4" disabled={busy}>
+          {busy ? 'Saving…' : 'Save text preferences'}
         </Button>
       )}
       {message && (
@@ -726,6 +828,18 @@ export function ClientCommercialDetails({
             }}
           />
         </details>
+        <SmsReminderForm
+          preferences={data.smsPreferences || emptyCommercialSmsPreferences}
+          readOnly={readOnly}
+          onSave={async (preferences) => {
+            await commercialFetch(
+              '/api/client/commercial/sms-preferences',
+              'PATCH',
+              preferences,
+            )
+            await refresh()
+          }}
+        />
         {data.documents.length > 0 && (
           <section
             className={styles.documents}
