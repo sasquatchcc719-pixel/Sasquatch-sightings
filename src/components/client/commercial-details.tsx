@@ -674,9 +674,9 @@ export function ClientCommercialDetails({
             </p>
             <h1 className={styles.title}>{data.businessName}</h1>
             <p className={styles.heroCopy}>
-              Review your service scope, update vendor and payment details,
-              download account documents, and check confirmed appointments—all
-              right here.
+              See every confirmed appointment and the services planned for each
+              visit. Return anytime to review your current scope and pricing,
+              update vendor or payment details, and download account documents.
             </p>
             {address && (
               <p className={styles.address}>

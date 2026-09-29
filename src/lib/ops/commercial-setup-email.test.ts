@@ -14,7 +14,14 @@ describe('buildCommercialSetupEmailDraft', () => {
     expect(draft.subject).toContain('Saltgrass Colorado Springs')
     expect(draft.body).toContain('Hi Alex,')
     expect(draft.body).toContain('alex@example.com')
-    expect(draft.subject).toContain('payment setup')
+    expect(draft.subject).toContain('appointments, services')
+    expect(draft.body).toContain(
+      'one place to see every confirmed cleaning appointment',
+    )
+    expect(draft.body).toContain('services planned for each visit')
+    expect(draft.body.indexOf('confirmed cleaning appointment')).toBeLessThan(
+      draft.body.indexOf('payment and invoice instructions'),
+    )
     expect(draft.body).toContain('This is not a contract')
     expect(draft.body).toContain('No signature is required')
     expect(draft.body).toContain('How Sasquatch should receive payment')
