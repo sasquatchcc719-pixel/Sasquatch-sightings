@@ -11,7 +11,7 @@ create table if not exists public.tomorrow_fill_settings (
   unanswered_limit integer not null default 4 check (unanswered_limit between 1 and 20),
   rest_days integer not null default 60 check (rest_days between 1 and 365),
   minimum_audience_size integer not null default 5 check (minimum_audience_size between 1 and 500),
-  default_wave_size integer not null default 15 check (default_wave_size between 1 and 100),
+  default_wave_size integer not null default 5 check (default_wave_size between 1 and 100),
   max_discounted_bookings integer not null default 2 check (max_discounted_bookings between 1 and 20),
   offer_code text not null default 'TF35',
   offer_amount numeric(10,2) not null default 35 check (offer_amount >= 0),
@@ -22,7 +22,8 @@ create table if not exists public.tomorrow_fill_settings (
 );
 
 alter table public.tomorrow_fill_settings
-  alter column message_template set default 'Hi {{first_name}}, Sasquatch Carpet Cleaning has an opening in your area tomorrow. Save ${{offer_amount}} on a cleaning of ${{minimum_subtotal}} or more. See available times: {{booking_url}} Reply STOP to opt out.';
+  alter column message_template set default 'Hi {{first_name}}, Sasquatch Carpet Cleaning has an opening in your area tomorrow. Save ${{offer_amount}} on a cleaning of ${{minimum_subtotal}} or more. See available times: {{booking_url}} Reply STOP to opt out.',
+  alter column default_wave_size set default 5;
 
 insert into public.tomorrow_fill_settings (id)
 values (true)

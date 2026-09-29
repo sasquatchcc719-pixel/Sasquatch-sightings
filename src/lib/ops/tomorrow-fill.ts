@@ -155,7 +155,7 @@ export async function loadTomorrowFillSettings(
     unanswered_limit: Number(data?.unanswered_limit ?? 4),
     rest_days: Number(data?.rest_days ?? 60),
     minimum_audience_size: Number(data?.minimum_audience_size ?? 5),
-    default_wave_size: Number(data?.default_wave_size ?? 15),
+    default_wave_size: Number(data?.default_wave_size ?? 5),
     max_discounted_bookings: Number(data?.max_discounted_bookings ?? 2),
     offer_code: String(data?.offer_code || 'TF35'),
     offer_amount: Number(data?.offer_amount ?? 35),
