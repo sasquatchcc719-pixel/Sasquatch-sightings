@@ -262,4 +262,37 @@ describe('estimate editor send integration', () => {
       '/admin/operations/recurring?sourceAppointment=service-job-a',
     )
   })
+
+  it('offers one-time and recurring scheduling before conversion', async () => {
+    render(<EstimateDetail estimateId="estimate-a" />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Schedule one visit' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Set up recurring visits' }),
+    ).toBeVisible()
+  })
+
+  it('saves the estimate before opening recurring setup', async () => {
+    saveSucceeds = true
+    routerPush.mockImplementationOnce(() => {
+      expect(requests.some((request) => request.method === 'PATCH')).toBe(true)
+    })
+    render(<EstimateDetail estimateId="estimate-a" />)
+
+    const recurringButton = await screen.findByRole('button', {
+      name: 'Set up recurring visits',
+    })
+    await act(async () => {
+      fireEvent.click(recurringButton)
+    })
+
+    await waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith(
+        '/admin/operations/recurring?sourceAppointment=estimate-a',
+      ),
+    )
+    expect(requests.some((request) => request.method === 'PATCH')).toBe(true)
+  })
 })

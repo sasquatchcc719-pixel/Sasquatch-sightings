@@ -77,6 +77,7 @@ type SchedulingStaff = {
 
 type SourceAppointment = {
   id: string
+  kind: 'estimate' | 'service'
   customer_id: string
   service_address_id: string
   appointment_date: string
@@ -1887,9 +1888,11 @@ function CreateTemplateForm({
         )
         setInvoiceMode(customer.business_name ? 'batch_monthly' : 'per_visit')
         setAssignedStaffUserId(appointment.assigned_staff_user_id || '')
+        const sourceLabel =
+          appointment.kind === 'estimate' ? 'estimate' : 'service job'
         setInternalNotes(
           [
-            `Recurring plan copied from service job ${appointment.id}.`,
+            `Recurring plan copied from ${sourceLabel} ${appointment.id}.`,
             appointment.internal_notes,
           ]
             .filter(Boolean)
@@ -2243,8 +2246,10 @@ function CreateTemplateForm({
             <div>
               <p className="font-semibold">
                 {loadingSource
-                  ? 'Copying the completed service job…'
-                  : 'Recurring setup copied from the service job'}
+                  ? 'Copying the estimate or service job…'
+                  : sourceAppointment?.kind === 'estimate'
+                    ? 'Recurring setup copied from the estimate'
+                    : 'Recurring setup copied from the service job'}
               </p>
               <p className="text-muted-foreground mt-1 text-sm">
                 The customer, address, services, technician, time, and monthly
@@ -2254,7 +2259,10 @@ function CreateTemplateForm({
               </p>
               {sourceAppointment ? (
                 <p className="mt-2 text-xs text-cyan-300">
-                  Source visit {sourceAppointment.appointment_date} ·{' '}
+                  {sourceAppointment.kind === 'estimate'
+                    ? 'Estimate date'
+                    : 'Source visit'}{' '}
+                  {sourceAppointment.appointment_date} ·{' '}
                   {sourceAppointment.start_time.slice(0, 5)}
                 </p>
               ) : null}

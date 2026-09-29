@@ -1046,6 +1046,15 @@ export function EstimateDetail({
     addrGateCode,
   ])
 
+  const handleOpenRecurringSetup = useCallback(async () => {
+    setActionLoading('recurring')
+    const saved = await handleSave()
+    if (saved) {
+      router.push(`/admin/operations/recurring?sourceAppointment=${estimateId}`)
+    }
+    setActionLoading(null)
+  }, [estimateId, handleSave, router])
+
   const handleStatusChange = useCallback(
     async (status: 'draft' | 'sent' | 'accepted' | 'declined') => {
       setActionLoading(status)
@@ -2359,19 +2368,52 @@ export function EstimateDetail({
               </Button>
             ) : null}
 
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button
-                className="gap-2 bg-amber-400 font-bold text-slate-950 shadow-md hover:bg-amber-300"
-                disabled={lineItems.length === 0 || !readyToSend}
-                title={notReadyReason ?? undefined}
-                onClick={() => {
-                  setConvertError(null)
-                  setShowConvertDialog(true)
-                }}
-              >
-                Schedule the work
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+            <div className="border-border/60 bg-muted/30 ml-auto w-full rounded-xl border p-3 lg:w-auto lg:min-w-[520px]">
+              <p className="text-sm font-semibold">Choose how to schedule</p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                Use this estimate for one appointment or as the starting point
+                for a recurring plan.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Button
+                  className="h-auto min-h-12 gap-2 bg-amber-400 py-2 font-bold text-slate-950 shadow-md hover:bg-amber-300"
+                  disabled={
+                    lineItems.length === 0 ||
+                    !readyToSend ||
+                    actionLoading !== null ||
+                    saving
+                  }
+                  title={notReadyReason ?? undefined}
+                  onClick={() => {
+                    setConvertError(null)
+                    setShowConvertDialog(true)
+                  }}
+                >
+                  <CalendarCheck className="h-4 w-4" />
+                  Schedule one visit
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-12 gap-2 border-cyan-400/60 py-2 font-bold text-cyan-700 hover:bg-cyan-50 hover:text-cyan-800 dark:text-cyan-300 dark:hover:bg-cyan-500/10"
+                  disabled={
+                    lineItems.length === 0 ||
+                    !readyToSend ||
+                    actionLoading !== null ||
+                    saving
+                  }
+                  title={notReadyReason ?? undefined}
+                  onClick={() => void handleOpenRecurringSetup()}
+                >
+                  {actionLoading === 'recurring' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CalendarClock className="h-4 w-4" />
+                  )}
+                  {actionLoading === 'recurring'
+                    ? 'Preparing recurring setup…'
+                    : 'Set up recurring visits'}
+                </Button>
+              </div>
             </div>
           </>
         ) : (
@@ -2427,7 +2469,7 @@ export function EstimateDetail({
           >
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-lg font-semibold">Schedule the work</h3>
+                <h3 className="text-lg font-semibold">Schedule one visit</h3>
                 <p className="text-muted-foreground mt-1 text-sm">
                   Choose the technician, then pick an opening while seeing what
                   is already on that calendar. The estimate lines transfer
