@@ -26,12 +26,9 @@ import { sendTelegramNotification } from '@/lib/telegram'
  * 404 page itself returns 200 — verify link changes in a real browser.)
  */
 export const REBOOK_URL = 'https://sightings.sasquatchcarpet.com/rebook'
-/** Tiered promo seeded in migration add_cleaning_reminders: $20 off $200+. */
-export const REMINDER_PROMO_CODE = 'REMIND20'
-export const REMINDER_PROMO_MIN_SPEND = 200
-
 export const REMINDER_INTERVALS = [3, 6, 12] as const
 export type ReminderInterval = (typeof REMINDER_INTERVALS)[number]
+export type ReminderSource = 'staff_invoice' | 'customer_sms'
 
 /** Send window in Mountain Time — outside it, due rows simply wait. */
 const WINDOW_START_HOUR = 9
@@ -120,7 +117,8 @@ export function buildConfirmationMessage(
   return (
     `${greeting} Sasquatch Carpet Cleaning. You're all set — we'll text you a ` +
     `reminder in ${months} months (around ${formatDueMonth(dueDate)}) when it's ` +
-    `time for your next cleaning. Thanks for having us out!`
+    `time for your next cleaning. Nothing has been booked, and there's no ` +
+    `obligation to schedule. Thanks for having us out!`
   )
 }
 
@@ -135,8 +133,8 @@ export function buildReminderMessage(
   return (
     `${greeting} Sasquatch Carpet Cleaning. Back in ${formatDueMonth(requestedAt)} ` +
     `you asked us to remind you in ${months} months when it was time for another ` +
-    `carpet cleaning — so here we are! Book here: ${REBOOK_URL} ` +
-    `Use code ${REMINDER_PROMO_CODE} for $20 off jobs $${REMINDER_PROMO_MIN_SPEND}+.`
+    `carpet cleaning — so here we are! Nothing has been booked, and there's no ` +
+    `obligation to schedule. If you'd like our help, reply here or book at ${REBOOK_URL}`
   )
 }
 
@@ -161,6 +159,7 @@ export async function setCleaningReminder(
     appointmentId: string
     months: ReminderInterval
     createdBy?: string | null
+    source?: ReminderSource
     now?: Date
     sendSms?: (phone: string, message: string) => Promise<{ sid: string }>
   },
@@ -231,6 +230,7 @@ export async function setCleaningReminder(
       status: 'pending',
       scheduled_for: scheduledFor.toISOString(),
       created_by: params.createdBy ?? null,
+      source: params.source ?? 'staff_invoice',
     })
     .select('id')
     .single()

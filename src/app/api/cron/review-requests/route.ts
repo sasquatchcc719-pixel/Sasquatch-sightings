@@ -10,6 +10,10 @@ import {
   enqueueReviewRequests,
   processDueReviewRequests,
 } from '@/lib/ops/review-requests'
+import {
+  enqueueCleaningReminderPrompts,
+  processDueCleaningReminderPrompts,
+} from '@/lib/ops/cleaning-reminder-prompts'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -21,7 +25,20 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const enqueued = await enqueueReviewRequests(supabase)
     const processed = await processDueReviewRequests(supabase)
-    return NextResponse.json({ success: true, enqueued, processed })
+    // Queue this after processing reviews so a sent review request establishes
+    // the 30-minute separation. The prompt sender rechecks that boundary and
+    // whether staff set a reminder before every send.
+    const reminderPromptsEnqueued =
+      await enqueueCleaningReminderPrompts(supabase)
+    const reminderPromptsProcessed =
+      await processDueCleaningReminderPrompts(supabase)
+    return NextResponse.json({
+      success: true,
+      enqueued,
+      processed,
+      reminderPromptsEnqueued,
+      reminderPromptsProcessed,
+    })
   } catch (error) {
     console.error('[cron/review-requests] Error:', error)
     return NextResponse.json(

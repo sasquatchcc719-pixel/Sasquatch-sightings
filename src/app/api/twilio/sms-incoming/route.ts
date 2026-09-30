@@ -29,6 +29,7 @@ import {
 } from '@/lib/ranger/telegram'
 import { recordTomorrowFillReply } from '@/lib/ops/tomorrow-fill'
 import { recordCommercialSmsOptOut } from '@/lib/ops/commercial-sms'
+import { handleCleaningReminderPromptReply } from '@/lib/ops/cleaning-reminder-prompts'
 
 export const maxDuration = 60
 
@@ -699,6 +700,24 @@ export async function POST(request: NextRequest) {
       message: rawMessageBody,
       optOutType,
     })
+
+    // A recent post-job reminder question accepts only exact 3 / 6 / 12 or
+    // decline replies. Anything else remains a normal customer conversation.
+    try {
+      await handleCleaningReminderPromptReply(supabase, {
+        phone: normalizedPhone,
+        message: rawMessageBody,
+        inboundMessageSid: twilioSid,
+        fromNumber: toNumber || null,
+      })
+    } catch (reminderReplyError) {
+      // Never reject Twilio's webhook or hide the customer's message when the
+      // reminder workflow fails; the normal Telegram relay still receives it.
+      console.error(
+        '[cleaning-reminder-prompts] Failed to handle customer reply:',
+        reminderReplyError,
+      )
+    }
 
     // ── Telegram relay ───────────────────────────────────────────────────────
     // Forward every inbound message into the customer's Telegram topic. Stored
