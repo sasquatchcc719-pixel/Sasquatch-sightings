@@ -19,891 +19,78 @@ import {
   ShieldBan,
   Trash2,
   Truck,
-  UserRoundCog,
   Droplets,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   appointmentDisplayRevenue,
   appointmentScheduleRevenue,
 } from '@/lib/ops/utilization-metrics'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
-type ScheduleView = 'week' | 'day' | 'month'
-
-type QueuedVisit = {
-  id: string
-  /** 'restoration' for a queued monitor visit, 'appointment' for a parked job. */
-  source: 'restoration' | 'appointment'
-  projectId: string
-  label: string
-  /** Street and city — two losses for the same customer look identical without it. */
-  place: string
-  visitType: string
-  sequence: number | null
-  /** Minutes, so a parked job keeps the length it was booked for. */
-  durationMinutes?: number
-}
-
-type StaffMember = {
-  id: string
-  user_id: string
-  display_name: string
-  role: string
-  is_active: boolean
-  default_open: boolean
-  scheduling_priority: number
-}
-
-type DailyAvailability = {
-  staff_user_id: string
-  date: string
-  is_open: boolean
-}
-
-type Appointment = {
-  id: string
-  appointment_date: string
-  start_time: string
-  end_time: string
-  status: string
-  quoted_total: number
-  lead_source: string | null
-  booking_channel: string | null
-  source: string | null
-  is_repeat_customer?: boolean
-  tomorrow_fill_recipient_id?: string | null
-  tomorrow_fill_recipients?:
-    | {
-        id: string
-        tomorrow_fill_campaigns:
-          | { target_date: string; offer_code: string }
-          | Array<{ target_date: string; offer_code: string }>
-          | null
-      }
-    | Array<{
-        id: string
-        tomorrow_fill_campaigns:
-          | { target_date: string; offer_code: string }
-          | Array<{ target_date: string; offer_code: string }>
-          | null
-      }>
-    | null
-  assigned_staff_user_id?: string | null
-  ops_customers:
-    | {
-        full_name: string
-        business_name: string | null
-        phone: string | null
-      }
-    | {
-        full_name: string
-        business_name: string | null
-        phone: string | null
-      }[]
-    | null
-  ops_service_addresses:
-    | {
-        street_1: string
-        city: string
-        state: string
-        zip_code: string
-      }
-    | {
-        street_1: string
-        city: string
-        state: string
-        zip_code: string
-      }[]
-    | null
-  recurring_template_id?: string | null
-  kind?: 'service' | 'estimate' | 'restoration' | null
-  estimate_status?: string | null
-  visit_type?: 'mitigation' | 'monitor' | 'final' | null
-  restoration_project_id?: string | null
-  service_concern_id?: string | null
-  parked_at?: string | null
-  is_subcontracted?: boolean | null
-  subcontractor_name?: string | null
-  ops_appointment_line_items: Array<{
-    id: string
-    name_snapshot: string
-    notes?: string | null
-    quantity?: number | null
-    duration_minutes?: number | null
-    line_total?: number | null
-    service_catalog_items?:
-      | { slug?: string | null }
-      | Array<{ slug?: string | null }>
-      | null
-  }>
-  ops_invoices:
-    | {
-        id: string
-        status: string
-        total?: number
-        payment_status?: string
-        payment_method?: string | null
-      }
-    | {
-        id: string
-        status: string
-        total?: number
-        payment_status?: string
-        payment_method?: string | null
-      }[]
-    | null
-}
-
-type CalendarEvent = {
-  id: string
-  title: string
-  description: string | null
-  start_date: string
-  end_date: string
-  start_time: string | null
-  end_time: string | null
-  is_all_day: boolean
-  assigned_staff_user_id?: string | null
-}
-
-type RecurringFrequencyInfo = {
-  frequency: string
-  interval_days: number | null
-}
-
-type ScheduleResponse = {
-  appointments: Appointment[]
-  /** Open subcontracted visits dated before today, from outside the loaded range. */
-  overdueSubcontracted?: Appointment[]
-  events: CalendarEvent[]
-  recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
-  staff?: StaffMember[]
-  dailyAvailability?: DailyAvailability[]
-  currentUserId?: string
-  currentUserRole?: string
-}
-
-type AvailabilityTemplate = {
-  id?: string
-  day_of_week: number
-  start_time: string
-  end_time: string
-  slot_interval_minutes: number
-  is_active?: boolean
-}
-
-type BusinessHoursRow = {
-  day_of_week: number
-  is_active: boolean
-  start_time: string
-  end_time: string
-}
-
-const STANDARD_START_HOUR = 9
-const EARLY_START_HOUR = 7
-const END_HOUR = 24
-const HOUR_HEIGHT = 84
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const STAFF_LANE_COLORS = [
-  '#2563eb',
-  '#16a34a',
-  '#9333ea',
-  '#ea580c',
-  '#0891b2',
-  '#dc2626',
-]
-const DEFAULT_SLOT_INTERVAL_MINUTES = 30
-const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
-  { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 1, is_active: true, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 2, is_active: true, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 3, is_active: true, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 4, is_active: true, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 5, is_active: true, start_time: '09:00', end_time: '18:00' },
-  { day_of_week: 6, is_active: true, start_time: '09:00', end_time: '18:00' },
-]
-
-function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null
-  return Array.isArray(value) ? value[0] || null : value
-}
-
-/** Per-line work descriptions (amber box) — same idea as recurring visit / invoice line items. */
-function recurringLineItemDescriptionBoxes(
-  appointment: Appointment,
-  compact: boolean,
-) {
-  if (!appointment.recurring_template_id) return null
-  const items = appointment.ops_appointment_line_items || []
-  const withNotes = items.filter((i) => (i.notes || '').trim())
-  if (withNotes.length === 0) return null
-  return (
-    <div className={compact ? 'mt-0.5 space-y-0.5' : 'mt-1.5 space-y-1'}>
-      {withNotes.map((item, idx) => (
-        <div
-          key={item.id || String(idx)}
-          className={
-            compact
-              ? 'line-clamp-2 rounded border border-amber-400/80 bg-amber-50 px-1.5 py-0.5 text-[9px] leading-tight text-amber-950'
-              : 'rounded-md border border-amber-400/80 bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-950'
-          }
-        >
-          {(item.notes || '').trim()}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/** Align with stats/utilization: invoice + line math first, then quote. */
-function calendarDisplayAmount(appointment: Appointment): string {
-  const n = appointmentDisplayRevenue({
-    quoted_total: appointment.quoted_total,
-    ops_invoices: appointment.ops_invoices,
-    ops_appointment_line_items: appointment.ops_appointment_line_items,
-  })
-  return Number.isFinite(n) ? n.toFixed(2) : '0.00'
-}
-
-function formatScheduleAmount(amount: number): string {
-  return amount.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  })
-}
-
-// Payment methods recorded when a job is marked paid (see the tech payment
-// route). Color-coded so the calendar can be scanned at a glance.
-const PAYMENT_METHOD_STYLES: Record<
-  string,
-  { label: string; className: string }
-> = {
-  venmo: { label: 'Venmo', className: 'bg-blue-100 text-blue-700' },
-  check: { label: 'Check', className: 'bg-amber-100 text-amber-800' },
-  cash: { label: 'Cash', className: 'bg-emerald-100 text-emerald-700' },
-  card: { label: 'Card', className: 'bg-sky-100 text-sky-700' },
-  square: { label: 'Square', className: 'bg-violet-100 text-violet-700' },
-}
-
-/**
- * A status chip for a completed job: "Warranty" for a service-concern return
- * or the canonical warranty catalog service, otherwise the payment method when
- * paid or a red "Unpaid" tag. Returns null when a normal job isn't completed
- * or has no invoice yet.
- */
-function paymentMethodChip(appointment: Appointment) {
-  if (appointment.status !== 'completed') return null
-  if (isWarrantyAppointment(appointment)) {
-    return (
-      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
-        Warranty
-      </span>
-    )
-  }
-  const invoice = unwrapRelation(appointment.ops_invoices)
-  if (!invoice) return null
-  const raw = invoice.payment_method?.trim().toLowerCase()
-  const isPaid = invoice.payment_status?.trim().toLowerCase() === 'paid'
-
-  if (!raw) {
-    // Completed but nothing recorded as paid yet → flag it.
-    if (isPaid) return null
-    return (
-      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700">
-        Unpaid
-      </span>
-    )
-  }
-
-  const style = PAYMENT_METHOD_STYLES[raw] ?? {
-    label: raw.replace(/\b\w/g, (c) => c.toUpperCase()),
-    className: 'bg-slate-100 text-slate-700',
-  }
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${style.className}`}
-    >
-      {style.label}
-    </span>
-  )
-}
-
-function humanizeSourceLabel(value: string | null | undefined): string | null {
-  const raw = String(value || '').trim()
-  if (!raw) return null
-  const lower = raw.toLowerCase()
-  const labels: Record<string, string> = {
-    admin: 'Admin',
-    ai_agent: 'AI Agent',
-    internal: 'Admin',
-    lsa_sms: 'Google LSA',
-    manual: 'Manual',
-    owner: 'Owner',
-    recurring: 'Recurring',
-    recurring_generation: 'Recurring',
-    retell_rabecca: 'Rabecca',
-    sms_harry: 'Harry',
-    website: 'Website',
-  }
-  return (
-    labels[lower] ||
-    raw.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
-  )
-}
-
-function getScheduleCardSources(appointment: Appointment): {
-  leadLabel: string | null
-  bookingLabel: string | null
-} {
-  const leadLabel = humanizeSourceLabel(appointment.lead_source)
-  const bookingLabel =
-    humanizeSourceLabel(appointment.booking_channel) ||
-    humanizeSourceLabel(appointment.source)
-  return { leadLabel, bookingLabel }
-}
-
-function formatDateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function parseMinutes(timeValue: string | null | undefined): number {
-  if (!timeValue) return STANDARD_START_HOUR * 60
-  const [hours, minutes] = timeValue.slice(0, 5).split(':').map(Number)
-  return hours * 60 + minutes
-}
-
-function minutesToTimeLabel(totalMinutes: number): string {
-  const safe = Math.max(0, totalMinutes)
-  const hours = Math.floor(safe / 60) % 24
-  const minutes = safe % 60
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-}
-
-/** Total minutes since midnight → `HH:MM:00` for ops PATCH bodies. */
-function minutesToDbTime(totalMinutes: number): string {
-  const safe = Math.max(0, Math.min(totalMinutes, 24 * 60 - 1))
-  const hours = Math.floor(safe / 60) % 24
-  const minutes = safe % 60
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-}
-
-function startOfWeek(date: Date): Date {
-  const next = new Date(date)
-  next.setHours(0, 0, 0, 0)
-  next.setDate(next.getDate() - next.getDay())
-  return next
-}
-
-function endOfWeek(date: Date): Date {
-  const next = startOfWeek(date)
-  next.setDate(next.getDate() + 6)
-  return next
-}
-
-function addDays(date: Date, amount: number): Date {
-  const next = new Date(date)
-  next.setDate(next.getDate() + amount)
-  return next
-}
-
-function addMonths(date: Date, amount: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
-}
-
-function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
-function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
-}
-
-function buildWeekDays(anchorDate: Date): Date[] {
-  const weekStart = startOfWeek(anchorDate)
-  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
-}
-
-function buildMonthGrid(anchorDate: Date): Date[] {
-  const monthStart = startOfMonth(anchorDate)
-  const gridStart = startOfWeek(monthStart)
-
-  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
-}
-
-function getViewLabel(view: ScheduleView, anchorDate: Date): string {
-  if (view === 'day') {
-    return anchorDate.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
-
-  if (view === 'month') {
-    return anchorDate.toLocaleDateString('en-US', {
-      month: 'long',
-      year: 'numeric',
-    })
-  }
-
-  const weekStart = startOfWeek(anchorDate)
-  const weekEnd = endOfWeek(anchorDate)
-  const sameMonth = weekStart.getMonth() === weekEnd.getMonth()
-
-  return sameMonth
-    ? `${weekStart.toLocaleDateString('en-US', { month: 'long' })} ${String(
-        weekStart.getDate(),
-      ).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(
-        2,
-        '0',
-      )}, ${weekStart.getFullYear()}`
-    : `${weekStart.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      })} - ${weekEnd.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })}`
-}
-
-function getRangeForView(view: ScheduleView, anchorDate: Date) {
-  if (view === 'day') {
-    // Mobile day view also shows a team week total, so load the surrounding
-    // week while continuing to render only the selected day.
-    return {
-      startDate: formatDateKey(startOfWeek(anchorDate)),
-      endDate: formatDateKey(endOfWeek(anchorDate)),
-    }
-  }
-
-  if (view === 'month') {
-    const monthGrid = buildMonthGrid(anchorDate)
-    return {
-      startDate: formatDateKey(monthGrid[0]),
-      endDate: formatDateKey(monthGrid[monthGrid.length - 1]),
-    }
-  }
-
-  return {
-    startDate: formatDateKey(startOfWeek(anchorDate)),
-    endDate: formatDateKey(endOfWeek(anchorDate)),
-  }
-}
-
-function getStatusTone(status: string): string {
-  switch (status) {
-    case 'pending_approval':
-      return 'border-amber-400 bg-amber-100'
-    case 'confirmed':
-      return 'border-emerald-400 bg-emerald-100'
-    case 'on_my_way':
-      return 'border-lime-500 bg-lime-100 text-lime-950'
-    case 'completed':
-      return 'border-slate-400 bg-slate-200/95 text-slate-700'
-    case 'cancelled':
-      return 'border-slate-300 bg-slate-100 text-slate-500'
-    default:
-      return 'border-emerald-400 bg-emerald-100'
-  }
-}
-
-function getRecurringTone(
-  info: RecurringFrequencyInfo | undefined,
-): string | null {
-  if (!info) return null
-  const days = info.interval_days
-  if (info.frequency === 'weekly' || (days && days <= 14)) {
-    return 'border-violet-400 bg-violet-100'
-  }
-  if (info.frequency === 'biweekly' || (days && days <= 30)) {
-    return 'border-sky-400 bg-sky-100'
-  }
-  if (info.frequency === 'monthly' || (days && days <= 60)) {
-    return 'border-teal-400 bg-teal-100'
-  }
-  if (days && days <= 90) {
-    return 'border-orange-400 bg-orange-100'
-  }
-  if (days && days <= 180) {
-    return 'border-rose-400 bg-rose-100'
-  }
-  return 'border-fuchsia-400 bg-fuchsia-100'
-}
-
-function getEventTone(event: CalendarEvent): string {
-  return event.is_all_day
-    ? 'border-amber-600 bg-amber-100 text-amber-900'
-    : 'border-slate-400 bg-slate-200 text-slate-800'
-}
-
-// Estimates are measuring visits — tentative work that hasn't been priced yet.
-// Render them in amber so they read as "hold-this-slot" and don't get confused
-// with real service appointments.
-function getEstimateTone(appointment: Appointment): string {
-  if (appointment.estimate_status === 'converted') {
-    return 'border-violet-400 bg-violet-100 text-slate-700'
-  }
-  if (appointment.estimate_status === 'declined') {
-    return 'border-slate-300 bg-slate-100 text-slate-500'
-  }
-  return 'border-amber-400 bg-amber-100 text-slate-800'
-}
-
-// Water losses read sky blue so a mitigation day is instantly distinguishable
-// from a cleaning job. Monitor visits are lighter — a short readings stop, not
-// a day's work.
-function getRestorationTone(appointment: Appointment): string {
-  return appointment.visit_type === 'mitigation'
-    ? 'border-sky-500 bg-sky-100 text-slate-800'
-    : 'border-sky-300 bg-sky-50 text-slate-700'
-}
-
-function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
-  return event.start_date <= dateKey && event.end_date >= dateKey
-}
-
-function getBlockPlacement(
-  event: CalendarEvent,
-  endMinutesOverride?: number | null,
-  gridStartHour = STANDARD_START_HOUR,
-) {
-  const workdayStart = gridStartHour * 60
-  const workdayEnd = END_HOUR * 60
-  const startMinutes = event.is_all_day
-    ? workdayStart
-    : Math.max(parseMinutes(event.start_time), workdayStart)
-  const rawEnd = event.is_all_day ? workdayEnd : parseMinutes(event.end_time)
-  const endMinutes = Math.min(
-    endMinutesOverride != null ? endMinutesOverride : rawEnd,
-    workdayEnd,
-  )
-  const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
-  const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 42)
-  return { top, height }
-}
-
-function getAppointmentPlacement(
-  appointment: Appointment,
-  endMinutesOverride?: number | null,
-  gridStartHour = STANDARD_START_HOUR,
-) {
-  const workdayStart = gridStartHour * 60
-  const startMinutes = Math.max(
-    parseMinutes(appointment.start_time),
-    workdayStart,
-  )
-  const rawEnd =
-    endMinutesOverride != null
-      ? endMinutesOverride
-      : parseMinutes(appointment.end_time)
-  const endMinutes = Math.max(rawEnd, startMinutes + 15)
-  const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
-  const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 56)
-  return {
-    top,
-    height,
-    startLabel: minutesToTimeLabel(startMinutes),
-    endLabel: minutesToTimeLabel(endMinutes),
-  }
-}
-
-/**
- * Weekends stay narrow without hiding visits or preventing drops.
- *
- * We do not book Sundays, so the column is collapsed to a label. Restoration
- * disagrees: drying does not pause for the weekend, and a monitor visit lands
- * on a Sunday whenever day three does. The sliver was inert — nothing could be
- * dropped on it, and anything already scheduled there was invisible — so a
- * Sunday monitor could neither be planned nor seen.
- *
- * It stays narrow, because it should keep looking like a day we do not sell.
- * It is simply no longer a dead zone: it takes a drop like any other column,
- * and marks what is on it.
- */
-/**
- * Where an appointment opens. Shared with the full-size blocks, because a visit
- * reached from the Sunday sliver has to land on the same screen as one reached
- * from Monday — a restoration monitor especially, since the readings are on the
- * project, not the appointment.
- */
-function appointmentHref(appointment: Appointment): string {
-  if (appointment.kind === 'restoration') {
-    // The visit is part of the address. Opening today's monitor and landing on
-    // the mitigation day files readings and photos to the wrong date.
-    return `/admin/operations/restoration/${appointment.restoration_project_id}?visit=${appointment.id}`
-  }
-  if (appointment.kind === 'estimate') {
-    return `/admin/operations/estimates/${appointment.id}`
-  }
-  if (appointment.recurring_template_id) {
-    return `/admin/operations/recurring/visit/${appointment.id}`
-  }
-  return `/admin/operations/appointments/${appointment.id}`
-}
-
-/** The customer's name off an appointment, whichever shape the relation came back in. */
-function customerNameOf(appointment: Appointment): string {
-  const customer = Array.isArray(appointment.ops_customers)
-    ? appointment.ops_customers[0]
-    : appointment.ops_customers
-  return customer?.business_name || customer?.full_name || 'Visit'
-}
-
-function tomorrowFillBadge(appointment: Appointment, compact = false) {
-  if (!appointment.tomorrow_fill_recipient_id) return null
-  const recipient = unwrapRelation(appointment.tomorrow_fill_recipients)
-  const campaign = unwrapRelation(recipient?.tomorrow_fill_campaigns)
-  const rescheduled =
-    Boolean(campaign?.target_date) &&
-    campaign?.target_date !== appointment.appointment_date
-  const label = `FILL-IN · ${campaign?.offer_code || 'TF35'}${rescheduled ? ' · RESCHEDULED' : ''}`
-  return (
-    <span
-      className={`inline-flex w-fit items-center rounded-full border border-amber-400/70 bg-amber-100 font-black tracking-wide text-amber-900 ${compact ? 'px-1.5 py-0.5 text-[8px]' : 'px-2 py-0.5 text-[9px]'}`}
-    >
-      {label}
-    </span>
-  )
-}
-
-function WeekendSliver({
-  dateKey,
-  dayName,
-  appointments,
-  onOpen,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  gridStartHour,
-}: {
-  dateKey: string
-  dayName: 'Sunday' | 'Saturday'
-  appointments: Appointment[]
-  onOpen: () => void
-  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void
-  onDragLeave: () => void
-  onDrop: (e: React.DragEvent<HTMLDivElement>) => void
-  gridStartHour: number
-}) {
-  return (
-    <div
-      data-date-column={dateKey}
-      className="relative border-r border-slate-200 bg-slate-100/70 transition-colors hover:bg-sky-50"
-      title={
-        appointments.length > 0
-          ? `${appointments.length} on ${dayName} — click to open the day`
-          : `${dayName} — click to open, or drag a visit here`
-      }
-      onClick={onOpen}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      {appointments.map((appointment) => {
-        const placement = getAppointmentPlacement(
-          appointment,
-          null,
-          gridStartHour,
-        )
-        return (
-          <Link
-            key={appointment.id}
-            href={appointmentHref(appointment)}
-            className="absolute right-1 left-1 flex flex-col overflow-hidden rounded-md bg-sky-500/90 px-1 py-0.5 text-[9px] leading-tight text-white shadow-sm hover:bg-sky-600"
-            style={{
-              top: placement.top + 6,
-              height: Math.max(28, placement.height),
-            }}
-            title={`${placement.startLabel} · ${customerNameOf(appointment)}`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <span className="font-semibold">{placement.startLabel}</span>
-            <span className="truncate">{customerNameOf(appointment)}</span>
-          </Link>
-        )
-      })}
-    </div>
-  )
-}
-
-/**
- * Assigns a horizontal column to each appointment so that overlapping
- * appointments sit side-by-side instead of stacking on top of each other.
- * Returns a Map<appointmentId, {col, totalCols}>.
- */
-function computeOverlapColumns(
-  appointments: Appointment[],
-): Map<string, { col: number; totalCols: number }> {
-  const sorted = [...appointments].sort(
-    (a, b) => parseMinutes(a.start_time) - parseMinutes(b.start_time),
-  )
-
-  const cols = new Map<string, number>()
-  const colEnds: number[] = [] // end minute of the last appointment placed in each column
-
-  for (const appt of sorted) {
-    const start = parseMinutes(appt.start_time)
-    const end = Math.max(parseMinutes(appt.end_time), start + 15)
-
-    // Find first column whose last appointment has already ended
-    let assigned = colEnds.findIndex((endMin) => endMin <= start)
-    if (assigned === -1) {
-      assigned = colEnds.length
-      colEnds.push(end)
-    } else {
-      colEnds[assigned] = end
-    }
-    cols.set(appt.id, assigned)
-  }
-
-  // For each appointment, totalCols = max col+1 among all appointments that
-  // directly overlap with it (including itself).
-  const result = new Map<string, { col: number; totalCols: number }>()
-  for (const appt of sorted) {
-    const start = parseMinutes(appt.start_time)
-    const end = Math.max(parseMinutes(appt.end_time), start + 15)
-    let maxCol = cols.get(appt.id) ?? 0
-    for (const other of sorted) {
-      if (other.id === appt.id) continue
-      const otherStart = parseMinutes(other.start_time)
-      const otherEnd = Math.max(parseMinutes(other.end_time), otherStart + 15)
-      if (otherStart < end && otherEnd > start) {
-        maxCol = Math.max(maxCol, cols.get(other.id) ?? 0)
-      }
-    }
-    result.set(appt.id, { col: cols.get(appt.id) ?? 0, totalCols: maxCol + 1 })
-  }
-
-  return result
-}
-
-/** Returns inline left/width styles for a column-slotted appointment card. */
-function overlapStyle(col: number, totalCols: number): React.CSSProperties {
-  const widthPct = 100 / totalCols
-  return {
-    left: `calc(${col * widthPct}% + 4px)`,
-    width: `calc(${widthPct}% - 8px)`,
-    right: 'auto',
-  }
-}
-
-function templatesToBusinessRows(
-  templates: AvailabilityTemplate[],
-): BusinessHoursRow[] {
-  const rowsByDay = new Map<number, BusinessHoursRow>()
-  for (const row of DEFAULT_BUSINESS_HOURS_ROWS) {
-    rowsByDay.set(row.day_of_week, { ...row })
-  }
-
-  const sorted = [...templates].sort(
-    (a, b) => parseMinutes(a.start_time) - parseMinutes(b.start_time),
-  )
-  for (const template of sorted) {
-    if (template.is_active === false) continue
-    if (!rowsByDay.has(template.day_of_week)) continue
-    rowsByDay.set(template.day_of_week, {
-      day_of_week: template.day_of_week,
-      is_active: true,
-      start_time: template.start_time.slice(0, 5),
-      end_time: template.end_time.slice(0, 5),
-    })
-  }
-
-  return DEFAULT_BUSINESS_HOURS_ROWS.map(
-    (defaultRow) => rowsByDay.get(defaultRow.day_of_week) || defaultRow,
-  )
-}
-
-function businessRowsToTemplates(
-  rows: BusinessHoursRow[],
-): AvailabilityTemplate[] {
-  return rows
-    .filter((row) => row.is_active)
-    .map((row) => ({
-      day_of_week: row.day_of_week,
-      start_time: row.start_time,
-      end_time: row.end_time,
-      slot_interval_minutes: DEFAULT_SLOT_INTERVAL_MINUTES,
-      is_active: true,
-    }))
-}
-
-function getBusinessDayRanges(templates: AvailabilityTemplate[]) {
-  const byDay = new Map<number, Array<{ start: number; end: number }>>()
-  for (const template of templates) {
-    if (template.is_active === false) continue
-    const current = byDay.get(template.day_of_week) || []
-    current.push({
-      start: parseMinutes(template.start_time),
-      end: parseMinutes(template.end_time),
-    })
-    byDay.set(template.day_of_week, current)
-  }
-
-  for (const [day, ranges] of byDay.entries()) {
-    byDay.set(
-      day,
-      ranges.sort((a, b) => a.start - b.start),
-    )
-  }
-
-  return byDay
-}
-
-function getOffHourSegmentsForGrid(
-  ranges: Array<{ start: number; end: number }>,
-  gridStartHour: number,
-): Array<{ start: number; end: number }> {
-  const workdayStart = gridStartHour * 60
-  const workdayEnd = END_HOUR * 60
-  if (ranges.length === 0) {
-    return [{ start: workdayStart, end: workdayEnd }]
-  }
-
-  const segments: Array<{ start: number; end: number }> = []
-  let cursor = workdayStart
-
-  for (const range of ranges) {
-    const nextStart = Math.max(range.start, workdayStart)
-    const nextEnd = Math.min(range.end, workdayEnd)
-    if (nextStart > cursor) {
-      segments.push({ start: cursor, end: nextStart })
-    }
-    cursor = Math.max(cursor, nextEnd)
-  }
-
-  if (cursor < workdayEnd) {
-    segments.push({ start: cursor, end: workdayEnd })
-  }
-
-  return segments
-}
-
-function formatPendingNotifyWhen(dateKey: string, time: string): string {
-  const [y, m, d] = dateKey.split('-').map(Number)
-  const [hh, mm] = time.split(':').map(Number)
-  const date = new Date(y, m - 1, d, hh, mm)
-  if (!Number.isFinite(date.getTime())) return `${dateKey} ${time}`
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
-}
-
+import type {
+  Appointment,
+  AvailabilityTemplate,
+  BlockFormState,
+  BusinessHoursRow,
+  CalendarEvent,
+  DailyAvailability,
+  DragPreview,
+  EditEventFormState,
+  QueuedVisit,
+  RecurringFrequencyInfo,
+  ScheduleResponse,
+  ScheduleView,
+  StaffMember,
+} from './operations-schedule-types'
+import {
+  addDays,
+  addMonths,
+  buildMonthGrid,
+  buildWeekDays,
+  businessRowsToTemplates,
+  DEFAULT_BUSINESS_HOURS_ROWS,
+  EARLY_START_HOUR,
+  END_HOUR,
+  formatDateKey,
+  formatPendingNotifyWhen,
+  formatScheduleAmount,
+  getAppointmentPlacement,
+  getBlockPlacement,
+  getBusinessDayRanges,
+  getEstimateTone,
+  getEventTone,
+  getOffHourSegmentsForGrid,
+  getRangeForView,
+  getRecurringTone,
+  getScheduleCardSources,
+  getStatusTone,
+  getViewLabel,
+  HOUR_HEIGHT,
+  intersectsDay,
+  minutesToDbTime,
+  parseMinutes,
+  STAFF_LANE_COLORS,
+  STANDARD_START_HOUR,
+  startOfMonth,
+  templatesToBusinessRows,
+  unwrapRelation,
+  WEEKDAY_LABELS,
+} from './operations-schedule-utils'
+import {
+  AppointmentBlocks,
+  recurringLineItemDescriptionBoxes,
+  tomorrowFillBadge,
+  WeekendSliver,
+} from './operations-schedule-appointment-blocks'
+import {
+  BlockTimeForm,
+  BusinessHoursForm,
+  DatePickerDialog,
+  EditEventDialog,
+} from './operations-schedule-editors'
 export function OperationsSchedule() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -966,7 +153,7 @@ export function OperationsSchedule() {
   const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
-  const [editEventForm, setEditEventForm] = useState({
+  const [editEventForm, setEditEventForm] = useState<EditEventFormState>({
     title: '',
     description: '',
     start_date: '',
@@ -999,11 +186,7 @@ export function OperationsSchedule() {
   // Drag-and-drop reschedule state
   const [draggingAppointment, setDraggingAppointment] =
     useState<Appointment | null>(null)
-  const [dragPreview, setDragPreview] = useState<{
-    dateKey: string
-    snappedMinutes: number
-    staffId?: string | null
-  } | null>(null)
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
     newDateKey: string
@@ -1103,16 +286,7 @@ export function OperationsSchedule() {
     return () => clearInterval(id)
   }, [])
 
-  const [blockForm, setBlockForm] = useState<{
-    title: string
-    description: string
-    start_date: string
-    end_date: string
-    start_time: string
-    end_time: string
-    is_all_day: boolean
-    assigned_staff_user_id: string | null
-  }>({
+  const [blockForm, setBlockForm] = useState<BlockFormState>({
     title: '',
     description: '',
     start_date: formatDateKey(new Date()),
@@ -1643,18 +817,21 @@ export function OperationsSchedule() {
     }
   }
 
-  const moveRange = (direction: 'prev' | 'next') => {
-    const multiplier = direction === 'prev' ? -1 : 1
-    if (view === 'day') {
-      setAnchorDate((current) => addDays(current, multiplier))
-      return
-    }
-    if (view === 'week') {
-      setAnchorDate((current) => addDays(current, multiplier * 7))
-      return
-    }
-    setAnchorDate((current) => addMonths(current, multiplier))
-  }
+  const moveRange = useCallback(
+    (direction: 'prev' | 'next') => {
+      const multiplier = direction === 'prev' ? -1 : 1
+      if (view === 'day') {
+        setAnchorDate((current) => addDays(current, multiplier))
+        return
+      }
+      if (view === 'week') {
+        setAnchorDate((current) => addDays(current, multiplier * 7))
+        return
+      }
+      setAnchorDate((current) => addMonths(current, multiplier))
+    },
+    [view],
+  )
 
   const handleCalTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartXRef.current = e.touches[0].clientX
@@ -2571,318 +1748,33 @@ export function OperationsSchedule() {
     }
   }
 
-  const renderApptBlocks = (appts: Appointment[]) => {
-    const overlapCols = computeOverlapColumns(appts)
-    return appts.map((appointment) => {
-      const customer = unwrapRelation(appointment.ops_customers)
-      const invoice = unwrapRelation(appointment.ops_invoices)
-      const customerLabel =
-        customer?.business_name || customer?.full_name || 'Customer'
-      const isWarranty = isWarrantyAppointment(appointment)
-      const serviceAddress = unwrapRelation(appointment.ops_service_addresses)
-      const { leadLabel, bookingLabel } = getScheduleCardSources(appointment)
-      const endOverride =
-        resizeSession?.appointmentId === appointment.id &&
-        resizeLiveEndMinutes != null
-          ? resizeLiveEndMinutes
-          : null
-      const placement = getAppointmentPlacement(
-        appointment,
-        endOverride,
-        gridStartHour,
-      )
-      const isEstimate = appointment.kind === 'estimate'
-      const isRestoration = appointment.kind === 'restoration'
-      const href = isRestoration
-        ? `/admin/operations/restoration/${appointment.restoration_project_id}?visit=${appointment.id}`
-        : isEstimate
-          ? `/admin/operations/estimates/${appointment.id}`
-          : invoice?.id
-            ? `/admin/operations/invoices/${invoice.id}`
-            : appointment.recurring_template_id
-              ? `/admin/operations/recurring/visit/${appointment.id}`
-              : `/admin/operations/appointments/${appointment.id}`
-      const isDragging = draggingAppointment?.id === appointment.id
-      const oc = overlapCols.get(appointment.id) ?? { col: 0, totalCols: 1 }
-      const blockTone = isRestoration
-        ? getRestorationTone(appointment)
-        : isEstimate
-          ? getEstimateTone(appointment)
-          : appointment.status === 'completed' ||
-              appointment.status === 'cancelled'
-            ? getStatusTone(appointment.status)
-            : appointment.recurring_template_id
-              ? (getRecurringTone(
-                  recurringFreqMap[appointment.recurring_template_id],
-                ) ?? getStatusTone(appointment.status))
-              : getStatusTone(appointment.status)
-      const isPointerDraggingThis =
-        pointerDragging && draggingAppointment?.id === appointment.id
-      const effectiveStaffId =
-        appointment.assigned_staff_user_id ?? staffList[0]?.id
-      const assignedStaff = staffList.find(
-        (staff) => staff.id === effectiveStaffId,
-      )
-      const otherStaff = staffList.filter(
-        (staff) => staff.id !== effectiveStaffId,
-      )
-      return (
-        <div
-          key={appointment.id}
-          data-appointment-block
-          data-appointment-id={appointment.id}
-          data-warranty-appointment={isWarranty ? 'true' : undefined}
-          className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''} ${focusedAppointmentId === appointment.id ? 'ring-4 ring-amber-400/60 ring-offset-2' : ''}`}
-          style={{
-            top: placement.top + 6,
-            height: placement.height - 8,
-            ...overlapStyle(oc.col, oc.totalCols),
-          }}
-        >
-          <div
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('appointmentId', appointment.id)
-              e.dataTransfer.effectAllowed = 'move'
-              const block = (e.currentTarget as HTMLElement).closest(
-                '[data-appointment-block]',
-              ) as HTMLElement | null
-              if (block) {
-                draggingYOffsetRef.current =
-                  e.clientY - block.getBoundingClientRect().top
-              } else {
-                draggingYOffsetRef.current = e.nativeEvent.offsetY
-              }
-              didDragRef.current = false
-              setDraggingAppointment(appointment)
-              setTimeout(() => {
-                didDragRef.current = true
-              }, 50)
-            }}
-            onDragEnd={() => {
-              setDraggingAppointment(null)
-              setDragPreview(null)
-            }}
-            onPointerDown={(e) => handleMovePointerDown(e, appointment)}
-            onPointerMove={handleMovePointerMove}
-            onPointerUp={(e) => void handleMovePointerUp(e)}
-            onPointerCancel={(e) => void handleMovePointerUp(e)}
-            style={{ touchAction: 'none' }}
-            className="flex shrink-0 cursor-grab touch-none items-center gap-1.5 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
-            title={`Drag ${customerLabel} to move start time`}
-          >
-            <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
-            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight font-semibold tracking-tight text-slate-800 sm:text-[10px]">
-              {customerLabel}
-            </span>
-            {isMobile && view === 'day'
-              ? otherStaff.map((staff) => (
-                  <button
-                    key={staff.id}
-                    type="button"
-                    draggable={false}
-                    className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white/80 px-2 text-[10px] font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={reassigningAppointmentId === appointment.id}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      void handleMobileStaffReassignment(appointment, staff)
-                    }}
-                    aria-label={`Move job to ${staff.display_name}`}
-                  >
-                    {reassigningAppointmentId === appointment.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <UserRoundCog className="h-3 w-3" />
-                    )}
-                    To {staff.display_name.split(' ')[0]}
-                  </button>
-                ))
-              : null}
-            {view === 'week' &&
-              staffList.length > 1 &&
-              (() => {
-                const staffIdx = staffList.findIndex(
-                  (s) => s.id === appointment.assigned_staff_user_id,
-                )
-                if (staffIdx < 0) return null
-                const initials = staffList[staffIdx].display_name.split(' ')[0]
-                return (
-                  <span
-                    className="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold text-white"
-                    style={{
-                      backgroundColor:
-                        STAFF_LANE_COLORS[staffIdx % STAFF_LANE_COLORS.length],
-                    }}
-                  >
-                    {initials}
-                  </span>
-                )
-              })()}
-          </div>
-          <Link
-            href={href}
-            aria-label={`Open ${customerLabel}${isWarranty ? ' warranty clean' : ''}`}
-            className={`flex min-h-0 flex-1 flex-col overflow-hidden ${isWarranty ? 'justify-center px-2 py-1' : 'p-2 pt-1'}`}
-            onClick={(e) => {
-              if (didDragRef.current) e.preventDefault()
-            }}
-          >
-            {isWarranty ? (
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] leading-tight font-bold text-rose-800">
-                  #Warranty clean
-                </span>
-                {serviceAddress?.city ? (
-                  <span className="truncate text-[10px] leading-tight font-semibold text-slate-600">
-                    {serviceAddress.city}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-            {!isWarranty && isEstimate ? (
-              <>
-                {appointment.is_repeat_customer ? (
-                  <span className="w-fit rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                    Repeat
-                  </span>
-                ) : null}
-                <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                  <Ruler className="h-2.5 w-2.5" />
-                  Commercial walkthrough
-                </span>
-                {customer?.business_name && customer.full_name ? (
-                  <div className="mt-1 line-clamp-1 shrink-0 text-[10px] text-slate-600">
-                    Contact: {customer.full_name}
-                  </div>
-                ) : null}
-                <div className="mt-0.5 line-clamp-2 shrink-0 text-[10px] leading-tight text-slate-600">
-                  {serviceAddress
-                    ? `${serviceAddress.street_1}, ${serviceAddress.city}`
-                    : 'Address pending'}
-                  {assignedStaff?.display_name
-                    ? ` · Tech: ${assignedStaff.display_name}`
-                    : ''}
-                </div>
-                <div className="mt-1 shrink-0 text-slate-700">
-                  {placement.startLabel} - {placement.endLabel}
-                </div>
-                {appointment.ops_appointment_line_items.length === 0 ? (
-                  <div className="mt-1 shrink-0 text-[10px] text-slate-600">
-                    Measurements and pricing pending
-                  </div>
-                ) : null}
-                <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-                  <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
-                    {(appointment.estimate_status || 'draft').replace(
-                      /^./,
-                      (value) => value.toUpperCase(),
-                    )}
-                  </span>
-                </div>
-              </>
-            ) : null}
-            {!isWarranty && !isEstimate ? (
-              <>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="shrink-0 font-semibold text-slate-700 tabular-nums">
-                    {placement.startLabel} - {placement.endLabel}
-                  </span>
-                  {appointment.is_repeat_customer ? (
-                    <span className="shrink-0 rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                      Repeat
-                    </span>
-                  ) : null}
-                  {appointment.recurring_template_id ? (
-                    <a
-                      href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-100"
-                    >
-                      <Repeat className="h-2.5 w-2.5" />
-                      Recurring
-                    </a>
-                  ) : null}
-                  <span
-                    className={`ml-auto shrink-0 text-right font-semibold tabular-nums ${
-                      appointment.status === 'completed'
-                        ? 'text-slate-600'
-                        : 'text-slate-800'
-                    }`}
-                  >
-                    ${calendarDisplayAmount(appointment)}
-                  </span>
-                </div>
-                {tomorrowFillBadge(appointment)}
-                <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                  <span className="truncate text-[10px] font-medium text-slate-600">
-                    {serviceAddress
-                      ? `${serviceAddress.street_1}, ${serviceAddress.city}`
-                      : 'Address pending'}
-                  </span>
-                  <span>{paymentMethodChip(appointment)}</span>
-                </div>
-                <div className="mt-1.5 line-clamp-2 leading-tight font-medium text-slate-800">
-                  {appointment.ops_appointment_line_items
-                    .map((item) => item.name_snapshot)
-                    .join(', ')}
-                </div>
-                {recurringLineItemDescriptionBoxes(appointment, false)}
-                {leadLabel || bookingLabel ? (
-                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[10px] leading-tight text-slate-500">
-                    {leadLabel ? <span>Lead: {leadLabel}</span> : null}
-                    {leadLabel && bookingLabel ? <span>·</span> : null}
-                    {bookingLabel ? <span>Booked: {bookingLabel}</span> : null}
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </Link>
-          {!isWarranty && !isEstimate && appointment.status !== 'completed' && (
-            <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
-              <button
-                type="button"
-                className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  appointment.status === 'cancelled'
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                }`}
-                disabled={statusActionAppointmentId === appointment.id}
-                onClick={(e) => {
-                  openStatusActionPopover(e, appointment)
-                }}
-              >
-                {statusActionAppointmentId === appointment.id ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                    Saving
-                  </span>
-                ) : appointment.status === 'cancelled' ? (
-                  'Restore'
-                ) : (
-                  'Cancel'
-                )}
-              </button>
-            </div>
-          )}
-          <button
-            type="button"
-            aria-label="Drag to change end time"
-            title="Drag to extend or shorten"
-            style={{ touchAction: 'none' }}
-            className="relative flex h-3 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-            onPointerDown={(e) => beginResize(e, appointment)}
-          >
-            <span
-              aria-hidden
-              className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-            />
-          </button>
-        </div>
-      )
-    })
-  }
+  const renderApptBlocks = (appointments: Appointment[]) => (
+    <AppointmentBlocks
+      appointments={appointments}
+      resizeSession={resizeSession}
+      resizeLiveEndMinutes={resizeLiveEndMinutes}
+      draggingAppointment={draggingAppointment}
+      recurringFrequencyMap={recurringFreqMap}
+      pointerDragging={pointerDragging}
+      isMobile={isMobile}
+      view={view}
+      staffList={staffList}
+      reassigningAppointmentId={reassigningAppointmentId}
+      statusActionAppointmentId={statusActionAppointmentId}
+      focusedAppointmentId={focusedAppointmentId}
+      gridStartHour={gridStartHour}
+      draggingYOffsetRef={draggingYOffsetRef}
+      didDragRef={didDragRef}
+      setDraggingAppointment={setDraggingAppointment}
+      setDragPreview={setDragPreview}
+      onMovePointerDown={handleMovePointerDown}
+      onMovePointerMove={handleMovePointerMove}
+      onMovePointerUp={handleMovePointerUp}
+      onMobileStaffReassignment={handleMobileStaffReassignment}
+      onOpenStatusAction={openStatusActionPopover}
+      onBeginResize={beginResize}
+    />
+  )
 
   return (
     <div className="space-y-6">
@@ -3310,539 +2202,51 @@ export function OperationsSchedule() {
             <span className="truncate">{viewLabel}</span>
           </Button>
 
-          {datePickerOpen && typeof document !== 'undefined'
-            ? createPortal(
-                <div
-                  role="dialog"
-                  aria-label="Pick a date"
-                  aria-modal="true"
-                  className="fixed inset-0 z-[220] flex items-start justify-center px-4 pt-20 sm:items-center sm:pt-0"
-                >
-                  <button
-                    type="button"
-                    aria-label="Close calendar"
-                    className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
-                    onClick={closeDatePicker}
-                  />
-                  <div className="border-border/60 bg-background animate-slide-up relative w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-xl">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Previous month"
-                        onClick={() => setPickerMonth((m) => addMonths(m, -1))}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => setPickerMonth(startOfMonth(new Date()))}
-                        className="hover:bg-muted rounded-md px-2 py-1 text-sm font-semibold"
-                        title="Jump to current month"
-                      >
-                        {pickerMonth.toLocaleDateString('en-US', {
-                          month: 'long',
-                          year: 'numeric',
-                        })}
-                      </button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Next month"
-                        onClick={() => setPickerMonth((m) => addMonths(m, 1))}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="text-muted-foreground mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium tracking-wide uppercase">
-                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                        <div key={`${d}-${i}`}>{d}</div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-7 gap-1">
-                      {buildMonthGrid(pickerMonth).map((d) => {
-                        const dKey = formatDateKey(d)
-                        const inMonth = d.getMonth() === pickerMonth.getMonth()
-                        const isToday = dKey === todayKey
-                        const isSelected = dKey === formatDateKey(anchorDate)
-                        return (
-                          <button
-                            key={dKey}
-                            type="button"
-                            onClick={() => {
-                              setAnchorDate(d)
-                              setDatePickerOpen(false)
-                            }}
-                            className={[
-                              'flex h-9 items-center justify-center rounded-lg text-sm transition',
-                              isSelected
-                                ? 'bg-emerald-500 font-semibold text-white shadow'
-                                : isToday
-                                  ? 'border-emerald-500 text-emerald-600 ring-1 ring-emerald-500 hover:bg-emerald-50'
-                                  : inMonth
-                                    ? 'text-foreground hover:bg-muted'
-                                    : 'text-muted-foreground/60 hover:bg-muted/60',
-                            ].join(' ')}
-                          >
-                            {d.getDate()}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const now = new Date()
-                          setAnchorDate(now)
-                          setPickerMonth(startOfMonth(now))
-                          setDatePickerOpen(false)
-                        }}
-                      >
-                        Today
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={closeDatePicker}
-                      >
-                        Close
-                      </Button>
-                    </div>
-                  </div>
-                </div>,
-                document.body,
-              )
-            : null}
+          <DatePickerDialog
+            open={datePickerOpen}
+            pickerMonth={pickerMonth}
+            anchorDate={anchorDate}
+            todayKey={todayKey}
+            setPickerMonth={setPickerMonth}
+            onSelectDate={(date) => {
+              setAnchorDate(date)
+              setDatePickerOpen(false)
+            }}
+            onClose={closeDatePicker}
+            onToday={(date) => {
+              setAnchorDate(date)
+              setPickerMonth(startOfMonth(date))
+              setDatePickerOpen(false)
+            }}
+          />
         </div>
 
-        {showBlockForm ? (
-          <form
-            className="border-border/60 bg-background/70 mt-4 grid gap-3 rounded-2xl border p-4 md:grid-cols-3"
-            onSubmit={handleBlockSubmit}
-          >
-            <div className="md:col-span-3">
-              <Label htmlFor="block-title">Description</Label>
-              <Input
-                id="block-title"
-                value={blockForm.title}
-                onChange={(event) =>
-                  setBlockForm((current) => ({
-                    ...current,
-                    title: event.target.value,
-                  }))
-                }
-                placeholder="Vacation, doctor, sick day, hold, or anything else"
-              />
-            </div>
-            <div>
-              <Label htmlFor="block-start-date">Start Date</Label>
-              <Input
-                id="block-start-date"
-                type="date"
-                value={blockForm.start_date}
-                onChange={(event) =>
-                  setBlockForm((current) => ({
-                    ...current,
-                    start_date: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="block-end-date">End Date</Label>
-              <Input
-                id="block-end-date"
-                type="date"
-                value={blockForm.end_date}
-                onChange={(event) =>
-                  setBlockForm((current) => ({
-                    ...current,
-                    end_date: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <label className="text-muted-foreground flex items-center gap-2 self-end text-sm">
-              <input
-                type="checkbox"
-                checked={blockForm.is_all_day}
-                onChange={(event) =>
-                  setBlockForm((current) => ({
-                    ...current,
-                    is_all_day: event.target.checked,
-                    start_time: event.target.checked ? '' : current.start_time,
-                    end_time: event.target.checked ? '' : current.end_time,
-                  }))
-                }
-              />
-              All day / full range
-            </label>
-            {!blockForm.is_all_day ? (
-              <>
-                <div>
-                  <Label htmlFor="block-start-time">Start Time</Label>
-                  <Input
-                    id="block-start-time"
-                    type="time"
-                    value={blockForm.start_time}
-                    onChange={(event) =>
-                      setBlockForm((current) => ({
-                        ...current,
-                        start_time: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="block-end-time">End Time</Label>
-                  <Input
-                    id="block-end-time"
-                    type="time"
-                    value={blockForm.end_time}
-                    onChange={(event) =>
-                      setBlockForm((current) => ({
-                        ...current,
-                        end_time: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </>
-            ) : null}
-            <div className="md:col-span-3">
-              <Label htmlFor="block-notes">Notes</Label>
-              <Textarea
-                id="block-notes"
-                value={blockForm.description}
-                onChange={(event) =>
-                  setBlockForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                placeholder="Optional notes for the block"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2 md:col-span-3">
-              <Button type="submit" disabled={saving}>
-                {saving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Save Block
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowBlockForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : null}
+        <BlockTimeForm
+          open={showBlockForm}
+          form={blockForm}
+          saving={saving}
+          setForm={setBlockForm}
+          onSubmit={handleBlockSubmit}
+          onCancel={() => setShowBlockForm(false)}
+        />
 
-        {editingEvent && typeof document !== 'undefined'
-          ? createPortal(
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Edit blocked time"
-                className="fixed inset-x-0 top-14 bottom-0 z-[220] flex items-start justify-center overflow-hidden bg-black/50 px-3 pt-8 pb-[calc(5rem+env(safe-area-inset-bottom))] backdrop-blur-sm sm:inset-0 sm:items-center sm:p-4"
-              >
-                {/* Backdrop — tap to dismiss */}
-                <button
-                  type="button"
-                  aria-label="Close edit blocked time"
-                  className="absolute inset-0 cursor-default"
-                  onClick={() => setEditingEvent(null)}
-                />
-                {/* Panel */}
-                <div className="bg-background border-border/60 relative z-10 flex max-h-full w-full flex-col overflow-hidden rounded-3xl border shadow-2xl sm:max-h-[92dvh] sm:max-w-lg">
-                  {/* Drag handle — mobile only */}
-                  <div className="mx-auto mt-3 mb-1 h-1 w-10 rounded-full bg-slate-300 md:hidden" />
-                  <form
-                    className="grid gap-4 overflow-y-auto p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:grid-cols-2"
-                    onSubmit={handleUpdateEvent}
-                  >
-                    {/* Header */}
-                    <div className="flex items-center justify-between md:col-span-2">
-                      <span className="text-base font-semibold">
-                        Edit Blocked Time
-                      </span>
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground rounded-full p-1 text-xl leading-none transition-colors"
-                        onClick={() => setEditingEvent(null)}
-                        aria-label="Close"
-                      >
-                        ×
-                      </button>
-                    </div>
+        <EditEventDialog
+          event={editingEvent}
+          form={editEventForm}
+          saving={editEventSaving}
+          setForm={setEditEventForm}
+          onSubmit={handleUpdateEvent}
+          onClose={() => setEditingEvent(null)}
+          onDelete={(id) => void handleDeleteEvent(id)}
+        />
 
-                    {/* Title */}
-                    <div className="md:col-span-2">
-                      <Label htmlFor="edit-block-title">Description</Label>
-                      <Input
-                        id="edit-block-title"
-                        className="mt-1"
-                        value={editEventForm.title}
-                        onChange={(e) =>
-                          setEditEventForm((cur) => ({
-                            ...cur,
-                            title: e.target.value,
-                          }))
-                        }
-                        placeholder="Vacation, doctor, sick day, hold…"
-                      />
-                    </div>
-
-                    {/* Dates */}
-                    <div>
-                      <Label htmlFor="edit-block-start-date">Start Date</Label>
-                      <Input
-                        id="edit-block-start-date"
-                        type="date"
-                        className="mt-1"
-                        value={editEventForm.start_date}
-                        onChange={(e) =>
-                          setEditEventForm((cur) => ({
-                            ...cur,
-                            start_date: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="edit-block-end-date">End Date</Label>
-                      <Input
-                        id="edit-block-end-date"
-                        type="date"
-                        className="mt-1"
-                        value={editEventForm.end_date}
-                        onChange={(e) =>
-                          setEditEventForm((cur) => ({
-                            ...cur,
-                            end_date: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    {/* All-day toggle */}
-                    <label className="text-muted-foreground flex cursor-pointer items-center gap-3 rounded-xl p-2 text-sm md:col-span-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={editEventForm.is_all_day}
-                        onChange={(e) =>
-                          setEditEventForm((cur) => ({
-                            ...cur,
-                            is_all_day: e.target.checked,
-                            start_time: e.target.checked ? '' : cur.start_time,
-                            end_time: e.target.checked ? '' : cur.end_time,
-                          }))
-                        }
-                      />
-                      All day / full range
-                    </label>
-
-                    {/* Times — only shown when not all-day */}
-                    {!editEventForm.is_all_day ? (
-                      <>
-                        <div>
-                          <Label htmlFor="edit-block-start-time">
-                            Start Time
-                          </Label>
-                          <Input
-                            id="edit-block-start-time"
-                            type="time"
-                            className="mt-1"
-                            value={editEventForm.start_time}
-                            onChange={(e) =>
-                              setEditEventForm((cur) => ({
-                                ...cur,
-                                start_time: e.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="edit-block-end-time">End Time</Label>
-                          <Input
-                            id="edit-block-end-time"
-                            type="time"
-                            className="mt-1"
-                            value={editEventForm.end_time}
-                            onChange={(e) =>
-                              setEditEventForm((cur) => ({
-                                ...cur,
-                                end_time: e.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                      </>
-                    ) : null}
-
-                    {/* Notes */}
-                    <div className="md:col-span-2">
-                      <Label htmlFor="edit-block-notes">Notes</Label>
-                      <Textarea
-                        id="edit-block-notes"
-                        className="mt-1"
-                        value={editEventForm.description}
-                        onChange={(e) =>
-                          setEditEventForm((cur) => ({
-                            ...cur,
-                            description: e.target.value,
-                          }))
-                        }
-                        placeholder="Optional notes"
-                      />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex flex-col gap-2 pt-1 md:col-span-2 md:flex-row">
-                      <Button
-                        type="submit"
-                        className="w-full md:w-auto"
-                        disabled={editEventSaving}
-                      >
-                        {editEventSaving ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
-                        Save Changes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full md:w-auto"
-                        onClick={() => setEditingEvent(null)}
-                        disabled={editEventSaving}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        className="w-full md:ml-auto md:w-auto"
-                        onClick={() => void handleDeleteEvent(editingEvent.id)}
-                        disabled={editEventSaving}
-                      >
-                        Delete Block
-                      </Button>
-                    </div>
-                  </form>
-                </div>
-              </div>,
-              document.body,
-            )
-          : null}
-
-        {showBusinessHours ? (
-          <form
-            className="border-border/60 bg-background/70 mt-4 space-y-3 rounded-2xl border p-4"
-            onSubmit={saveBusinessHours}
-          >
-            <div>
-              <div className="text-sm font-semibold">Business Hours</div>
-              <p className="text-muted-foreground mt-1 text-xs">
-                Set the working window by day. Outside this window is treated as
-                off-hours in the calendar and slot generation.
-              </p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {businessHoursRows.map((row) => (
-                <div
-                  key={row.day_of_week}
-                  className="border-border/60 rounded-xl border p-3"
-                >
-                  <label className="flex items-center justify-between gap-2 text-sm font-medium">
-                    <span>{WEEKDAY_LABELS[row.day_of_week]}</span>
-                    <input
-                      type="checkbox"
-                      checked={row.is_active}
-                      onChange={(event) =>
-                        setBusinessHoursRows((current) =>
-                          current.map((entry) =>
-                            entry.day_of_week === row.day_of_week
-                              ? { ...entry, is_active: event.target.checked }
-                              : entry,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <Label htmlFor={`biz-start-${row.day_of_week}`}>
-                        Start
-                      </Label>
-                      <Input
-                        id={`biz-start-${row.day_of_week}`}
-                        type="time"
-                        value={row.start_time}
-                        disabled={!row.is_active}
-                        onChange={(event) =>
-                          setBusinessHoursRows((current) =>
-                            current.map((entry) =>
-                              entry.day_of_week === row.day_of_week
-                                ? { ...entry, start_time: event.target.value }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`biz-end-${row.day_of_week}`}>End</Label>
-                      <Input
-                        id={`biz-end-${row.day_of_week}`}
-                        type="time"
-                        value={row.end_time}
-                        disabled={!row.is_active}
-                        onChange={(event) =>
-                          setBusinessHoursRows((current) =>
-                            current.map((entry) =>
-                              entry.day_of_week === row.day_of_week
-                                ? { ...entry, end_time: event.target.value }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={businessHoursSaving}>
-                {businessHoursSaving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Save Business Hours
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  setBusinessHoursRows(
-                    DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })),
-                  )
-                }
-              >
-                Reset to Mon-Sat 9:00-18:00
-              </Button>
-            </div>
-          </form>
-        ) : null}
+        <BusinessHoursForm
+          open={showBusinessHours}
+          rows={businessHoursRows}
+          saving={businessHoursSaving}
+          setRows={setBusinessHoursRows}
+          onSubmit={saveBusinessHours}
+        />
       </Card>
 
       {error ? (
