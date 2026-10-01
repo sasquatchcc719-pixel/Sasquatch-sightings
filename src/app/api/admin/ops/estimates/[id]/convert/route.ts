@@ -14,7 +14,6 @@ import {
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
-import { scheduleJobReminder } from '@/lib/onesignal'
 
 /**
  * Convert an estimate into a real service appointment + invoice.
@@ -27,7 +26,7 @@ import { scheduleJobReminder } from '@/lib/onesignal'
  *   1. Creates a NEW ops_appointments row (kind='service') on the chosen date.
  *   2. Copies all line items from the estimate (length/width/notes preserved).
  *   3. Creates ops_invoices + ops_invoice_line_items.
- *   4. Fires QB sync + lifecycle comms + reminder (unless skip_comms=true).
+ *   4. Fires QB sync + lifecycle comms (unless skip_comms=true).
  *   5. Sets estimate_status='converted' and converted_appointment_id on the
  *      original estimate. The measuring visit stays on the calendar.
  */
@@ -362,13 +361,6 @@ export async function POST(
           appointmentId: serviceAppt.id,
         }),
         syncAppointmentToQuickBooks(serviceAppt.id),
-        scheduleJobReminder({
-          appointmentId: serviceAppt.id,
-          appointmentDate,
-          startTime: `${startTime}:00`.slice(0, 8),
-          customerName: customer.full_name || 'Customer',
-          address: `${address.street_1}, ${address.city}`,
-        }),
       ])
       if (commsResult.status === 'rejected') {
         console.error(

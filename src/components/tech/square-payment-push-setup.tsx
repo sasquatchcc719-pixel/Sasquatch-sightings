@@ -187,9 +187,7 @@ export function SquarePaymentPushSetup({
         <div className="flex items-start gap-3">
           <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
           <div>
-            <p className="font-semibold">
-              Install Sightings for payment alerts
-            </p>
+            <p className="font-semibold">Install Sightings for work alerts</p>
             <p className="mt-1 text-sm text-amber-100/80">
               In Safari, tap Share, choose Add to Home Screen, then open
               Sightings from its new icon. The notification button will appear
@@ -206,10 +204,10 @@ export function SquarePaymentPushSetup({
       <section className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-emerald-50">
         <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" />
         <div>
-          <p className="font-semibold">Square payment alerts are enabled</p>
+          <p className="font-semibold">Work alerts are enabled</p>
           <p className="text-sm text-emerald-100/70">
-            This phone will receive a Sightings alert when a Square invoice is
-            paid.
+            This phone will receive 30-minute job reminders and Square payment
+            alerts for your assigned work.
           </p>
         </div>
       </section>
@@ -224,7 +222,7 @@ export function SquarePaymentPushSetup({
       <div className="flex items-start gap-3">
         <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Square payment alerts</p>
+          <p className="font-semibold">Work alerts</p>
           <p className="mt-1 text-sm text-amber-100/80">
             {status === 'denied'
               ? 'Notifications are blocked. Allow Sightings in this phone’s notification settings, then reopen the app.'
@@ -232,7 +230,7 @@ export function SquarePaymentPushSetup({
                 ? 'This browser cannot receive web push notifications.'
                 : status === 'error'
                   ? 'Sightings could not start notifications. Reload the app and try again.'
-                  : 'Enable alerts on this work phone when a customer pays a Square invoice.'}
+                  : 'Enable 30-minute job reminders and Square payment alerts on this work phone.'}
           </p>
         </div>
         {!unavailable ? (

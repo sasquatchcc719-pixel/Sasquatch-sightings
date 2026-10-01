@@ -1,11 +1,14 @@
 /**
- * Cron job to send Telegram notifications to Charles 30 minutes before appointments
+ * Cron job to send 30-minute appointment reminders.
+ * Charles receives Telegram for every job; David receives a phone push only
+ * when he is the assigned technician.
  * Runs every 5 minutes and checks for upcoming jobs
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { sendDavidJobReminderPush } from '@/lib/ops/job-reminder-push'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -70,6 +73,7 @@ async function sendUpcomingJobReminders() {
       appointment_date,
       start_time,
       end_time,
+      assigned_staff_user_id,
       internal_notes,
       status,
       ops_customers!ops_appointments_customer_id_fkey (
@@ -105,6 +109,7 @@ async function sendUpcomingJobReminders() {
   )
 
   let sent = 0
+  let davidPushSent = 0
 
   for (const appt of upcomingAppointments) {
     // Parse the appointment start time and create a proper Date object
@@ -140,19 +145,23 @@ async function sendUpcomingJobReminders() {
     )
 
     if (inWindow) {
-      // Check if we've already sent a reminder for this appointment today
-      const reminderKey = `reminder_${appt.id}_${todayDate}`
-      const { data: existingReminder } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', reminderKey)
-        .maybeSingle()
-
-      if (existingReminder) {
-        // Already sent reminder for this appointment
-        console.log(`[job-reminders] Already sent reminder for appt ${appt.id}`)
+      const telegramReminderKey = `reminder_${appt.id}_${todayDate}`
+      const davidPushReminderKey = `david_push_reminder_${appt.id}_${todayDate}`
+      const { data: existingReminders, error: reminderLookupError } =
+        await supabase
+          .from('system_settings')
+          .select('key')
+          .in('key', [telegramReminderKey, davidPushReminderKey])
+      if (reminderLookupError) {
+        console.error(
+          `[job-reminders] Failed to read receipts for appt ${appt.id}:`,
+          reminderLookupError,
+        )
         continue
       }
+      const sentKeys = new Set(
+        (existingReminders || []).map((reminder) => reminder.key),
+      )
 
       // Build notification message
       const customer = Array.isArray(appt.ops_customers)
@@ -185,20 +194,50 @@ async function sendUpcomingJobReminders() {
         message += `\n\n📝 ${appt.internal_notes}`
       }
 
-      // Send Telegram notification
-      await sendTelegramNotification(message, { parseMode: 'Markdown' })
+      if (!sentKeys.has(telegramReminderKey)) {
+        const telegramSent = await sendTelegramNotification(message, {
+          parseMode: 'Markdown',
+        })
+        if (telegramSent) {
+          await supabase.from('system_settings').upsert({
+            key: telegramReminderKey,
+            value: JSON.stringify({ sent_at: new Date().toISOString() }),
+            updated_at: new Date().toISOString(),
+          })
+          sent++
+        }
+      }
 
-      // Mark as sent
-      await supabase.from('system_settings').upsert({
-        key: reminderKey,
-        value: JSON.stringify({ sent_at: new Date().toISOString() }),
-        updated_at: new Date().toISOString(),
-      })
+      if (!sentKeys.has(davidPushReminderKey)) {
+        const pushSent = await sendDavidJobReminderPush({
+          supabase,
+          appointmentId: appt.id,
+          appointmentDate: todayDate,
+          assignedStaffUserId: appt.assigned_staff_user_id,
+          customerName,
+          address: addressLine,
+          timeLabel: timeFormatted,
+        })
+        if (pushSent) {
+          await supabase.from('system_settings').upsert({
+            key: davidPushReminderKey,
+            value: JSON.stringify({ sent_at: new Date().toISOString() }),
+            updated_at: new Date().toISOString(),
+          })
+          davidPushSent++
+        }
+      }
 
-      console.log(`[job-reminders] Sent reminder for appt ${appt.id}`)
-      sent++
+      console.log(
+        `[job-reminders] Processed reminders for appt ${appt.id}: telegram=${sentKeys.has(telegramReminderKey) ? 'already sent' : 'checked'}, david_push=${sentKeys.has(davidPushReminderKey) ? 'already sent' : 'checked'}`,
+      )
     }
   }
 
-  return { sent, total_checked: upcomingAppointments.length }
+  return {
+    sent,
+    telegram_sent: sent,
+    david_push_sent: davidPushSent,
+    total_checked: upcomingAppointments.length,
+  }
 }

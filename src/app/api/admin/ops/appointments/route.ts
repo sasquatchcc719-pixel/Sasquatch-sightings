@@ -18,7 +18,6 @@ import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
-import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import {
@@ -762,7 +761,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const [commsResult, qbResult, reminderResult] = await Promise.allSettled([
+      const [commsResult, qbResult] = await Promise.allSettled([
         sendOpsLifecycleCommunications({
           event: 'job_scheduled',
           appointmentId: appointment.id,
@@ -770,13 +769,6 @@ export async function POST(request: NextRequest) {
         isNoChargeWarranty
           ? Promise.resolve(null)
           : syncAppointmentToQuickBooks(appointment.id),
-        scheduleJobReminder({
-          appointmentId: appointment.id,
-          appointmentDate: appointmentDate,
-          startTime: `${startTime}:00`.slice(0, 8),
-          customerName: fullName,
-          address: `${address.street_1}, ${address.city}`,
-        }),
       ])
       if (commsResult.status === 'rejected') {
         console.error(
@@ -788,12 +780,6 @@ export async function POST(request: NextRequest) {
         console.error(
           '[ops/appointments][POST] QB sync error:',
           qbResult.reason,
-        )
-      }
-      if (reminderResult.status === 'rejected') {
-        console.error(
-          '[ops/appointments][POST] Reminder error:',
-          reminderResult.reason,
         )
       }
     } else {

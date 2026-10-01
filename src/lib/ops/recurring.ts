@@ -12,7 +12,6 @@ import {
 } from '@/lib/quickbooks'
 import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
-import { scheduleJobReminder } from '@/lib/onesignal'
 import { effectiveBillingMode } from '@/lib/ops/monthly-restoration-billing'
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -722,26 +721,13 @@ export async function generateRecurringAppointments(
         }
       }
 
-      await Promise.all([
-        supabase.from('ops_appointment_status_events').insert({
-          appointment_id: appointment.id,
-          from_status: null,
-          to_status: 'booked',
-          changed_by: null,
-          notes: `Auto-generated from recurring template: ${template.label}`,
-        }),
-        // No tech is dispatched to a subcontracted visit, so there is nobody
-        // to remind — the week-header chip is the prompt to close it out.
-        template.is_subcontracted
-          ? Promise.resolve()
-          : scheduleJobReminder({
-              appointmentId: appointment.id,
-              appointmentDate: scheduledDate,
-              startTime: normalizedStart,
-              customerName: customer.full_name,
-              address: `${address.street_1}, ${address.city}`,
-            }),
-      ])
+      await supabase.from('ops_appointment_status_events').insert({
+        appointment_id: appointment.id,
+        from_status: null,
+        to_status: 'booked',
+        changed_by: null,
+        notes: `Auto-generated from recurring template: ${template.label}`,
+      })
 
       result.created++
       templateDateSet.add(date)
