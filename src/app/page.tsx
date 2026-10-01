@@ -1,4 +1,5 @@
 import { createClient } from '@/supabase/server'
+import { loadHistoricalJobPins } from '@/lib/public-job-coverage.server'
 import { MapView } from '@/components/public/MapView'
 import { ContactSection } from '@/components/public/ContactSection'
 import { Button } from '@/components/ui/button'
@@ -19,8 +20,11 @@ async function getPublishedJobs() {
         slug,
         city,
         image_url,
+        gps_lat,
+        gps_lng,
         gps_fuzzy_lat,
         gps_fuzzy_lng,
+        ops_invoice_id,
         service:services(name)
       `,
       )
@@ -72,6 +76,18 @@ async function getSightings() {
 export default async function Home() {
   const jobs = await getPublishedJobs()
   const sightings = await getSightings()
+  const historicalJobs = await loadHistoricalJobPins(jobs).catch((error) => {
+    console.error('Failed to build historical job coverage:', error)
+    return []
+  })
+  const publicJobs = jobs.map(
+    ({
+      gps_lat: _gpsLat,
+      gps_lng: _gpsLng,
+      ops_invoice_id: _invoiceId,
+      ...job
+    }) => job,
+  )
 
   return (
     <div className="flex flex-col">
@@ -96,7 +112,9 @@ export default async function Home() {
           </div>
         </div>
 
-        {jobs.length === 0 && sightings.length === 0 ? (
+        {publicJobs.length === 0 &&
+        historicalJobs.length === 0 &&
+        sightings.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="p-8 text-center">
               <h2 className="mb-2 text-2xl font-bold text-white">
@@ -112,7 +130,11 @@ export default async function Home() {
           </div>
         ) : (
           <div className="h-full pt-24">
-            <MapView jobs={jobs} sightings={sightings} />
+            <MapView
+              jobs={publicJobs}
+              historicalJobs={historicalJobs}
+              sightings={sightings}
+            />
           </div>
         )}
       </section>

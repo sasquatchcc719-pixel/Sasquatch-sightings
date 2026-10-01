@@ -1,51 +1,58 @@
-'use client';
+'use client'
 
-import { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import { useEffect, useRef, useState } from 'react'
+import mapboxgl from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
 
 interface Job {
-  id: string;
-  slug: string;
-  city: string;
-  image_url: string;
-  gps_fuzzy_lat: number;
-  gps_fuzzy_lng: number;
+  id: string
+  slug: string
+  city: string
+  image_url: string
+  gps_fuzzy_lat: number
+  gps_fuzzy_lng: number
   service: {
-    name: string;
-  }[];
+    name: string
+  }[]
 }
 
 interface Sighting {
-  id: string;
-  image_url: string;
-  gps_lat: number;
-  gps_lng: number;
-  created_at: string;
+  id: string
+  image_url: string
+  gps_lat: number
+  gps_lng: number
+  created_at: string
+}
+
+interface HistoricalJob {
+  id: string
+  gps_fuzzy_lat: number
+  gps_fuzzy_lng: number
 }
 
 interface MapViewProps {
-  jobs: Job[];
-  sightings: Sighting[];
+  jobs: Job[]
+  historicalJobs: HistoricalJob[]
+  sightings: Sighting[]
 }
 
-export function MapView({ jobs, sightings }: MapViewProps) {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+export function MapView({ jobs, historicalJobs, sightings }: MapViewProps) {
+  const mapContainer = useRef<HTMLDivElement>(null)
+  const map = useRef<mapboxgl.Map | null>(null)
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const markersRef = useRef<mapboxgl.Marker[]>([])
 
   useEffect(() => {
-    if (!mapContainer.current) return;
-    if (map.current) return; // Initialize map only once
+    if (!mapContainer.current) return
+    if (map.current) return // Initialize map only once
 
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
     if (!token) {
-      console.error('Mapbox token not found');
-      return;
+      console.error('Mapbox token not found')
+      return
     }
 
-    mapboxgl.accessToken = token;
+    mapboxgl.accessToken = token
 
     // Initialize map centered on Colorado Front Range
     map.current = new mapboxgl.Map({
@@ -53,61 +60,82 @@ export function MapView({ jobs, sightings }: MapViewProps) {
       style: 'mapbox://styles/mapbox/streets-v12',
       center: [-104.8, 39.0], // Colorado Front Range
       zoom: 8,
-    });
+    })
 
     map.current.on('load', () => {
-      setMapLoaded(true);
-    });
+      setMapLoaded(true)
+    })
 
     // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
 
     return () => {
       // Clean up markers first
-      markersRef.current.forEach(marker => {
+      markersRef.current.forEach((marker) => {
         try {
-          marker.remove();
+          marker.remove()
         } catch (e) {
-          console.error('Error removing marker:', e);
+          console.error('Error removing marker:', e)
         }
-      });
-      markersRef.current = [];
-      
+      })
+      markersRef.current = []
+
       // Then remove map
       if (map.current) {
         try {
-          map.current.remove();
+          map.current.remove()
         } catch (e) {
-          console.error('Error removing map:', e);
+          console.error('Error removing map:', e)
         }
-        map.current = null;
+        map.current = null
       }
-      setMapLoaded(false);
-    };
-  }, []);
+      setMapLoaded(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (!map.current || !mapLoaded) return;
-    if (jobs.length === 0 && sightings.length === 0) return;
+    if (!map.current || !mapLoaded) return
+    if (
+      jobs.length === 0 &&
+      historicalJobs.length === 0 &&
+      sightings.length === 0
+    )
+      return
 
     // Clear existing markers
-    markersRef.current.forEach(marker => {
+    markersRef.current.forEach((marker) => {
       try {
-        marker.remove();
+        marker.remove()
       } catch (error) {
-        console.error('Error removing marker:', error);
+        console.error('Error removing marker:', error)
       }
-    });
-    markersRef.current = [];
+    })
+    markersRef.current = []
 
-    // Add GREEN markers for each job
+    // Add LIGHT GREEN markers for completed jobs imported from historical systems.
+    historicalJobs.forEach((job) => {
+      if (!job.gps_fuzzy_lat || !job.gps_fuzzy_lng) return
+      if (!map.current) return
+
+      try {
+        const marker = new mapboxgl.Marker({ color: '#84cc16', scale: 0.82 })
+          .setLngLat([job.gps_fuzzy_lng, job.gps_fuzzy_lat])
+          .addTo(map.current)
+
+        markersRef.current.push(marker)
+      } catch (error) {
+        console.error('Error adding historical job marker:', error)
+      }
+    })
+
+    // Add GREEN markers for each featured job
     jobs.forEach((job) => {
-      if (!job.gps_fuzzy_lat || !job.gps_fuzzy_lng) return;
-      if (!map.current) return;
+      if (!job.gps_fuzzy_lat || !job.gps_fuzzy_lng) return
+      if (!map.current) return
 
       try {
         // Create popup content
-        const serviceName = job.service?.[0]?.name || 'Service';
+        const serviceName = job.service?.[0]?.name || 'Service'
         const popupContent = `
           <div style="min-width: 200px;">
             <img 
@@ -124,26 +152,26 @@ export function MapView({ jobs, sightings }: MapViewProps) {
               View Details →
             </a>
           </div>
-        `;
+        `
 
-        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent);
+        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent)
 
         // Create GREEN marker for jobs
         const marker = new mapboxgl.Marker({ color: '#16a34a' })
           .setLngLat([job.gps_fuzzy_lng, job.gps_fuzzy_lat])
           .setPopup(popup)
-          .addTo(map.current);
-        
-        markersRef.current.push(marker);
+          .addTo(map.current)
+
+        markersRef.current.push(marker)
       } catch (error) {
-        console.error('Error adding job marker:', error);
+        console.error('Error adding job marker:', error)
       }
-    });
+    })
 
     // Add BLUE markers for each sighting
     sightings.forEach((sighting) => {
-      if (!sighting.gps_lat || !sighting.gps_lng) return;
-      if (!map.current) return;
+      if (!sighting.gps_lat || !sighting.gps_lng) return
+      if (!map.current) return
 
       try {
         // Format date
@@ -151,7 +179,7 @@ export function MapView({ jobs, sightings }: MapViewProps) {
           year: 'numeric',
           month: 'short',
           day: 'numeric',
-        });
+        })
 
         // Create popup content
         const popupContent = `
@@ -164,60 +192,100 @@ export function MapView({ jobs, sightings }: MapViewProps) {
             <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600;">🦍 Sasquatch Spotted!</h3>
             <p style="margin: 0; font-size: 12px; color: #666;">${date}</p>
           </div>
-        `;
+        `
 
-        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent);
+        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent)
 
         // Create BLUE marker for sightings
         const marker = new mapboxgl.Marker({ color: '#2563eb' })
           .setLngLat([sighting.gps_lng, sighting.gps_lat])
           .setPopup(popup)
-          .addTo(map.current);
-        
-        markersRef.current.push(marker);
+          .addTo(map.current)
+
+        markersRef.current.push(marker)
       } catch (error) {
-        console.error('Error adding sighting marker:', error);
+        console.error('Error adding sighting marker:', error)
       }
-    });
+    })
 
     // Fit map to show all markers if there are any
-    const allPoints: [number, number][] = [];
-    
+    const allPoints: [number, number][] = []
+
     jobs.forEach((job) => {
       if (job.gps_fuzzy_lat && job.gps_fuzzy_lng) {
-        allPoints.push([job.gps_fuzzy_lng, job.gps_fuzzy_lat]);
+        allPoints.push([job.gps_fuzzy_lng, job.gps_fuzzy_lat])
       }
-    });
-    
+    })
+
+    historicalJobs.forEach((job) => {
+      if (job.gps_fuzzy_lat && job.gps_fuzzy_lng) {
+        allPoints.push([job.gps_fuzzy_lng, job.gps_fuzzy_lat])
+      }
+    })
+
     sightings.forEach((sighting) => {
       if (sighting.gps_lat && sighting.gps_lng) {
-        allPoints.push([sighting.gps_lng, sighting.gps_lat]);
+        allPoints.push([sighting.gps_lng, sighting.gps_lat])
       }
-    });
+    })
 
     if (allPoints.length > 0 && map.current) {
       try {
-        const bounds = new mapboxgl.LngLatBounds();
+        const bounds = new mapboxgl.LngLatBounds()
         allPoints.forEach((point) => {
-          bounds.extend(point);
-        });
-        
+          bounds.extend(point)
+        })
+
         // Only fit bounds if we have valid bounds
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, {
             padding: 50,
             maxZoom: 12,
-          });
+          })
         }
       } catch (error) {
-        console.error('Error fitting bounds:', error);
+        console.error('Error fitting bounds:', error)
       }
     }
-  }, [jobs, sightings, mapLoaded]);
+  }, [jobs, historicalJobs, sightings, mapLoaded])
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={mapContainer} className="w-full h-full" />
+    <div className="relative h-full w-full">
+      <div ref={mapContainer} className="h-full w-full" />
+      <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-white/15 bg-neutral-950/90 px-4 py-3 text-sm text-white shadow-xl backdrop-blur-sm">
+        <p className="mb-2 text-xs font-semibold tracking-[0.14em] text-white/60 uppercase">
+          Completed work
+        </p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-5">
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-[#16a34a]" />
+              Featured projects
+            </span>
+            <span className="font-semibold tabular-nums">{jobs.length}</span>
+          </div>
+          <div className="flex items-center justify-between gap-5">
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-[#84cc16]" />
+              Other completed jobs
+            </span>
+            <span className="font-semibold tabular-nums">
+              {historicalJobs.length}
+            </span>
+          </div>
+          {sightings.length > 0 ? (
+            <div className="flex items-center justify-between gap-5">
+              <span className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#2563eb]" />
+                Sasquatch sightings
+              </span>
+              <span className="font-semibold tabular-nums">
+                {sightings.length}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
-  );
+  )
 }
