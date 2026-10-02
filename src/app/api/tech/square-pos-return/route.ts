@@ -3,6 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { getChargeableInvoice } from '@/lib/tech/appointments'
 import { parseSquarePosReturn } from '@/lib/payments/square-pos'
 import { createAdminClient } from '@/supabase/server'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 /**
  * Square Point of Sale switches back here after a tap-to-pay transaction.
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
         .update({ payment_status: 'paid', updated_at: nowIso })
         .eq('id', id)
       if (appointmentUpdateError) throw appointmentUpdateError
+      await ensureInvoiceQuickBooksSyncJob(supabase, invoice.invoiceId)
       console.log(
         `[square-pos-return] Marked invoice ${invoice.invoiceId} paid (txn ${result.transactionId ?? 'n/a'})`,
       )

@@ -11,6 +11,7 @@ import { retrieveSquareOrderInvoiceNumber } from '@/lib/payments/square'
 import { sendOneSignalToExternalIds } from '@/lib/onesignal'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 type CustomerRow = {
   business_name?: string | null
@@ -250,6 +251,10 @@ export async function POST(request: NextRequest) {
         .eq('id', appointment.id)
       if (appointmentError) throw appointmentError
     }
+
+    // A completed Square payment is enough to make the invoice billable even
+    // when the payment arrives before the technician closes the job.
+    await ensureInvoiceQuickBooksSyncJob(supabase, invoice.id)
 
     // Clear an abandoned claim so Square's retry can recover a Telegram send
     // interrupted before it recorded success.

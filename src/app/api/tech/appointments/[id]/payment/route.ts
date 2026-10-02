@@ -5,6 +5,7 @@ import {
   shouldHideTechPricing,
 } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 export async function POST(
   request: NextRequest,
@@ -87,6 +88,8 @@ export async function POST(
       })
       .eq('id', id)
     if (appointmentUpdateError) throw appointmentUpdateError
+
+    await ensureInvoiceQuickBooksSyncJob(supabase, appointment.invoice.id)
 
     const updated = await getAssignedTechAppointment(supabase, staffUserId, id)
     return NextResponse.json({ appointment: updated })

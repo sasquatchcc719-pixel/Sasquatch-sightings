@@ -10,6 +10,7 @@ import {
 import { enqueue } from '@/lib/echo/enqueue'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
+import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -150,6 +151,15 @@ export async function POST(request: NextRequest, { params }: Params) {
         updated_at: publishNowIso,
       })
       .eq('id', appointment.id)
+
+    // Publishing is also a job-completion path. Keep its invoice billing in
+    // lockstep with the operations and tech completion routes so a paid Square
+    // invoice cannot be left without a QuickBooks sync job.
+    await promoteInvoiceOnJobCompletion(supabase, {
+      appointmentId: appointment.id,
+      userId: access.id,
+      note: 'Job completed while publishing map post',
+    })
 
     await enrollCustomerInDrip(appointment.id)
 

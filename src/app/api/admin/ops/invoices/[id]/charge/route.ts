@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { chargeCardViaQB, createQBPayment } from '@/lib/quickbooks-api'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 export async function POST(
   request: NextRequest,
@@ -108,6 +109,8 @@ export async function POST(
         .eq('id', appointment.id)
       if (appointmentUpdateError) throw appointmentUpdateError
     }
+
+    await ensureInvoiceQuickBooksSyncJob(supabase, id)
 
     return NextResponse.json({
       ok: true,
