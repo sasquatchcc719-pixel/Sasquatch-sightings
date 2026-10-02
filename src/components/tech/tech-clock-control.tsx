@@ -26,6 +26,8 @@ type ClockStatus = {
   recentClockOut: RecentClockOut | null
 }
 
+type ConfirmAction = 'clock_out' | 'start_break' | 'end_break'
+
 type MeterAsset = {
   id: string
   name: string
@@ -35,8 +37,8 @@ type MeterAsset = {
 
 const REQUEST_TIMEOUT_MS = 15_000
 const STATUS_POLL_MS = 60_000
-// The confirm button stays disarmed briefly so a double-tap on "Clock Out"
-// can't land on "Yes, clock out" in the same spot.
+// The confirm button stays disarmed briefly so a double-tap on a clock action
+// cannot land on its confirmation button in the same spot.
 const CONFIRM_ARM_DELAY_MS = 1_200
 
 function formatElapsed(ms: number): string {
@@ -88,7 +90,7 @@ export function TechClockControl() {
   const [loading, setLoading] = useState<string | null>('status')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmArmed, setConfirmArmed] = useState(false)
 
   const [meterAssets, setMeterAssets] = useState<MeterAsset[] | null>(null)
@@ -164,7 +166,7 @@ export function TechClockControl() {
   }, [])
 
   useEffect(() => {
-    if (!confirmOpen) {
+    if (!confirmAction) {
       setConfirmArmed(false)
       return
     }
@@ -173,7 +175,7 @@ export function TechClockControl() {
       CONFIRM_ARM_DELAY_MS,
     )
     return () => window.clearTimeout(timer)
-  }, [confirmOpen])
+  }, [confirmAction])
 
   const elapsedMs = useMemo(() => {
     if (!entry) return 0
@@ -293,8 +295,18 @@ export function TechClockControl() {
     } finally {
       busyRef.current = false
       setLoading(null)
-      setConfirmOpen(false)
+      setConfirmAction(null)
     }
+  }
+
+  function openConfirmation(action: ConfirmAction) {
+    setConfirmArmed(false)
+    setConfirmAction(action)
+  }
+
+  function closeConfirmation() {
+    setConfirmArmed(false)
+    setConfirmAction(null)
   }
 
   const isClocked = Boolean(entry)
@@ -335,7 +347,7 @@ export function TechClockControl() {
             type="button"
             disabled={loading !== null}
             onClick={() =>
-              void runAction(isOnBreak ? 'end_break' : 'start_break')
+              openConfirmation(isOnBreak ? 'end_break' : 'start_break')
             }
             className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-60 ${
               isOnBreak
@@ -356,7 +368,7 @@ export function TechClockControl() {
           <button
             type="button"
             disabled={loading !== null}
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => openConfirmation('clock_out')}
             className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-red-200 ring-1 ring-red-400/30 disabled:opacity-60"
           >
             <LogOut className="h-4 w-4" />
@@ -407,10 +419,10 @@ export function TechClockControl() {
         <p className="mx-auto mt-2 max-w-3xl text-xs text-red-300">{error}</p>
       ) : null}
 
-      {confirmOpen && entry ? (
+      {confirmAction && entry ? (
         <div
           className="fixed inset-0 z-[230] flex items-end justify-center bg-black/70 p-4 sm:items-center"
-          onClick={() => setConfirmOpen(false)}
+          onClick={closeConfirmation}
         >
           <div
             className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-slate-900 p-5"
@@ -418,36 +430,64 @@ export function TechClockControl() {
           >
             <div>
               <p className="text-base font-semibold text-white">
-                Clock out now?
+                {confirmAction === 'clock_out'
+                  ? 'Clock out now?'
+                  : confirmAction === 'start_break'
+                    ? 'Are you sure you want to start your break?'
+                    : 'Are you sure you want to end your break?'}
               </p>
               <p className="mt-1 text-sm text-slate-400">
-                You clocked in at {formatClockTime(entry.startedAt)} and have
-                been on the clock for {formatHoursMinutes(elapsedMs)}.
-                {isOnBreak ? ' Your break will end too.' : ''}
+                {confirmAction === 'clock_out' ? (
+                  <>
+                    You clocked in at {formatClockTime(entry.startedAt)} and
+                    have been on the clock for {formatHoursMinutes(elapsedMs)}.
+                    {isOnBreak ? ' Your break will end too.' : ''}
+                  </>
+                ) : confirmAction === 'start_break' ? (
+                  'Paid time will pause now and stay paused until you end the break.'
+                ) : (
+                  'Paid time will resume immediately when you confirm.'
+                )}
               </p>
-              <p className="mt-2 text-xs text-slate-500">
-                Just stepping away? Use Start Break instead so your shift stays
-                open.
-              </p>
+              {confirmAction === 'clock_out' ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Just stepping away? Use Start Break instead so your shift
+                  stays open.
+                </p>
+              ) : null}
             </div>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setConfirmOpen(false)}
+                onClick={closeConfirmation}
                 className="flex-1 rounded-lg bg-white/10 py-3 text-sm font-semibold text-white hover:bg-white/20"
               >
-                Keep working
+                {confirmAction === 'end_break'
+                  ? 'Stay on break'
+                  : 'Keep working'}
               </button>
               <button
                 type="button"
                 disabled={!confirmArmed || loading !== null}
-                onClick={() => void runAction('clock_out')}
-                className="flex-1 rounded-lg bg-red-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+                onClick={() => void runAction(confirmAction)}
+                className={`flex-1 rounded-lg py-3 text-sm font-semibold text-white disabled:opacity-40 ${
+                  confirmAction === 'clock_out'
+                    ? 'bg-red-600'
+                    : confirmAction === 'start_break'
+                      ? 'bg-amber-600'
+                      : 'bg-emerald-600'
+                }`}
               >
-                {loading === 'clock_out' ? (
+                {loading === confirmAction ? (
                   <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                 ) : (
-                  'Yes, clock out'
+                  <>
+                    {confirmAction === 'clock_out'
+                      ? 'Yes, clock out'
+                      : confirmAction === 'start_break'
+                        ? 'Yes, start break'
+                        : 'Yes, end break'}
+                  </>
                 )}
               </button>
             </div>
