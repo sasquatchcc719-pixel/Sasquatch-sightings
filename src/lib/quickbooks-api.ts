@@ -187,6 +187,13 @@ type QBInvoiceMatch = {
   total: number | null
 }
 
+type QBPaymentTermRef = {
+  value: string
+  name: string
+}
+
+const qbPaymentTermCache = new Map<string, QBPaymentTermRef>()
+
 export const QUICKBOOKS_INVOICE_PREFIX = 'SASQ-'
 
 /**
@@ -212,6 +219,67 @@ export function quickBooksInvoiceDocNumber(
 
 function qbEscape(value: string): string {
   return value.replace(/'/g, "\\'")
+}
+
+export function quickBooksDueDate(
+  transactionDate: string,
+  paymentTermsDays: number,
+): string {
+  const [year, month, day] = transactionDate.split('-').map(Number)
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(paymentTermsDays) ||
+    paymentTermsDays < 0
+  ) {
+    throw new Error('Invalid QuickBooks transaction date or payment terms')
+  }
+  const dueDate = new Date(Date.UTC(year, month - 1, day))
+  dueDate.setUTCDate(dueDate.getUTCDate() + paymentTermsDays)
+  return dueDate.toISOString().slice(0, 10)
+}
+
+async function resolveQBPaymentTerm(
+  realmId: string,
+  accessToken: string,
+  paymentTermsDays: number,
+): Promise<QBPaymentTermRef> {
+  const name =
+    paymentTermsDays === 0 ? 'Due on receipt' : `Net ${paymentTermsDays}`
+  const cacheKey = `${realmId}:${name}`
+  const cached = qbPaymentTermCache.get(cacheKey)
+  if (cached) return cached
+
+  const query = encodeURIComponent(
+    `SELECT * FROM Term WHERE Name = '${qbEscape(name)}'`,
+  )
+  const res = await qbFetch(
+    realmId,
+    accessToken,
+    `/query?query=${query}&minorversion=65`,
+  )
+  if (!res.ok) {
+    const detail = await readQBErrorDetail(res)
+    throw new Error(
+      `QuickBooks payment-term lookup failed: ${res.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+
+  const data = await res.json()
+  const term = data?.QueryResponse?.Term?.find(
+    (candidate: { Active?: boolean; DueDays?: number; Name?: string }) =>
+      candidate.Active !== false &&
+      candidate.Name === name &&
+      Number(candidate.DueDays) === paymentTermsDays,
+  )
+  if (!term?.Id) {
+    throw new Error(`QuickBooks payment term "${name}" is not configured`)
+  }
+
+  const ref = { value: String(term.Id), name }
+  qbPaymentTermCache.set(cacheKey, ref)
+  return ref
 }
 
 async function findQBInvoiceByDocNumber(
@@ -393,6 +461,7 @@ export async function createQBInvoice(params: {
     service_date?: string | null
   }>
   discountAmount?: number
+  paymentTermsDays?: number | null
   /**
    * Invoice number to set as QuickBooks DocNumber. Required when the QBO
    * account has "Custom transaction numbers" enabled. Coerced to string.
@@ -473,6 +542,22 @@ export async function createQBInvoice(params: {
     CustomerRef: { value: params.qbCustomerId },
     TxnDate: params.serviceDate,
     Line: lines,
+  }
+
+  if (
+    params.paymentTermsDays !== null &&
+    params.paymentTermsDays !== undefined
+  ) {
+    const paymentTerm = await resolveQBPaymentTerm(
+      auth.realmId,
+      auth.accessToken,
+      params.paymentTermsDays,
+    )
+    body.DueDate = quickBooksDueDate(
+      params.serviceDate,
+      params.paymentTermsDays,
+    )
+    body.SalesTermRef = paymentTerm
   }
 
   if (docNumber) {
@@ -759,6 +844,7 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
       quickbooks_invoice_id,
       ops_customers!ops_batch_invoices_customer_id_fkey (
         id, full_name, business_name, email, phone, quickbooks_customer_id,
+        quickbooks_payment_terms_days,
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_batch_invoice_entries (
@@ -893,6 +979,7 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
       serviceDate: batchInvoice.month,
       lineItems,
       discountAmount: Number(batchInvoice.discount_amount || 0),
+      paymentTermsDays: customer.quickbooks_payment_terms_days,
       docNumber:
         (batchInvoice as { invoice_number?: number | string | null })
           .invoice_number ?? null,
@@ -1190,7 +1277,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       kind,
       ops_customers!ops_appointments_customer_id_fkey (
         id, full_name, first_name, business_name, email, phone,
-        quickbooks_customer_id,
+        quickbooks_customer_id, quickbooks_payment_terms_days,
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_invoices (
@@ -1297,6 +1384,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
           discountAmount:
             Number(invoice.discount_amount || 0) +
             Number(invoice.percentage_discount_amount || 0),
+          paymentTermsDays: customer.quickbooks_payment_terms_days,
           docNumber:
             (invoice as { invoice_number?: number | string | null })
               .invoice_number ?? null,
@@ -1417,7 +1505,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
 
   const { data: cust } = await supabase
     .from('ops_customers')
-    .select('quickbooks_customer_id')
+    .select('quickbooks_customer_id, quickbooks_payment_terms_days')
     .eq('id', appt.customer_id)
     .single()
 
@@ -1450,6 +1538,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
     discountAmount:
       Number(inv.discount_amount || 0) +
       Number(inv.percentage_discount_amount || 0),
+    paymentTermsDays: cust.quickbooks_payment_terms_days,
     docNumber:
       (inv as { invoice_number?: number | string | null }).invoice_number ??
       null,

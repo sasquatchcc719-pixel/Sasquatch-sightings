@@ -377,7 +377,7 @@ export async function GET(request: NextRequest) {
 
           const { data: custRow } = await supabase
             .from('ops_customers')
-            .select('quickbooks_customer_id')
+            .select('quickbooks_customer_id, quickbooks_payment_terms_days')
             .eq('id', appt.customer_id)
             .maybeSingle()
 
@@ -399,6 +399,7 @@ export async function GET(request: NextRequest) {
             discountAmount:
               Number(invRow.discount_amount || 0) +
               Number(invRow.percentage_discount_amount || 0),
+            paymentTermsDays: custRow.quickbooks_payment_terms_days,
             docNumber:
               (invRow as { invoice_number?: number | string | null })
                 .invoice_number ?? null,

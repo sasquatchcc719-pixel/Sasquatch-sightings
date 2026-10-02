@@ -243,6 +243,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Customer appointment messages must describe `start_time` as the scheduled arrival and `end_time` as the estimated completion; never present the service duration as an arrival window.
 - Keep the post-job cleaning-reminder choice separate from the review request by at least 30 minutes, and suppress that backup text whenever staff already set a reminder from the invoice.
 - Enforce QuickBooks invoice sync with recurring reconciliation as well as route-level enqueue calls; exclude cash, estimates, restoration, warranties, and batch-billed appointments so a missed code path cannot silently orphan an invoice.
+- Recovery Village is monthly consolidated and Saltgrass Colorado Springs is per-visit at job close; both send QuickBooks Net 45 from their invoice transaction date (month start for Recovery Village, completed visit date for Saltgrass).
 
 ---
 

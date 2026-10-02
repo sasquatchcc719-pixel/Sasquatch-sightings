@@ -12,7 +12,11 @@ vi.mock('@/supabase/server', () => ({
   createAdminClient: vi.fn(),
 }))
 
-import { createQBInvoice, quickBooksInvoiceDocNumber } from './quickbooks-api'
+import {
+  createQBInvoice,
+  quickBooksDueDate,
+  quickBooksInvoiceDocNumber,
+} from './quickbooks-api'
 
 const params = {
   qbCustomerId: '724',
@@ -50,6 +54,48 @@ describe('createQBInvoice', () => {
     expect(() => quickBooksInvoiceDocNumber('1'.repeat(17))).toThrow(
       'exceeds 21 characters',
     )
+  })
+
+  it('sets Net 45 and its due date from the transaction date', async () => {
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = decodeURIComponent(String(input))
+        if (url.includes('SELECT * FROM Invoice')) {
+          return jsonResponse({ QueryResponse: {} })
+        }
+        if (url.includes("SELECT * FROM Term WHERE Name = 'Net 45'")) {
+          return jsonResponse({
+            QueryResponse: {
+              Term: [
+                {
+                  Id: '6',
+                  Name: 'Net 45',
+                  DueDays: 45,
+                  Active: true,
+                },
+              ],
+            },
+          })
+        }
+
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          TxnDate: '2026-09-15',
+          DueDate: '2026-10-30',
+          SalesTermRef: { value: '6', name: 'Net 45' },
+        })
+        return jsonResponse({ Invoice: { Id: '6902' } })
+      },
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      createQBInvoice({
+        ...params,
+        serviceDate: '2026-09-15',
+        paymentTermsDays: 45,
+      }),
+    ).resolves.toBe('6902')
+    expect(quickBooksDueDate('2026-09-01', 45)).toBe('2026-10-16')
   })
 
   it('recovers when another worker creates the same invoice during the request', async () => {
