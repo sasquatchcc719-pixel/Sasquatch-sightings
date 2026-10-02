@@ -32,6 +32,7 @@ import {
   isActiveTechJobStatus,
 } from '@/lib/tech/appointments'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
+import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -450,6 +451,13 @@ export async function PATCH(
       nextStatus === 'completed' && !completedAtExisting
         ? nowIso
         : completedAtExisting
+
+    if (
+      nextStatus !== current.status &&
+      (nextStatus === 'on_my_way' || nextStatus === 'in_progress')
+    ) {
+      await captureAddOnBonusBaseline(supabase, id)
+    }
 
     // Re-link to (or detach from) a recurring series — only owner/dispatcher/admin.
     // Validates template customer_id + service_address_id match the job.

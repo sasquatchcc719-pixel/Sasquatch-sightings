@@ -250,6 +250,41 @@ type PremiumRow = {
   appliedMinutes: number | null
 }
 
+type AddOnBonusRow = {
+  key: string
+  appointmentId: string
+  appointmentDate: string
+  staffUserId: string
+  staffName: string
+  customerName: string
+  categoryLabel: string
+  eligibleRevenue: number
+  bonusRate: number
+  bonusAmount: number
+  status: 'earned' | 'pending'
+}
+
+type AddOnBonusResponse = {
+  rows: AddOnBonusRow[]
+  earnedBonus: number
+  pendingBonus: number
+  eligibleRevenue: number
+}
+
+async function fetchAddOnBonuses(
+  startDate: string,
+  endDate: string,
+  staffUserId: string,
+): Promise<AddOnBonusResponse> {
+  const params = new URLSearchParams({ startDate, endDate })
+  if (staffUserId) params.set('staffUserId', staffUserId)
+  const res = await fetch(
+    `/api/admin/ops/payroll/add-on-bonuses?${params.toString()}`,
+  )
+  if (!res.ok) throw new Error('Failed to load add-on bonuses')
+  return res.json()
+}
+
 async function fetchPremiums(
   startDate: string,
   endDate: string,
@@ -450,6 +485,24 @@ export function PayrollTimesheetsView() {
     refetchInterval: 60_000,
   })
 
+  const addOnBonusesQuery = useQuery({
+    queryKey: [
+      'payroll-add-on-bonuses',
+      viewMode,
+      date,
+      payPeriod.startDate,
+      payPeriod.endDate,
+      staffFilter,
+    ],
+    queryFn: () =>
+      fetchAddOnBonuses(
+        viewMode === 'day' ? date : payPeriod.startDate,
+        viewMode === 'day' ? date : payPeriod.endDate,
+        staffFilter,
+      ),
+    refetchInterval: 60_000,
+  })
+
   const staff = staffQuery.data || []
   const entries = useMemo(
     () => entriesQuery.data?.entries ?? [],
@@ -470,6 +523,12 @@ export function PayrollTimesheetsView() {
         .reduce((sum, p) => sum + Number(p.appliedPay || 0), 0),
     [premiums],
   )
+  const addOnBonuses = useMemo(
+    () => addOnBonusesQuery.data?.rows ?? [],
+    [addOnBonusesQuery.data?.rows],
+  )
+  const totalEarnedAddOnBonus = addOnBonusesQuery.data?.earnedBonus || 0
+  const totalPendingAddOnBonus = addOnBonusesQuery.data?.pendingBonus || 0
 
   const premiumByDayAndStaff = useMemo(() => {
     const map = new Map<string, PremiumRow>()
@@ -484,7 +543,13 @@ export function PayrollTimesheetsView() {
   const totalsByStaff = useMemo(() => {
     const totals = new Map<
       string,
-      { name: string; minutes: number; grossPay: number; premiumPay: number }
+      {
+        name: string
+        minutes: number
+        grossPay: number
+        premiumPay: number
+        addOnBonusPay: number
+      }
     >()
     for (const entry of entries) {
       const existing = totals.get(entry.staffUserId) || {
@@ -492,6 +557,7 @@ export function PayrollTimesheetsView() {
         minutes: 0,
         grossPay: 0,
         premiumPay: 0,
+        addOnBonusPay: 0,
       }
       existing.minutes += entry.payableMinutes
       existing.grossPay += entry.grossPay
@@ -504,12 +570,25 @@ export function PayrollTimesheetsView() {
         minutes: 0,
         grossPay: 0,
         premiumPay: 0,
+        addOnBonusPay: 0,
       }
       existing.premiumPay += Number(premium.appliedPay || 0)
       totals.set(premium.staffUserId, existing)
     }
+    for (const bonus of addOnBonuses) {
+      if (bonus.status !== 'earned') continue
+      const existing = totals.get(bonus.staffUserId) || {
+        name: bonus.staffName,
+        minutes: 0,
+        grossPay: 0,
+        premiumPay: 0,
+        addOnBonusPay: 0,
+      }
+      existing.addOnBonusPay += bonus.bonusAmount
+      totals.set(bonus.staffUserId, existing)
+    }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [entries, premiums])
+  }, [addOnBonuses, entries, premiums])
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -1057,11 +1136,20 @@ export function PayrollTimesheetsView() {
               <div className="text-right">
                 <p className="text-sm text-slate-400">Gross pay</p>
                 <p className="mt-1 text-3xl font-bold text-emerald-300">
-                  {fmtMoney(totalGrossPay + totalAppliedPremiumPay)}
+                  {fmtMoney(
+                    totalGrossPay +
+                      totalAppliedPremiumPay +
+                      totalEarnedAddOnBonus,
+                  )}
                 </p>
                 {totalAppliedPremiumPay > 0 && (
                   <p className="mt-0.5 text-xs text-emerald-200/80">
                     incl. {fmtMoney(totalAppliedPremiumPay)} after-hours
+                  </p>
+                )}
+                {totalEarnedAddOnBonus > 0 && (
+                  <p className="mt-0.5 text-xs text-cyan-200/80">
+                    incl. {fmtMoney(totalEarnedAddOnBonus)} add-on bonus
                   </p>
                 )}
               </div>
@@ -1076,11 +1164,14 @@ export function PayrollTimesheetsView() {
                     <span>{total.name}</span>
                     <span className="font-mono">
                       {fmtMin(total.minutes)} ·{' '}
-                      {fmtMoney(total.grossPay + total.premiumPay)}
-                      {total.premiumPay > 0 && (
+                      {fmtMoney(
+                        total.grossPay + total.premiumPay + total.addOnBonusPay,
+                      )}
+                      {total.premiumPay + total.addOnBonusPay > 0 && (
                         <span className="text-emerald-300/80">
                           {' '}
-                          (+{fmtMoney(total.premiumPay)})
+                          (+
+                          {fmtMoney(total.premiumPay + total.addOnBonusPay)})
                         </span>
                       )}
                     </span>
@@ -1103,6 +1194,99 @@ export function PayrollTimesheetsView() {
           Recovery Village premium check failed. Refresh payroll after the issue
           is fixed so after-hours bonuses can be reviewed.
         </div>
+      )}
+
+      {addOnBonusesQuery.isError && (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Add-on bonus totals could not be loaded. Refresh payroll after the
+          issue is fixed before running payroll.
+        </div>
+      )}
+
+      {!addOnBonusesQuery.isError && (
+        <section className="overflow-hidden rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-cyan-500/10 via-slate-900/60 to-emerald-500/10 shadow-xl shadow-cyan-950/20">
+          <div className="border-b border-white/10 px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-white">
+                  Onsite add-on bonuses
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  10% of a new service category sold onsite. Estimate
+                  corrections inside the original category do not qualify.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-right sm:grid-cols-3">
+                <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-3 py-2">
+                  <p className="text-[11px] tracking-wide text-emerald-200/70 uppercase">
+                    Earned
+                  </p>
+                  <p className="font-mono text-lg font-bold text-emerald-200">
+                    {fmtMoney(totalEarnedAddOnBonus)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-400/15 bg-amber-400/10 px-3 py-2">
+                  <p className="text-[11px] tracking-wide text-amber-200/70 uppercase">
+                    Awaiting payment
+                  </p>
+                  <p className="font-mono text-lg font-bold text-amber-200">
+                    {fmtMoney(totalPendingAddOnBonus)}
+                  </p>
+                </div>
+                <div className="col-span-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 sm:col-span-1">
+                  <p className="text-[11px] tracking-wide text-slate-400 uppercase">
+                    Qualifying sales
+                  </p>
+                  <p className="font-mono text-lg font-bold text-white">
+                    {fmtMoney(addOnBonusesQuery.data?.eligibleRevenue || 0)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {addOnBonuses.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-slate-400">
+              No qualifying add-on services in this date range.
+            </p>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {addOnBonuses.map((bonus) => (
+                <div
+                  key={bonus.key}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">
+                      {bonus.staffName} · {bonus.customerName}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {fmtDate(bonus.appointmentDate)} · {bonus.categoryLabel} ·{' '}
+                      {fmtMoney(bonus.eligibleRevenue)} ×{' '}
+                      {Math.round(bonus.bonusRate * 100)}%
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono font-semibold text-cyan-200">
+                      {fmtMoney(bonus.bonusAmount)}
+                    </p>
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        bonus.status === 'earned'
+                          ? 'bg-emerald-400/15 text-emerald-200'
+                          : 'bg-amber-400/15 text-amber-200'
+                      }`}
+                    >
+                      {bonus.status === 'earned'
+                        ? 'Earned · invoice paid'
+                        : 'Pending customer payment'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {!premiumsQuery.isError && premiums.length > 0 && (

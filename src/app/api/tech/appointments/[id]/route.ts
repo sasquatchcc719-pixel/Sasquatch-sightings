@@ -10,6 +10,7 @@ import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 
 export async function GET(
   _request: NextRequest,
@@ -129,6 +130,12 @@ export async function PATCH(
             { status: 409 },
           )
         }
+      }
+      if (
+        status !== current.status &&
+        (status === 'on_my_way' || status === 'in_progress')
+      ) {
+        await captureAddOnBonusBaseline(supabase, id)
       }
       updates.status = status
       if (status === 'on_my_way')

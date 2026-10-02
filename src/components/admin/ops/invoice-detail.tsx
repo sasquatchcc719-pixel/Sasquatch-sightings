@@ -234,6 +234,7 @@ type InvoiceDetail = {
   ops_invoice_line_items: Array<{
     id: string
     appointment_line_item_id: string | null
+    service_catalog_item_id: string | null
     description: string
     quantity: number
     unit_price: number
@@ -407,6 +408,7 @@ export function InvoiceDetail({
     Array<{
       id: string
       appointment_line_item_id: string | null
+      service_catalog_item_id: string | null
       description: string
       quantity: number
       unit_price: string
@@ -668,6 +670,7 @@ export function InvoiceDetail({
             (item: {
               id: string
               appointment_line_item_id: string | null
+              service_catalog_item_id: string | null
               description: string
               quantity: number
               unit_price: number
@@ -677,6 +680,7 @@ export function InvoiceDetail({
             }) => ({
               id: item.id,
               appointment_line_item_id: item.appointment_line_item_id,
+              service_catalog_item_id: item.service_catalog_item_id,
               description: item.description,
               quantity: Number(item.quantity),
               unit_price: String(item.unit_price),
@@ -883,6 +887,7 @@ export function InvoiceDetail({
           line_items: lineItems.map((item) => ({
             id: item.id,
             appointment_line_item_id: item.appointment_line_item_id,
+            service_catalog_item_id: item.service_catalog_item_id,
             description: item.description,
             quantity: item.quantity,
             unit_price: Number(item.unit_price || 0),
@@ -2506,6 +2511,7 @@ export function InvoiceDetail({
                             {
                               id: `new-${Date.now()}`,
                               appointment_line_item_id: null,
+                              service_catalog_item_id: service.id,
                               description: service.name,
                               quantity: 1,
                               unit_price:

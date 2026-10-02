@@ -21,6 +21,11 @@ import {
   computePromoDiscountAmount,
   computeTieredDiscountAmount,
 } from '@/lib/promo-discount'
+import {
+  captureAddOnBonusBaseline,
+  isNewQualifyingServiceCategory,
+  qualifyingAddOnCategory,
+} from '@/lib/ops/add-on-bonuses'
 
 const OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS = 2_000
 
@@ -80,6 +85,7 @@ const INVOICE_SELECT = `
   ops_invoice_line_items (
     id,
     appointment_line_item_id,
+    service_catalog_item_id,
     description,
     quantity,
     unit_price,
@@ -260,6 +266,7 @@ export async function PATCH(
           ops_invoice_line_items (
             id,
             appointment_line_item_id,
+            service_catalog_item_id,
             description,
             quantity,
             unit_price,
@@ -390,6 +397,20 @@ export async function PATCH(
       }
     } else {
       const lineItems = lineItemsPayload
+      const bonusBaseline =
+        access.role === 'tech' && current.appointment_id
+          ? await captureAddOnBonusBaseline(supabase, current.appointment_id)
+          : []
+      let technicianBonusRate = 0
+      if (access.role === 'tech' && access.staff?.id) {
+        const { data: technician, error: technicianError } = await supabase
+          .from('staff_users')
+          .select('add_on_bonus_rate')
+          .eq('id', access.staff.id)
+          .single()
+        if (technicianError) throw technicianError
+        technicianBonusRate = Number(technician.add_on_bonus_rate || 0)
+      }
 
       const submittedRealIds = lineItems
         .map((i: { id?: string }) => String(i.id || ''))
@@ -430,10 +451,47 @@ export async function PATCH(
         const unitPrice = Number(item.unit_price || 0)
         const quantity = Number(item.quantity || 1)
         const lineTotal = Number((unitPrice * quantity).toFixed(2))
+        const serviceCatalogItemId = String(
+          item.service_catalog_item_id || '',
+        ).trim()
 
         const isNew = !lineId || lineId.startsWith('new-')
 
         if (isNew) {
+          let catalogService: {
+            id: string
+            name: string
+            category: string | null
+          } | null = null
+          if (serviceCatalogItemId) {
+            const { data, error: catalogError } = await supabase
+              .from('service_catalog_items')
+              .select('id, name, category')
+              .eq('id', serviceCatalogItemId)
+              .eq('is_active', true)
+              .maybeSingle()
+            if (catalogError) throw catalogError
+            if (!data) {
+              return NextResponse.json(
+                { error: 'Selected service is no longer available' },
+                { status: 400 },
+              )
+            }
+            catalogService = data
+          }
+
+          const bonusCategory = qualifyingAddOnCategory(
+            catalogService?.category,
+            catalogService?.name || description,
+          )
+          const qualifiesForBonus = Boolean(
+            access.role === 'tech' &&
+            access.staff?.id &&
+            technicianBonusRate > 0 &&
+            serviceCatalogItemId &&
+            isNewQualifyingServiceCategory(bonusCategory, bonusBaseline),
+          )
+
           // Give the new line a real appointment line item. Without one it is
           // invisible to anything that reads the appointment — including the
           // fiber-check gate, which would let a rug added here reach a wet
@@ -444,12 +502,20 @@ export async function PATCH(
               .from('ops_appointment_line_items')
               .insert({
                 appointment_id: current.appointment_id,
+                service_catalog_item_id: catalogService?.id || null,
                 name_snapshot: description,
                 quantity,
                 unit_price: unitPrice,
                 line_total: lineTotal,
                 duration_minutes: 60,
                 buffer_minutes: 0,
+                add_on_bonus_staff_user_id: qualifiesForBonus
+                  ? access.staff?.id
+                  : null,
+                add_on_bonus_category: qualifiesForBonus ? bonusCategory : null,
+                add_on_bonus_rate: qualifiesForBonus
+                  ? technicianBonusRate
+                  : null,
               })
               .select('id')
               .single()
@@ -462,6 +528,7 @@ export async function PATCH(
             .insert({
               invoice_id: id,
               appointment_line_item_id: appointmentLineItemId,
+              service_catalog_item_id: catalogService?.id || null,
               description,
               quantity,
               unit_price: unitPrice,

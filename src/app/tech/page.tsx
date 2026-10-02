@@ -4,6 +4,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  DollarSign,
+  TrendingUp,
   Truck,
 } from 'lucide-react'
 import { requireAnyRole } from '@/lib/auth'
@@ -11,6 +13,8 @@ import { createAdminClient } from '@/supabase/server'
 import { getAssignedTechAppointments } from '@/lib/tech/appointments'
 import { TechDaySchedule } from '@/components/tech/tech-day-schedule'
 import { getMountainDateKey, shiftDateKey } from '@/lib/tech/day-schedule'
+import { getSemiMonthlyPayPeriod } from '@/lib/ops/timesheet-pay'
+import { loadAddOnBonuses } from '@/lib/ops/add-on-bonuses'
 
 type TechHomePageProps = {
   searchParams?: Promise<{ date?: string }>
@@ -30,6 +34,13 @@ function selectedDateKey(value: string | undefined): string {
   return getMountainDateKey()
 }
 
+function formatMoney(amount: number): string {
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  })
+}
+
 export default async function TechHomePage({
   searchParams,
 }: TechHomePageProps) {
@@ -39,11 +50,25 @@ export default async function TechHomePage({
   const today = getMountainDateKey()
   const dateKey = selectedDateKey(params?.date)
   const staffUserId = access.staff?.id ?? access.id
-  const appointments = await getAssignedTechAppointments(
-    supabase,
-    staffUserId,
-    dateKey,
-  )
+  const { data: bonusStaff } = access.staff?.id
+    ? await supabase
+        .from('staff_users')
+        .select('add_on_bonus_rate')
+        .eq('id', access.staff.id)
+        .maybeSingle()
+    : { data: null }
+  const bonusRate = Number(bonusStaff?.add_on_bonus_rate || 0)
+  const payPeriod = getSemiMonthlyPayPeriod(today)
+  const [appointments, bonusSummary] = await Promise.all([
+    getAssignedTechAppointments(supabase, staffUserId, dateKey),
+    access.staff?.id && bonusRate > 0
+      ? loadAddOnBonuses(supabase, {
+          startDate: payPeriod.startDate,
+          endDate: payPeriod.endDate,
+          staffUserId: access.staff.id,
+        })
+      : Promise.resolve(null),
+  ])
 
   return (
     <div className="space-y-5">
@@ -76,6 +101,80 @@ export default async function TechHomePage({
           </Link>
         </div>
       </section>
+
+      {bonusSummary ? (
+        <section className="overflow-hidden rounded-3xl border border-cyan-300/25 bg-gradient-to-br from-cyan-400/15 via-slate-950/70 to-emerald-400/15 shadow-2xl shadow-cyan-950/30">
+          <div className="p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-cyan-200">
+                  <TrendingUp className="h-4 w-4" />
+                  Add-on bonus progress
+                </p>
+                <h2 className="mt-2 text-3xl font-bold text-white">
+                  {formatMoney(bonusSummary.earnedBonus)} earned
+                </h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  {payPeriod.label} · {Math.round(bonusRate * 100)}% of new
+                  service categories sold onsite
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-3 text-emerald-100">
+                <DollarSign className="h-6 w-6" />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Awaiting payment</p>
+                <p className="mt-1 font-mono text-xl font-bold text-amber-200">
+                  {formatMoney(bonusSummary.pendingBonus)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Qualifying sales</p>
+                <p className="mt-1 font-mono text-xl font-bold text-cyan-100">
+                  {formatMoney(bonusSummary.eligibleRevenue)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {bonusSummary.rows.length > 0 ? (
+            <div className="border-t border-white/10 bg-slate-950/25 px-5 py-3">
+              <p className="mb-2 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                Recent add-ons
+              </p>
+              <div className="space-y-2">
+                {bonusSummary.rows.slice(0, 4).map((bonus) => (
+                  <div
+                    key={bonus.key}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span className="min-w-0 truncate text-slate-300">
+                      {bonus.categoryLabel} · {bonus.customerName}
+                    </span>
+                    <span
+                      className={
+                        bonus.status === 'earned'
+                          ? 'font-mono font-semibold text-emerald-200'
+                          : 'font-mono font-semibold text-amber-200'
+                      }
+                    >
+                      {formatMoney(bonus.bonusAmount)}
+                      {bonus.status === 'pending' ? ' pending' : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="border-t border-white/10 px-5 py-4 text-sm text-slate-400">
+              New qualifying add-ons will appear here as you sell them.
+            </p>
+          )}
+        </section>
+      ) : null}
 
       <Link
         href="/tech/vehicle-help"
