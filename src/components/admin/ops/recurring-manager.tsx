@@ -567,6 +567,11 @@ type AddJobForm = {
   durationMinutes: string
 }
 
+type BillingSendFeedback = {
+  kind: 'success' | 'error'
+  message: string
+}
+
 const emptyAddJob: AddJobForm = {
   customerId: '',
   addressId: '',
@@ -579,7 +584,7 @@ const emptyAddJob: AddJobForm = {
   durationMinutes: '60',
 }
 
-function MonthEndBillingSection() {
+export function MonthEndBillingSection() {
   const now = new Date()
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [month, setMonth] = useState(defaultMonth)
@@ -589,6 +594,9 @@ function MonthEndBillingSection() {
   >({})
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState<string | null>(null)
+  const [sendFeedback, setSendFeedback] = useState<
+    Record<string, BillingSendFeedback>
+  >({})
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [addForm, setAddForm] = useState<AddJobForm>(emptyAddJob)
   const [savingJob, setSavingJob] = useState(false)
@@ -678,6 +686,11 @@ function MonthEndBillingSection() {
 
   const handleGenerate = async (customerId: string) => {
     setGenerating(customerId)
+    setSendFeedback((current) => {
+      const next = { ...current }
+      delete next[customerId]
+      return next
+    })
     try {
       const res = await fetch(
         '/api/admin/ops/recurring/generate-monthly-invoice',
@@ -693,13 +706,27 @@ function MonthEndBillingSection() {
         },
       )
       const data = await res.json()
-      if (data.error) {
-        alert(data.error)
-      } else {
-        load(month)
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'QuickBooks did not confirm the invoice')
       }
-    } catch {
-      alert('Failed to generate invoice')
+      if (!data.quickbooksInvoiceId) {
+        throw new Error('QuickBooks returned no invoice confirmation ID')
+      }
+      setSendFeedback((current) => ({
+        ...current,
+        [customerId]: {
+          kind: 'success',
+          message: `Confirmed in QuickBooks as invoice ID ${data.quickbooksInvoiceId}.`,
+        },
+      }))
+      await load(month)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to send invoice'
+      setSendFeedback((current) => ({
+        ...current,
+        [customerId]: { kind: 'error', message },
+      }))
     } finally {
       setGenerating(null)
     }
@@ -901,9 +928,17 @@ function MonthEndBillingSection() {
         customers.map((entry) => {
           const isGenerating = generating === entry.customerId
           const hasInvoice = !!entry.existingInvoice
+          const quickBooksInvoiceId =
+            entry.existingInvoice?.quickbooks_invoice_id || null
+          const isQuickBooksConfirmed = Boolean(
+            quickBooksInvoiceId &&
+            entry.existingInvoice?.sync_status === 'synced',
+          )
           const canSendExisting =
             hasInvoice &&
-            !['sent', 'paid'].includes(entry.existingInvoice!.status)
+            !isQuickBooksConfirmed &&
+            entry.existingInvoice!.status !== 'paid'
+          const feedback = sendFeedback[entry.customerId]
           const selectedAppointments = new Set(
             selected[entry.customerId]?.appointments ?? [],
           )
@@ -971,21 +1006,6 @@ function MonthEndBillingSection() {
                         <Plus className="h-3.5 w-3.5" />
                       )}
                       {isAdding ? 'Cancel' : 'Add Job'}
-                    </Button>
-                  )}
-                  {canSendExisting && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleGenerate(entry.customerId)}
-                      disabled={isGenerating}
-                      className="gap-1.5"
-                    >
-                      {isGenerating ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Receipt className="h-3.5 w-3.5" />
-                      )}
-                      Send to QB
                     </Button>
                   )}
                 </div>
@@ -1601,32 +1621,98 @@ function MonthEndBillingSection() {
                   </p>
                 </div>
 
-                {hasInvoice ? (
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-5 w-5 text-green-400" />
-                    <span className="font-medium">
-                      Invoice generated —{' '}
-                      {formatCurrency(entry.existingInvoice!.total)}
-                    </span>
+                {isQuickBooksConfirmed ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-3 rounded-lg border border-green-500/40 bg-green-500/10 px-4 py-3 text-green-700 dark:text-green-300"
+                  >
+                    <CheckCircle className="h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Sent to QuickBooks</p>
+                      <p className="text-xs">
+                        Confirmed as QuickBooks invoice ID {quickBooksInvoiceId}
+                      </p>
+                    </div>
+                  </div>
+                ) : hasInvoice ? (
+                  <div className="flex max-w-xl flex-wrap items-center justify-end gap-3">
+                    <div
+                      role={feedback?.kind === 'error' ? 'alert' : 'status'}
+                      className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
+                        feedback?.kind === 'error'
+                          ? 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300'
+                          : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                      }`}
+                    >
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">
+                          Not confirmed in QuickBooks
+                        </p>
+                        <p className="text-xs">
+                          {feedback?.message ||
+                            entry.existingInvoice?.attachment_error ||
+                            'The invoice exists here, but QuickBooks has not confirmed it.'}
+                        </p>
+                      </div>
+                    </div>
+                    {canSendExisting && (
+                      <Button
+                        onClick={() => handleGenerate(entry.customerId)}
+                        disabled={isGenerating}
+                        className="gap-2"
+                      >
+                        {isGenerating ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                        {isGenerating
+                          ? 'Sending to QuickBooks…'
+                          : 'Try sending again'}
+                      </Button>
+                    )}
                   </div>
                 ) : (
-                  <Button
-                    onClick={() => handleGenerate(entry.customerId)}
-                    disabled={!canGenerate || isGenerating}
-                    className="gap-2"
-                    title={
-                      !canGenerate
-                        ? 'No completed visits to invoice yet'
-                        : undefined
-                    }
-                  >
-                    {isGenerating ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Receipt className="h-4 w-4" />
+                  <div className="flex max-w-xl flex-wrap items-center justify-end gap-3">
+                    {feedback?.kind === 'error' && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300"
+                      >
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-semibold">
+                            QuickBooks send failed
+                          </p>
+                          <p className="text-xs">{feedback.message}</p>
+                        </div>
+                      </div>
                     )}
-                    Create one invoice & send to QB
-                  </Button>
+                    <Button
+                      onClick={() => handleGenerate(entry.customerId)}
+                      disabled={!canGenerate || isGenerating}
+                      className="gap-2"
+                      title={
+                        !canGenerate
+                          ? 'No completed visits to invoice yet'
+                          : undefined
+                      }
+                    >
+                      {isGenerating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : feedback?.kind === 'error' ? (
+                        <RefreshCw className="h-4 w-4" />
+                      ) : (
+                        <Receipt className="h-4 w-4" />
+                      )}
+                      {isGenerating
+                        ? 'Sending to QuickBooks…'
+                        : feedback?.kind === 'error'
+                          ? 'Try sending again'
+                          : 'Create one invoice & send to QB'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </Card>

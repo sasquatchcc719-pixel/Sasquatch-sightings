@@ -63,21 +63,47 @@ export async function POST(request: NextRequest) {
 
     const { data: existingBatch } = await supabase
       .from('ops_batch_invoices')
-      .select('id, quickbooks_invoice_id, status')
+      .select('id, quickbooks_invoice_id, status, sync_status')
       .eq('customer_id', customerId)
       .eq('month', monthStart)
       .maybeSingle()
     if (existingBatch) {
-      if (existingBatch.status === 'sent' || existingBatch.status === 'paid') {
+      if (
+        existingBatch.quickbooks_invoice_id &&
+        ['sent', 'paid'].includes(existingBatch.status)
+      ) {
+        console.info('[recurring/monthly-invoice] Already confirmed', {
+          batchInvoiceId: existingBatch.id,
+          quickbooksInvoiceId: existingBatch.quickbooks_invoice_id,
+        })
+        return NextResponse.json({
+          batchInvoiceId: existingBatch.id,
+          quickbooksInvoiceId: existingBatch.quickbooks_invoice_id,
+          alreadySent: true,
+        })
+      }
+      if (existingBatch.status === 'paid') {
         return NextResponse.json(
-          { error: 'This monthly invoice has already been sent.' },
+          {
+            error:
+              'This monthly invoice is marked paid, but has no QuickBooks confirmation ID.',
+          },
           { status: 409 },
         )
       }
       try {
+        console.info('[recurring/monthly-invoice] Retrying QuickBooks sync', {
+          batchInvoiceId: existingBatch.id,
+          syncStatus: existingBatch.sync_status,
+        })
         const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
           existingBatch.id,
         )
+        console.info('[recurring/monthly-invoice] QuickBooks sync confirmed', {
+          batchInvoiceId: existingBatch.id,
+          quickbooksInvoiceId,
+          retried: true,
+        })
         return NextResponse.json({
           batchInvoiceId: existingBatch.id,
           quickbooksInvoiceId,
@@ -86,6 +112,10 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'QuickBooks sync failed'
+        console.error('[recurring/monthly-invoice] Retry failed', {
+          batchInvoiceId: existingBatch.id,
+          error: message,
+        })
         return NextResponse.json({ error: message }, { status: 502 })
       }
     }
@@ -251,6 +281,11 @@ export async function POST(request: NextRequest) {
     await ensureBatchInvoiceQuickBooksSyncJob(supabase, batchInvoice.id)
 
     try {
+      console.info('[recurring/monthly-invoice] Sending to QuickBooks', {
+        batchInvoiceId: batchInvoice.id,
+        appointmentCount: appointments.length,
+        restorationCount: projects.length,
+      })
       const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
         batchInvoice.id,
       )
@@ -263,6 +298,11 @@ export async function POST(request: NextRequest) {
         })
         .eq('entity_type', 'batch_invoice')
         .eq('entity_id', batchInvoice.id)
+      console.info('[recurring/monthly-invoice] QuickBooks sync confirmed', {
+        batchInvoiceId: batchInvoice.id,
+        quickbooksInvoiceId,
+        retried: false,
+      })
       return NextResponse.json({
         batchInvoiceId: batchInvoice.id,
         quickbooksInvoiceId,
@@ -273,6 +313,10 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'QuickBooks sync failed'
+      console.error('[recurring/monthly-invoice] Initial sync failed', {
+        batchInvoiceId: batchInvoice.id,
+        error: message,
+      })
       return NextResponse.json(
         { error: message, batchInvoiceId: batchInvoice.id },
         { status: 502 },
@@ -280,6 +324,9 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error'
+    console.error('[recurring/monthly-invoice] Request failed', {
+      error: message,
+    })
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
