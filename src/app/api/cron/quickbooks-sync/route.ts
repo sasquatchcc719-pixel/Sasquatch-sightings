@@ -21,6 +21,7 @@ import {
   retryTimestamp,
   type SyncAlertContext,
 } from '@/lib/ops/quickbooks-sync-retry'
+import { reconcileMissingInvoiceQuickBooksJobs } from '@/lib/ops/quickbooks-sync-reconciliation'
 
 const BATCH_SIZE = 20
 
@@ -144,6 +145,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Enqueue repair is an invariant, not something every payment/completion
+    // route must get right forever. This catches state changes that committed
+    // without their queue insert and completed drafts left by a missed path.
+    const reconciliation = await reconcileMissingInvoiceQuickBooksJobs(supabase)
+    if (reconciliation.promotedDrafts || reconciliation.queuedInvoices) {
+      console.log('[cron/quickbooks-sync] Repaired missing invoice jobs', {
+        ...reconciliation,
+      })
+    }
+
     // Only pick up work that is actually due — a job waiting out its backoff
     // carries a future next_retry_at and must be left alone until then.
     const dueFilter = `next_retry_at.is.null,next_retry_at.lte.${new Date().toISOString()}`
@@ -189,7 +200,12 @@ export async function GET(request: NextRequest) {
     ]
 
     if (jobs.length === 0) {
-      return NextResponse.json({ processed: 0, synced: 0, failed: 0 })
+      return NextResponse.json({
+        processed: 0,
+        synced: 0,
+        failed: 0,
+        reconciliation,
+      })
     }
 
     const results = {
@@ -524,8 +540,12 @@ export async function GET(request: NextRequest) {
       console.error('[cron/quickbooks-sync] Payment polling error:', paymentErr)
     }
 
-    console.log('[cron/quickbooks-sync]', { ...results, paymentsUpdated })
-    return NextResponse.json({ ...results, paymentsUpdated })
+    console.log('[cron/quickbooks-sync]', {
+      ...results,
+      reconciliation,
+      paymentsUpdated,
+    })
+    return NextResponse.json({ ...results, reconciliation, paymentsUpdated })
   } catch (error) {
     console.error('[cron/quickbooks-sync] Fatal error:', error)
     return NextResponse.json(

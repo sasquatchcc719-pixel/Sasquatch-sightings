@@ -33,7 +33,7 @@ export type InvoiceOnCompletionResult =
  */
 export async function promoteInvoiceOnJobCompletion(
   supabase: SupabaseClient,
-  params: { appointmentId: string; userId: string; note: string },
+  params: { appointmentId: string; userId: string | null; note: string },
 ): Promise<InvoiceOnCompletionResult> {
   const { appointmentId, userId, note } = params
 
