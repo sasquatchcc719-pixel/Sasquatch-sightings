@@ -1,6 +1,6 @@
 'use client'
 
-import type { Dispatch, FormEvent, SetStateAction } from 'react'
+import type { Dispatch, FormEvent, MouseEvent, SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -147,6 +147,15 @@ type EventFieldsProps<T extends EditEventFormState> = {
   layout: 'create' | 'edit'
 }
 
+function openNativePicker(event: MouseEvent<HTMLInputElement>) {
+  try {
+    event.currentTarget.showPicker?.()
+  } catch {
+    // Some browsers open the native picker before click fires. In that case,
+    // calling showPicker again can throw even though the chooser is visible.
+  }
+}
+
 function EventFields<T extends EditEventFormState>({
   form,
   setForm,
@@ -185,6 +194,7 @@ function EventFields<T extends EditEventFormState>({
                 type="date"
                 className="mt-1"
                 value={form.start_date}
+                onClick={openNativePicker}
                 onChange={(event) =>
                   setForm((current) => {
                     const startDate = event.target.value
@@ -208,6 +218,7 @@ function EventFields<T extends EditEventFormState>({
                   type="time"
                   className="mt-1"
                   value={form.start_time}
+                  onClick={openNativePicker}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -230,6 +241,7 @@ function EventFields<T extends EditEventFormState>({
                 min={form.start_date || undefined}
                 className="mt-1"
                 value={form.end_date}
+                onClick={openNativePicker}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -246,6 +258,7 @@ function EventFields<T extends EditEventFormState>({
                   type="time"
                   className="mt-1"
                   value={form.end_time}
+                  onClick={openNativePicker}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,

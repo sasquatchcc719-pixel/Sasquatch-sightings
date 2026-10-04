@@ -37,6 +37,26 @@ function BlockTimeHarness({
 }
 
 describe('BlockTimeForm', () => {
+  it('opens the native date and time selectors from the whole input', () => {
+    render(<BlockTimeHarness onSave={vi.fn()} />)
+
+    const starts = screen.getByRole('group', { name: 'Starts' })
+    const ends = screen.getByRole('group', { name: 'Ends' })
+    const inputs = [
+      within(starts).getByLabelText('Date'),
+      within(starts).getByLabelText('Time'),
+      within(ends).getByLabelText('Date'),
+      within(ends).getByLabelText('Time'),
+    ] as HTMLInputElement[]
+
+    for (const input of inputs) {
+      const showPicker = vi.fn()
+      input.showPicker = showPicker
+      fireEvent.click(input)
+      expect(showPicker).toHaveBeenCalledOnce()
+    }
+  })
+
   it('saves independent start and end date-time endpoints', () => {
     const onSave = vi.fn()
     render(<BlockTimeHarness onSave={onSave} />)
