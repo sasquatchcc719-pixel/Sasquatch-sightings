@@ -246,6 +246,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Enforce QuickBooks invoice sync with recurring reconciliation as well as route-level enqueue calls; exclude cash, estimates, restoration, warranties, and batch-billed appointments so a missed code path cannot silently orphan an invoice.
 - Recovery Village is monthly consolidated and Saltgrass Colorado Springs is per-visit at job close; both send QuickBooks Net 45 from their invoice transaction date (month start for Recovery Village, completed visit date for Saltgrass).
 - Every technician time-clock state change that can alter payroll—including starting and ending a break—must require a delayed second confirmation tap so an accidental double-tap cannot submit it.
+- Treat a timed multi-day schedule block as one continuous start date-time to end date-time range: the first and last days keep their endpoint times, intervening days are fully blocked, and calendar dragging must never collapse the range to one date.
 
 ---
 

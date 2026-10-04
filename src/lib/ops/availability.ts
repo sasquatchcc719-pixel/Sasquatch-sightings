@@ -1,3 +1,5 @@
+import { calendarEventWindowForDate } from './calendar-event-range'
+
 export type AvailabilityTemplate = {
   day_of_week: number
   start_time: string
@@ -134,14 +136,19 @@ export function calendarEventsToAppointmentWindows(
         isBlockingEvent && event.start_date <= date && event.end_date >= date
       )
     })
-    .map((event) => ({
-      appointment_date: date,
-      start_time:
-        event.is_all_day || !event.start_time ? '00:00:00' : event.start_time,
-      end_time:
-        event.is_all_day || !event.end_time ? '23:59:00' : event.end_time,
-      status: 'booked',
-    }))
+    .flatMap((event) => {
+      const window = calendarEventWindowForDate(event, date)
+      return window
+        ? [
+            {
+              appointment_date: date,
+              start_time: window.start_time,
+              end_time: window.end_time,
+              status: 'booked',
+            },
+          ]
+        : []
+    })
 }
 
 /**

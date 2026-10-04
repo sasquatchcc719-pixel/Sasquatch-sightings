@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { calendarEventRangeError } from '@/lib/ops/calendar-event-range'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       ? String(body.description).trim()
       : null
     const isAllDay = Boolean(body.is_all_day)
+    const normalizedAllDay = isAllDay || (!startTime && !endTime)
 
     if (!title || !startDate || !endDate) {
       return NextResponse.json(
@@ -61,11 +63,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if ((startTime && !endTime) || (!startTime && endTime)) {
-      return NextResponse.json(
-        { error: 'Provide both start_time and end_time or leave both blank' },
-        { status: 400 },
-      )
+    const rangeError = calendarEventRangeError({
+      start_date: startDate,
+      end_date: endDate,
+      start_time: startTime,
+      end_time: endTime,
+      is_all_day: normalizedAllDay,
+    })
+    if (rangeError) {
+      return NextResponse.json({ error: rangeError }, { status: 400 })
     }
 
     const { data, error } = await supabase
@@ -77,7 +83,7 @@ export async function POST(request: NextRequest) {
         end_date: endDate,
         start_time: startTime || null,
         end_time: endTime || null,
-        is_all_day: isAllDay || !startTime || !endTime,
+        is_all_day: normalizedAllDay,
         assigned_staff_user_id: body.assigned_staff_user_id || null,
         created_by: access.id,
       })

@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { calendarEventWindowForDate } from '@/lib/ops/calendar-event-range'
 import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 import type {
   Appointment,
@@ -272,15 +273,19 @@ export function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
 
 export function getBlockPlacement(
   event: CalendarEvent,
+  dateKey: string,
   endMinutesOverride?: number | null,
   gridStartHour = STANDARD_START_HOUR,
 ) {
   const workdayStart = gridStartHour * 60
   const workdayEnd = END_HOUR * 60
-  const startMinutes = event.is_all_day
+  const window = calendarEventWindowForDate(event, dateKey)
+  const startMinutes = window?.is_full_day
     ? workdayStart
-    : Math.max(parseMinutes(event.start_time), workdayStart)
-  const rawEnd = event.is_all_day ? workdayEnd : parseMinutes(event.end_time)
+    : Math.max(parseMinutes(window?.start_time), workdayStart)
+  const rawEnd = window?.is_full_day
+    ? workdayEnd
+    : parseMinutes(window?.end_time)
   const endMinutes = Math.min(
     endMinutesOverride != null ? endMinutesOverride : rawEnd,
     workdayEnd,

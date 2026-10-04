@@ -152,6 +152,27 @@ describe('availability gap fill', () => {
       end_time: '13:00:00',
     })
   })
+
+  it('treats a timed multi-day event as one continuous blocked range', () => {
+    const event = {
+      start_date: '2026-10-05',
+      end_date: '2026-10-08',
+      start_time: '09:00:00',
+      end_time: '17:00:00',
+      is_all_day: false,
+      event_kind: 'block',
+    }
+
+    expect(
+      calendarEventsToAppointmentWindows('2026-10-05', [event]),
+    ).toMatchObject([{ start_time: '09:00:00', end_time: '23:59:59' }])
+    expect(
+      calendarEventsToAppointmentWindows('2026-10-06', [event]),
+    ).toMatchObject([{ start_time: '00:00:00', end_time: '23:59:59' }])
+    expect(
+      calendarEventsToAppointmentWindows('2026-10-08', [event]),
+    ).toMatchObject([{ start_time: '00:00:00', end_time: '17:00:00' }])
+  })
 })
 
 describe('after-hours admin bookings', () => {

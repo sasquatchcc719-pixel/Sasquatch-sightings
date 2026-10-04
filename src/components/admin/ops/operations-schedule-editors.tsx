@@ -172,35 +172,91 @@ function EventFields<T extends EditEventFormState>({
           }
         />
       </div>
-      <div>
-        <Label htmlFor={`${prefix}-start-date`}>Start Date</Label>
-        <Input
-          id={`${prefix}-start-date`}
-          type="date"
-          className={editing ? 'mt-1' : undefined}
-          value={form.start_date}
-          onChange={(event) =>
-            setForm((current) => ({
-              ...current,
-              start_date: event.target.value,
-            }))
-          }
-        />
-      </div>
-      <div>
-        <Label htmlFor={`${prefix}-end-date`}>End Date</Label>
-        <Input
-          id={`${prefix}-end-date`}
-          type="date"
-          className={editing ? 'mt-1' : undefined}
-          value={form.end_date}
-          onChange={(event) =>
-            setForm((current) => ({
-              ...current,
-              end_date: event.target.value,
-            }))
-          }
-        />
+      <div
+        className={`grid gap-3 md:grid-cols-2 ${editing ? 'md:col-span-2' : 'md:col-span-3'}`}
+      >
+        <fieldset className="border-border/70 rounded-2xl border p-3">
+          <legend className="px-1 text-sm font-semibold">Starts</legend>
+          <div className={form.is_all_day ? '' : 'grid gap-3 sm:grid-cols-2'}>
+            <div>
+              <Label htmlFor={`${prefix}-start-date`}>Date</Label>
+              <Input
+                id={`${prefix}-start-date`}
+                type="date"
+                className="mt-1"
+                value={form.start_date}
+                onChange={(event) =>
+                  setForm((current) => {
+                    const startDate = event.target.value
+                    return {
+                      ...current,
+                      start_date: startDate,
+                      end_date:
+                        current.end_date && current.end_date >= startDate
+                          ? current.end_date
+                          : startDate,
+                    }
+                  })
+                }
+              />
+            </div>
+            {!form.is_all_day ? (
+              <div>
+                <Label htmlFor={`${prefix}-start-time`}>Time</Label>
+                <Input
+                  id={`${prefix}-start-time`}
+                  type="time"
+                  className="mt-1"
+                  value={form.start_time}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      start_time: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        </fieldset>
+        <fieldset className="border-border/70 rounded-2xl border p-3">
+          <legend className="px-1 text-sm font-semibold">Ends</legend>
+          <div className={form.is_all_day ? '' : 'grid gap-3 sm:grid-cols-2'}>
+            <div>
+              <Label htmlFor={`${prefix}-end-date`}>Date</Label>
+              <Input
+                id={`${prefix}-end-date`}
+                type="date"
+                min={form.start_date || undefined}
+                className="mt-1"
+                value={form.end_date}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    end_date: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            {!form.is_all_day ? (
+              <div>
+                <Label htmlFor={`${prefix}-end-time`}>Time</Label>
+                <Input
+                  id={`${prefix}-end-time`}
+                  type="time"
+                  className="mt-1"
+                  value={form.end_time}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      end_time: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        </fieldset>
       </div>
       <label
         className={
@@ -224,40 +280,6 @@ function EventFields<T extends EditEventFormState>({
         />
         All day / full range
       </label>
-      {!form.is_all_day ? (
-        <>
-          <div>
-            <Label htmlFor={`${prefix}-start-time`}>Start Time</Label>
-            <Input
-              id={`${prefix}-start-time`}
-              type="time"
-              className={editing ? 'mt-1' : undefined}
-              value={form.start_time}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  start_time: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div>
-            <Label htmlFor={`${prefix}-end-time`}>End Time</Label>
-            <Input
-              id={`${prefix}-end-time`}
-              type="time"
-              className={editing ? 'mt-1' : undefined}
-              value={form.end_time}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  end_time: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </>
-      ) : null}
       <div className={editing ? 'md:col-span-2' : 'md:col-span-3'}>
         <Label htmlFor={`${prefix}-notes`}>Notes</Label>
         <Textarea

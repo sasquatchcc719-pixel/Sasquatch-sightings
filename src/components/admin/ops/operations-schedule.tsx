@@ -1076,7 +1076,7 @@ export function OperationsSchedule() {
     e: React.PointerEvent<HTMLDivElement>,
     calEvent: CalendarEvent,
   ) => {
-    if (calEvent.is_all_day) return
+    if (calEvent.is_all_day || calEvent.start_date !== calEvent.end_date) return
     const block = (e.currentTarget as HTMLElement).closest(
       '[data-event-block]',
     ) as HTMLElement | null
@@ -1200,7 +1200,8 @@ export function OperationsSchedule() {
 
   const beginEventResize = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>, calEvent: CalendarEvent) => {
-      if (calEvent.is_all_day) return
+      if (calEvent.is_all_day || calEvent.start_date !== calEvent.end_date)
+        return
       if (e.pointerType === 'mouse' && e.button !== 0) return
       e.preventDefault()
       e.stopPropagation()
@@ -2978,6 +2979,7 @@ export function OperationsSchedule() {
                                       : null
                                   const placement = getBlockPlacement(
                                     event,
+                                    dateKey,
                                     endOverride,
                                     gridStartHour,
                                   )
@@ -2993,29 +2995,33 @@ export function OperationsSchedule() {
                                         height: placement.height - 8,
                                       }}
                                     >
-                                      {!event.is_all_day && (
-                                        <div
-                                          onPointerDown={(e) =>
-                                            handleEventMovePointerDown(e, event)
-                                          }
-                                          onPointerMove={
-                                            handleEventMovePointerMove
-                                          }
-                                          onPointerUp={(e) =>
-                                            void handleEventMovePointerUp(e)
-                                          }
-                                          onPointerCancel={(e) =>
-                                            void handleEventMovePointerUp(e)
-                                          }
-                                          style={{ touchAction: 'none' }}
-                                          className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                        >
-                                          <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                          <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                            Move
-                                          </span>
-                                        </div>
-                                      )}
+                                      {!event.is_all_day &&
+                                        event.start_date === event.end_date && (
+                                          <div
+                                            onPointerDown={(e) =>
+                                              handleEventMovePointerDown(
+                                                e,
+                                                event,
+                                              )
+                                            }
+                                            onPointerMove={
+                                              handleEventMovePointerMove
+                                            }
+                                            onPointerUp={(e) =>
+                                              void handleEventMovePointerUp(e)
+                                            }
+                                            onPointerCancel={(e) =>
+                                              void handleEventMovePointerUp(e)
+                                            }
+                                            style={{ touchAction: 'none' }}
+                                            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                          >
+                                            <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                            <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                              Move
+                                            </span>
+                                          </div>
+                                        )}
                                       <button
                                         type="button"
                                         className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
@@ -3030,23 +3036,24 @@ export function OperationsSchedule() {
                                           </div>
                                         ) : null}
                                       </button>
-                                      {!event.is_all_day && (
-                                        <button
-                                          type="button"
-                                          aria-label="Drag to change end time"
-                                          title="Drag to extend or shorten"
-                                          style={{ touchAction: 'none' }}
-                                          className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                          onPointerDown={(e) =>
-                                            beginEventResize(e, event)
-                                          }
-                                        >
-                                          <span
-                                            aria-hidden
-                                            className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                          />
-                                        </button>
-                                      )}
+                                      {!event.is_all_day &&
+                                        event.start_date === event.end_date && (
+                                          <button
+                                            type="button"
+                                            aria-label="Drag to change end time"
+                                            title="Drag to extend or shorten"
+                                            style={{ touchAction: 'none' }}
+                                            className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                            onPointerDown={(e) =>
+                                              beginEventResize(e, event)
+                                            }
+                                          >
+                                            <span
+                                              aria-hidden
+                                              className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                            />
+                                          </button>
+                                        )}
                                     </div>
                                   )
                                 })}
@@ -3228,6 +3235,7 @@ export function OperationsSchedule() {
                                               : null
                                           const placement = getBlockPlacement(
                                             event,
+                                            dateKey,
                                             endOverride,
                                             gridStartHour,
                                           )
@@ -3243,38 +3251,40 @@ export function OperationsSchedule() {
                                                 height: placement.height - 8,
                                               }}
                                             >
-                                              {!event.is_all_day && (
-                                                <div
-                                                  onPointerDown={(e) =>
-                                                    handleEventMovePointerDown(
-                                                      e,
-                                                      event,
-                                                    )
-                                                  }
-                                                  onPointerMove={
-                                                    handleEventMovePointerMove
-                                                  }
-                                                  onPointerUp={(e) =>
-                                                    void handleEventMovePointerUp(
-                                                      e,
-                                                    )
-                                                  }
-                                                  onPointerCancel={(e) =>
-                                                    void handleEventMovePointerUp(
-                                                      e,
-                                                    )
-                                                  }
-                                                  style={{
-                                                    touchAction: 'none',
-                                                  }}
-                                                  className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                                >
-                                                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                                  <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                                    Move
-                                                  </span>
-                                                </div>
-                                              )}
+                                              {!event.is_all_day &&
+                                                event.start_date ===
+                                                  event.end_date && (
+                                                  <div
+                                                    onPointerDown={(e) =>
+                                                      handleEventMovePointerDown(
+                                                        e,
+                                                        event,
+                                                      )
+                                                    }
+                                                    onPointerMove={
+                                                      handleEventMovePointerMove
+                                                    }
+                                                    onPointerUp={(e) =>
+                                                      void handleEventMovePointerUp(
+                                                        e,
+                                                      )
+                                                    }
+                                                    onPointerCancel={(e) =>
+                                                      void handleEventMovePointerUp(
+                                                        e,
+                                                      )
+                                                    }
+                                                    style={{
+                                                      touchAction: 'none',
+                                                    }}
+                                                    className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                                  >
+                                                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                                    <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                                      Move
+                                                    </span>
+                                                  </div>
+                                                )}
                                               <button
                                                 type="button"
                                                 className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
@@ -3291,25 +3301,27 @@ export function OperationsSchedule() {
                                                   </div>
                                                 ) : null}
                                               </button>
-                                              {!event.is_all_day && (
-                                                <button
-                                                  type="button"
-                                                  aria-label="Drag to change end time"
-                                                  title="Drag to extend or shorten"
-                                                  style={{
-                                                    touchAction: 'none',
-                                                  }}
-                                                  className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                                  onPointerDown={(e) =>
-                                                    beginEventResize(e, event)
-                                                  }
-                                                >
-                                                  <span
-                                                    aria-hidden
-                                                    className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                                  />
-                                                </button>
-                                              )}
+                                              {!event.is_all_day &&
+                                                event.start_date ===
+                                                  event.end_date && (
+                                                  <button
+                                                    type="button"
+                                                    aria-label="Drag to change end time"
+                                                    title="Drag to extend or shorten"
+                                                    style={{
+                                                      touchAction: 'none',
+                                                    }}
+                                                    className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                                    onPointerDown={(e) =>
+                                                      beginEventResize(e, event)
+                                                    }
+                                                  >
+                                                    <span
+                                                      aria-hidden
+                                                      className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                                    />
+                                                  </button>
+                                                )}
                                             </div>
                                           )
                                         })}
@@ -3465,6 +3477,7 @@ export function OperationsSchedule() {
                                       : null
                                   const placement = getBlockPlacement(
                                     event,
+                                    dateKey,
                                     endOverride,
                                     gridStartHour,
                                   )
@@ -3480,29 +3493,33 @@ export function OperationsSchedule() {
                                         height: placement.height - 8,
                                       }}
                                     >
-                                      {!event.is_all_day && (
-                                        <div
-                                          onPointerDown={(e) =>
-                                            handleEventMovePointerDown(e, event)
-                                          }
-                                          onPointerMove={
-                                            handleEventMovePointerMove
-                                          }
-                                          onPointerUp={(e) =>
-                                            void handleEventMovePointerUp(e)
-                                          }
-                                          onPointerCancel={(e) =>
-                                            void handleEventMovePointerUp(e)
-                                          }
-                                          style={{ touchAction: 'none' }}
-                                          className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                        >
-                                          <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                          <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                            Move
-                                          </span>
-                                        </div>
-                                      )}
+                                      {!event.is_all_day &&
+                                        event.start_date === event.end_date && (
+                                          <div
+                                            onPointerDown={(e) =>
+                                              handleEventMovePointerDown(
+                                                e,
+                                                event,
+                                              )
+                                            }
+                                            onPointerMove={
+                                              handleEventMovePointerMove
+                                            }
+                                            onPointerUp={(e) =>
+                                              void handleEventMovePointerUp(e)
+                                            }
+                                            onPointerCancel={(e) =>
+                                              void handleEventMovePointerUp(e)
+                                            }
+                                            style={{ touchAction: 'none' }}
+                                            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                          >
+                                            <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                            <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                              Move
+                                            </span>
+                                          </div>
+                                        )}
                                       <button
                                         type="button"
                                         className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
@@ -3517,23 +3534,24 @@ export function OperationsSchedule() {
                                           </div>
                                         ) : null}
                                       </button>
-                                      {!event.is_all_day && (
-                                        <button
-                                          type="button"
-                                          aria-label="Drag to change end time"
-                                          title="Drag to extend or shorten"
-                                          style={{ touchAction: 'none' }}
-                                          className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                          onPointerDown={(e) =>
-                                            beginEventResize(e, event)
-                                          }
-                                        >
-                                          <span
-                                            aria-hidden
-                                            className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                          />
-                                        </button>
-                                      )}
+                                      {!event.is_all_day &&
+                                        event.start_date === event.end_date && (
+                                          <button
+                                            type="button"
+                                            aria-label="Drag to change end time"
+                                            title="Drag to extend or shorten"
+                                            style={{ touchAction: 'none' }}
+                                            className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                            onPointerDown={(e) =>
+                                              beginEventResize(e, event)
+                                            }
+                                          >
+                                            <span
+                                              aria-hidden
+                                              className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                            />
+                                          </button>
+                                        )}
                                     </div>
                                   )
                                 })}

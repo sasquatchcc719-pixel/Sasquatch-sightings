@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { calendarEventRangeError } from '@/lib/ops/calendar-event-range'
 import { createAdminClient } from '@/supabase/server'
 
 export async function PATCH(
@@ -48,6 +49,24 @@ export async function PATCH(
         { error: 'Title cannot be empty' },
         { status: 400 },
       )
+    }
+
+    if (
+      startDate !== undefined &&
+      endDate !== undefined &&
+      startTime !== undefined &&
+      endTime !== undefined
+    ) {
+      const rangeError = calendarEventRangeError({
+        start_date: startDate,
+        end_date: endDate,
+        start_time: startTime,
+        end_time: endTime,
+        is_all_day: isAllDay ?? false,
+      })
+      if (rangeError) {
+        return NextResponse.json({ error: rangeError }, { status: 400 })
+      }
     }
 
     const updates: Record<string, unknown> = {}
