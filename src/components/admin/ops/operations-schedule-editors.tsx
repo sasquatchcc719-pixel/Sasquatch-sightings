@@ -186,7 +186,7 @@ function EventFields<T extends EditEventFormState>({
       >
         <fieldset className="border-border/70 rounded-2xl border p-3">
           <legend className="px-1 text-sm font-semibold">Starts</legend>
-          <div className={form.is_all_day ? '' : 'grid gap-3 sm:grid-cols-2'}>
+          <div className={form.is_all_day ? '' : 'grid gap-3'}>
             <div>
               <Label htmlFor={`${prefix}-start-date`}>Date</Label>
               <Input
@@ -232,7 +232,7 @@ function EventFields<T extends EditEventFormState>({
         </fieldset>
         <fieldset className="border-border/70 rounded-2xl border p-3">
           <legend className="px-1 text-sm font-semibold">Ends</legend>
-          <div className={form.is_all_day ? '' : 'grid gap-3 sm:grid-cols-2'}>
+          <div className={form.is_all_day ? '' : 'grid gap-3'}>
             <div>
               <Label htmlFor={`${prefix}-end-date`}>Date</Label>
               <Input
