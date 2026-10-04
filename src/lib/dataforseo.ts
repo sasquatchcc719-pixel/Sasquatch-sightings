@@ -24,6 +24,8 @@ import type {
 } from '@/lib/serpApi'
 
 const BASE = 'https://api.dataforseo.com/v3'
+const REQUEST_TIMEOUT_MS = 45_000
+const REQUEST_ATTEMPTS = 2
 
 /**
  * Zoom level for point scans.
@@ -62,6 +64,44 @@ export function auth(): string {
 
 export const DFS_BASE = BASE
 
+async function dataForSeoFetch(
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      const response = await fetch(`${BASE}${path}`, {
+        ...init,
+        signal: controller.signal,
+      })
+      if (
+        attempt < REQUEST_ATTEMPTS &&
+        (response.status === 429 || response.status >= 500)
+      ) {
+        lastError = new Error(`DataForSEO returned HTTP ${response.status}`)
+        await response.body?.cancel().catch(() => undefined)
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+      if (attempt === REQUEST_ATTEMPTS) break
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `DataForSEO request failed after ${REQUEST_ATTEMPTS} attempts: ${detail}`,
+  )
+}
+
 /**
  * Generic DataForSEO POST. Every v3 endpoint takes an array of task objects and
  * returns `{ status_code, tasks: [{ status_code, result: [...] }] }`, so one
@@ -76,7 +116,7 @@ export async function dfsPost<T = unknown>(
   task: Record<string, unknown>,
   opts: { softEmpty?: RegExp } = {},
 ): Promise<{ result: T[]; taskId: string | null; cost: number }> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await dataForSeoFetch(path, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth()}`,
@@ -257,7 +297,7 @@ async function mapsSearch(
   coordinate: string,
   depth = 20,
 ): Promise<RawMapsItem[]> {
-  const res = await fetch(`${BASE}/serp/google/maps/live/advanced`, {
+  const res = await dataForSeoFetch('/serp/google/maps/live/advanced', {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth()}`,
@@ -270,6 +310,9 @@ async function mapsSearch(
         language_code: 'en',
         device: 'desktop',
         depth,
+        // DataForSEO warns that its default search-places mode can relocate
+        // local-intent searches away from the requested map area.
+        search_places: false,
       },
     ]),
   })

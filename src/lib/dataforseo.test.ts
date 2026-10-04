@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchOrganicRanks } from './dataforseo'
+import { fetchMapsLocalFinder, fetchOrganicRanks } from './dataforseo'
 import type { RadarDomain } from './serpApi'
 
 const domains: RadarDomain[] = [
@@ -19,6 +19,7 @@ const domains: RadarDomain[] = [
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   delete process.env.DATAFORSEO_LOGIN
   delete process.env.DATAFORSEO_PASSWORD
 })
@@ -96,5 +97,83 @@ describe('fetchOrganicRanks', () => {
       device: 'desktop',
       depth: 50,
     })
+  })
+
+  it('keeps local-intent Maps searches inside the requested area', async () => {
+    process.env.DATAFORSEO_LOGIN = 'login'
+    process.env.DATAFORSEO_PASSWORD = 'password'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status_code: 20000,
+          tasks: [
+            {
+              status_code: 20000,
+              result: [
+                {
+                  items: [
+                    {
+                      rank_absolute: 1,
+                      title: 'Sasquatch Carpet Cleaning',
+                      url: 'https://www.sasquatchcarpet.com/',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchMapsLocalFinder(
+      'carpet cleaning',
+      'palmer lake, Colorado, United States',
+      domains,
+    )
+
+    expect(result.ranksByDomainId.get('sasquatch')).toBe(1)
+    const [, request] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String(request.body))[0]
+    expect(body).toMatchObject({
+      keyword: 'carpet cleaning',
+      location_coordinate: '39.1152,-104.9178,12z',
+      search_places: false,
+    })
+  })
+
+  it('retries a transient provider failure once', async () => {
+    process.env.DATAFORSEO_LOGIN = 'login'
+    process.env.DATAFORSEO_PASSWORD = 'password'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status_code: 20000,
+            tasks: [
+              {
+                id: 'retry-task',
+                status_code: 20000,
+                result: [{ items: [] }],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchOrganicRanks(
+      'carpet cleaning',
+      'monument, Colorado, United States',
+      domains,
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.taskId).toBe('retry-task')
   })
 })

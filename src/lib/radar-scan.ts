@@ -9,21 +9,19 @@ import { createAdminClient } from '@/supabase/server'
 import { fetchMapsLocalFinder, fetchOrganicRanks } from '@/lib/dataforseo'
 import type { ReportCardInput, ReportCardTone } from '@/lib/reports/report-card'
 
-const DELAY_MS = 2000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+const PRIMARY_RADAR_DOMAIN = 'sasquatchcarpet.com'
 
 export type RadarScanResult = {
   success: boolean
   keywords_processed: number
   keywords_available?: number
   keywords_deferred?: number
+  keywords_succeeded?: number
+  keywords_failed?: number
   rankings_inserted: number
   organic_provider_cost?: number
   message?: string
-  /** When rankings_inserted is 0 but we had keywords/domains, the first provider or insert error. */
+  /** Provider, persistence, or completeness details when success is false. */
   error_detail?: string
 }
 
@@ -62,148 +60,168 @@ export async function runRadarScan(): Promise<RadarScanResult> {
 
   let rankingsInserted = 0
   let organicProviderCost = 0
-  let firstError: string | undefined
-  let keywordsProcessed = 0
+  const failures: string[] = []
+  let keywordsSucceeded = 0
 
-  for (let i = 0; i < keywords.length; i++) {
-    const kw = keywords[i]
-    keywordsProcessed += 1
-    try {
-      const organic = await fetchOrganicRanks(kw.keyword, kw.location, domains)
-      organicProviderCost += organic.cost
+  await Promise.all(
+    keywords.map(async (kw) => {
+      let scanRunId: string | null = null
+      try {
+        // These are independent provider calls. Running all towns concurrently
+        // keeps one slow request from consuming the five-minute cron budget.
+        const [organic, { mapPack, ranksByDomainId }] = await Promise.all([
+          fetchOrganicRanks(kw.keyword, kw.location, domains),
+          fetchMapsLocalFinder(kw.keyword, kw.location, domains),
+        ])
+        organicProviderCost += organic.cost
 
-      // Second call: the deep Maps local finder (top ~20). This lets us
-      // see real positions below the 3-pack (#7, #12, …) and track daily
-      // movement from the exact same fixed town centre.
-      await sleep(DELAY_MS)
-      const { mapPack, ranksByDomainId } = await fetchMapsLocalFinder(
-        kw.keyword,
-        kw.location,
-        domains,
-      )
+        const scannedAt = new Date().toISOString()
+        const { data: scanRun, error: scanRunError } = await supabase
+          .from('radar_scan_runs')
+          .insert({
+            keyword_id: kw.id,
+            provider: 'dataforseo',
+            device: organic.device,
+            latitude: organic.lat,
+            longitude: organic.lng,
+            requested_depth: organic.requestedDepth,
+            returned_depth: organic.returnedDepth,
+            provider_task_id: organic.taskId,
+            provider_cost: organic.cost,
+            created_at: scannedAt,
+          })
+          .select('id')
+          .single()
+        if (scanRunError) {
+          throw new Error(
+            `Scan metadata insert failed: ${scanRunError.message}`,
+          )
+        }
+        scanRunId = scanRun.id
 
-      const scannedAt = new Date().toISOString()
-      const { data: scanRun, error: scanRunError } = await supabase
-        .from('radar_scan_runs')
-        .insert({
-          keyword_id: kw.id,
-          provider: 'dataforseo',
-          device: organic.device,
-          latitude: organic.lat,
-          longitude: organic.lng,
-          requested_depth: organic.requestedDepth,
-          returned_depth: organic.returnedDepth,
-          provider_task_id: organic.taskId,
-          provider_cost: organic.cost,
-          created_at: scannedAt,
+        const rows = organic.ranks.map((r) => {
+          const finderRank = ranksByDomainId.get(r.domain_id) ?? null
+          return {
+            keyword_id: kw.id,
+            domain_id: r.domain_id,
+            rank_position: r.rank_position,
+            scan_run_id: scanRun.id,
+            created_at: scannedAt,
+            // Two DIFFERENT Google surfaces — never compare or merge them.
+            // This scan no longer requests the web local 3-pack, so pack_rank is
+            // deliberately blank. finder_rank is the Maps local finder (1–20).
+            // map_rank remains its deprecated compatibility alias.
+            pack_rank: null,
+            finder_rank: finderRank,
+            // Deprecated, kept equal to finder_rank so existing readers behave.
+            map_rank: finderRank,
+          }
         })
-        .select('id')
-        .single()
-      if (scanRunError) {
-        throw new Error(`Scan metadata insert failed: ${scanRunError.message}`)
-      }
-
-      const rows = organic.ranks.map((r) => {
-        const finderRank = ranksByDomainId.get(r.domain_id) ?? null
-        return {
-          keyword_id: kw.id,
-          domain_id: r.domain_id,
-          rank_position: r.rank_position,
-          scan_run_id: scanRun.id,
-          created_at: scannedAt,
-          // Two DIFFERENT Google surfaces — never compare or merge them.
-          // This scan no longer requests the web local 3-pack, so pack_rank is
-          // deliberately blank. finder_rank is the Maps local finder (1–20).
-          // map_rank remains its deprecated compatibility alias.
-          pack_rank: null,
-          finder_rank: finderRank,
-          // Deprecated, kept equal to finder_rank so existing readers behave.
-          map_rank: finderRank,
+        // Append the complete organic result set. History is intentionally kept:
+        // it is the evidence needed to audit a surprising rank change.
+        if (organic.snapshot.length > 0) {
+          const { error: snapshotError } = await supabase
+            .from('radar_serp_snapshots')
+            .insert(
+              organic.snapshot.map((s) => ({
+                keyword_id: kw.id,
+                scan_run_id: scanRun.id,
+                position: s.position,
+                domain: s.domain,
+                created_at: scannedAt,
+                ...(s.rating != null && { rating: s.rating }),
+                ...(s.reviews != null && { reviews: s.reviews }),
+                ...(s.address && { address: s.address }),
+              })),
+            )
+          if (snapshotError) {
+            throw new Error(
+              `Organic snapshot insert failed: ${snapshotError.message}`,
+            )
+          }
         }
-      })
-      const { error: insertError } = await supabase
-        .from('radar_rankings')
-        .insert(rows)
-      if (insertError) {
-        const msg = `Insert failed: ${insertError.message}`
-        if (!firstError) firstError = msg
-        console.error(
-          `[Radar Scan] Insert error for keyword ${kw.id}:`,
-          insertError,
-        )
-      } else {
+
+        // Persist the full Maps local finder (top ~20, with review counts) as
+        // history so the review gap vs competitors is trackable over time.
+        if (mapPack.length > 0) {
+          const { error: mapPackError } = await supabase
+            .from('radar_map_pack_snapshots')
+            .insert(
+              mapPack.map((p) => ({
+                keyword_id: kw.id,
+                scan_run_id: scanRun.id,
+                position: p.position,
+                title: p.title,
+                domain: p.domain,
+                rating: p.rating,
+                reviews: p.reviews,
+                address: p.address,
+                created_at: scannedAt,
+              })),
+            )
+          if (mapPackError) {
+            throw new Error(
+              `Maps snapshot insert failed: ${mapPackError.message}`,
+            )
+          }
+        }
+
+        // Rankings are the final write. If any audit snapshot failed above, the
+        // scan run is deleted and cannot masquerade as a complete observation.
+        const { error: insertError } = await supabase
+          .from('radar_rankings')
+          .insert(rows)
+        if (insertError)
+          throw new Error(`Rankings insert failed: ${insertError.message}`)
+
         rankingsInserted += rows.length
-      }
-
-      // Append the complete organic result set. History is intentionally kept:
-      // it is the evidence needed to audit a surprising rank change.
-      if (organic.snapshot.length > 0) {
-        const { error: snapshotError } = await supabase
-          .from('radar_serp_snapshots')
-          .insert(
-            organic.snapshot.map((s) => ({
-              keyword_id: kw.id,
-              scan_run_id: scanRun.id,
-              position: s.position,
-              domain: s.domain,
-              created_at: scannedAt,
-              ...(s.rating != null && { rating: s.rating }),
-              ...(s.reviews != null && { reviews: s.reviews }),
-              ...(s.address && { address: s.address }),
-            })),
-          )
-        if (snapshotError) {
-          console.error(
-            `[Radar Scan] Organic snapshot insert error for keyword ${kw.id}:`,
-            snapshotError,
-          )
+        keywordsSucceeded += 1
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const failure = `${kw.location}: ${msg}`
+        failures.push(failure)
+        console.error(
+          `[Radar Scan] failed for "${kw.keyword}" (${kw.location}):`,
+          err,
+        )
+        if (scanRunId) {
+          const { error: cleanupError } = await supabase
+            .from('radar_scan_runs')
+            .delete()
+            .eq('id', scanRunId)
+          if (cleanupError) {
+            console.error(
+              `[Radar Scan] cleanup failed for run ${scanRunId}:`,
+              cleanupError,
+            )
+          }
         }
       }
+    }),
+  )
 
-      // Persist the full Maps local finder (top ~20, with review counts) as
-      // history so the review gap vs competitors is trackable over time.
-      if (mapPack.length > 0) {
-        const { error: mapPackError } = await supabase
-          .from('radar_map_pack_snapshots')
-          .insert(
-            mapPack.map((p) => ({
-              keyword_id: kw.id,
-              scan_run_id: scanRun.id,
-              position: p.position,
-              title: p.title,
-              domain: p.domain,
-              rating: p.rating,
-              reviews: p.reviews,
-              address: p.address,
-              created_at: scannedAt,
-            })),
-          )
-        if (mapPackError) {
-          console.error(
-            `[Radar Scan] Map pack insert error for keyword ${kw.id}:`,
-            mapPackError,
-          )
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!firstError) firstError = msg
-      console.error(`[Radar Scan] provider error for "${kw.keyword}":`, err)
-    }
-
-    if (i < keywords.length - 1) {
-      await sleep(DELAY_MS)
-    }
+  const expectedRows = keywords.length * domains.length
+  const success =
+    failures.length === 0 &&
+    keywordsSucceeded === keywords.length &&
+    rankingsInserted === expectedRows
+  if (!success && failures.length === 0) {
+    failures.push(
+      `Incomplete scan: ${keywordsSucceeded}/${keywords.length} towns and ` +
+        `${rankingsInserted}/${expectedRows} ranking rows completed`,
+    )
   }
 
   return {
-    success: true,
-    keywords_processed: keywordsProcessed,
+    success,
+    keywords_processed: keywords.length,
     keywords_available: keywords.length,
     keywords_deferred: 0,
+    keywords_succeeded: keywordsSucceeded,
+    keywords_failed: failures.length,
     rankings_inserted: rankingsInserted,
     organic_provider_cost: Number(organicProviderCost.toFixed(4)),
-    error_detail: rankingsInserted === 0 && firstError ? firstError : undefined,
+    error_detail: failures.length ? failures.join(' | ') : undefined,
   }
 }
 
@@ -282,6 +300,25 @@ export function rollingMedianRank(
     .sort((a, b) => a - b)
   const median = sorted[1]
   return median >= missFloor ? null : median
+}
+
+export function summarizeOrganicSamples(
+  values: Array<number | null>,
+  window = 7,
+): {
+  latest: number | null
+  typicalWhenFound: number | null
+  found: number
+  total: number
+} {
+  const recent = values.slice(0, window)
+  const ranked = recent.filter((value): value is number => value != null)
+  return {
+    latest: recent[0] ?? null,
+    typicalWhenFound: ranked.length ? Math.round(median(ranked)) : null,
+    found: ranked.length,
+    total: recent.length,
+  }
 }
 
 function median(values: number[]): number {
@@ -465,11 +502,14 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     .from('radar_domains')
     .select('id, domain, is_my_domain')
   const mine = (domains ?? []).filter((domain) => domain.is_my_domain)
-  const myDomainIds = mine.map((domain) => domain.id)
-  const myDomains = mine.map((domain) =>
-    domain.domain.toLowerCase().replace(/^www\./, ''),
+  const primaryDomain = mine.find(
+    (domain) =>
+      domain.domain.toLowerCase().replace(/^www\./, '') ===
+      PRIMARY_RADAR_DOMAIN,
   )
-  if (myDomainIds.length === 0) return null
+  if (!primaryDomain) return null
+  const myDomainIds = [primaryDomain.id]
+  const myDomains = [PRIMARY_RADAR_DOMAIN]
 
   const { data: keywords } = await supabase
     .from('radar_keywords')
@@ -571,8 +611,12 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       const samples = samplesFor(rowsForMetric, metric)
       const values = samples.map((sample) => sample.value)
       const missFloor = metric === 'map' ? MAPS_DEPTH + 1 : ORGANIC_MISS_FLOOR
-      const current = rollingMedianRank(values, missFloor)
-      const arrow = arrowFor(values, missFloor)
+      const organicSummary = summarizeOrganicSamples(values)
+      const current =
+        metric === 'map'
+          ? rollingMedianRank(values, missFloor)
+          : organicSummary.latest
+      const arrow = metric === 'map' ? arrowFor(values, missFloor) : ''
       const newestRun = samples[0]?.scanRunId
         ? scanRunById.get(samples[0].scanRunId!)
         : null
@@ -586,8 +630,14 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
               ? '🟢'
               : '•'
       const value =
-        metric === 'map' ? fmtMap(current) : fmtOrganic(current, returnedDepth)
-      const baseline = samples.length < 3 ? ' · new baseline' : ''
+        metric === 'map'
+          ? fmtMap(current)
+          : `${fmtOrganic(current, returnedDepth)} · seen ${organicSummary.found}/${organicSummary.total}` +
+            (organicSummary.typicalWhenFound == null
+              ? ''
+              : ` · typical #${organicSummary.typicalWhenFound} when found`)
+      const baseline =
+        samples.length < (metric === 'map' ? 3 : 7) ? ' · new baseline' : ''
       const line = `${icon} ${town}: ${value}${arrow}${baseline}`
       const groups = metric === 'map' ? mapGroups : organicGroups
       const list = groups.get(kw.keyword) ?? []
@@ -613,11 +663,18 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   const parts = [`🗺️ Radar Daily · ${date}`]
   if (mapGroups.size > 0) {
     parts.push(
-      `— Maps town-center sample (top ${MAPS_DEPTH}) —\n${block(mapGroups)}`,
+      `— Google Maps Business Profile rank · town-center spot check · 3-scan median (top ${MAPS_DEPTH}) —\n${block(mapGroups)}`,
     )
   }
   if (organicGroups.size > 0) {
-    parts.push(`— Organic rank · full-depth check —\n${block(organicGroups)}`)
+    parts.push(
+      `— Website organic rank · latest desktop spot check + 7-scan context (top 50) —\n${block(organicGroups)}`,
+    )
+  }
+  if (mapGroups.size > 0 && organicGroups.size > 0) {
+    parts.push(
+      `Maps and website organic are separate Google result systems. Their rank numbers are not comparable.`,
+    )
   }
 
   const latestGrid = localFalcon[0]
@@ -631,11 +688,13 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       `— Local Falcon service-area grid —\n` +
         `Average rank ${latestGrid.arp?.toFixed(1) ?? '—'} · ` +
         `SoLV ${latestGrid.solv?.toFixed(1) ?? '—'}% · ${coverage}\n` +
-        `This grid trend is the best Maps progress signal; town rows above are single points.`,
+        (previousGrid
+          ? `This comparable grid trend is the best Maps progress signal; town rows above are single points.`
+          : `New grid baseline; wait for the same grid configuration before calling movement.`),
     )
   }
   parts.push(
-    `🥇 #1 · 🟢 top 3 · ⚠️ not found · arrows require a confirmed 3-scan trend`,
+    `🥇 #1 · 🟢 top 3 · ⚠️ not found · arrows apply only to the 3-scan Maps trend`,
   )
 
   const mapVisible = mapCurrent.filter((row) => row.rank != null).length
@@ -652,13 +711,17 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       ? latestGrid.solv - previousGrid.solv
       : null
   let tone: ReportCardTone = 'neutral'
-  let verdict = 'Local Maps visibility is holding steady.'
+  let verdict = latestGrid
+    ? 'Latest Local Falcon grid is a new comparison baseline.'
+    : 'Local Falcon is awaiting a comparable service-area grid.'
   if (solvChange != null && solvChange >= 1) {
     tone = 'good'
     verdict = `Local Maps visibility improved ${solvChange.toFixed(1)} points.`
   } else if (solvChange != null && solvChange <= -1) {
     tone = 'warn'
     verdict = `Local Maps visibility slipped ${Math.abs(solvChange).toFixed(1)} points.`
+  } else if (solvChange != null) {
+    verdict = 'Local Maps visibility is holding steady.'
   }
 
   const card: ReportCardInput = {
@@ -666,7 +729,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     title: date,
     subtitle:
       `${weeklyMapsVisibility.length}-week fixed-location Maps history · ` +
-      'full-depth organic · service-area grid',
+      'separate website organic spot check · service-area grid',
     verdict: { text: verdict, tone },
     metrics: [
       {
@@ -706,7 +769,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
           }
         : null,
     footer:
-      'Weekly points use the same fixed town centers. Grid coverage is Local Falcon.',
+      'Maps and website organic ranks are separate. Grid coverage is Local Falcon.',
   }
 
   const caption = [

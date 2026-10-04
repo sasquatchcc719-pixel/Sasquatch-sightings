@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildWeeklyMapsVisibility, rollingMedianRank } from './radar-scan'
+import {
+  buildWeeklyMapsVisibility,
+  rollingMedianRank,
+  summarizeOrganicSamples,
+} from './radar-scan'
 
 describe('rollingMedianRank', () => {
   it('does not turn one bad sample into an unranked alert', () => {
@@ -17,6 +21,26 @@ describe('rollingMedianRank', () => {
   it('uses the latest raw value while a new provider baseline forms', () => {
     expect(rollingMedianRank([16], 51)).toBe(16)
     expect(rollingMedianRank([18, 16], 51)).toBe(18)
+  })
+})
+
+describe('summarizeOrganicSamples', () => {
+  it('shows the latest raw result without hiding the recent volatility', () => {
+    expect(summarizeOrganicSamples([25, null, 7, 8, 8, null, null])).toEqual({
+      latest: 25,
+      typicalWhenFound: 8,
+      found: 4,
+      total: 7,
+    })
+  })
+
+  it('reports a latest miss separately from typical ranked observations', () => {
+    expect(summarizeOrganicSamples([null, 25, null, 7, 8, 8, null])).toEqual({
+      latest: null,
+      typicalWhenFound: 8,
+      found: 4,
+      total: 7,
+    })
   })
 })
 

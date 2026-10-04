@@ -71,11 +71,14 @@ export async function GET(request: NextRequest) {
       console.error('[Radar Cron] GBP review sync failed:', reviewErr)
     }
 
-    // Daily Telegram report: a graph image first, then the detailed rank text.
-    // Never let a report failure break rank tracking.
+    // Never send a digest assembled from a partial scan. The non-2xx response
+    // below makes the incomplete cron run visible to monitoring.
     let digestSent = false
     let digestImageSent = false
     try {
+      if (!result.success) {
+        throw new Error(result.error_detail || 'Radar scan was incomplete')
+      }
       const report = await buildRadarDailyReport()
       if (report) {
         const delivery = await deliverReportCard({
@@ -93,12 +96,15 @@ export async function GET(request: NextRequest) {
       console.error('[Radar Cron] digest send failed:', digestErr)
     }
 
-    return NextResponse.json({
-      ...result,
-      review_sync: reviewSync,
-      digestSent,
-      digestImageSent,
-    })
+    return NextResponse.json(
+      {
+        ...result,
+        review_sync: reviewSync,
+        digestSent,
+        digestImageSent,
+      },
+      { status: result.success ? 200 : 502 },
+    )
   } catch (err) {
     console.error('[Radar Cron] Error:', err)
     return NextResponse.json(
