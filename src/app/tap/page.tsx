@@ -10,6 +10,7 @@ import {
   Droplets,
   Phone,
   MessageSquare,
+  Camera,
   UserPlus,
   Share2,
   Star,
@@ -17,6 +18,7 @@ import {
   MapPin,
   Wrench,
   ChevronRight,
+  X,
 } from 'lucide-react'
 import { TapForest } from './tap-forest'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
@@ -36,6 +38,7 @@ export default function TapLandingPage() {
   const [partnerName, setPartnerName] = useState<string | null>(null)
   const [couponCode, setCouponCode] = useState<string>('SCC20')
   const [showWidget, setShowWidget] = useState(false)
+  const [showWaterHelp, setShowWaterHelp] = useState(false)
   const [showShareToast, setShowShareToast] = useState(false)
   const estimatorRef = useRef<HTMLElement>(null)
   const isRedirecting = !!partnerId
@@ -50,6 +53,22 @@ export default function TapLandingPage() {
       })
     }
   }, [showWidget])
+
+  useEffect(() => {
+    if (!showWaterHelp) return
+
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowWaterHelp(false)
+    }
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showWaterHelp])
 
   // Redirect logic moved to trackTap to support placard configuration
 
@@ -170,6 +189,8 @@ export default function TapLandingPage() {
   const textMessage = partnerName
     ? `Hi! I scanned the card at ${partnerName} and I'm interested in carpet cleaning.`
     : 'Hi! I scanned your card and I am interested in carpet cleaning.'
+  const waterDamageText =
+    'Hi, I have water damage. I am attaching photos and a short video of the affected area.'
 
   return (
     <main className={styles.page}>
@@ -198,9 +219,14 @@ export default function TapLandingPage() {
           className={styles.primaryActions}
           aria-label="Cleaning and water damage help"
         >
-          <a
-            href={`tel:${WATER_DAMAGE_PHONE_E164}`}
-            onClick={() => void trackButtonClick('call')}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={showWaterHelp}
+            onClick={() => {
+              setShowWaterHelp(true)
+              void trackButtonClick('water_damage_help_open')
+            }}
             className={`${styles.actionPanel} ${styles.emergency}`}
           >
             <span className={styles.waterScene} aria-hidden="true">
@@ -239,10 +265,10 @@ export default function TapLandingPage() {
                 <br />
                 emergency
               </span>
-              <span className={styles.emergencyCta}>Tap to call for help</span>
+              <span className={styles.emergencyCta}>See what to do now</span>
             </span>
             <ChevronRight className={styles.actionArrow} aria-hidden="true" />
-          </a>
+          </button>
 
           <button
             type="button"
@@ -410,6 +436,77 @@ export default function TapLandingPage() {
       {showShareToast && (
         <div role="status" className={styles.toast}>
           Link copied — ready to share.
+        </div>
+      )}
+
+      {showWaterHelp && (
+        <div
+          className={styles.waterHelpBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowWaterHelp(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="water-help-title"
+            className={styles.waterHelpDialog}
+          >
+            <button
+              type="button"
+              className={styles.waterHelpClose}
+              aria-label="Close water damage help"
+              onClick={() => setShowWaterHelp(false)}
+            >
+              <X aria-hidden="true" />
+            </button>
+
+            <div className={styles.waterHelpHeading}>
+              <span className={styles.waterHelpIcon} aria-hidden="true">
+                <Droplets />
+              </span>
+              <div>
+                <p>What to do right now</p>
+                <h2 id="water-help-title">Water damage help</h2>
+              </div>
+            </div>
+
+            <ol className={styles.waterHelpSteps}>
+              <li>Turn off or stop the water source, if possible.</li>
+              <li>
+                Take photos and a short video for your insurance adjuster.
+              </li>
+              <li>
+                Move small valuables away from the wet area, if it is safe.
+              </li>
+              <li>
+                Leave the carpet and pad in place so we can properly assess
+                them.
+              </li>
+              <li>Call Sasquatch for water extraction and help.</li>
+            </ol>
+
+            <div className={styles.waterHelpActions}>
+              <a
+                href={`tel:${WATER_DAMAGE_PHONE_E164}`}
+                onClick={() => void trackButtonClick('call')}
+                className={styles.waterHelpCall}
+              >
+                <Phone aria-hidden="true" />
+                <span>Call for emergency water extraction</span>
+              </a>
+              <a
+                href={`sms:${WATER_DAMAGE_PHONE_E164}?body=${encodeURIComponent(waterDamageText)}`}
+                onClick={() =>
+                  void trackButtonClick('water_damage_text_photos')
+                }
+                className={styles.waterHelpText}
+              >
+                <Camera aria-hidden="true" />
+                <span>Text us photos</span>
+              </a>
+            </div>
+          </section>
         </div>
       )}
     </main>

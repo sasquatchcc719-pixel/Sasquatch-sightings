@@ -72,21 +72,39 @@ afterEach(() => {
 })
 
 describe('mobile NFC card', () => {
-  it('offers a direct emergency dial link before analytics has responded', () => {
+  it('shows practical water-damage guidance before offering contact actions', () => {
     vi.mocked(fetch).mockImplementation(() => new Promise(() => {}))
     render(<TapLandingPage />)
+    const emergency = screen.getByRole('button', {
+      name: /Water damage emergency/,
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(emergency)
+    const dialog = screen.getByRole('dialog', {
+      name: 'Water damage help',
+    })
+    expect(dialog).toHaveTextContent('Turn off or stop the water source')
+    expect(dialog).toHaveTextContent(
+      'Take photos and a short video for your insurance adjuster',
+    )
+    expect(dialog).toHaveTextContent('Move small valuables away')
+    expect(dialog).toHaveTextContent('Leave the carpet and pad in place')
     expect(
-      screen.getByRole('link', { name: /Water damage emergency/ }),
+      screen.getByRole('link', { name: 'Call for emergency water extraction' }),
     ).toHaveAttribute('href', 'tel:+17197498807')
+    expect(
+      decodeURIComponent(
+        screen
+          .getByRole('link', { name: 'Text us photos' })
+          .getAttribute('href')!,
+      ),
+    ).toContain('sms:+17197498807?body=')
     expect(
       screen.getByRole('link', { name: /Call the office/ }),
     ).toHaveAttribute('href', 'tel:719-249-8791')
     expect(
       screen.queryByText(/Charles|24\/7|text “water”/i),
     ).not.toBeInTheDocument()
-    const emergency = screen.getByRole('link', {
-      name: /Water damage emergency/,
-    })
     const estimate = screen.getByRole('button', {
       name: /Get a free carpet cleaning estimate/,
     })
@@ -99,16 +117,16 @@ describe('mobile NFC card', () => {
   it('keeps the water decorative and the emergency action accessible', () => {
     vi.mocked(fetch).mockImplementation(() => new Promise(() => {}))
     render(<TapLandingPage />)
-    const emergency = screen.getByRole('link', {
-      name: 'Water damage emergency Tap to call for help',
+    const emergency = screen.getByRole('button', {
+      name: 'Water damage emergency See what to do now',
     })
     expect(emergency.firstElementChild).toHaveAttribute('aria-hidden', 'true')
     expect(emergency.querySelectorAll('svg[focusable="false"]')).toHaveLength(2)
-    expect(emergency).toHaveAttribute('href', 'tel:+17197498807')
-    expect(emergency.querySelector('button, input, [tabindex]')).toBeNull()
+    expect(emergency).not.toHaveAttribute('href')
+    expect(emergency).toHaveAttribute('aria-haspopup', 'dialog')
   })
 
-  it('does not prevent dialing when click tracking fails', async () => {
+  it('does not block emergency contact actions when click tracking fails', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<TapLandingPage />)
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
@@ -122,7 +140,10 @@ describe('mobile NFC card', () => {
     }
     document.addEventListener('click', intercept, { once: true })
     fireEvent.click(
-      screen.getByRole('link', { name: /Water damage emergency/ }),
+      screen.getByRole('button', { name: /Water damage emergency/ }),
+    )
+    fireEvent.click(
+      screen.getByRole('link', { name: 'Call for emergency water extraction' }),
     )
     expect(preventedByApp).toBe(false)
     await waitFor(() =>
@@ -179,7 +200,7 @@ describe('mobile NFC card', () => {
       'existing-card',
     )
     expect(
-      screen.getByRole('link', { name: /Water damage emergency/ }),
+      screen.getByRole('button', { name: /Water damage emergency/ }),
     ).toBeVisible()
     expect(screen.getByRole('link', { name: /Save contact/ })).toHaveAttribute(
       'href',

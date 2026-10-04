@@ -249,6 +249,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat a timed multi-day schedule block as one continuous start date-time to end date-time range: the first and last days keep their endpoint times, intervening days are fully blocked, and calendar dragging must never collapse the range to one date.
 - Never display service-address map pins from city/ZIP fallback coordinates; require a verified street-level geocode, reject shared centroid coordinates, and apply privacy offsets only after coordinate validation.
 - Date and time inputs in scheduling editors must open their native selector when the user clicks anywhere in the field, including after layout or multi-day range changes.
+- Water-damage emergency guidance should tell customers to stop the source, document damage, protect small valuables, and leave carpet and pad in place; never ask them to extract the water or avoid necessary walking.
 
 ---
 
