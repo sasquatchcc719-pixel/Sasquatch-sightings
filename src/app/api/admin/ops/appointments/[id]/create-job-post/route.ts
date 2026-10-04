@@ -3,48 +3,27 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { generateJobSlug } from '@/lib/slug'
 import { generateJobDescription } from '@/lib/ai'
+import { forwardGeocodeAddress } from '@/lib/ops/forward-geocode'
 
 type Params = { params: Promise<{ id: string }> }
 
-// Geocode an address via Nominatim (same approach as the rest of the app)
-async function geocodeAddress(
-  street: string,
-  city: string,
-  state: string,
-  zip: string,
-): Promise<{
-  lat: number
-  lng: number
-  resolvedCity: string
-  neighborhood: string
-} | null> {
-  const query = encodeURIComponent(`${street}, ${city}, ${state} ${zip}, USA`)
-  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&addressdetails=1`
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'SasquatchCarpetCleaning/1.0 (sasquatchcc719@gmail.com)',
-      },
-    })
-    const results = await response.json()
-    if (!Array.isArray(results) || results.length === 0) return null
-
-    const result = results[0]
-    const addr = result.address ?? {}
-    const resolvedCity =
-      addr.city ?? addr.town ?? addr.village ?? addr.hamlet ?? city
-    const neighborhood = addr.neighbourhood ?? addr.suburb ?? addr.county ?? ''
-
-    return {
-      lat: parseFloat(result.lat),
-      lng: parseFloat(result.lon),
-      resolvedCity,
-      neighborhood,
-    }
-  } catch {
+function validColoradoPoint(
+  latValue: number | string | null,
+  lngValue: number | string | null,
+): { lat: number; lng: number } | null {
+  const lat = Number(latValue)
+  const lng = Number(lngValue)
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < 36.8 ||
+    lat > 41.2 ||
+    lng < -109.2 ||
+    lng > -101.8
+  ) {
     return null
   }
+  return { lat, lng }
 }
 
 // Try to find a matching service in the old `services` table by name similarity
@@ -106,6 +85,8 @@ export async function POST(_request: NextRequest, { params }: Params) {
         id,
         appointment_date,
         internal_notes,
+        gps_lat,
+        gps_lng,
         ops_customers!ops_appointments_customer_id_fkey ( full_name ),
         ops_service_addresses (
           street_1, city, state, zip_code
@@ -196,16 +177,33 @@ export async function POST(_request: NextRequest, { params }: Params) {
       publishablePhotos.find((p) => p.label === 'before') ??
       publishablePhotos[0]
 
-    // Geocode the address
-    const geo = await geocodeAddress(
-      address.street_1,
-      address.city,
-      address.state,
-      address.zip_code,
+    // Prefer coordinates captured at the completed job. If they are missing,
+    // accept only a verified street-level geocode—never a city-center default.
+    const onsitePoint = validColoradoPoint(
+      appointment.gps_lat,
+      appointment.gps_lng,
     )
+    const geo = onsitePoint
+      ? null
+      : await forwardGeocodeAddress({
+          street_1: address.street_1,
+          city: address.city,
+          state: address.state,
+          zip_code: address.zip_code,
+        })
+    const verifiedPoint = onsitePoint ?? geo
+    if (!verifiedPoint) {
+      return NextResponse.json(
+        {
+          error:
+            'This job has no captured GPS and its street address could not be verified. Capture the job location or correct the address before creating a public post.',
+        },
+        { status: 422 },
+      )
+    }
 
-    const lat = geo?.lat ?? 38.8339
-    const lng = geo?.lng ?? -104.8214
+    const lat = verifiedPoint.lat
+    const lng = verifiedPoint.lng
     const resolvedCity = geo?.resolvedCity ?? address.city
     const neighborhood = geo?.neighborhood ?? ''
 

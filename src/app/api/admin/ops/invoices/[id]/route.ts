@@ -26,6 +26,10 @@ import {
   isNewQualifyingServiceCategory,
   qualifyingAddOnCategory,
 } from '@/lib/ops/add-on-bonuses'
+import {
+  invalidateGeocodeForAddressUpdate,
+  queueGeocodeForStoredAddress,
+} from '@/lib/ops/forward-geocode'
 
 const OPTIONAL_INVOICE_LOOKUP_TIMEOUT_MS = 2_000
 
@@ -325,11 +329,19 @@ export async function PATCH(
           if (a.gate_code !== undefined) au.gate_code = a.gate_code || null
           if (a.notes !== undefined) au.notes = a.notes || null
           if (Object.keys(au).length > 0) {
+            const locationChanged = invalidateGeocodeForAddressUpdate(au)
             au.updated_at = new Date().toISOString()
-            await supabase
+            const { error: addressError } = await supabase
               .from('ops_service_addresses')
               .update(au)
               .eq('id', appt.service_address_id)
+            if (addressError) throw addressError
+            if (locationChanged && appt.service_address_id) {
+              await queueGeocodeForStoredAddress(
+                supabase,
+                appt.service_address_id,
+              )
+            }
           }
         }
 

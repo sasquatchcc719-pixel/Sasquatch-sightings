@@ -25,7 +25,7 @@ export async function loadHistoricalJobPins(
     supabase
       .from('ops_service_addresses')
       .select(
-        'id, customer_id, street_1, city, state, zip_code, latitude, longitude',
+        'id, customer_id, street_1, city, state, zip_code, latitude, longitude, geocode_source',
       )
       .not('latitude', 'is', null)
       .not('longitude', 'is', null)

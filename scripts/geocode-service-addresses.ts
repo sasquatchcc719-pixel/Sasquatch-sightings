@@ -11,6 +11,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { config } from 'dotenv'
 import path from 'path'
+import { forwardGeocodeAddress } from '../src/lib/ops/forward-geocode'
 
 config({ path: path.join(process.cwd(), '.env.local') })
 
@@ -38,61 +39,12 @@ async function nominatimSearch(
   state: string,
   zip: string,
 ): Promise<{ lat: number; lng: number } | null> {
-  const params = new URLSearchParams({
-    format: 'json',
-    street,
+  return forwardGeocodeAddress({
+    street_1: street,
     city,
     state,
-    postalcode: zip,
-    countrycodes: 'us',
-    limit: '1',
-    addressdetails: '0',
+    zip_code: zip,
   })
-
-  const url = `https://nominatim.openstreetmap.org/search?${params}`
-
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'SasquatchCarpetCleaning/1.0 (backfill)' },
-  })
-
-  if (!res.ok) {
-    console.error(`  Nominatim HTTP ${res.status}`)
-    return null
-  }
-
-  const results = await res.json()
-
-  if (!Array.isArray(results) || results.length === 0) {
-    // Fallback: try zip + city only
-    const params2 = new URLSearchParams({
-      format: 'json',
-      city,
-      state,
-      postalcode: zip,
-      countrycodes: 'us',
-      limit: '1',
-      addressdetails: '0',
-    })
-    const res2 = await fetch(
-      `https://nominatim.openstreetmap.org/search?${params2}`,
-      {
-        headers: { 'User-Agent': 'SasquatchCarpetCleaning/1.0 (backfill)' },
-      },
-    )
-    if (!res2.ok) return null
-    const r2 = await res2.json()
-    if (!Array.isArray(r2) || r2.length === 0) return null
-    const lat = parseFloat(r2[0].lat)
-    const lng = parseFloat(r2[0].lon)
-    if (isNaN(lat) || isNaN(lng)) return null
-    console.log('    [fallback: zip/city]')
-    return { lat, lng }
-  }
-
-  const lat = parseFloat(results[0].lat)
-  const lng = parseFloat(results[0].lon)
-  if (isNaN(lat) || isNaN(lng)) return null
-  return { lat, lng }
 }
 
 async function main() {
@@ -138,7 +90,7 @@ async function main() {
           latitude: coords.lat,
           longitude: coords.lng,
           geocoded_at: new Date().toISOString(),
-          geocode_source: 'nominatim-backfill',
+          geocode_source: 'nominatim-street-verified-backfill',
           updated_at: new Date().toISOString(),
         })
         .eq('id', addr.id)

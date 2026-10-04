@@ -7,6 +7,7 @@ export type HistoricalServiceAddress = {
   zip_code: string
   latitude: number | string | null
   longitude: number | string | null
+  geocode_source?: string | null
 }
 
 export type PublishedJobLocation = {
@@ -29,6 +30,13 @@ const COLORADO_BOUNDS = {
 }
 
 const LEGACY_JOB_MATCH_METERS = 75
+const MAX_DISTINCT_ADDRESSES_PER_COORDINATE = 10
+const KNOWN_AREA_CENTERS = new Set([
+  '38.833958|-104.825348',
+  '39.091659|-104.872758',
+  '39.228848|-104.884495',
+  '39.122214|-104.917204',
+])
 
 function normalizeAddressPart(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -98,6 +106,10 @@ function isMappableColoradoCoordinate(lat: number, lng: number): boolean {
   )
 }
 
+function coordinateKey(lat: number, lng: number): string {
+  return `${lat.toFixed(6)}|${lng.toFixed(6)}`
+}
+
 export function buildHistoricalJobPins(params: {
   addresses: HistoricalServiceAddress[]
   customerIdsWithJobHistory: Set<string>
@@ -139,6 +151,17 @@ export function buildHistoricalJobPins(params: {
     }
   }
 
+  const addressKeysByCoordinate = new Map<string, Set<string>>()
+  for (const [addressKey, address] of uniqueAddresses) {
+    const key = coordinateKey(
+      Number(address.latitude),
+      Number(address.longitude),
+    )
+    const addressKeys = addressKeysByCoordinate.get(key) ?? new Set<string>()
+    addressKeys.add(addressKey)
+    addressKeysByCoordinate.set(key, addressKeys)
+  }
+
   const pins: HistoricalJobPin[] = []
   for (const [addressKey, address] of uniqueAddresses) {
     if (representedAddressKeys.has(addressKey)) continue
@@ -146,6 +169,14 @@ export function buildHistoricalJobPins(params: {
     const exactPoint = {
       lat: Number(address.latitude),
       lng: Number(address.longitude),
+    }
+    const exactCoordinateKey = coordinateKey(exactPoint.lat, exactPoint.lng)
+    if (
+      KNOWN_AREA_CENTERS.has(exactCoordinateKey) ||
+      (addressKeysByCoordinate.get(exactCoordinateKey)?.size ?? 0) >
+        MAX_DISTINCT_ADDRESSES_PER_COORDINATE
+    ) {
+      continue
     }
     const matchesLegacyPublishedJob = legacyPublishedLocations.some(
       (jobPoint) =>

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import {
+  invalidateGeocodeForAddressUpdate,
+  queueGeocodeForStoredAddress,
+} from '@/lib/ops/forward-geocode'
 
 export async function PATCH(
   request: NextRequest,
@@ -130,12 +134,16 @@ export async function PATCH(
         if (addr.label !== undefined) updates.label = addr.label || null
 
         if (Object.keys(updates).length > 0) {
+          const locationChanged = invalidateGeocodeForAddressUpdate(updates)
           updates.updated_at = new Date().toISOString()
           const { error: addrError } = await supabase
             .from('ops_service_addresses')
             .update(updates)
             .eq('id', addr.id)
           if (addrError) throw addrError
+          if (locationChanged) {
+            await queueGeocodeForStoredAddress(supabase, addr.id)
+          }
         }
       }
     }

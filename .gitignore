@@ -45,3 +45,6 @@ yarn-error.log*
 # Retell config exports and local bridge artifacts
 .retell/
 .firecrawl/
+
+# local audit/repair artifacts (may contain customer address data)
+/output/

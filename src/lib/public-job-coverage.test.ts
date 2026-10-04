@@ -93,4 +93,38 @@ describe('buildHistoricalJobPins', () => {
 
     expect(pins).toEqual([])
   })
+
+  it('rejects known city-center fallback coordinates', () => {
+    const pins = buildHistoricalJobPins({
+      addresses: [
+        address({
+          latitude: 39.0916586,
+          longitude: -104.872758,
+          geocode_source: 'nominatim-backfill',
+        }),
+      ],
+      customerIdsWithJobHistory: new Set(['customer-1']),
+      publishedJobs: [],
+    })
+
+    expect(pins).toEqual([])
+  })
+
+  it('rejects a coordinate reused by many distinct street addresses', () => {
+    const addresses = Array.from({ length: 11 }, (_, index) =>
+      address({
+        id: `address-${index}`,
+        street_1: `${100 + index} Different Street`,
+        latitude: 39.2,
+        longitude: -104.8,
+      }),
+    )
+    const pins = buildHistoricalJobPins({
+      addresses,
+      customerIdsWithJobHistory: new Set(['customer-1']),
+      publishedJobs: [],
+    })
+
+    expect(pins).toEqual([])
+  })
 })
