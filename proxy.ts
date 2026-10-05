@@ -1,7 +1,12 @@
 import { updateSession } from '@/supabase/proxy'
-import { type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+  // The external REST API authenticates exclusively with its bearer key.
+  // Keep cookie/session refresh completely outside this namespace.
+  if (request.nextUrl.pathname.startsWith('/api/v1/')) {
+    return NextResponse.next()
+  }
   return await updateSession(request)
 }
 
