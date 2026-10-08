@@ -1,5 +1,5 @@
 /**
- * Post-job Google review request engine.
+ * Post-job review request engine.
  *
  * Cron-driven, no hooks into completion paths: every run scans recently
  * completed appointments (any completion path — Telegram, admin UI, GPS),
@@ -18,13 +18,6 @@ import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 /** Public page listing every platform we can be reviewed on (Google, Yelp, BBB, Nextdoor, …). */
 export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
-
-// Sasquatch Carpet Cleaning, LLC GBP listing — direct "leave a review" form.
-// Keep the verified Place ID here instead of a g.page shortcut; the shortcut
-// for this listing started redirecting customers to the Google homepage.
-export const GOOGLE_REVIEW_URL =
-  process.env.GOOGLE_REVIEW_URL ||
-  'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ'
 
 /** Send as soon as the completion scanner picks up the finished job. */
 const ASK_DELAY_MINUTES = 0
@@ -120,9 +113,9 @@ export function buildReviewRequestMessage(
   const greeting = first ? `Hi ${first}, it's` : "Hi, it's"
   return (
     `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
-    `If you have a minute for a Google review it makes a huge difference for us — ` +
-    `and if you can mention what we cleaned and how it turned out, that's the part ` +
-    `future customers actually read: ${GOOGLE_REVIEW_URL}`
+    `If you have a minute to share your experience, you can choose your preferred review site here. ` +
+    `Mentioning what we cleaned and how it turned out really helps future customers: ` +
+    `${ALL_REVIEWS_PAGE_URL}`
   )
 }
 
@@ -491,7 +484,7 @@ export async function buildReviewRequestContext(
     return `
 
 REVIEW REQUEST CONTEXT (important):
-We texted this customer a Google review request on ${sentDate}, right after their completed job. If their message is about that — they left a review, plan to, mention stars, or reviewed on another platform like Yelp — reply with a short, warm, natural thank-you (1–2 sentences, like a real person: "That means a lot — thank you so much!"). Do NOT recite or confirm their contact details, do NOT quote prices, do NOT start a booking flow unless they ask for one. If they already reviewed on Google and ask where else they can leave one, share ${ALL_REVIEWS_PAGE_URL} (links to Yelp, BBB, Nextdoor, and more). Never pressure anyone for a review they've already given.`
+We texted this customer a review request on ${sentDate}, right after their completed job, with ${ALL_REVIEWS_PAGE_URL} so they could choose a review site. If their message is about that — they left a review, plan to, or mention stars — reply with a short, warm, natural thank-you (1–2 sentences, like a real person: "That means a lot — thank you so much!"). Do NOT recite or confirm their contact details, do NOT quote prices, do NOT start a booking flow unless they ask for one. Never pressure anyone for a review they've already given.`
   } catch (err) {
     console.error('[review-requests] context lookup failed:', err)
     return ''

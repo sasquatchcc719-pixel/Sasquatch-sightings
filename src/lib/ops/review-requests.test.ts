@@ -17,7 +17,6 @@ import {
   enqueueReviewRequests,
   processDueReviewRequests,
   isWithinSendWindow,
-  GOOGLE_REVIEW_URL,
   ALL_REVIEWS_PAGE_URL,
 } from './review-requests'
 import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
@@ -77,17 +76,16 @@ describe('isWithinSendWindow (Mountain Time)', () => {
 })
 
 describe('buildReviewRequestMessage', () => {
-  it('greets by first name and includes the verified review link', () => {
-    expect(GOOGLE_REVIEW_URL).toBe(
-      'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
-    )
+  it('greets by first name and includes the review hub', () => {
+    expect(ALL_REVIEWS_PAGE_URL).toBe('https://www.sasquatchcarpet.com/reviews')
     const msg = buildReviewRequestMessage({
       first_name: 'Tiffany',
       full_name: 'Tiffany Sewell',
     })
     expect(msg).toContain('Hi Tiffany')
     expect(msg).toContain('Sasquatch Carpet Cleaning')
-    expect(msg).toContain(GOOGLE_REVIEW_URL)
+    expect(msg).toContain('choose your preferred review site')
+    expect(msg).toContain(ALL_REVIEWS_PAGE_URL)
   })
 
   it('asks for detail, not just a rating', () => {
@@ -115,7 +113,7 @@ describe('buildReviewRequestMessage', () => {
   it('falls back to a generic greeting without a name', () => {
     const msg = buildReviewRequestMessage({ first_name: null, full_name: null })
     expect(msg).toContain("Hi, it's Charles")
-    expect(msg).toContain(GOOGLE_REVIEW_URL)
+    expect(msg).toContain(ALL_REVIEWS_PAGE_URL)
   })
 })
 
@@ -191,7 +189,7 @@ describe('review request pipeline against the real DB', () => {
     expect(result.deferred).toBe(false)
     expect(result.sent).toBeGreaterThanOrEqual(1)
     expect(sentMessages.length).toBeGreaterThanOrEqual(1)
-    expect(sentMessages[0].message).toContain(GOOGLE_REVIEW_URL)
+    expect(sentMessages[0].message).toContain(ALL_REVIEWS_PAGE_URL)
 
     const { data: after } = await supabase
       .from('review_requests')
@@ -200,7 +198,7 @@ describe('review request pipeline against the real DB', () => {
       .single()
     expect(after?.status).toBe('sent')
     expect(after?.sent_at).toBeTruthy()
-    expect(after?.message).toContain(GOOGLE_REVIEW_URL)
+    expect(after?.message).toContain(ALL_REVIEWS_PAGE_URL)
   })
 
   it('builds review-reply context for phones with a recent sent request', async () => {
