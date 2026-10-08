@@ -19,11 +19,12 @@ import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 /** Public page listing every platform we can be reviewed on (Google, Yelp, BBB, Nextdoor, …). */
 export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
 
-// Sasquatch Carpet Cleaning, LLC GBP listing — "leave a review" short link
-// from the reinstated Google Business Profile (2026-07-23). Replaces the
-// prior writereview?placeid= link, which broke when the profile went down.
+// Sasquatch Carpet Cleaning, LLC GBP listing — direct "leave a review" form.
+// Keep the verified Place ID here instead of a g.page shortcut; the shortcut
+// for this listing started redirecting customers to the Google homepage.
 export const GOOGLE_REVIEW_URL =
-  process.env.GOOGLE_REVIEW_URL || 'https://g.page/r/CVAp5EYpgMFLEBM/review'
+  process.env.GOOGLE_REVIEW_URL ||
+  'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ'
 
 /** Send as soon as the completion scanner picks up the finished job. */
 const ASK_DELAY_MINUTES = 0

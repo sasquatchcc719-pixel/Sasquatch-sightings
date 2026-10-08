@@ -109,11 +109,7 @@ describe('getOpsTemplateKeysForEvent', () => {
         { name_snapshot: 'Regular Size Room (100 to 200 Sqft)' },
         { name_snapshot: 'Urine Eliminator Treatment' },
       ]),
-    ).toEqual([
-      'job_finished_sms',
-      'job_finished_email_urine',
-      'satisfaction_checkin_email',
-    ])
+    ).toEqual(['job_finished_email_urine', 'satisfaction_checkin_email'])
   })
 
   it('uses the standard completion email when there is no urine treatment', () => {
@@ -121,16 +117,11 @@ describe('getOpsTemplateKeysForEvent', () => {
       getOpsTemplateKeysForEvent('job_finished', [
         { name_snapshot: 'Regular Size Room (100 to 200 Sqft)' },
       ]),
-    ).toEqual([
-      'job_finished_sms',
-      'job_finished_email',
-      'satisfaction_checkin_email',
-    ])
+    ).toEqual(['job_finished_email', 'satisfaction_checkin_email'])
   })
 
   it('falls back to the standard completion email when no line items are passed', () => {
     expect(getOpsTemplateKeysForEvent('job_finished')).toEqual([
-      'job_finished_sms',
       'job_finished_email',
       'satisfaction_checkin_email',
     ])

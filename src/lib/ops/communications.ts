@@ -407,7 +407,6 @@ export function getOpsTemplateKeysForEvent(
     return ['job_rescheduled_sms', 'job_rescheduled_email']
   }
   return [
-    'job_finished_sms',
     hasUrineTreatmentLineItem(lineItems)
       ? 'job_finished_email_urine'
       : 'job_finished_email',

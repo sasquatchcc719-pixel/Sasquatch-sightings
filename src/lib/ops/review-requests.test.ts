@@ -78,6 +78,9 @@ describe('isWithinSendWindow (Mountain Time)', () => {
 
 describe('buildReviewRequestMessage', () => {
   it('greets by first name and includes the verified review link', () => {
+    expect(GOOGLE_REVIEW_URL).toBe(
+      'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
+    )
     const msg = buildReviewRequestMessage({
       first_name: 'Tiffany',
       full_name: 'Tiffany Sewell',
@@ -103,7 +106,9 @@ describe('buildReviewRequestMessage', () => {
       full_name: 'Tiffany Sewell',
     })
     // Both would violate Google's review policies on an already-fragile profile.
-    expect(msg).not.toMatch(/if you were happy|if you liked|5[- ]star|five[- ]star/i)
+    expect(msg).not.toMatch(
+      /if you were happy|if you liked|5[- ]star|five[- ]star/i,
+    )
     expect(msg).not.toMatch(/discount|off your next|free|gift card|reward/i)
   })
 
@@ -290,8 +295,14 @@ describe('we never ask for a review on a flood', () => {
   })
 
   afterAll(async () => {
-    await supabase.from('review_requests').delete().eq('appointment_id', appointmentId)
-    await supabase.from('ops_appointments').delete().eq('internal_notes', MARKER)
+    await supabase
+      .from('review_requests')
+      .delete()
+      .eq('appointment_id', appointmentId)
+    await supabase
+      .from('ops_appointments')
+      .delete()
+      .eq('internal_notes', MARKER)
     await supabase.from('restoration_projects').delete().eq('id', projectId)
   })
 
