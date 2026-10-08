@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import {
   Briefcase,
+  Ban,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -26,6 +27,7 @@ import { Label } from '@/components/ui/label'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
 import { CustomerDeleteControl } from './customer-delete-control'
+import { CustomerBlacklistControl } from './customer-blacklist-control'
 
 type CustomerAddress = {
   id: string
@@ -83,6 +85,9 @@ type CustomerRow = {
   phone: string
   notes: string | null
   email_opt_out: boolean | null
+  is_blacklisted?: boolean
+  blacklist_reason?: string | null
+  blacklisted_at?: string | null
   billing_mode?: 'immediate' | 'monthly_consolidated'
   quickbooks_customer_id: string | null
   created_at: string
@@ -198,8 +203,10 @@ function formatJobAddress(
 
 export function CustomersDirectory({
   canDeleteCustomers = false,
+  canManageBlacklist = false,
 }: {
   canDeleteCustomers?: boolean
+  canManageBlacklist?: boolean
 }) {
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
@@ -438,7 +445,11 @@ export function CustomersDirectory({
             return (
               <Card
                 key={customer.id}
-                className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur"
+                className={`bg-card/80 p-4 shadow-sm backdrop-blur ${
+                  customer.is_blacklisted
+                    ? 'border-red-500/45'
+                    : 'border-border/60'
+                }`}
               >
                 {isEditing && editForm ? (
                   /* ── Edit mode ──────────────────────────────── */
@@ -802,7 +813,7 @@ export function CustomersDirectory({
                           {customer.email ? ` · ${customer.email}` : ''}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <Button
                           size="sm"
                           variant="outline"
@@ -812,6 +823,33 @@ export function CustomersDirectory({
                           <Pencil className="h-3.5 w-3.5" />
                           Edit
                         </Button>
+                        {canManageBlacklist ? (
+                          <CustomerBlacklistControl
+                            customerId={customer.id}
+                            label={customer.business_name || customer.full_name}
+                            isBlacklisted={Boolean(customer.is_blacklisted)}
+                            reason={customer.blacklist_reason}
+                            onChanged={(blacklisted, reason) =>
+                              setCustomers((current) =>
+                                current.map((row) =>
+                                  row.id === customer.id
+                                    ? {
+                                        ...row,
+                                        is_blacklisted: blacklisted,
+                                        blacklist_reason: reason,
+                                        blacklisted_at: blacklisted
+                                          ? new Date().toISOString()
+                                          : null,
+                                        email_opt_out: blacklisted
+                                          ? true
+                                          : row.email_opt_out,
+                                      }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                        ) : null}
                         {canDeleteCustomers ? (
                           <CustomerDeleteControl
                             customerId={customer.id}
@@ -871,6 +909,16 @@ export function CustomersDirectory({
                       return (
                         <>
                           <div className="mt-3 flex flex-wrap gap-2">
+                            {customer.is_blacklisted ? (
+                              <Badge
+                                variant="outline"
+                                className="gap-1 border-red-500/45 bg-red-500/15 text-xs font-medium text-red-200"
+                                title={customer.blacklist_reason || undefined}
+                              >
+                                <Ban className="h-3 w-3" />
+                                Blacklisted
+                              </Badge>
+                            ) : null}
                             {upcoming.length > 0 ? (
                               <button
                                 type="button"

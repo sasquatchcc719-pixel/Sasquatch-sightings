@@ -11,6 +11,7 @@ export default async function CustomersPage() {
   return (
     <CustomersDirectory
       canDeleteCustomers={user.role === 'admin' || user.role === 'owner'}
+      canManageBlacklist={user.role === 'admin' || user.role === 'owner'}
     />
   )
 }

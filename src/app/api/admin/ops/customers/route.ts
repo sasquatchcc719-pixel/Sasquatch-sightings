@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { normalizePhone } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -48,6 +49,44 @@ export async function GET(request: NextRequest) {
 
     if (customers.length > 0) {
       const customerIds = customers.map((c: { id: string }) => c.id)
+      const customerPhones = new Set(
+        customers
+          .map((customer: { phone?: string | null }) =>
+            normalizePhone(String(customer.phone || '')),
+          )
+          .filter((phone: string) => phone.length === 10),
+      )
+      for (const customer of customers as Record<string, unknown>[]) {
+        customer.is_blacklisted = false
+        customer.blacklist_entry_id = null
+        customer.blacklist_reason = null
+        customer.blacklisted_at = null
+      }
+
+      if (customerPhones.size > 0) {
+        const { data: blacklistRows, error: blacklistError } = await supabase
+          .from('blacklist')
+          .select('id, phone, reason, created_at')
+          .in('phone', [...customerPhones])
+
+        if (blacklistError) throw blacklistError
+
+        const blacklistByPhone = new Map(
+          (blacklistRows || []).map((entry) => [
+            normalizePhone(String(entry.phone || '')),
+            entry,
+          ]),
+        )
+        for (const customer of customers as Record<string, unknown>[]) {
+          const entry = blacklistByPhone.get(
+            normalizePhone(String(customer.phone || '')),
+          )
+          customer.is_blacklisted = Boolean(entry)
+          customer.blacklist_entry_id = entry?.id ?? null
+          customer.blacklist_reason = entry?.reason ?? null
+          customer.blacklisted_at = entry?.created_at ?? null
+        }
+      }
 
       const { data: statsRows } = await supabase.rpc(
         'get_customer_stats_batch',

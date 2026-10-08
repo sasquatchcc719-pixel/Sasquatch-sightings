@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { normalizePhone } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
 import {
   invalidateGeocodeForAddressUpdate,
@@ -18,7 +19,7 @@ export async function PATCH(
 
     const { data: existing, error: existingError } = await supabase
       .from('ops_customers')
-      .select('id, billing_mode')
+      .select('id, billing_mode, phone, full_name, business_name')
       .eq('id', id)
       .single()
 
@@ -29,6 +30,9 @@ export async function PATCH(
     if (body.customer && typeof body.customer === 'object') {
       const c = body.customer
       const updates: Record<string, unknown> = {}
+      let blacklistUpdate:
+        | { id: string; phone: string; name: string }
+        | undefined
 
       if (c.first_name !== undefined) updates.first_name = c.first_name
       if (c.last_name !== undefined) updates.last_name = c.last_name
@@ -52,6 +56,69 @@ export async function PATCH(
       if (c.notes !== undefined) updates.notes = c.notes || null
       if (c.email_opt_out !== undefined)
         updates.email_opt_out = Boolean(c.email_opt_out)
+
+      const blacklistProfileChanged =
+        c.phone !== undefined ||
+        c.full_name !== undefined ||
+        c.first_name !== undefined ||
+        c.last_name !== undefined ||
+        c.business_name !== undefined
+      if (blacklistProfileChanged) {
+        const oldPhone = normalizePhone(String(existing.phone || ''))
+        const { data: blacklistEntry, error: blacklistLookupError } =
+          oldPhone.length === 10
+            ? await supabase
+                .from('blacklist')
+                .select('id')
+                .eq('phone', oldPhone)
+                .maybeSingle()
+            : { data: null, error: null }
+
+        if (blacklistLookupError) throw blacklistLookupError
+
+        if (blacklistEntry) {
+          const nextPhone = normalizePhone(
+            String(c.phone !== undefined ? c.phone : existing.phone || ''),
+          )
+          if (nextPhone.length !== 10) {
+            return NextResponse.json(
+              {
+                error:
+                  'A blacklisted customer must keep a valid 10-digit phone number.',
+              },
+              { status: 400 },
+            )
+          }
+
+          if (nextPhone !== oldPhone) {
+            const { data: conflict, error: conflictError } = await supabase
+              .from('blacklist')
+              .select('id')
+              .eq('phone', nextPhone)
+              .maybeSingle()
+            if (conflictError) throw conflictError
+            if (conflict && conflict.id !== blacklistEntry.id) {
+              return NextResponse.json(
+                { error: 'The new phone number is already blacklisted.' },
+                { status: 409 },
+              )
+            }
+          }
+
+          const nextBusinessName =
+            c.business_name !== undefined
+              ? c.business_name
+              : existing.business_name
+          blacklistUpdate = {
+            id: blacklistEntry.id,
+            phone: nextPhone,
+            name: String(
+              nextBusinessName || updates.full_name || existing.full_name,
+            ),
+          }
+        }
+      }
+
       if (c.billing_mode !== undefined) {
         if (!['immediate', 'monthly_consolidated'].includes(c.billing_mode)) {
           return NextResponse.json(
@@ -105,6 +172,17 @@ export async function PATCH(
           .update(updates)
           .eq('id', id)
         if (customerError) throw customerError
+      }
+
+      if (blacklistUpdate) {
+        const { error: blacklistError } = await supabase
+          .from('blacklist')
+          .update({
+            phone: blacklistUpdate.phone,
+            name: blacklistUpdate.name,
+          })
+          .eq('id', blacklistUpdate.id)
+        if (blacklistError) throw blacklistError
       }
     }
 
