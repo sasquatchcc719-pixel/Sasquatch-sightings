@@ -29,8 +29,7 @@ const products = [
     description:
       'Reduces calcium and magnesium hardness to help limit scale and soap residue. Typically uses salt and needs routine upkeep. A softener is not a general drinking-water filter.',
     photo: 'Water softener and salt tank',
-    y: 706,
-    height: 161,
+    image: '/tap/water-installations/water-softener.png',
   },
   {
     name: 'Whole-House Filtration',
@@ -38,8 +37,7 @@ const products = [
     description:
       'Treats incoming water with selected filter media. Options can address sediment, chlorine, taste or odor. Filter type and service schedule depend on the water and system.',
     photo: 'Whole-house water filter housings connected to copper plumbing',
-    y: 877,
-    height: 155,
+    image: '/tap/water-installations/whole-house-filter.png',
   },
   {
     name: 'Reverse Osmosis',
@@ -47,8 +45,7 @@ const products = [
     description:
       'Usually installed under a kitchen sink. Uses a membrane and filters to reduce selected dissolved substances. Choose verified reduction claims; filters and membranes require replacement.',
     photo: 'Under-sink reverse osmosis filters and storage tank',
-    y: 1042,
-    height: 153,
+    image: '/tap/water-installations/reverse-osmosis.png',
   },
   {
     name: 'Specialty Filtration',
@@ -56,8 +53,7 @@ const products = [
     description:
       'Targets measured issues such as iron or manganese. The right media and system depend on concentrations and water chemistry. Testing guides whether specialty treatment is appropriate.',
     photo: 'Specialty water filtration tank in a utility room',
-    y: 1208,
-    height: 165,
+    image: '/tap/water-installations/specialty-filter.png',
   },
   {
     name: 'Automatic Emergency Water Shutoff',
@@ -65,8 +61,7 @@ const products = [
     description:
       'When a leak is detected, a compatible automatic shutoff system can close your home’s main water supply—helping keep a small leak from becoming major water damage.',
     photo: 'Automatic shutoff valve on the water supply with a leak sensor',
-    y: 1386,
-    height: 172,
+    image: '/tap/water-installations/automatic-shutoff.png',
   },
 ]
 
@@ -135,15 +130,13 @@ export default function WaterSolutionsPage() {
           <div className={styles.products}>
             {products.map((product) => (
               <article key={product.name} className={styles.product}>
-                <div
-                  role="img"
-                  aria-label={product.photo}
+                <Image
+                  src={product.image}
+                  alt={product.photo}
+                  width={1536}
+                  height={1024}
+                  sizes="(max-width: 700px) 94vw, 360px"
                   className={styles.productPhoto}
-                  style={{
-                    aspectRatio: `300 / ${product.height}`,
-                    backgroundSize: `${(887 / 300) * 100}% auto`,
-                    backgroundPosition: `${(2 / (887 - 300)) * 100}% ${(product.y / (1774 - product.height)) * 100}%`,
-                  }}
                 />
                 <div className={styles.productCopy}>
                   <h3>{product.name}</h3>

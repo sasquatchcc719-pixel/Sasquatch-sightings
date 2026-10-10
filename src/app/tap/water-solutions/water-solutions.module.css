@@ -115,9 +115,9 @@
   background: #f6f6ef;
 }
 .productPhoto {
+  display: block;
   width: 100%;
-  background-image: url('/tap/water-solutions-long.png');
-  background-repeat: no-repeat;
+  height: auto;
 }
 .productCopy {
   padding: 25px 28px;

@@ -251,6 +251,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Date and time inputs in scheduling editors must open their native selector when the user clicks anywhere in the field, including after layout or multi-day range changes.
 - Water-damage emergency guidance should tell customers to stop the source, document damage, protect small valuables, and leave carpet and pad in place; never ask them to extract the water or avoid necessary walking.
 - Build NFC sales destinations as responsive pages using the approved long-form copy; keep print flyers separate and match image-button frames to the existing card buttons.
+- Water-treatment imagery must show finished professional installations with credible equipment and connected plumbing; generate each product image separately instead of enlarging small artwork from a flyer.
 
 ---
 
