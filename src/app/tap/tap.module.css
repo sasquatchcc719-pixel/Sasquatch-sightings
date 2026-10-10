@@ -76,21 +76,24 @@
   display: grid;
   gap: 18px;
 }
-.waterSolutions {
+.actionPanel.waterSolutions {
   display: block;
-  overflow: hidden;
-  border: 2px solid #b7cdbb;
-  border-radius: 10px;
-  box-shadow: 0 8px 20px #0005;
-  transition: filter 180ms;
+  padding: 8px;
 }
 .waterSolutions img {
   display: block;
   width: 100%;
   height: auto;
-}
-.waterSolutions:hover {
-  filter: brightness(1.06);
+  clip-path: polygon(
+    10px 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0 calc(100% - 10px),
+    0 10px
+  );
 }
 .actionPanel {
   position: relative;

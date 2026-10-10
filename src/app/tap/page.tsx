@@ -276,7 +276,7 @@ export default function TapLandingPage() {
                 ? `/tap/water-solutions?card=${encodeURIComponent(cardId)}`
                 : '/tap/water-solutions'
             }
-            className={styles.waterSolutions}
+            className={`${styles.actionPanel} ${styles.waterSolutions}`}
             aria-label="Explore water testing, treatment and leak protection"
             onClick={() => void trackButtonClick('water_solutions')}
           >
