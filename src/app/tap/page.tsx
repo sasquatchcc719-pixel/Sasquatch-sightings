@@ -270,6 +270,25 @@ export default function TapLandingPage() {
             <ChevronRight className={styles.actionArrow} aria-hidden="true" />
           </button>
 
+          <Link
+            href={
+              cardId
+                ? `/tap/water-solutions?card=${encodeURIComponent(cardId)}`
+                : '/tap/water-solutions'
+            }
+            className={styles.waterSolutions}
+            aria-label="Explore water testing, treatment and leak protection"
+            onClick={() => void trackButtonClick('water_solutions')}
+          >
+            <Image
+              src="/tap/water-solutions-button.png"
+              alt="Water Testing, Treatment & Leak Protection. Understand your water. Explore your options."
+              width={1774}
+              height={887}
+              sizes="(max-width: 560px) 94vw, 524px"
+            />
+          </Link>
+
           <button
             type="button"
             className={`${styles.actionPanel} ${styles.estimate}`}

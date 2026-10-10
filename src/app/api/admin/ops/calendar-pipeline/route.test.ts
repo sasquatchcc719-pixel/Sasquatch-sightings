@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addOneCalendarYear, mountainDateKey } from './route'
+import { addOneCalendarYear, mountainDateKey } from '@/lib/ops/calendar-dates'
 
 describe('calendar pipeline rolling window', () => {
   it('ends on the same calendar date next year', () => {

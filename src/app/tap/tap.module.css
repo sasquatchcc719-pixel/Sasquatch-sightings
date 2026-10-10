@@ -76,6 +76,22 @@
   display: grid;
   gap: 18px;
 }
+.waterSolutions {
+  display: block;
+  overflow: hidden;
+  border: 2px solid #b7cdbb;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px #0005;
+  transition: filter 180ms;
+}
+.waterSolutions img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.waterSolutions:hover {
+  filter: brightness(1.06);
+}
 .actionPanel {
   position: relative;
   isolation: isolate;
