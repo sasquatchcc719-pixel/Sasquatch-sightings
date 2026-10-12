@@ -251,12 +251,17 @@
   display: grid;
   grid-template-columns: 42% 1fr;
   align-items: center;
+  margin: 0 36px 28px;
+  overflow: hidden;
+  border: 1px solid #cbd8c4;
+  border-radius: 14px;
   background: #eaf0e6;
 }
 .leakPhoto {
   display: block;
   width: 100%;
-  height: 215px;
+  height: 100%;
+  min-height: 265px;
   object-fit: cover;
 }
 .leak > div {
@@ -267,6 +272,9 @@
 }
 .leak p {
   margin-top: 10px;
+}
+.leak .eyebrow {
+  margin: 0 0 10px;
 }
 .footer {
   position: relative;
@@ -406,9 +414,11 @@
   }
   .leak {
     grid-template-columns: 1fr;
+    margin: 0 22px 24px;
   }
   .leakPhoto {
-    height: 130px;
+    height: 155px;
+    min-height: 0;
     object-position: center 48%;
   }
   .leak > div {

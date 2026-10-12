@@ -68,7 +68,10 @@ const treatments = [
 ]
 
 const steps = [
-  ['Collect & Test', 'Choose a panel for your water source and concerns.'],
+  [
+    'Collect & Test',
+    'We collect a water sample and send it to a lab for testing.',
+  ],
   [
     'Understand Your Results',
     'See the findings and treatment categories worth evaluating.',
@@ -173,6 +176,35 @@ export default function WaterSolutionsPage() {
         </section>
 
         <section
+          className={styles.leak}
+          aria-labelledby="leak-protection-title"
+        >
+          <Image
+            src="/tap/water-installations/automatic-shutoff.png"
+            alt="Smart automatic main-water shutoff valve installed on copper plumbing with a leak sensor"
+            width={1536}
+            height={1024}
+            sizes="(max-width: 700px) 90vw, 420px"
+            className={styles.leakPhoto}
+          />
+          <div>
+            <p className={styles.eyebrow}>Leak protection</p>
+            <h2 id="leak-protection-title">
+              Protect your home from plumbing leaks, too.
+            </h2>
+            <p>
+              Leaks can happen in any home, regardless of water quality. Leak
+              sensors, smart water monitors and automatic main-water shutoff
+              systems can help detect leaks and limit water damage.
+            </p>
+            <p>
+              A plumbing professional checks your home’s setup and recommends
+              compatible equipment.
+            </p>
+          </div>
+        </section>
+
+        <section
           className={styles.process}
           aria-labelledby="water-process-title"
         >
@@ -224,29 +256,6 @@ export default function WaterSolutionsPage() {
             <Phone size={20} aria-hidden="true" /> Call (719) 249-8791{' '}
             <ChevronRight size={22} aria-hidden="true" />
           </a>
-        </section>
-
-        <section
-          className={styles.leak}
-          aria-labelledby="leak-protection-title"
-        >
-          <Image
-            src="/tap/water-installations/automatic-shutoff.png"
-            alt="Smart automatic main-water shutoff valve installed on copper plumbing with a leak sensor"
-            width={1536}
-            height={1024}
-            sizes="(max-width: 700px) 100vw, 450px"
-            className={styles.leakPhoto}
-          />
-          <div>
-            <h2 id="leak-protection-title">
-              Protect your home from plumbing leaks, too.
-            </h2>
-            <p>
-              Leak sensors, smart water monitors and automatic shutoff systems
-              require a separate plumbing assessment.
-            </p>
-          </div>
         </section>
 
         <footer className={styles.footer}>
