@@ -53,6 +53,7 @@ type Account = {
   id: string
   business_name: string
   full_name: string
+  phone: string | null
   ops_commercial_agreements: { id: string; status: string }[]
   ops_client_users: { id: string; is_active: boolean }[]
   ops_commercial_profiles: SchedulingSmsProfile | SchedulingSmsProfile[] | null
@@ -158,8 +159,10 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
 
 function SchedulingTextStatus({
   preferences,
+  usesBookingPhone = false,
 }: {
   preferences?: CommercialSmsPreferences
+  usesBookingPhone?: boolean
 }) {
   const signedUp =
     preferences?.enabled === true &&
@@ -167,15 +170,24 @@ function SchedulingTextStatus({
     !!preferences.phone.trim()
   const label = signedUp
     ? 'Signed up'
-    : preferences?.optedOutAt
-      ? 'Opted out'
-      : 'Not signed up'
+    : usesBookingPhone
+      ? 'Booking number'
+      : preferences?.optedOutAt
+        ? 'Opted out'
+        : 'Not signed up'
   return (
     <span
+      title={
+        usesBookingPhone
+          ? 'Uses the existing customer phone for booking texts. No portal signup is recorded.'
+          : undefined
+      }
       className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
         signedUp
           ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-200'
-          : 'border-amber-400/50 bg-amber-400/15 text-amber-200'
+          : usesBookingPhone
+            ? 'border-cyan-400/50 bg-cyan-400/15 text-cyan-200'
+            : 'border-amber-400/50 bg-amber-400/15 text-amber-200'
       }`}
     >
       <MessageSquare className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -290,6 +302,7 @@ export function CommercialAccounts() {
                 </h3>
                 <div className="mt-3">
                   <SchedulingTextStatus
+                    usesBookingPhone={!profile && !!c.phone?.trim()}
                     preferences={{
                       phone: profile?.scheduling_sms_phone || '',
                       enabled: profile?.scheduling_sms_enabled === true,
@@ -491,7 +504,10 @@ export function CommercialAccount({
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h2 className="text-3xl font-bold">{data.businessName}</h2>
-            <SchedulingTextStatus preferences={data.smsPreferences} />
+            <SchedulingTextStatus
+              preferences={data.smsPreferences}
+              usesBookingPhone={data.smsUsesBookingPhone}
+            />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

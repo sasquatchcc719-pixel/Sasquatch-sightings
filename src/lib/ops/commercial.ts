@@ -168,6 +168,7 @@ export type CommercialData = {
     published_at: string
   }[]
   smsPreferences?: CommercialSmsPreferences
+  smsUsesBookingPhone?: boolean
   businessName: string
   addresses: {
     id: string

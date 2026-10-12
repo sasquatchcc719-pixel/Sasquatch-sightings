@@ -254,6 +254,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Water-treatment imagery must show finished professional installations with credible equipment and connected plumbing; generate each product image separately instead of enlarging small artwork from a flyer.
 - Recurring note edits must preserve existing appointment and invoice IDs; regenerate only for actual schedule or pricing changes, and exclude the edited plan's own visits from conflict previews.
 - Put staff customer-detail collection beside the business name; provide a prominent phone-intake action and keep its form directly below the account heading.
+- Commercial text status must distinguish portal opt-in from existing booking-number texts; no portal signup does not mean reminders are off when no commercial profile exists.
 
 ---
 

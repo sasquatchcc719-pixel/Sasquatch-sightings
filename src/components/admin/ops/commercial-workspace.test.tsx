@@ -59,17 +59,19 @@ describe('commercial text reminder status', () => {
   }
 
   it.each([
-    [authorized, 'Signed up'],
-    [{ ...authorized, consentAt: null }, 'Not signed up'],
-    [{ ...authorized, phone: '' }, 'Not signed up'],
+    [authorized, 'Signed up', false],
+    [{ ...authorized, consentAt: null }, 'Not signed up', false],
+    [{ ...authorized, phone: '' }, 'Not signed up', false],
     [
       { ...authorized, enabled: false, optedOutAt: '2026-10-09T12:00:00Z' },
       'Opted out',
+      false,
     ],
-    [undefined, 'Not signed up'],
+    [undefined, 'Not signed up', false],
+    [undefined, 'Booking number', true],
   ])(
     'shows saved enrollment beside the account name: %j',
-    async (preferences, label) => {
+    async (preferences, label, usesBookingPhone) => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({
@@ -78,6 +80,7 @@ describe('commercial text reminder status', () => {
             businessName: 'Example Business',
             profile: emptyProfile,
             smsPreferences: preferences,
+            smsUsesBookingPhone: usesBookingPhone,
             agreements: [],
             addresses: [],
             estimates: [],
@@ -116,6 +119,18 @@ describe('commercial text reminder status', () => {
         ops_commercial_profiles: null,
       },
       {
+        id: 'booking',
+        business_name: 'Existing Booking Business',
+        phone: '+17195550100',
+        ops_commercial_profiles: null,
+      },
+      {
+        id: 'disabled',
+        business_name: 'Disabled Profile Business',
+        phone: '+17195550100',
+        ops_commercial_profiles: { ...enrolled, scheduling_sms_enabled: false },
+      },
+      {
         id: 'stopped',
         business_name: 'Stopped Business',
         ops_commercial_profiles: {
@@ -132,18 +147,18 @@ describe('commercial text reminder status', () => {
     }))
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({ customers, requests: [] }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ customers, requests: [] }),
+      }),
     )
     render(<CommercialAccounts />)
     for (const [name, label] of [
       ['Enrolled Business', 'Signed up'],
       ['New Business', 'Not signed up'],
       ['Stopped Business', 'Opted out'],
+      ['Existing Booking Business', 'Booking number'],
+      ['Disabled Profile Business', 'Not signed up'],
     ]) {
       const card = await screen.findByRole('link', { name: new RegExp(name) })
       expect(

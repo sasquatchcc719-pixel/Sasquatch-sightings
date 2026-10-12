@@ -10,8 +10,46 @@ import {
   SIGNATURE_CONSENT,
   type CommercialAgreement,
 } from './commercial'
-import { agreementHash } from './commercial-server'
+import { agreementHash, loadCommercialData } from './commercial-server'
 import { commercialDocument } from './commercial-document'
+
+describe('commercial booking text status', () => {
+  it.each([
+    [null, '+17195550100', true],
+    [{}, '+17195550100', false],
+    [null, '', false],
+  ])(
+    'preserves the distinction between no profile and disabled portal texts',
+    async (profile, phone, expected) => {
+      const from = vi.fn((table: string) => {
+        const data =
+          table === 'ops_customers'
+            ? {
+                business_name: 'Existing Business',
+                full_name: 'Lance',
+                email: '',
+                phone,
+              }
+            : table === 'ops_commercial_profiles'
+              ? profile
+              : []
+        const result = { data, error: null }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue(result),
+          maybeSingle: vi.fn().mockResolvedValue(result),
+          then: (resolve: (value: typeof result) => unknown) => resolve(result),
+        }
+      })
+      const data = await loadCommercialData({ from } as never, 'customer-a')
+      expect(data.smsUsesBookingPhone).toBe(expected)
+      expect(data.smsPreferences?.enabled).toBe(false)
+    },
+  )
+})
 
 describe('commercial agreement integrity', () => {
   it('requests 24 hours notice in new drafts without adding fees or penalties', () => {

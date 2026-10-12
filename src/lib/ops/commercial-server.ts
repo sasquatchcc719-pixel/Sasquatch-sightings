@@ -98,6 +98,7 @@ export async function loadCommercialData(
     },
     agreements: agreements.data || [],
     documents: documents.data || [],
+    smsUsesBookingPhone: !profile.data && !!customer.data!.phone?.trim(),
     smsPreferences: {
       phone: savedSmsPreferences?.scheduling_sms_phone || '',
       enabled: savedSmsPreferences?.scheduling_sms_enabled === true,
