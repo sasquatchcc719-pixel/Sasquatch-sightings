@@ -13,8 +13,9 @@ import {
 } from 'recharts'
 import { Card } from '@/components/ui/card'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
+import type { BusinessLaborSummary } from '@/lib/ops/business-labor'
 
-export type BusinessCostSnapshot = {
+export type BusinessCostSnapshot = Partial<BusinessLaborSummary> & {
   periodKind: 'rolling_28_day' | 'weekly' | 'year_to_date'
   windowStart: string
   windowEnd: string
@@ -34,7 +35,15 @@ const DAY_MS = 86_400_000
 
 export type BusinessEconomicsRange = '30d' | '90d' | 'year'
 
-type ChartPoint = BusinessCostSnapshot & {
+type Reading = BusinessCostSnapshot & { costPerHour: number; costPct: number }
+function trackedReading(snapshot: BusinessCostSnapshot): Reading {
+  return {
+    ...snapshot,
+    costPerHour: snapshot.trackedCostPerHour ?? snapshot.bookCostPerHour,
+    costPct: snapshot.trackedCostPct ?? snapshot.bookCostPct,
+  }
+}
+type ChartPoint = Reading & {
   timestamp: number
   hourlyGapRange: [number, number]
   profitable: boolean
@@ -53,10 +62,10 @@ function dateTimestamp(date: string) {
   return new Date(`${date}T12:00:00Z`).getTime()
 }
 
-export function filterBusinessCostSnapshots(
-  snapshots: BusinessCostSnapshot[],
+export function filterBusinessCostSnapshots<T extends BusinessCostSnapshot>(
+  snapshots: T[],
   range: BusinessEconomicsRange,
-): BusinessCostSnapshot[] {
+): T[] {
   const latest = snapshots.at(-1)
   if (!latest) return []
   if (range === 'year') {
@@ -117,7 +126,7 @@ function EconomicsTooltip({
   payload,
 }: {
   active?: boolean
-  payload?: Array<{ payload?: BusinessCostSnapshot }>
+  payload?: Array<{ payload?: Reading }>
 }) {
   const point = payload?.[0]?.payload
   if (!active || !point) return null
@@ -133,16 +142,16 @@ function EconomicsTooltip({
           <strong>{money(point.revenuePerHour)}</strong>
         </div>
         <div className="flex justify-between gap-5 text-orange-400">
-          <span>QuickBooks cost/hour</span>
-          <strong>{money(point.bookCostPerHour)}</strong>
+          <span>Tracked cost/hour</span>
+          <strong>{money(point.costPerHour)}</strong>
         </div>
         <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
           <span>Cost share</span>
-          <strong>{point.bookCostPct.toFixed(1)}%</strong>
+          <strong>{point.costPct.toFixed(1)}%</strong>
         </div>
         <div className="flex justify-between gap-5">
-          <span>Margin after costs</span>
-          <strong>{(100 - point.bookCostPct).toFixed(1)}%</strong>
+          <span>After tracked costs</span>
+          <strong>{(100 - point.costPct).toFixed(1)}%</strong>
         </div>
       </div>
     </div>
@@ -150,12 +159,17 @@ function EconomicsTooltip({
 }
 
 export function BusinessEconomicsChart({
-  weeklySnapshots,
-  yearToDate,
+  weeklySnapshots: savedWeeklySnapshots,
+  yearToDate: savedYearToDate,
 }: {
   weeklySnapshots: BusinessCostSnapshot[]
   yearToDate: BusinessCostSnapshot | null
 }) {
+  const weeklySnapshots = useMemo(
+    () => savedWeeklySnapshots.map(trackedReading),
+    [savedWeeklySnapshots],
+  )
+  const yearToDate = savedYearToDate ? trackedReading(savedYearToDate) : null
   const [range, setRange] = useState<BusinessEconomicsRange>('90d')
   const [selectedWindowEnd, setSelectedWindowEnd] = useState<string | null>(
     null,
@@ -171,10 +185,10 @@ export function BusinessEconomicsChart({
         ...snapshot,
         timestamp: dateTimestamp(snapshot.windowEnd),
         hourlyGapRange: [
-          Math.min(snapshot.revenuePerHour, snapshot.bookCostPerHour),
-          Math.max(snapshot.revenuePerHour, snapshot.bookCostPerHour),
+          Math.min(snapshot.revenuePerHour, snapshot.costPerHour),
+          Math.max(snapshot.revenuePerHour, snapshot.costPerHour),
         ],
-        profitable: snapshot.revenuePerHour >= snapshot.bookCostPerHour,
+        profitable: snapshot.revenuePerHour >= snapshot.costPerHour,
       })),
     [filteredSnapshots],
   )
@@ -188,7 +202,7 @@ export function BusinessEconomicsChart({
     ) ||
     filteredSnapshots.at(-1) ||
     latest
-  const costShare = Math.max(0, Math.min(100, selected.bookCostPct))
+  const costShare = Math.max(0, Math.min(100, selected.costPct))
   const marginShare = Math.max(0, 100 - costShare)
   const topExpenses = Object.entries(selected.expenseBreakdown)
     .filter(([label, amount]) =>
@@ -254,13 +268,13 @@ export function BusinessEconomicsChart({
             Business Economics
           </h2>
           <p className="text-muted-foreground mt-1 max-w-3xl text-sm">
-            The year-to-date average answers what the business normally earns
-            and costs. The weekly view shows what moved in the most recently
-            completed Thursday–Wednesday periods.
+            Compare earned revenue with recorded payroll and QuickBooks non-wage
+            costs. Payroll follows the work date, so a week without a paycheck
+            no longer looks like a week without labor.
           </p>
         </div>
         <span className="w-fit rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
-          Updated from QuickBooks weekly
+          QuickBooks + recorded payroll
         </span>
       </div>
 
@@ -288,22 +302,20 @@ export function BusinessEconomicsChart({
               </p>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs">
-                QuickBooks cost/hour
-              </p>
+              <p className="text-muted-foreground text-xs">Tracked cost/hour</p>
               <p className="mt-1 text-3xl font-bold text-slate-100">
-                {money(yearToDate.bookCostPerHour)}
+                {money(yearToDate.costPerHour)}
               </p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs">
-                Margin after costs
+                After tracked costs
               </p>
               <p className="mt-1 text-3xl font-bold text-violet-300">
-                {(100 - yearToDate.bookCostPct).toFixed(1)}%
+                {(100 - yearToDate.costPct).toFixed(1)}%
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                {yearToDate.bookCostPct.toFixed(1)}% cost share
+                {yearToDate.costPct.toFixed(1)}% cost share
               </p>
             </div>
           </div>
@@ -314,10 +326,17 @@ export function BusinessEconomicsChart({
         <h3 className="text-lg font-semibold text-amber-300">
           Weekly movement
         </h3>
+        {!!latest.laborIssues?.length && (
+          <p className="mt-2 font-semibold text-amber-200">
+            Provisional reading — payroll needs review. See the selected-week
+            details below.
+          </p>
+        )}
         <p className="text-muted-foreground mt-1 text-sm">
           Latest completed week: {dateLabel(latest.windowStart)}–
-          {dateLabel(latest.windowEnd)}. Weekly expenses will naturally move
-          more sharply than the annual average. Use the range controls below to
+          {dateLabel(latest.windowEnd)}. Revenue and cost per hour use the same
+          productive-hour total, including tracked travel. Payroll uses paid
+          clock hours, including non-job work. Use the range controls below to
           compare the last 30 days, 90 days, or the calendar year.
         </p>
       </div>
@@ -333,25 +352,20 @@ export function BusinessEconomicsChart({
           )}
         </Card>
         <Card className="border-orange-500/25 bg-orange-500/[0.05] p-4">
-          <p className="text-muted-foreground text-xs">QuickBooks cost/hour</p>
+          <p className="text-muted-foreground text-xs">Tracked cost/hour</p>
           <p className="mt-1 text-2xl font-bold text-orange-300">
-            {money(latest.bookCostPerHour)}
+            {money(latest.costPerHour)}
           </p>
           {previous && (
-            <Trend
-              value={latest.bookCostPerHour - previous.bookCostPerHour}
-              inverse
-            />
+            <Trend value={latest.costPerHour - previous.costPerHour} inverse />
           )}
         </Card>
         <Card className="border-violet-500/25 bg-violet-500/[0.05] p-4">
-          <p className="text-muted-foreground text-xs">Margin after costs</p>
+          <p className="text-muted-foreground text-xs">After tracked costs</p>
           <p className="mt-1 text-2xl font-bold text-violet-300">
-            {(100 - latest.bookCostPct).toFixed(1)}%
+            {(100 - latest.costPct).toFixed(1)}%
           </p>
-          {previous && (
-            <Trend value={previous.bookCostPct - latest.bookCostPct} />
-          )}
+          {previous && <Trend value={previous.costPct - latest.costPct} />}
         </Card>
       </div>
 
@@ -363,16 +377,15 @@ export function BusinessEconomicsChart({
                 <span className="h-0.5 w-5 bg-emerald-400" /> Revenue/hour
               </span>
               <span className="flex items-center gap-2 text-orange-400">
-                <span className="h-0.5 w-5 bg-orange-400" /> QuickBooks
-                cost/hour
+                <span className="h-0.5 w-5 bg-orange-400" /> Tracked cost/hour
               </span>
               <span className="flex items-center gap-2 text-emerald-400">
                 <span className="h-2.5 w-5 rounded-sm bg-emerald-500/25" />
-                Profitable gap
+                Revenue above tracked costs
               </span>
               <span className="flex items-center gap-2 text-rose-400">
                 <span className="h-2.5 w-5 rounded-sm bg-rose-500/25" />
-                Loss gap
+                Costs above revenue
               </span>
             </div>
             <p className="text-muted-foreground mt-2 text-[11px]">
@@ -491,7 +504,7 @@ export function BusinessEconomicsChart({
               <Line
                 yAxisId="dollars"
                 type="linear"
-                dataKey="bookCostPerHour"
+                dataKey="costPerHour"
                 stroke="#fb923c"
                 strokeWidth={3}
                 dot={{
@@ -531,6 +544,39 @@ export function BusinessEconomicsChart({
           <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-3">
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
+                Recorded wages + extras
+              </p>
+              <p className="mt-1 text-xl font-bold text-orange-300">
+                {money(selected.recordedLabor ?? 0)}
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {(selected.recordedPaidHours ?? 0).toFixed(1)} paid clock hours
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-[11px] uppercase">
+                Total tracked cost
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-100">
+                {money(selected.trackedCost ?? selected.quickbooksCost)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-[11px] uppercase">
+                Booked wages replaced
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-100">
+                {money(
+                  (selected.bookedWages ?? 0) -
+                    (selected.retainedBookWages ?? 0),
+                )}
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Removed from QuickBooks cost to avoid counting payroll twice
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-[11px] uppercase">
                 Total revenue
               </p>
               <p className="mt-1 text-xl font-bold text-slate-100">
@@ -547,18 +593,18 @@ export function BusinessEconomicsChart({
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                QuickBooks cost/hour
+                Tracked cost/hour
               </p>
               <p className="mt-1 text-xl font-bold text-slate-200">
-                {money(selected.bookCostPerHour)}
+                {money(selected.costPerHour)}
               </p>
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                QuickBooks cost
+                QB non-wage costs
               </p>
               <p className="mt-1 text-base font-semibold text-slate-100">
-                {money(selected.quickbooksCost)}
+                {money(selected.otherBookCosts ?? selected.quickbooksCost)}
               </p>
             </div>
             <div>
@@ -566,33 +612,52 @@ export function BusinessEconomicsChart({
                 Cost share
               </p>
               <p className="mt-1 text-base font-semibold text-orange-300">
-                {selected.bookCostPct.toFixed(1)}%
+                {selected.costPct.toFixed(1)}%
               </p>
             </div>
             <div>
               <p className="text-muted-foreground text-[11px] uppercase">
-                Margin after costs
+                After tracked costs
               </p>
               <p
                 className={`mt-1 text-base font-semibold ${
-                  100 - selected.bookCostPct >= 0
+                  100 - selected.costPct >= 0
                     ? 'text-emerald-300'
                     : 'text-rose-300'
                 }`}
               >
-                {(100 - selected.bookCostPct).toFixed(1)}%
+                {(100 - selected.costPct).toFixed(1)}%
               </p>
             </div>
           </div>
+          {(selected.laborIssues?.length ?? 0) > 0 && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-200"
+            >
+              <p className="font-semibold">
+                Provisional — payroll needs review
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {selected.laborIssues!.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs">
+                The figures use the recorded timesheet; no shift times have been
+                changed.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="mt-4">
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-medium text-orange-300">
-              {selected.bookCostPct.toFixed(1)}% cost
+              {selected.costPct.toFixed(1)}% cost
             </span>
             <span className="font-medium text-emerald-300">
-              {(100 - selected.bookCostPct).toFixed(1)}% margin after costs
+              {(100 - selected.costPct).toFixed(1)}% after tracked costs
             </span>
           </div>
           <div className="bg-muted flex h-3 overflow-hidden rounded-full">
@@ -626,13 +691,18 @@ export function BusinessEconomicsChart({
         )}
 
         <p className="text-muted-foreground mt-4 text-[11px] leading-relaxed">
-          Both views use actual cash-basis QuickBooks P&amp;L expenses and
-          remove reconciliation discrepancies. No estimate is added for owner
-          labor, depreciation, Square fees, loan principal, owner draws,
-          income-tax payments, or untracked office time. The calendar-year chart
-          leaves January through early May blank because reliable week-level
-          time records begin May 7; the YTD benchmark above still includes
-          January onward.
+          Tracked cost combines recorded gross wages, earned paid-invoice
+          bonuses, and approved premiums with QuickBooks non-wage expenses.
+          Recorded payroll replaces QuickBooks wage payments for the same
+          reporting window; wages before timeclock coverage remain booked.
+          Payroll follows work dates; other expenses follow cash-basis
+          QuickBooks dates. Employer taxes and insurance remain where booked, so
+          these figures are not a complete net profit or the configured $31
+          loaded-labor estimate. Missing time and unpaid owner labor are not
+          invented. Productive hours come from job and revenue records,
+          including tracked travel; scheduled duration is used when actual job
+          timestamps are missing. Paid clock hours are a separate measure.
+          Historical weeks before reliable time records are left blank.
         </p>
       </Card>
     </section>

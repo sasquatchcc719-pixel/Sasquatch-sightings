@@ -87,7 +87,7 @@ export async function loadPartnerLiveStats(
           ? [inv.ops_invoice_line_items]
           : []
       s.revenue += effectiveInvoiceAmount({
-        invoiceTotal: Number(inv?.total || 0),
+        invoiceTotal: inv?.total != null ? Number(inv.total) : null,
         invoiceLineItems: lineItems,
         quotedTotal: Number(appt.quoted_total || 0),
         kind: appt.kind ? String(appt.kind) : null,

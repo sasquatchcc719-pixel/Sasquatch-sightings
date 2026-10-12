@@ -27,12 +27,16 @@ export async function GET(request: NextRequest) {
       windows,
       'weekly',
     )
-    const [yearToDate] = await refreshBusinessCostSnapshots(
+    await refreshBusinessCostSnapshots(
       supabase,
       [yearToDateCostWindow()],
       'year_to_date',
     )
-    const snapshots = await loadBusinessCostSnapshots(supabase, 'weekly')
+    const [snapshots, yearToDateSnapshots] = await Promise.all([
+      loadBusinessCostSnapshots(supabase, 'weekly'),
+      loadBusinessCostSnapshots(supabase, 'year_to_date', 1),
+    ])
+    const yearToDate = yearToDateSnapshots.at(-1)
     const digest = buildBusinessCostDigest(snapshots, yearToDate || null)
     const report = buildBusinessCostReportCard(snapshots, yearToDate || null)
     if (!report) {

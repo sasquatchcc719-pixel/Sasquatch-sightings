@@ -17,6 +17,7 @@ import {
 import { isBlacklisted } from '@/lib/blacklist'
 import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
 import { settleOptionalInvoiceLookup } from '@/lib/ops/invoice-loading'
+import { syncRecordedInvoiceRevenue } from '@/lib/ops/revenue-from-invoice'
 import {
   computePromoDiscountAmount,
   computeTieredDiscountAmount,
@@ -267,6 +268,7 @@ export async function PATCH(
       .select(
         `
           *,
+          ops_appointments (kind),
           ops_invoice_line_items (
             id,
             appointment_line_item_id,
@@ -783,6 +785,15 @@ export async function PATCH(
       .single()
 
     if (invoiceError) throw invoiceError
+
+    const reportingAppointment = Array.isArray(current.ops_appointments)
+      ? current.ops_appointments[0]
+      : current.ops_appointments
+    await syncRecordedInvoiceRevenue(supabase, {
+      invoiceId: id,
+      invoiceTotal: total,
+      kind: reportingAppointment?.kind,
+    })
 
     if (promoCodeIdToIncrement) {
       const { error: promoCountError } = await supabase.rpc(

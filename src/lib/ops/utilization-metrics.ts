@@ -59,8 +59,8 @@ type LineRow = { line_total?: number | null }
  *
  * Priority (first match wins — no max-with-stale-fields):
  *   1. Invoice header total (ops_invoices.total) — the real source of truth once
- *      an invoice exists; this is what the customer was charged.
- *   2. Invoice line item sum — only if invoice total is 0/missing.
+ *      an invoice exists, including $0 after a full discount.
+ *   2. Invoice line item sum — only if invoice total is missing.
  *   3. Quote total — only if neither invoice nor lines exist (pre-invoice jobs).
  *
  * Restoration is special: a water loss bills once on the closing visit.
@@ -69,15 +69,17 @@ type LineRow = { line_total?: number | null }
  * job (Benns: ~$3.9k quote on mitigation + ~$4k closing invoice = ~$7.9k).
  */
 export function effectiveInvoiceAmount(params: {
-  invoiceTotal: number
+  invoiceTotal: number | null
   invoiceLineItems?: LineRow[] | null
   quotedTotal?: number | null
   kind?: string | null
 }): number {
   if (params.kind === 'estimate') return 0
 
-  const inv = Number(params.invoiceTotal || 0)
-  if (inv > 0) return inv
+  if (params.invoiceTotal != null) {
+    const inv = Number(params.invoiceTotal)
+    if (Number.isFinite(inv) && inv >= 0) return inv
+  }
 
   const lineSum = (params.invoiceLineItems || []).reduce(
     (s, li) => s + Number(li.line_total || 0),
@@ -116,7 +118,7 @@ export function appointmentDisplayRevenue(appt: {
       ? inv.ops_invoice_line_items
       : appt.ops_appointment_line_items) || null
   return effectiveInvoiceAmount({
-    invoiceTotal: Number(inv?.total || 0),
+    invoiceTotal: inv?.total != null ? Number(inv.total) : null,
     invoiceLineItems,
     quotedTotal: appt.quoted_total,
     // Estimate cards still show their proposed value. Reporting callers use

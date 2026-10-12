@@ -3,6 +3,12 @@ import { loadProfitAndLossCost } from '@/lib/quickbooks-profit-loss'
 import { loadUtilizationSupplementRows } from '@/lib/ops/utilization-supplement'
 import type { ReportCardInput } from '@/lib/reports/report-card'
 import {
+  loadRecordedBusinessLabor,
+  businessLaborSummary,
+  bookedWageAmount,
+  type BusinessLaborSummary,
+} from './business-labor'
+import {
   excludeJobsCoveredByRevenueEntries,
   utilizationHoursFromAppointment,
 } from '@/lib/ops/utilization-metrics'
@@ -14,7 +20,7 @@ export const BUSINESS_COST_HISTORY_START = '2026-05-01'
 export type CostWindow = { start: string; end: string }
 export type BusinessCostPeriod = 'rolling_28_day' | 'weekly' | 'year_to_date'
 
-export type BusinessCostSnapshot = {
+export type BusinessCostSnapshot = Partial<BusinessLaborSummary> & {
   periodKind: BusinessCostPeriod
   windowStart: string
   windowEnd: string
@@ -363,7 +369,39 @@ export async function loadBusinessCostSnapshots(
     .order('window_end', { ascending: false })
     .limit(limit)
   if (error) throw error
-  return (data || []).map((row) => coerceBusinessCostSnapshot(row)).reverse()
+  const snapshots = (data || [])
+    .map((row) => coerceBusinessCostSnapshot(row))
+    .reverse()
+  if (!snapshots.length) return snapshots
+  const start = snapshots.reduce(
+    (min, s) => (s.windowStart < min ? s.windowStart : min),
+    snapshots[0].windowStart,
+  )
+  const end = snapshots.at(-1)!.windowEnd
+  const labor = await loadRecordedBusinessLabor(supabase, start, end)
+  const firstRecordedDay = labor.find((row) => row.entries > 0)?.date
+  const enriched: BusinessCostSnapshot[] = []
+  for (const snapshot of snapshots) {
+    let retainedBookWages = 0
+    if (
+      firstRecordedDay &&
+      snapshot.windowStart < firstRecordedDay &&
+      snapshot.windowEnd >= firstRecordedDay
+    ) {
+      // Keep real wage payments from before timeclock coverage instead of
+      // replacing a whole year's payroll with a partial year of timesheets.
+      const earlierBooks = await loadProfitAndLossCost({
+        startDate: snapshot.windowStart,
+        endDate: addDays(firstRecordedDay, -1),
+      })
+      retainedBookWages = bookedWageAmount(earlierBooks.expenseBreakdown)
+    }
+    enriched.push({
+      ...snapshot,
+      ...businessLaborSummary({ ...snapshot, retainedBookWages }, labor),
+    })
+  }
+  return enriched
 }
 
 function signed(value: number, suffix = ''): string {
@@ -376,6 +414,13 @@ function signedMoney(value: number): string {
   return `${sign}$${Math.abs(value).toFixed(2)}`
 }
 
+function reportingCostPerHour(snapshot: BusinessCostSnapshot) {
+  return snapshot.trackedCostPerHour ?? snapshot.bookCostPerHour
+}
+function reportingCostPct(snapshot: BusinessCostSnapshot) {
+  return snapshot.trackedCostPct ?? snapshot.bookCostPct
+}
+
 export function buildBusinessCostDigest(
   weeklySnapshots: BusinessCostSnapshot[],
   yearToDate: BusinessCostSnapshot | null,
@@ -383,13 +428,17 @@ export function buildBusinessCostDigest(
   const latest = weeklySnapshots[weeklySnapshots.length - 1]
   if (!latest) return 'Business Cost Report — no productive hours available.'
   const previous = weeklySnapshots[weeklySnapshots.length - 2]
+  const includesPayroll = latest.trackedCostPerHour !== undefined
+  const costLabel = includesPayroll
+    ? 'Tracked cost/hour'
+    : 'QuickBooks cost/hour'
   const costDelta = previous
-    ? latest.bookCostPerHour - previous.bookCostPerHour
+    ? reportingCostPerHour(latest) - reportingCostPerHour(previous)
     : null
   const marginDelta = previous
-    ? previous.bookCostPct - latest.bookCostPct
+    ? reportingCostPct(previous) - reportingCostPct(latest)
     : null
-  const latestMarginPct = 100 - latest.bookCostPct
+  const latestMarginPct = 100 - reportingCostPct(latest)
 
   return [
     'Weekly Business Cost Report',
@@ -398,9 +447,17 @@ export function buildBusinessCostDigest(
     `Work completed: $${latest.revenue.toFixed(2)} revenue across ${latest.productiveHours.toFixed(1)} productive hours`,
     '',
     `Revenue/hour: $${latest.revenuePerHour.toFixed(2)}`,
-    `QuickBooks cost/hour: $${latest.bookCostPerHour.toFixed(2)}`,
-    `Cost share: ${latest.bookCostPct.toFixed(1)}%`,
-    `Margin after QuickBooks costs: ${latestMarginPct.toFixed(1)}%`,
+    `${costLabel}: $${reportingCostPerHour(latest).toFixed(2)}`,
+    `Cost share: ${reportingCostPct(latest).toFixed(1)}%`,
+    `${includesPayroll ? 'After tracked costs' : 'Margin after QuickBooks costs'}: ${latestMarginPct.toFixed(1)}%`,
+    ...(includesPayroll
+      ? [
+          `Recorded wages + extras: $${(latest.recordedLabor || 0).toFixed(2)} across ${(latest.recordedPaidHours || 0).toFixed(1)} paid clock hours`,
+        ]
+      : []),
+    ...(latest.laborIssues?.length
+      ? ['PROVISIONAL — PAYROLL NEEDS REVIEW', ...latest.laborIssues]
+      : []),
     ...(costDelta === null
       ? []
       : [
@@ -412,13 +469,15 @@ export function buildBusinessCostDigest(
           '',
           `${yearToDate.windowEnd.slice(0, 4)} YEAR-TO-DATE AVERAGE`,
           `Revenue/hour: $${yearToDate.revenuePerHour.toFixed(2)}`,
-          `QuickBooks cost/hour: $${yearToDate.bookCostPerHour.toFixed(2)}`,
-          `Cost share: ${yearToDate.bookCostPct.toFixed(1)}%`,
-          `Margin after QuickBooks costs: ${(100 - yearToDate.bookCostPct).toFixed(1)}%`,
+          `${costLabel}: $${reportingCostPerHour(yearToDate).toFixed(2)}`,
+          `Cost share: ${reportingCostPct(yearToDate).toFixed(1)}%`,
+          `${includesPayroll ? 'After tracked costs' : 'Margin after QuickBooks costs'}: ${(100 - reportingCostPct(yearToDate)).toFixed(1)}%`,
         ]
       : []),
     '',
-    'Costs are actual cash-basis QuickBooks P&L expenses with reconciliation discrepancies removed. No owner-labor estimate, depreciation estimate, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.',
+    includesPayroll
+      ? 'Tracked costs include recorded earned wages, earned bonuses, and approved premiums plus QuickBooks non-wage expenses. Booked wage payments are replaced, not added twice; wages before timeclock coverage stay booked. Other costs follow cash dates. This is not complete net profit. No owner-labor estimate or untracked time is added.'
+      : 'Costs are actual cash-basis QuickBooks P&L expenses with reconciliation discrepancies removed. No owner-labor estimate, depreciation estimate, processor fees, loan principal, owner draws, income-tax payments, or untracked office time are included.',
   ].join('\n')
 }
 
@@ -437,19 +496,23 @@ export function buildBusinessCostReportCard(
   const latest = weeklySnapshots[weeklySnapshots.length - 1]
   if (!latest) return null
 
-  const gap = latest.revenuePerHour - latest.bookCostPerHour
+  const includesPayroll = latest.trackedCostPerHour !== undefined
+  const needsReview = !!latest.laborIssues?.length
+  const gap = latest.revenuePerHour - reportingCostPerHour(latest)
   const profitable = gap >= 0
-  const latestMarginPct = 100 - latest.bookCostPct
+  const latestMarginPct = 100 - reportingCostPct(latest)
   const year = latest.windowEnd.slice(0, 4)
   const card: ReportCardInput = {
     eyebrow: 'Weekly Business Economics',
     title: 'Income vs. cost',
     subtitle: `${shortDate(latest.windowStart)}–${shortDate(latest.windowEnd)} · Thursday–Wednesday`,
     verdict: {
-      text: profitable
-        ? `Income stayed $${gap.toFixed(0)}/hour above QuickBooks cost.`
-        : `QuickBooks cost exceeded income by $${Math.abs(gap).toFixed(0)}/hour.`,
-      tone: profitable ? 'good' : 'bad',
+      text: needsReview
+        ? 'Provisional — recorded payroll needs review.'
+        : profitable
+          ? `Income stayed $${gap.toFixed(0)}/hour above ${includesPayroll ? 'tracked' : 'QuickBooks'} cost.`
+          : `${includesPayroll ? 'Tracked' : 'QuickBooks'} cost exceeded income by $${Math.abs(gap).toFixed(0)}/hour.`,
+      tone: needsReview ? 'warn' : profitable ? 'good' : 'bad',
     },
     metrics: [
       {
@@ -460,20 +523,24 @@ export function buildBusinessCostReportCard(
       },
       {
         label: 'Cost / hour',
-        value: `$${latest.bookCostPerHour.toFixed(0)}`,
-        note: 'Actual QuickBooks expenses',
+        value: `$${reportingCostPerHour(latest).toFixed(0)}`,
+        note: includesPayroll
+          ? 'Recorded payroll + QB non-wage costs'
+          : 'Actual QuickBooks expenses',
         tone: profitable ? 'warn' : 'bad',
       },
       {
-        label: 'Margin after costs',
+        label: includesPayroll ? 'After tracked costs' : 'Margin after costs',
         value: `${latestMarginPct.toFixed(1)}%`,
-        note: `${latest.bookCostPct.toFixed(1)}% cost share`,
+        note: needsReview
+          ? 'Payroll review required'
+          : `${reportingCostPct(latest).toFixed(1)}% cost share`,
         tone: profitable ? 'good' : 'bad',
       },
       {
         label: `${year} YTD average`,
         value: yearToDate
-          ? `$${yearToDate.revenuePerHour.toFixed(0)}/$${yearToDate.bookCostPerHour.toFixed(0)}`
+          ? `$${yearToDate.revenuePerHour.toFixed(0)}/$${reportingCostPerHour(yearToDate).toFixed(0)}`
           : 'Pending',
         note: yearToDate ? 'income / cost per hour' : 'No YTD snapshot',
         tone: 'neutral',
@@ -484,16 +551,19 @@ export function buildBusinessCostReportCard(
       points: weeklySnapshots.map((snapshot) => ({
         label: shortDate(snapshot.windowEnd),
         income: snapshot.revenuePerHour,
-        cost: snapshot.bookCostPerHour,
+        cost: reportingCostPerHour(snapshot),
       })),
     },
-    footer:
-      'Costs are actual cash-basis QuickBooks expenses. No owner-labor estimate is added.',
+    footer: includesPayroll
+      ? 'Recorded earned payroll + QB non-wage expenses; wage payments counted once. Not net profit. No owner-labor estimate is added.'
+      : 'Costs are actual cash-basis QuickBooks expenses. No owner-labor estimate is added.',
   }
 
   return {
     card,
-    caption: `${year} income vs. QuickBooks cost per productive hour · Latest margin ${latestMarginPct.toFixed(1)}%`,
+    caption: needsReview
+      ? `${year} business costs — provisional; payroll needs review`
+      : `${year} income vs. ${includesPayroll ? 'tracked' : 'QuickBooks'} cost per productive hour · Latest margin ${latestMarginPct.toFixed(1)}%`,
     runKey: latest.windowEnd,
   }
 }

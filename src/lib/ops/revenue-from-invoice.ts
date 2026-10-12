@@ -9,6 +9,24 @@ export type RecordRevenueFromOpsInvoiceResult =
   | { ok: true; skipped: false; entry_id: string }
   | { ok: false; error: string }
 
+/** Keep already-recorded reporting values aligned with later invoice edits. */
+export async function syncRecordedInvoiceRevenue(
+  supabase: SupabaseClient,
+  params: { invoiceId: string; invoiceTotal: number; kind?: string | null },
+) {
+  const amount = effectiveInvoiceAmount({
+    invoiceTotal: params.invoiceTotal,
+    kind: params.kind,
+  })
+  for (const table of ['revenue_entries', 'jobs']) {
+    const { error } = await supabase
+      .from(table)
+      .update({ invoice_amount: amount })
+      .eq('ops_invoice_id', params.invoiceId)
+    if (error) throw error
+  }
+}
+
 /**
  * Inserts a revenue_entries row for an ops invoice (stats without publishing a job post).
  * Idempotent: skips if ops_invoice_id already present.
@@ -99,7 +117,7 @@ export async function recordRevenueFromOpsInvoice(
       : []
 
   const invoiceTotal = effectiveInvoiceAmount({
-    invoiceTotal: Number(invoice.total || 0),
+    invoiceTotal: invoice.total != null ? Number(invoice.total) : null,
     invoiceLineItems: invLines,
     quotedTotal: Number(
       (appointment as { quoted_total?: number }).quoted_total || 0,

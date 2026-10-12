@@ -74,7 +74,10 @@ export async function GET() {
               .ops_invoice_line_items
           : []
         totalRevenue += effectiveInvoiceAmount({
-          invoiceTotal: Number((inv as { total?: number }).total || 0),
+          invoiceTotal:
+            (inv as { total?: number }).total != null
+              ? Number((inv as { total?: number }).total)
+              : null,
           invoiceLineItems: lineItems,
           quotedTotal: Number(
             (appt as { quoted_total?: number }).quoted_total || 0,

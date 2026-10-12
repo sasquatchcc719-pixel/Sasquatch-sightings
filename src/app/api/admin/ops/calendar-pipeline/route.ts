@@ -70,7 +70,10 @@ function apptAmount(appt: unknown): number {
       : []
     : []
   return effectiveInvoiceAmount({
-    invoiceTotal: Number((inv as { total?: number })?.total || 0),
+    invoiceTotal:
+      (inv as { total?: number } | null)?.total != null
+        ? Number((inv as { total?: number }).total)
+        : null,
     invoiceLineItems: lineItems,
     quotedTotal: Number(a.quoted_total ?? 0),
     kind: a.kind,

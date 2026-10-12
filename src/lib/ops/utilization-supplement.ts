@@ -136,7 +136,7 @@ export async function loadUtilizationSupplementRows(
         : []
 
     const amt = effectiveInvoiceAmount({
-      invoiceTotal: Number(inv?.total || 0),
+      invoiceTotal: inv?.total != null ? Number(inv.total) : null,
       invoiceLineItems:
         invoiceLineItems.length > 0 ? invoiceLineItems : appointmentLineItems,
       quotedTotal: Number(

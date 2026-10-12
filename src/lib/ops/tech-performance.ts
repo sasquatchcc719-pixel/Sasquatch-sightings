@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { loadAddOnBonuses } from '@/lib/ops/add-on-bonuses'
+import { mountainDateKey } from '@/lib/ops/timesheet-pay'
 import {
   effectiveInvoiceAmount,
   utilizationHoursFromAppointment,
@@ -8,7 +10,7 @@ import {
  * Per-tech profitability: what a tech generates (completed-job revenue and
  * on-the-job hours) against what they cost (timesheet paid hours and labor
  * cost). Gross payroll stays available for reference; configured fully loaded
- * rates include employer payroll burden such as taxes and insurance.
+ * estimates model employer payroll burden such as taxes and insurance.
  */
 
 export type TechMonthRow = {
@@ -19,7 +21,10 @@ export type TechMonthRow = {
   paidHours: number
   /** Payroll recorded on the timesheet, before employer burden. */
   grossWages: number
-  /** Fully loaded cost of paid time. Falls back to gross payroll. */
+  /** Saved after-hours premiums and earned add-on bonuses. */
+  supplementalPay: number
+  laborCostIsEstimate: boolean
+  /** Loaded estimate or recorded gross pay, plus saved premiums and earned bonuses. */
   laborCost: number
   /** laborCost / paidHours (falls back to jobHours when no timesheets) */
   laborCostPerPaidHour: number
@@ -43,6 +48,7 @@ export type TechDayRow = Omit<TechMonthRow, 'month'> & {
 export type TechPerformance = {
   staffUserId: string
   displayName: string
+  laborIssues: { date: string; message: string }[]
   days: TechDayRow[]
   months: TechMonthRow[]
   totals: Omit<TechMonthRow, 'month'>
@@ -61,8 +67,14 @@ type TimesheetInput = {
   isLive?: boolean
 }
 
+type SupplementalPayInput = {
+  work_date: string
+  pay: number
+}
+
 type StoredTimesheetInput = TimesheetInput & {
   started_at?: string | null
+  ended_at?: string | null
   break_minutes?: number | null
   hourly_rate?: number | null
   clock_state?: string | null
@@ -73,12 +85,53 @@ const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * Fully loaded field-labor cost, including employer taxes, insurance, and
+ * Configured field-labor estimate, including employer taxes, insurance, and
  * similar employment costs. Keeping this separate from timesheet gross pay
  * lets historical reports be recalculated without rewriting payroll records.
  */
 const FULLY_LOADED_HOURLY_COST_BY_STAFF_ID: Record<string, number> = {
   '01d0d46b-29ac-4a27-b953-f5fbc30cf2cd': 31, // David Gonzalez
+}
+
+export function buildTechLaborIssues(
+  timesheets: StoredTimesheetInput[],
+  now: Date,
+): TechPerformance['laborIssues'] {
+  const today = mountainDateKey(now)
+  return timesheets.flatMap((timesheet) => {
+    const date = timesheet.work_date.slice(0, 10)
+    if (
+      ['active', 'on_break'].includes(timesheet.clock_state || '') &&
+      date < today
+    ) {
+      return [
+        {
+          date,
+          message:
+            'An earlier shift is still open. Review the missing clock-out; labor totals are provisional.',
+        },
+      ]
+    }
+    const elapsedHours =
+      timesheet.started_at && timesheet.ended_at
+        ? (new Date(timesheet.ended_at).getTime() -
+            new Date(timesheet.started_at).getTime()) /
+          3_600_000
+        : 0
+    if (
+      timesheet.clock_state === 'complete' &&
+      (timesheet.payable_minutes > 16 * 60 || elapsedHours > 16)
+    ) {
+      return [
+        {
+          date,
+          message:
+            'Recorded shift exceeds 16 hours. Review the clock-out time; totals include the recorded hours.',
+        },
+      ]
+    }
+    return []
+  })
 }
 
 export function buildOwnerTimesheets(
@@ -144,19 +197,20 @@ function summarize(
   jobHours: number,
   paidHours: number,
   grossWages: number,
-  fullyLoadedHourlyCost?: number,
+  baseLaborCost: number,
+  laborCostIsEstimate: boolean,
+  supplementalPay = 0,
 ): Omit<TechMonthRow, 'month'> {
   const hourBase = paidHours > 0 ? paidHours : jobHours
-  const laborCost =
-    fullyLoadedHourlyCost != null && paidHours > 0
-      ? paidHours * fullyLoadedHourlyCost
-      : grossWages
+  const laborCost = baseLaborCost + supplementalPay
   return {
     jobs,
     revenue: round2(revenue),
     jobHours: round1(jobHours),
     paidHours: round1(paidHours),
     grossWages: round2(grossWages),
+    supplementalPay: round2(supplementalPay),
+    laborCostIsEstimate,
     laborCost: round2(laborCost),
     laborCostPerPaidHour: hourBase > 0 ? round2(laborCost / hourBase) : 0,
     revenuePerPaidHour: hourBase > 0 ? round2(revenue / hourBase) : 0,
@@ -171,6 +225,7 @@ export function buildTechDayRows(
   appointments: ApptInput[],
   timesheets: TimesheetInput[],
   fullyLoadedHourlyCost?: number,
+  supplementalPay: SupplementalPayInput[] = [],
 ): TechDayRow[] {
   type Acc = {
     jobs: number
@@ -178,6 +233,8 @@ export function buildTechDayRows(
     jobHours: number
     paidHours: number
     grossWages: number
+    baseLaborCost: number
+    supplementalPay: number
     isLive: boolean
   }
   const byDay = new Map<string, Acc>()
@@ -190,6 +247,8 @@ export function buildTechDayRows(
         jobHours: 0,
         paidHours: 0,
         grossWages: 0,
+        baseLaborCost: 0,
+        supplementalPay: 0,
         isLive: false,
       }
       byDay.set(date, a)
@@ -207,7 +266,20 @@ export function buildTechDayRows(
     const a = acc(ts.work_date.slice(0, 10))
     a.paidHours += (ts.payable_minutes || 0) / 60
     a.grossWages += ts.gross_pay || 0
+    // Floor each shift before aggregation: a higher-paid shift must not be
+    // offset by another shift whose wages are below the configured estimate.
+    a.baseLaborCost += round2(
+      fullyLoadedHourlyCost != null
+        ? Math.max(
+            ts.gross_pay || 0,
+            ((ts.payable_minutes || 0) / 60) * fullyLoadedHourlyCost,
+          )
+        : ts.gross_pay || 0,
+    )
     a.isLive ||= !!ts.isLive
+  }
+  for (const payment of supplementalPay) {
+    acc(payment.work_date.slice(0, 10)).supplementalPay += payment.pay
   }
 
   return [...byDay.entries()]
@@ -219,7 +291,9 @@ export function buildTechDayRows(
         a.jobHours,
         a.paidHours,
         a.grossWages,
-        fullyLoadedHourlyCost,
+        a.baseLaborCost,
+        fullyLoadedHourlyCost != null && a.paidHours > 0,
+        a.supplementalPay,
       )
       const hourBase = a.paidHours > 0 ? a.paidHours : a.jobHours
       return {
@@ -238,6 +312,7 @@ export function buildTechMonthRows(
   appointments: ApptInput[],
   timesheets: TimesheetInput[],
   fullyLoadedHourlyCost?: number,
+  supplementalPay: SupplementalPayInput[] = [],
 ): { months: TechMonthRow[]; totals: Omit<TechMonthRow, 'month'> } {
   type Acc = {
     jobs: number
@@ -245,12 +320,22 @@ export function buildTechMonthRows(
     jobHours: number
     paidHours: number
     grossWages: number
+    baseLaborCost: number
+    supplementalPay: number
   }
   const byMonth = new Map<string, Acc>()
   const acc = (month: string): Acc => {
     let a = byMonth.get(month)
     if (!a) {
-      a = { jobs: 0, revenue: 0, jobHours: 0, paidHours: 0, grossWages: 0 }
+      a = {
+        jobs: 0,
+        revenue: 0,
+        jobHours: 0,
+        paidHours: 0,
+        grossWages: 0,
+        baseLaborCost: 0,
+        supplementalPay: 0,
+      }
       byMonth.set(month, a)
     }
     return a
@@ -266,6 +351,19 @@ export function buildTechMonthRows(
     const a = acc(ts.work_date.slice(0, 7))
     a.paidHours += (ts.payable_minutes || 0) / 60
     a.grossWages += ts.gross_pay || 0
+    // Floor each shift before aggregation: a higher-paid shift must not be
+    // offset by another shift whose wages are below the configured estimate.
+    a.baseLaborCost += round2(
+      fullyLoadedHourlyCost != null
+        ? Math.max(
+            ts.gross_pay || 0,
+            ((ts.payable_minutes || 0) / 60) * fullyLoadedHourlyCost,
+          )
+        : ts.gross_pay || 0,
+    )
+  }
+  for (const payment of supplementalPay) {
+    acc(payment.work_date.slice(0, 7)).supplementalPay += payment.pay
   }
 
   const months = [...byMonth.entries()]
@@ -278,7 +376,9 @@ export function buildTechMonthRows(
         a.jobHours,
         a.paidHours,
         a.grossWages,
-        fullyLoadedHourlyCost,
+        a.baseLaborCost,
+        fullyLoadedHourlyCost != null && a.paidHours > 0,
+        a.supplementalPay,
       ),
     }))
 
@@ -289,8 +389,18 @@ export function buildTechMonthRows(
       jobHours: s.jobHours + a.jobHours,
       paidHours: s.paidHours + a.paidHours,
       grossWages: s.grossWages + a.grossWages,
+      baseLaborCost: s.baseLaborCost + a.baseLaborCost,
+      supplementalPay: s.supplementalPay + a.supplementalPay,
     }),
-    { jobs: 0, revenue: 0, jobHours: 0, paidHours: 0, grossWages: 0 },
+    {
+      jobs: 0,
+      revenue: 0,
+      jobHours: 0,
+      paidHours: 0,
+      grossWages: 0,
+      baseLaborCost: 0,
+      supplementalPay: 0,
+    },
   )
 
   return {
@@ -301,7 +411,9 @@ export function buildTechMonthRows(
       t.jobHours,
       t.paidHours,
       t.grossWages,
-      fullyLoadedHourlyCost,
+      t.baseLaborCost,
+      fullyLoadedHourlyCost != null && t.paidHours > 0,
+      t.supplementalPay,
     ),
   }
 }
@@ -342,15 +454,50 @@ async function loadStaffPerformance(
   let tsQuery = supabase
     .from('ops_timesheet_entries')
     .select(
-      'work_date, payable_minutes, gross_pay, started_at, break_minutes, hourly_rate, clock_state, break_started_at',
+      'work_date, payable_minutes, gross_pay, started_at, ended_at, break_minutes, hourly_rate, clock_state, break_started_at',
     )
     .eq('staff_user_id', staff.id)
   if (since) tsQuery = tsQuery.gte('work_date', since)
 
-  const [{ data: appts }, { data: timesheets }] = await Promise.all([
+  const [appointmentResult, timesheetResult] = await Promise.all([
     apptQuery,
     tsQuery,
   ])
+  if (appointmentResult.error) throw appointmentResult.error
+  if (timesheetResult.error) throw timesheetResult.error
+  const appts = appointmentResult.data
+  const timesheets = timesheetResult.data
+
+  const supplementalPay: SupplementalPayInput[] = []
+  if (hourlyRateOverride == null) {
+    let premiumQuery = supabase
+      .from('ops_after_hours_premiums')
+      .select('work_date, premium_pay')
+      .eq('staff_user_id', staff.id)
+      .in('status', ['approved', 'paid'])
+    if (since) premiumQuery = premiumQuery.gte('work_date', since)
+    const [premiumResult, bonuses] = await Promise.all([
+      premiumQuery,
+      loadAddOnBonuses(supabase, {
+        startDate: since ?? '1900-01-01',
+        endDate: mountainDateKey(new Date()),
+        staffUserId: staff.id,
+      }),
+    ])
+    if (premiumResult.error) throw premiumResult.error
+    supplementalPay.push(
+      ...(premiumResult.data || []).map((premium) => ({
+        work_date: String(premium.work_date),
+        pay: Number(premium.premium_pay || 0),
+      })),
+      ...bonuses.rows
+        .filter((bonus) => bonus.status === 'earned')
+        .map((bonus) => ({
+          work_date: bonus.appointmentDate,
+          pay: bonus.bonusAmount,
+        })),
+    )
+  }
 
   const apptInputs: ApptInput[] = (appts || [])
     .filter((a) => a.appointment_date)
@@ -388,7 +535,7 @@ async function loadStaffPerformance(
         isRestoration && !isMitigation
           ? 0
           : effectiveInvoiceAmount({
-              invoiceTotal: Number(inv?.total || 0),
+              invoiceTotal: inv?.total != null ? Number(inv.total) : null,
               invoiceLineItems: lineItems,
               quotedTotal: Number(a.quoted_total || 0),
               kind: a.kind ? String(a.kind) : null,
@@ -412,11 +559,13 @@ async function loadStaffPerformance(
     apptInputs,
     timesheetInputs,
     fullyLoadedHourlyCost,
+    supplementalPay,
   )
   const days = buildTechDayRows(
     apptInputs,
     timesheetInputs,
     fullyLoadedHourlyCost,
+    supplementalPay,
   )
 
   if (months.length === 0) return null
@@ -424,6 +573,13 @@ async function loadStaffPerformance(
   return {
     staffUserId: staff.id,
     displayName: staff.display_name,
+    laborIssues:
+      hourlyRateOverride == null
+        ? buildTechLaborIssues(
+            (timesheets || []) as StoredTimesheetInput[],
+            new Date(),
+          )
+        : [],
     days,
     months,
     totals,
@@ -436,11 +592,12 @@ export async function loadTechPerformance(
 ): Promise<TechPerformance[]> {
   const since = options?.sinceDate ?? null
 
-  const { data: techs } = await supabase
+  const { data: techs, error } = await supabase
     .from('staff_users')
     .select('id, display_name')
     .eq('is_active', true)
     .eq('role', 'tech')
+  if (error) throw error
 
   if (!techs || techs.length === 0) return []
 
@@ -455,7 +612,7 @@ export async function loadOwnerPerformance(
   supabase: SupabaseClient,
   options?: { sinceDate?: string; hourlyRate?: number },
 ): Promise<TechPerformance | null> {
-  const { data: owner } = await supabase
+  const { data: owner, error } = await supabase
     .from('staff_users')
     .select('id, display_name')
     .eq('is_active', true)
@@ -463,6 +620,7 @@ export async function loadOwnerPerformance(
     .order('scheduling_priority', { ascending: true })
     .limit(1)
     .maybeSingle()
+  if (error) throw error
 
   if (!owner) return null
 

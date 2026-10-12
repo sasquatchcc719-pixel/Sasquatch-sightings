@@ -152,6 +152,8 @@ type TechMonthRow = {
   jobHours: number
   paidHours: number
   grossWages: number
+  supplementalPay: number
+  laborCostIsEstimate: boolean
   laborCost: number
   laborCostPerPaidHour: number
   revenuePerPaidHour: number
@@ -169,6 +171,7 @@ type TechDayRow = Omit<TechMonthRow, 'month'> & {
 type TechPerformance = {
   staffUserId: string
   displayName: string
+  laborIssues: { date: string; message: string }[]
   days: TechDayRow[]
   months: TechMonthRow[]
   totals: Omit<TechMonthRow, 'month'>
@@ -795,7 +798,9 @@ function ProfitabilityTooltip({ active, payload }: ProfitabilityTooltipProps) {
           </span>
         </div>
         <div className="flex justify-between gap-5">
-          <span>Labor cost</span>
+          <span>
+            {day.laborCostIsEstimate ? 'Labor estimate' : 'Recorded labor'}
+          </span>
           <span className="text-foreground font-medium">
             {usd(day.laborCost)}
           </span>
@@ -807,7 +812,7 @@ function ProfitabilityTooltip({ active, payload }: ProfitabilityTooltipProps) {
           </span>
         </div>
         <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
-          <span>Profit / hour</span>
+          <span>After labor / hour</span>
           <span
             className={`font-semibold ${day.profitPerHour >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
           >
@@ -841,14 +846,16 @@ function DailyProfitabilityChart({ days }: { days: TechDayRow[] }) {
       <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold">Daily Profit / Paid Hr</h4>
+            <h4 className="text-sm font-semibold">After Labor / Paid Hr</h4>
             <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
               LIVE
             </span>
           </div>
           <p className="text-muted-foreground mt-1 text-xs">
-            Revenue minus gross wages, divided by paid hours.
+            Revenue minus labor cost, including saved premiums and earned
+            bonuses, divided by paid hours. Configured loaded rates are
+            estimates; other business expenses are excluded.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -1687,6 +1694,7 @@ export default function StatsPage() {
   const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
   const [techPerf, setTechPerf] = useState<TechPerformance[]>([])
+  const [techPerfError, setTechPerfError] = useState(false)
   const [ownerPerf, setOwnerPerf] = useState<TechPerformance | null>(null)
   const [health, setHealth] = useState<BusinessHealth | null>(null)
   const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
@@ -1698,6 +1706,7 @@ export default function StatsPage() {
   >([])
   const [yearToDateBusinessCost, setYearToDateBusinessCost] =
     useState<BusinessCostSnapshot | null>(null)
+  const [businessCostsError, setBusinessCostsError] = useState(false)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -2091,16 +2100,18 @@ export default function StatsPage() {
         const res = await fetch('/api/admin/stats/tech-performance', {
           cache: 'no-store',
         })
-        if (res.ok && active) {
+        if (!res.ok) throw new Error('Unable to reconcile technician labor')
+        if (active) {
           const json = (await res.json()) as {
             techs?: TechPerformance[]
             owner?: TechPerformance | null
           }
           setTechPerf(json.techs || [])
           setOwnerPerf(json.owner || null)
+          setTechPerfError(false)
         }
       } catch {
-        // Non-fatal — section simply hides
+        if (active) setTechPerfError(true)
       }
     }
     void fetchTechPerf()
@@ -2181,16 +2192,16 @@ export default function StatsPage() {
         const res = await fetch('/api/admin/stats/business-economics', {
           cache: 'no-store',
         })
-        if (res.ok) {
-          const json = (await res.json()) as {
-            weeklySnapshots?: BusinessCostSnapshot[]
-            yearToDate?: BusinessCostSnapshot | null
-          }
-          setWeeklyBusinessCosts(json.weeklySnapshots || [])
-          setYearToDateBusinessCost(json.yearToDate || null)
+        if (!res.ok) throw new Error('Unable to reconcile business costs')
+        const json = (await res.json()) as {
+          weeklySnapshots?: BusinessCostSnapshot[]
+          yearToDate?: BusinessCostSnapshot | null
         }
+        setWeeklyBusinessCosts(json.weeklySnapshots || [])
+        setYearToDateBusinessCost(json.yearToDate || null)
+        setBusinessCostsError(false)
       } catch {
-        // Non-fatal — section hides
+        setBusinessCostsError(true)
       }
     }
     void fetchSourceRevenue()
@@ -3167,10 +3178,21 @@ export default function StatsPage() {
       </div>
 
       {/* Revenue, cost, and tracked margin */}
-      <BusinessEconomicsChart
-        weeklySnapshots={weeklyBusinessCosts}
-        yearToDate={yearToDateBusinessCost}
-      />
+      {businessCostsError ? (
+        <p
+          role="alert"
+          className="mb-8 rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-amber-200"
+        >
+          Business cost figures could not be reconciled with payroll and
+          QuickBooks. Refresh to try again; missing costs are not treated as
+          zero.
+        </p>
+      ) : (
+        <BusinessEconomicsChart
+          weeklySnapshots={weeklyBusinessCosts}
+          yearToDate={yearToDateBusinessCost}
+        />
+      )}
 
       {/* Potential Revenue - Money Left on Table */}
       <div className="mb-8">
@@ -3259,6 +3281,15 @@ export default function StatsPage() {
       </div>
 
       {/* Tech Profitability */}
+      {techPerfError && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-amber-200"
+        >
+          Technician labor figures could not be refreshed. Any readings below
+          are the last loaded data; missing payroll is not treated as zero.
+        </p>
+      )}
       {techPerf.length > 0 && (
         <div className="mb-8">
           <div className="mb-1 flex items-center gap-2">
@@ -3268,12 +3299,12 @@ export default function StatsPage() {
             </h2>
           </div>
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
-            What each tech generates (completed-job revenue) vs their true labor
-            cost (timesheet paid hours × fully loaded hourly cost). David&apos;s
-            labor cost is set to <strong>$31/hr</strong>, including employer
-            taxes, insurance, and related employment costs. Field-service rule
-            of thumb: keep tech labor under <strong>30–35%</strong> of the
-            revenue they produce.
+            Completed-job revenue compared with recorded paid time. David&apos;s
+            labor uses a configured <strong>$31/hr estimate</strong> for wages,
+            employer taxes, insurance, and related employment costs. Saved
+            after-hours premiums and earned add-on bonuses are added separately.
+            Other business expenses are excluded; these figures are not net
+            profit.
           </p>
 
           {techPerf.map((tech) => {
@@ -3287,6 +3318,25 @@ export default function StatsPage() {
             return (
               <div key={tech.staffUserId} className="space-y-4">
                 <h3 className="text-lg font-semibold">{tech.displayName}</h3>
+
+                {tech.laborIssues?.length > 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-amber-700 dark:text-amber-300"
+                  >
+                    <div className="mb-2 flex items-center gap-2 font-semibold">
+                      <AlertTriangle className="h-5 w-5" />
+                      Review recorded labor before using these figures
+                    </div>
+                    <ul className="list-disc space-y-1 pl-5 text-sm">
+                      {tech.laborIssues.map((issue, index) => (
+                        <li key={`${issue.date}-${index}`}>
+                          <strong>{issue.date}:</strong> {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Headline cards */}
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -3303,14 +3353,21 @@ export default function StatsPage() {
                       {t.paidHours > 0
                         ? formatCurrency(t.laborCostPerPaidHour)
                         : '—'}
-                      /hr labor cost
+                      /hr{' '}
+                      {t.laborCostIsEstimate
+                        ? 'labor estimate'
+                        : 'recorded labor'}
                     </p>
                   </Card>
 
                   <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
                     <div className="mb-1 flex items-center gap-2 text-amber-400/80">
                       <Target className="h-4 w-4" />
-                      <p className="text-sm font-medium">Labor % of Revenue</p>
+                      <p className="text-sm font-medium">
+                        {t.laborCostIsEstimate
+                          ? 'Est. Labor % of Revenue'
+                          : 'Labor % of Revenue'}
+                      </p>
                     </div>
                     <p
                       className={`stat-value text-2xl font-bold ${laborColor}`}
@@ -3333,21 +3390,26 @@ export default function StatsPage() {
                         : '—'}
                     </p>
                     <p className="text-muted-foreground mt-0.5 text-xs">
-                      job hours ÷ paid clock hours
+                      recorded job/drive hours ÷ paid clock hours
                     </p>
                   </Card>
 
                   <Card className="card-interactive animate-slide-up-delay-3 border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
                     <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
                       <TrendingUp className="h-4 w-4" />
-                      <p className="text-sm font-medium">Profit After Labor</p>
+                      <p className="text-sm font-medium">
+                        {t.laborCostIsEstimate
+                          ? 'After Labor Estimate'
+                          : 'After Recorded Labor'}
+                      </p>
                     </div>
                     <p className="stat-value text-2xl font-bold text-green-700 dark:text-green-400">
                       {formatCurrency(t.profitAfterLaborCost)}
                     </p>
                     <p className="text-muted-foreground mt-0.5 text-xs">
                       {formatCurrency(t.revenue)} revenue −{' '}
-                      {formatCurrency(t.laborCost)} labor cost
+                      {formatCurrency(t.laborCost)} labor; excludes other
+                      expenses
                     </p>
                   </Card>
                 </div>
@@ -3372,7 +3434,9 @@ export default function StatsPage() {
                             Paid Hrs
                           </th>
                           <th className="pr-3 pb-2 text-right font-medium">
-                            Labor Cost
+                            {t.laborCostIsEstimate
+                              ? 'Labor Estimate'
+                              : 'Recorded Labor'}
                           </th>
                           <th className="pr-3 pb-2 text-right font-medium">
                             $/Paid Hr
@@ -3381,7 +3445,7 @@ export default function StatsPage() {
                             Labor %
                           </th>
                           <th className="pb-2 text-right font-medium">
-                            Profit
+                            After Labor
                           </th>
                         </tr>
                       </thead>

@@ -87,7 +87,7 @@ function fmtMoney(amount: number): string {
 
 function fmtDate(dateKey: string): string {
   return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
-    weekday: 'short',
+    weekday: 'long',
     month: 'short',
     day: 'numeric',
     timeZone: 'UTC',
@@ -914,7 +914,7 @@ export function PayrollTimesheetsView() {
             <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white">
               <span className="font-medium">{payPeriod.label}</span>
               <span className="ml-2 text-slate-400">
-                {payPeriod.startDate} to {payPeriod.endDate}
+                {fmtDate(payPeriod.startDate)} to {fmtDate(payPeriod.endDate)}
               </span>
             </div>
           )}
@@ -1402,8 +1402,8 @@ export function PayrollTimesheetsView() {
         <div className="border-b border-white/10 bg-slate-900/70 px-4 py-3">
           <h3 className="font-semibold text-white">
             {viewMode === 'day'
-              ? `Entries for ${date}`
-              : `Pay period: ${payPeriod.label} (${payPeriod.startDate} to ${payPeriod.endDate})`}
+              ? `Entries for ${fmtDate(date)}`
+              : `Pay period: ${payPeriod.label} (${fmtDate(payPeriod.startDate)} to ${fmtDate(payPeriod.endDate)})`}
           </h3>
         </div>
 
@@ -1485,8 +1485,7 @@ export function PayrollTimesheetsView() {
                       )}
                     </div>
                     <p className="text-sm text-slate-400">
-                      {viewMode === 'period' ? `${entry.workDate} · ` : ''}
-                      {fmtTime(entry.startedAt)} →{' '}
+                      {fmtDate(entry.workDate)} · {fmtTime(entry.startedAt)} →{' '}
                       {entry.clockState === 'complete'
                         ? fmtTime(entry.endedAt)
                         : 'Now'}

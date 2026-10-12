@@ -326,7 +326,7 @@ export async function loadBusinessHealth(
         ? [inv.ops_invoice_line_items]
         : []
     const revenue = effectiveInvoiceAmount({
-      invoiceTotal: Number(inv?.total || 0),
+      invoiceTotal: inv?.total != null ? Number(inv.total) : null,
       invoiceLineItems: lineItems,
       quotedTotal: Number(a.quoted_total || 0),
       kind: a.kind ? String(a.kind) : null,
@@ -601,7 +601,7 @@ export async function loadCustomerValueIndex(
       String(a.customer_id),
       String(a.appointment_date),
       effectiveInvoiceAmount({
-        invoiceTotal: Number(inv?.total || 0),
+        invoiceTotal: inv?.total != null ? Number(inv.total) : null,
         quotedTotal: Number(a.quoted_total || 0),
         kind: a.kind ? String(a.kind) : null,
       }),

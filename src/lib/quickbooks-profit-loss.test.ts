@@ -16,6 +16,27 @@ const section = (
 })
 
 describe('parseProfitAndLossCost', () => {
+  it('separates wages from recruiting and workers comp so payroll is not counted twice', () => {
+    const result = parseProfitAndLossCost([
+      section('Expenses', 900, [
+        section('Payroll expenses', 700, [
+          section('Wages', 500),
+          section('Workers Comp Insurance', 150),
+          section('Recruiting', 50),
+        ]),
+        section('Supplies', 200),
+      ]),
+    ])
+    expect(result.expenseBreakdown).toEqual({
+      'Payroll expenses / Wages': 500,
+      'Payroll expenses / Workers Comp Insurance': 150,
+      'Payroll expenses / Recruiting': 50,
+      Supplies: 200,
+    })
+    expect(
+      Object.values(result.expenseBreakdown).reduce((sum, n) => sum + n, 0),
+    ).toBe(900)
+  })
   it('uses only P&L cost sections and removes reconciliation discrepancies', () => {
     const result = parseProfitAndLossCost([
       section('Income', 50000),

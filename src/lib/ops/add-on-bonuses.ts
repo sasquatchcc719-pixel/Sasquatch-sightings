@@ -181,11 +181,19 @@ export function discountedEligibleRevenue(
   return Math.round(lineRevenue * factor * 100) / 100
 }
 
+function bonusIdBatches(ids: string[]): string[][] {
+  const batches: string[][] = []
+  for (let index = 0; index < ids.length; index += 50) {
+    batches.push(ids.slice(index, index + 50))
+  }
+  return batches
+}
+
 export async function loadAddOnBonuses(
   supabase: AdminClient,
   options: { startDate: string; endDate: string; staffUserId?: string },
 ): Promise<AddOnBonusSummary> {
-  const { data: appointments, error: appointmentsError } = await supabase
+  const appointmentQuery = supabase
     .from('ops_appointments')
     .select(
       `
@@ -199,51 +207,72 @@ export async function loadAddOnBonuses(
     )
     .gte('appointment_date', options.startDate)
     .lte('appointment_date', options.endDate)
-
-  if (appointmentsError) throw appointmentsError
-  const appointmentIds = (appointments || []).map((row) => row.id)
+    .order('id', { ascending: true })
+  const firstPage = await appointmentQuery.range(0, 999)
+  if (firstPage.error) throw firstPage.error
+  const appointments = firstPage.data || []
+  let pageLength = appointments.length
+  for (let offset = 1000; pageLength === 1000; offset += 1000) {
+    const page = await appointmentQuery.range(offset, offset + 999)
+    if (page.error) throw page.error
+    appointments.push(...(page.data || []))
+    pageLength = page.data?.length || 0
+  }
+  const appointmentIds = appointments.map((row) => row.id)
   if (appointmentIds.length === 0) {
     return { rows: [], earnedBonus: 0, pendingBonus: 0, eligibleRevenue: 0 }
   }
 
-  let lineQuery = supabase
-    .from('ops_appointment_line_items')
-    .select(
-      'id, appointment_id, line_total, add_on_bonus_staff_user_id, add_on_bonus_category, add_on_bonus_rate',
-    )
-    .in('appointment_id', appointmentIds)
-    .not('add_on_bonus_staff_user_id', 'is', null)
-    .is('excluded_at', null)
-
-  if (options.staffUserId) {
-    lineQuery = lineQuery.eq('add_on_bonus_staff_user_id', options.staffUserId)
+  const lineResults = await Promise.all(
+    bonusIdBatches(appointmentIds).map((ids) => {
+      let query = supabase
+        .from('ops_appointment_line_items')
+        .select(
+          'id, appointment_id, line_total, add_on_bonus_staff_user_id, add_on_bonus_category, add_on_bonus_rate',
+        )
+        .in('appointment_id', ids)
+        .not('add_on_bonus_staff_user_id', 'is', null)
+        .is('excluded_at', null)
+      if (options.staffUserId) {
+        query = query.eq('add_on_bonus_staff_user_id', options.staffUserId)
+      }
+      return query
+    }),
+  )
+  for (const result of lineResults) {
+    if (result.error) throw result.error
   }
-
-  const { data: lines, error: linesError } = await lineQuery
-  if (linesError) throw linesError
-  if (!lines?.length) {
+  const lines = lineResults.flatMap((result) => result.data || [])
+  if (!lines.length) {
     return { rows: [], earnedBonus: 0, pendingBonus: 0, eligibleRevenue: 0 }
   }
 
   const staffIds = [
     ...new Set(lines.map((line) => line.add_on_bonus_staff_user_id as string)),
   ]
-  const [
-    { data: staff, error: staffError },
-    { data: invoices, error: invoiceError },
-  ] = await Promise.all([
+  const bonusAppointmentIds = [
+    ...new Set(lines.map((line) => line.appointment_id)),
+  ]
+  const [staffResult, invoiceResults] = await Promise.all([
     supabase.from('staff_users').select('id, display_name').in('id', staffIds),
-    supabase
-      .from('ops_invoices')
-      .select(
-        'id, appointment_id, payment_status, subtotal, discount_amount, percentage_discount_amount, created_at',
-      )
-      .in('appointment_id', appointmentIds)
-      .order('created_at', { ascending: false }),
+    Promise.all(
+      bonusIdBatches(bonusAppointmentIds).map((ids) =>
+        supabase
+          .from('ops_invoices')
+          .select(
+            'id, appointment_id, payment_status, subtotal, discount_amount, percentage_discount_amount, created_at',
+          )
+          .in('appointment_id', ids)
+          .order('created_at', { ascending: false }),
+      ),
+    ),
   ])
-
-  if (staffError) throw staffError
-  if (invoiceError) throw invoiceError
+  if (staffResult.error) throw staffResult.error
+  for (const result of invoiceResults) {
+    if (result.error) throw result.error
+  }
+  const staff = staffResult.data || []
+  const invoices = invoiceResults.flatMap((result) => result.data || [])
 
   const appointmentById = new Map(
     (appointments || []).map((row) => [row.id, row]),

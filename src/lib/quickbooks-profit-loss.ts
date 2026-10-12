@@ -39,11 +39,21 @@ function rowAmount(row: QbReportRow): number {
 }
 
 function directBreakdown(row: QbReportRow): Record<string, number> {
-  return Object.fromEntries(
-    (row.Rows?.Row || [])
-      .map((child) => [rowLabel(child), round2(rowAmount(child))] as const)
-      .filter(([label]) => Boolean(label)),
-  )
+  const breakdown: Record<string, number> = {}
+  function visit(child: QbReportRow, parents: string[]) {
+    const label = rowLabel(child)
+    if (!label) return
+    const path = [...parents, label]
+    const children = child.Rows?.Row || []
+    if (children.length) {
+      children.forEach((nested) => visit(nested, path))
+    } else {
+      const key = path.join(' / ')
+      breakdown[key] = round2((breakdown[key] || 0) + rowAmount(child))
+    }
+  }
+  ;(row.Rows?.Row || []).forEach((child) => visit(child, []))
+  return breakdown
 }
 
 function mergeBreakdowns(

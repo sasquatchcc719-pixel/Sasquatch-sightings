@@ -304,7 +304,7 @@ export async function loadAttributionRows(
       lead_source_key: a.lead_source_key,
       is_commercial: flaggedCommercial || businessName.length > 0,
       revenue: effectiveInvoiceAmount({
-        invoiceTotal: Number(inv?.total || 0),
+        invoiceTotal: inv?.total != null ? Number(inv.total) : null,
         invoiceLineItems: lineItems,
         quotedTotal: Number(a.quoted_total || 0),
         kind: a.kind ? String(a.kind) : null,

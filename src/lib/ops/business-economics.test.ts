@@ -8,8 +8,41 @@ import {
   weeklyCostWindowsSince,
   yearToDateCostWindow,
 } from './business-economics'
+import { businessLaborSummary } from './business-labor'
 
 describe('business economics', () => {
+  it('includes earned payroll in reporting and flags unreviewed clocks instead of claiming a settled margin', () => {
+    const raw = calculateBusinessCostSnapshot({
+      periodKind: 'weekly',
+      window: { start: '2026-10-01', end: '2026-10-07' },
+      revenue: 1000,
+      productiveHours: 10,
+      quickbooksCost: 100,
+      excludedBookkeepingAdjustments: 0,
+      ownerFieldHours: 0,
+      expenseBreakdown: { Fuel: 100 },
+    })
+    const snapshot = {
+      ...raw,
+      ...businessLaborSummary(raw, [
+        {
+          date: '2026-10-07',
+          paidHours: 20,
+          grossWages: 500,
+          extraPay: 0,
+          entries: 1,
+          issues: ['Review Oct 7 shift'],
+        },
+      ]),
+    }
+    const digest = buildBusinessCostDigest([snapshot], snapshot)
+    expect(digest).toContain('Tracked cost/hour: $60.00')
+    expect(digest).toContain('Recorded wages + extras: $500.00')
+    expect(digest).toContain('PROVISIONAL — PAYROLL NEEDS REVIEW')
+    const report = buildBusinessCostReportCard([snapshot], snapshot)
+    expect(report?.card.verdict?.tone).toBe('warn')
+    expect(report?.card.incomeCostSeries?.points[0].cost).toBe(60)
+  })
   it('builds discrete Thursday-through-Wednesday weeks and a YTD window', () => {
     const now = new Date('2026-09-24T16:00:00Z')
     expect(latestCompletedWednesday(now)).toBe('2026-09-23')

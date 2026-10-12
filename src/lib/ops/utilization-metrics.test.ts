@@ -7,6 +7,17 @@ import {
 } from './utilization-metrics'
 
 describe('effectiveInvoiceAmount', () => {
+  it('keeps a fully discounted invoice at zero despite positive lines and quote', () => {
+    expect(
+      effectiveInvoiceAmount({
+        invoiceTotal: 0,
+        invoiceLineItems: [{ line_total: 240 }],
+        quotedTotal: 240,
+        kind: 'service',
+      }),
+    ).toBe(0)
+  })
+
   it('prefers invoice total over quote', () => {
     expect(
       effectiveInvoiceAmount({
@@ -19,7 +30,7 @@ describe('effectiveInvoiceAmount', () => {
   it('falls back to quote for ordinary jobs without an invoice', () => {
     expect(
       effectiveInvoiceAmount({
-        invoiceTotal: 0,
+        invoiceTotal: null,
         quotedTotal: 350,
         kind: 'service',
       }),
@@ -30,7 +41,7 @@ describe('effectiveInvoiceAmount', () => {
     // Benns mitigation visit: project estimate on the calendar, no invoice yet.
     expect(
       effectiveInvoiceAmount({
-        invoiceTotal: 0,
+        invoiceTotal: null,
         quotedTotal: 3897.08,
         kind: 'restoration',
       }),
@@ -40,7 +51,7 @@ describe('effectiveInvoiceAmount', () => {
   it('never counts an estimate as revenue', () => {
     expect(
       effectiveInvoiceAmount({
-        invoiceTotal: 0,
+        invoiceTotal: null,
         invoiceLineItems: [{ line_total: 1049.94 }],
         quotedTotal: 1049.94,
         kind: 'estimate',
@@ -76,6 +87,20 @@ describe('excludeJobsCoveredByRevenueEntries', () => {
 })
 
 describe('appointmentScheduleRevenue', () => {
+  it('shows and reports zero for a fully discounted invoice', () => {
+    const appointment = {
+      kind: 'service',
+      quoted_total: 240,
+      ops_invoices: {
+        total: 0,
+        ops_invoice_line_items: [{ line_total: 240 }],
+      },
+    }
+
+    expect(appointmentDisplayRevenue(appointment)).toBe(0)
+    expect(appointmentScheduleRevenue(appointment)).toBe(0)
+  })
+
   it('keeps an estimate value visible without counting it as revenue', () => {
     const estimate = {
       kind: 'estimate',

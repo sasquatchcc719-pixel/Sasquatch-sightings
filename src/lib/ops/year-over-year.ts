@@ -301,9 +301,7 @@ export async function loadYearOverYear(
       ? row.ops_invoices[0]
       : row.ops_invoices
     const total = effectiveInvoiceAmount({
-      invoiceTotal: Number(
-        (inv as { total?: number | string | null } | null)?.total ?? 0,
-      ),
+      invoiceTotal: inv?.total != null ? Number(inv.total) : null,
       quotedTotal: Number(row.quoted_total ?? 0),
       kind: row.kind ? String(row.kind) : null,
     })

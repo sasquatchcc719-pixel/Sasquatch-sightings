@@ -62,6 +62,7 @@ let current: CurrentInvoice
 let promo: Record<string, unknown>
 let invoiceUpdate: Record<string, unknown> | null
 let rpcCalls: Array<{ name: string; args: unknown }>
+let reportingUpdates: Array<{ table: string; payload: Record<string, unknown> }>
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -69,6 +70,7 @@ beforeEach(() => {
   mocks.assertAccess.mockResolvedValue(undefined)
   invoiceUpdate = null
   rpcCalls = []
+  reportingUpdates = []
   current = {
     id: 'invoice-a',
     appointment_id: null,
@@ -106,6 +108,8 @@ beforeEach(() => {
         update: vi.fn((payload: Record<string, unknown>) => {
           updatePayload = payload
           if (table === 'ops_invoices') invoiceUpdate = payload
+          if (table === 'jobs' || table === 'revenue_entries')
+            reportingUpdates.push({ table, payload })
           return builder
         }),
         single: vi.fn(async () => {
@@ -142,6 +146,14 @@ async function patchInvoice(body: Record<string, unknown>) {
 }
 
 describe('invoice coupon tracking', () => {
+  it('updates existing reporting amounts when an invoice discount changes', async () => {
+    const response = await patchInvoice({ discount_amount: 566 })
+    expect(response.status).toBe(200)
+    expect(reportingUpdates).toEqual([
+      { table: 'revenue_entries', payload: { invoice_amount: 0 } },
+      { table: 'jobs', payload: { invoice_amount: 0 } },
+    ])
+  })
   it('recalculates a selected coupon on the server and stores its metadata', async () => {
     const response = await patchInvoice({
       promo_code: 'partner10',

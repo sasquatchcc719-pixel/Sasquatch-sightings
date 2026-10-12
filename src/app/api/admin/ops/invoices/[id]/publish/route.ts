@@ -179,7 +179,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (hoursWorked <= 0) hoursWorked = null
 
     const invoiceTotal = effectiveInvoiceAmount({
-      invoiceTotal: Number(invoice.total || 0),
+      invoiceTotal: invoice.total != null ? Number(invoice.total) : null,
       invoiceLineItems: invLines,
       quotedTotal: Number(
         (appointment as { quoted_total?: number }).quoted_total || 0,
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         status: 'published',
         published_at: new Date().toISOString(),
         ops_invoice_id: invoiceId,
-        ...(invoiceTotal > 0 ? { invoice_amount: invoiceTotal } : {}),
+        invoice_amount: invoiceTotal,
         ...(hoursWorked ? { hours_worked: hoursWorked } : {}),
       })
       .select()

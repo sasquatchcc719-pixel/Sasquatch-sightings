@@ -20,6 +20,8 @@ export async function GET() {
           annualWindow: 'January 1 through the latest completed Wednesday.',
           bookCost:
             'Cash-basis QuickBooks P&L costs, excluding reconciliation discrepancies.',
+          trackedCost:
+            'Recorded earned wages, paid-invoice add-on bonuses, and approved premiums plus QuickBooks non-wage costs. Booked wages are replaced, not added twice; older wages without timeclock coverage stay booked.',
         },
       },
       { headers: { 'Cache-Control': 'private, no-store' } },
