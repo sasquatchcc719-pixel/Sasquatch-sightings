@@ -4,7 +4,15 @@ import { createAdminClient } from '@/supabase/server'
 import {
   generateRecurringAppointments,
   generateBatchInvoice,
+  type RecurringTemplate,
+  type RecurrenceRule,
+  type TemplateLineItem,
 } from '@/lib/ops/recurring'
+import {
+  recurringEditsNeedRegeneration,
+  recurringItemContent,
+  recurringRulesContent,
+} from '@/lib/ops/recurring-edits'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -81,6 +89,23 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const supabase = createAdminClient()
     const body = await request.json()
 
+    const { data: current, error: currentError } = await supabase
+      .from('ops_recurring_templates')
+      .select('*, ops_recurrence_rules(*)')
+      .eq('id', id)
+      .single()
+    if (currentError || !current) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    const previous = current as RecurringTemplate & {
+      ops_recurrence_rules: RecurrenceRule[]
+    }
+    const needsRegeneration = recurringEditsNeedRegeneration(
+      previous,
+      body.template || {},
+      body.rules,
+    )
+
     if (body.template) {
       const updates: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
@@ -144,7 +169,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       }
     }
 
-    if (Array.isArray(body.rules)) {
+    if (
+      Array.isArray(body.rules) &&
+      recurringRulesContent(body.rules) !==
+        recurringRulesContent(previous.ops_recurrence_rules)
+    ) {
       await supabase.from('ops_recurrence_rules').delete().eq('template_id', id)
 
       if (body.rules.length > 0) {
@@ -182,11 +211,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     if (body.update_future) {
       const tpl = body.template
-      if (
-        tpl?.line_items ||
-        tpl?.start_time ||
-        tpl?.scheduled_duration_minutes != null
-      ) {
+      if (needsRegeneration) {
         const today = new Date().toISOString().slice(0, 10)
 
         const { data: futureAppts } = await supabase
@@ -209,6 +234,63 @@ export async function PATCH(request: NextRequest, { params }: Params) {
               .eq('appointment_id', appt.id)
           }
           await generateRecurringAppointments(supabase, id)
+        }
+      } else {
+        // A note edit must keep appointment/invoice IDs and must not fire the
+        // AFTER INSERT booking notification trigger.
+        const today = new Date().toISOString().slice(0, 10)
+        if (tpl?.internal_notes !== undefined) {
+          const { error } = await supabase
+            .from('ops_appointments')
+            .update({
+              internal_notes: tpl.internal_notes,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('recurring_template_id', id)
+            .gte('appointment_date', today)
+            .in('status', ['booked', 'confirmed'])
+          if (error) throw error
+        }
+        const changedNotes = (tpl?.line_items || [])
+          .map((item: TemplateLineItem, index: number) => ({
+            before: previous.line_items[index],
+            after: item,
+          }))
+          .filter(
+            ({
+              before,
+              after,
+            }: {
+              before: TemplateLineItem
+              after: TemplateLineItem
+            }) => (before.notes || null) !== (after.notes || null),
+          )
+        if (changedNotes.length) {
+          const { data: visits, error } = await supabase
+            .from('ops_appointments')
+            .select('ops_appointment_line_items(*)')
+            .eq('recurring_template_id', id)
+            .gte('appointment_date', today)
+            .in('status', ['booked', 'confirmed'])
+          if (error) throw error
+          for (const visit of visits || []) {
+            const used = new Set<string>()
+            for (const { before, after } of changedNotes) {
+              const line = visit.ops_appointment_line_items.find(
+                (line: TemplateLineItem & { id: string }) =>
+                  !used.has(line.id) &&
+                  recurringItemContent(line) === recurringItemContent(before) &&
+                  (line.notes || null) === (before.notes || null),
+              )
+              if (!line) continue // Preserve notes customized on an individual visit.
+              used.add(line.id)
+              const { error: noteError } = await supabase
+                .from('ops_appointment_line_items')
+                .update({ notes: after.notes || null })
+                .eq('id', line.id)
+              if (noteError) throw noteError
+            }
+          }
         }
       }
     }

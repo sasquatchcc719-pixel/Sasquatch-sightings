@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
             Number(scheduleInput.scheduled_duration_minutes) || 120,
           ),
           staffUserId: String(scheduleInput.assigned_staff_user_id),
+          excludeTemplateId: typeof body.template_id === 'string' ? body.template_id : undefined,
         })
         return NextResponse.json({
           preview_dates: dates,

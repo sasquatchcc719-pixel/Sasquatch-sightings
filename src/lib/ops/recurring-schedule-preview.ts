@@ -20,6 +20,7 @@ export type RecurringScheduleOccurrence = {
 }
 
 type AppointmentRow = {
+  recurring_template_id?: string | null
   appointment_date: string
   start_time: string
   end_time: string
@@ -67,6 +68,7 @@ export function buildRecurringScheduleOccurrences(params: {
   durationMinutes: number
   appointments: AppointmentRow[]
   events: CalendarEventRow[]
+  excludeTemplateId?: string
 }): RecurringScheduleOccurrence[] {
   const startTime = `${params.startTime}:00`.slice(0, 8)
   const endTime = addMinutesToTimeWithinDay(startTime, params.durationMinutes)
@@ -74,6 +76,8 @@ export function buildRecurringScheduleOccurrences(params: {
   return params.dates.map((date) => {
     const appointment = params.appointments.find(
       (row) =>
+        (!params.excludeTemplateId ||
+          row.recurring_template_id !== params.excludeTemplateId) &&
         row.appointment_date === date &&
         overlaps(startTime, endTime, row.start_time, row.end_time),
     )
@@ -135,6 +139,7 @@ export async function previewRecurringSchedule(
     startTime: string
     durationMinutes: number
     staffUserId: string
+    excludeTemplateId?: string
   },
 ): Promise<{
   staff: { id: string; display_name: string }
@@ -171,7 +176,7 @@ export async function previewRecurringSchedule(
     supabase
       .from('ops_appointments')
       .select(
-        'appointment_date, start_time, end_time, ops_customers!ops_appointments_customer_id_fkey(full_name, business_name)',
+        'appointment_date, start_time, end_time, recurring_template_id, ops_customers!ops_appointments_customer_id_fkey(full_name, business_name)',
       )
       .gte('appointment_date', startDate)
       .lte('appointment_date', endDate)
@@ -201,6 +206,7 @@ export async function previewRecurringSchedule(
       durationMinutes: params.durationMinutes,
       appointments: (appointmentsResult.data || []) as AppointmentRow[],
       events: (eventsResult.data || []) as CalendarEventRow[],
+      excludeTemplateId: params.excludeTemplateId,
     }),
   }
 }

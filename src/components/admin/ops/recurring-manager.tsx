@@ -2131,6 +2131,7 @@ function CreateTemplateForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           preview_only: true,
+          template_id: initialData?.id,
           rules: rulesPayload,
           schedule: {
             start_time: startTime,

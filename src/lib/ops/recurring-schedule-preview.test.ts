@@ -7,6 +7,37 @@ import {
 } from './recurring'
 
 describe('buildRecurringScheduleOccurrences', () => {
+  it('ignores the edited plan but keeps other and unlinked jobs as conflicts', () => {
+    const row = {
+      appointment_date: '2026-10-15',
+      start_time: '21:00:00',
+      end_time: '23:59:00',
+      ops_customers: { full_name: null, business_name: 'Saltgrass' },
+    }
+    const preview = (
+      appointments: (typeof row & { recurring_template_id: string | null })[],
+    ) =>
+      buildRecurringScheduleOccurrences({
+        dates: ['2026-10-15'],
+        startTime: '21:00',
+        durationMinutes: 180,
+        events: [],
+        excludeTemplateId: 'saltgrass-plan',
+        appointments,
+      })[0]
+    expect(
+      preview([{ ...row, recurring_template_id: 'saltgrass-plan' }]).status,
+    ).toBe('clear')
+    expect(
+      preview([
+        { ...row, recurring_template_id: 'saltgrass-plan' },
+        { ...row, recurring_template_id: 'other-plan' },
+      ]).status,
+    ).toBe('conflict')
+    expect(preview([{ ...row, recurring_template_id: null }]).status).toBe(
+      'conflict',
+    )
+  })
   it('marks an overlapping appointment and leaves other visits clear', () => {
     const occurrences = buildRecurringScheduleOccurrences({
       dates: ['2026-09-11', '2026-09-18'],
