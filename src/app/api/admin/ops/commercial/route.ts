@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     let query = db
       .from('ops_customers')
       .select(
-        'id,business_name,full_name,email,phone,is_commercial,ops_commercial_agreements(id,status),ops_client_users(id,is_active)',
+        'id,business_name,full_name,email,phone,is_commercial,ops_commercial_agreements(id,status),ops_client_users(id,is_active),ops_commercial_profiles(scheduling_sms_phone,scheduling_sms_enabled,scheduling_sms_consent_at,scheduling_sms_opted_out_at)',
       )
       .order('business_name')
       .limit(100)

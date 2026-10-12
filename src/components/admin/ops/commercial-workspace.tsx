@@ -28,6 +28,7 @@ import {
   type CommercialData,
   type AgreementContent,
   type CommercialAgreement,
+  type CommercialSmsPreferences,
   blankScopeLine,
   phaseTotal,
   publicationIssues,
@@ -54,6 +55,13 @@ type Account = {
   full_name: string
   ops_commercial_agreements: { id: string; status: string }[]
   ops_client_users: { id: string; is_active: boolean }[]
+  ops_commercial_profiles: SchedulingSmsProfile | SchedulingSmsProfile[] | null
+}
+type SchedulingSmsProfile = {
+  scheduling_sms_phone: string | null
+  scheduling_sms_enabled: boolean | null
+  scheduling_sms_consent_at: string | null
+  scheduling_sms_opted_out_at: string | null
 }
 type AccountData = CommercialData & {
   estimates: {
@@ -148,6 +156,34 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function SchedulingTextStatus({
+  preferences,
+}: {
+  preferences?: CommercialSmsPreferences
+}) {
+  const signedUp =
+    preferences?.enabled === true &&
+    !!preferences.consentAt &&
+    !!preferences.phone.trim()
+  const label = signedUp
+    ? 'Signed up'
+    : preferences?.optedOutAt
+      ? 'Opted out'
+      : 'Not signed up'
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
+        signedUp
+          ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-200'
+          : 'border-amber-400/50 bg-amber-400/15 text-amber-200'
+      }`}
+    >
+      <MessageSquare className="h-4 w-4 shrink-0" aria-hidden="true" />
+      Text reminders: {label}
+    </span>
+  )
+}
+
 export function CommercialAccounts() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [search, setSearch] = useState('')
@@ -240,41 +276,54 @@ export function CommercialAccounts() {
         <p>Loading commercial accounts…</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {accounts.map((c) => (
-            <Link
-              href={`/admin/operations/commercial/${c.id}`}
-              key={c.id}
-              className={`${panelClass} transition hover:border-cyan-400/50`}
-            >
-              <Building2 className="mb-5 h-7 w-7 text-cyan-400" />
-              <h3 className="text-xl font-semibold">
-                {c.business_name || c.full_name}
-              </h3>
-              <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-400">
-                <span>
-                  {
-                    c.ops_commercial_agreements.filter(
-                      (a) => a.status === 'signed',
-                    ).length
-                  }{' '}
-                  signed agreements
-                </span>
-                <span>
-                  {
-                    c.ops_commercial_agreements.filter(
-                      (a) => a.status === 'draft',
-                    ).length
-                  }{' '}
-                  drafts
-                </span>
-                <span>
-                  {c.ops_client_users.filter((u) => u.is_active).length} portal
-                  contacts
-                </span>
-              </div>
-              <p className="mt-5 text-sm text-cyan-300">Open account →</p>
-            </Link>
-          ))}
+          {accounts.map((c) => {
+            const profile = unwrapRelation(c.ops_commercial_profiles)
+            return (
+              <Link
+                href={`/admin/operations/commercial/${c.id}`}
+                key={c.id}
+                className={`${panelClass} transition hover:border-cyan-400/50`}
+              >
+                <Building2 className="mb-5 h-7 w-7 text-cyan-400" />
+                <h3 className="text-xl font-semibold">
+                  {c.business_name || c.full_name}
+                </h3>
+                <div className="mt-3">
+                  <SchedulingTextStatus
+                    preferences={{
+                      phone: profile?.scheduling_sms_phone || '',
+                      enabled: profile?.scheduling_sms_enabled === true,
+                      consentAt: profile?.scheduling_sms_consent_at || null,
+                      optedOutAt: profile?.scheduling_sms_opted_out_at || null,
+                    }}
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-400">
+                  <span>
+                    {
+                      c.ops_commercial_agreements.filter(
+                        (a) => a.status === 'signed',
+                      ).length
+                    }{' '}
+                    signed agreements
+                  </span>
+                  <span>
+                    {
+                      c.ops_commercial_agreements.filter(
+                        (a) => a.status === 'draft',
+                      ).length
+                    }{' '}
+                    drafts
+                  </span>
+                  <span>
+                    {c.ops_client_users.filter((u) => u.is_active).length}{' '}
+                    portal contacts
+                  </span>
+                </div>
+                <p className="mt-5 text-sm text-cyan-300">Open account →</p>
+              </Link>
+            )
+          })}
           {accounts.length === 0 && (
             <p>
               No businesses found. Add the business to Customers, then search
@@ -440,7 +489,10 @@ export function CommercialAccount({
           <p className="text-xs tracking-widest text-cyan-400 uppercase">
             Commercial workspace
           </p>
-          <h2 className="text-3xl font-bold">{data.businessName}</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h2 className="text-3xl font-bold">{data.businessName}</h2>
+            <SchedulingTextStatus preferences={data.smsPreferences} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button

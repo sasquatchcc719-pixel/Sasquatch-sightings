@@ -7,10 +7,15 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgreementEditor, CommercialAccount } from './commercial-workspace'
+import {
+  AgreementEditor,
+  CommercialAccount,
+  CommercialAccounts,
+} from './commercial-workspace'
 import {
   newAgreementContent,
   type CommercialAgreement,
+  emptyProfile,
 } from '@/lib/ops/commercial'
 
 vi.mock('@/supabase/client', () => ({ createClient: vi.fn() }))
@@ -44,6 +49,109 @@ function draft(): CommercialAgreement {
     created_at: '2026-09-05T00:00:00Z',
   }
 }
+
+describe('commercial text reminder status', () => {
+  const authorized = {
+    phone: '+17195550100',
+    enabled: true,
+    consentAt: '2026-10-08T16:13:23Z',
+    optedOutAt: null,
+  }
+
+  it.each([
+    [authorized, 'Signed up'],
+    [{ ...authorized, consentAt: null }, 'Not signed up'],
+    [{ ...authorized, phone: '' }, 'Not signed up'],
+    [
+      { ...authorized, enabled: false, optedOutAt: '2026-10-09T12:00:00Z' },
+      'Opted out',
+    ],
+    [undefined, 'Not signed up'],
+  ])(
+    'shows saved enrollment beside the account name: %j',
+    async (preferences, label) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            businessName: 'Example Business',
+            profile: emptyProfile,
+            smsPreferences: preferences,
+            agreements: [],
+            addresses: [],
+            estimates: [],
+            users: [],
+            plans: [],
+          }),
+        }),
+      )
+      render(<CommercialAccount customerId="customer-a" />)
+      const heading = await screen.findByRole('heading', {
+        name: 'Example Business',
+      })
+      expect(
+        within(heading.parentElement!).getByText(`Text reminders: ${label}`),
+      ).toBeInTheDocument()
+      expect(fetch).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('shows each business enrollment on its list card, including accounts without a profile', async () => {
+    const enrolled = {
+      scheduling_sms_phone: authorized.phone,
+      scheduling_sms_enabled: true,
+      scheduling_sms_consent_at: authorized.consentAt,
+      scheduling_sms_opted_out_at: null,
+    }
+    const customers = [
+      {
+        id: 'enrolled',
+        business_name: 'Enrolled Business',
+        ops_commercial_profiles: [enrolled],
+      },
+      {
+        id: 'missing',
+        business_name: 'New Business',
+        ops_commercial_profiles: null,
+      },
+      {
+        id: 'stopped',
+        business_name: 'Stopped Business',
+        ops_commercial_profiles: {
+          ...enrolled,
+          scheduling_sms_enabled: false,
+          scheduling_sms_opted_out_at: '2026-10-09T12:00:00Z',
+        },
+      },
+    ].map((c) => ({
+      ...c,
+      full_name: '',
+      ops_commercial_agreements: [],
+      ops_client_users: [],
+    }))
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ customers, requests: [] }),
+        }),
+    )
+    render(<CommercialAccounts />)
+    for (const [name, label] of [
+      ['Enrolled Business', 'Signed up'],
+      ['New Business', 'Not signed up'],
+      ['Stopped Business', 'Opted out'],
+    ]) {
+      const card = await screen.findByRole('link', { name: new RegExp(name) })
+      expect(
+        within(card).getByText(`Text reminders: ${label}`),
+      ).toBeInTheDocument()
+    }
+  })
+})
 
 describe('commercial agreement approval', () => {
   it('puts the required representative field beside the approval controls', () => {
