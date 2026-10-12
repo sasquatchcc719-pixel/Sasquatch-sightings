@@ -105,6 +105,30 @@ export function getSemiMonthlyPayPeriod(value: string): SemiMonthlyPayPeriod {
   const [year, month, day] = value.split('-').map(Number)
   if (!year || !month || !day) throw new Error('Invalid pay period date')
 
+  // The new schedule starts October 11, 2026. Keep earlier payroll intact
+  // and isolate October 1–10 so the transition never overlaps a regular run.
+  if (value >= '2026-10-11') {
+    if (day >= 11 && day <= 24) {
+      return {
+        startDate: dateKey(year, month, 11),
+        endDate: dateKey(year, month, 24),
+        label: '11th through 24th',
+      }
+    }
+    return {
+      startDate: dateKey(year, day <= 10 ? month - 1 : month, 25),
+      endDate: dateKey(year, day <= 10 ? month : month + 1, 10),
+      label: '25th through 10th',
+    }
+  }
+  if (value >= '2026-10-01') {
+    return {
+      startDate: '2026-10-01',
+      endDate: '2026-10-10',
+      label: 'Transition: 1st through 10th',
+    }
+  }
+
   if (day <= 15) {
     return {
       startDate: dateKey(year, month, 1),
@@ -126,15 +150,7 @@ export function shiftSemiMonthlyPayPeriod(
   offset: -1 | 1,
 ): SemiMonthlyPayPeriod {
   const current = getSemiMonthlyPayPeriod(value)
-  const [year, month, day] = current.startDate.split('-').map(Number)
-
-  if (offset === 1) {
-    return day === 1
-      ? getSemiMonthlyPayPeriod(dateKey(year, month, 16))
-      : getSemiMonthlyPayPeriod(dateKey(year, month + 1, 1))
-  }
-
-  return day === 16
-    ? getSemiMonthlyPayPeriod(dateKey(year, month, 1))
-    : getSemiMonthlyPayPeriod(dateKey(year, month - 1, 16))
+  const boundary = offset === 1 ? current.endDate : current.startDate
+  const [year, month, day] = boundary.split('-').map(Number)
+  return getSemiMonthlyPayPeriod(dateKey(year, month, day + offset))
 }

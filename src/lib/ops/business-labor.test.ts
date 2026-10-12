@@ -44,6 +44,25 @@ describe('business payroll reconciliation', () => {
       trackedMarginPct: 77,
     })
   })
+  it('does not add the $1,114 transition paycheck on top of wages already earned', () => {
+    const before = businessLaborSummary(snapshot, labor)
+    const after = businessLaborSummary(
+      {
+        ...snapshot,
+        quickbooksCost: snapshot.quickbooksCost + 1114,
+        expenseBreakdown: {
+          ...snapshot.expenseBreakdown,
+          'Payroll expenses / Wages': 500 + 1114,
+        },
+      },
+      labor,
+    )
+    expect(after.bookedWages).toBe(1614)
+    expect(after.recordedLabor).toBe(before.recordedLabor)
+    expect(after.trackedCost).toBe(before.trackedCost)
+    expect(after.trackedCostPerHour).toBe(before.trackedCostPerHour)
+    expect(after.trackedMarginPct).toBe(before.trackedMarginPct)
+  })
   it('counts labor even in a week with no paycheck posted to QuickBooks', () => {
     expect(
       businessLaborSummary(
