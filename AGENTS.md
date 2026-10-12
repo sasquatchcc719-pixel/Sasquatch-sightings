@@ -253,6 +253,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Build NFC sales destinations as responsive pages using the approved long-form copy; keep print flyers separate and match image-button frames to the existing card buttons.
 - Water-treatment imagery must show finished professional installations with credible equipment and connected plumbing; generate each product image separately instead of enlarging small artwork from a flyer.
 - Recurring note edits must preserve existing appointment and invoice IDs; regenerate only for actual schedule or pricing changes, and exclude the edited plan's own visits from conflict previews.
+- Put staff customer-detail collection beside the business name; provide a prominent phone-intake action and keep its form directly below the account heading.
 
 ---
 

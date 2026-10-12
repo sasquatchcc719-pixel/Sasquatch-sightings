@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Building2,
   FileCheck2,
@@ -299,6 +299,7 @@ export function CommercialAccount({
   const [data, setData] = useState<AccountData | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const profileRef = useRef<HTMLDetailsElement>(null)
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState('')
   const [estimateId, setEstimateId] = useState(initialEstimateId)
@@ -442,6 +443,21 @@ export function CommercialAccount({
           <h2 className="text-3xl font-bold">{data.businessName}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            className="gap-2 bg-cyan-400 font-semibold text-slate-950 hover:bg-cyan-300"
+            aria-controls="business-profile"
+            onClick={() => {
+              const profile = profileRef.current
+              if (!profile) return
+              profile.open = true
+              profile.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              profile.querySelector('input')?.focus({ preventScroll: true })
+            }}
+          >
+            <Phone className="h-4 w-4" aria-hidden="true" />
+            Collect details by phone
+          </Button>
           <CustomerDeleteControl
             customerId={customerId}
             label={data.businessName}
@@ -467,6 +483,42 @@ export function CommercialAccount({
           </Link>
         </div>
       </div>
+      <details
+        ref={profileRef}
+        id="business-profile"
+        className={`${panelClass} scroll-mt-4`}
+      >
+        <summary className="cursor-pointer font-semibold">
+          Business profile & service locations
+        </summary>
+        <div className="mt-4">
+          <ProfileForm
+            key={customerId}
+            profile={data.profile}
+            admin
+            onSave={async (p) => {
+              await commercialFetch('/api/admin/ops/commercial', 'POST', {
+                customer_id: customerId,
+              })
+              await commercialFetch(base, 'PATCH', p)
+              await load()
+            }}
+          />
+          <div className="mt-3 space-y-2">
+            {data.addresses.map((a) => (
+              <p key={a.id} className="text-sm text-slate-400">
+                {a.label} · {a.street_1}, {a.city}, {a.state} {a.zip_code}
+              </p>
+            ))}
+          </div>
+          <Link
+            className="mt-3 inline-block text-sm text-cyan-300"
+            href="/admin/operations/customers"
+          >
+            Manage customer addresses →
+          </Link>
+        </div>
+      </details>
       {error && (
         <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-red-300">
           {error}
@@ -882,38 +934,7 @@ export function CommercialAccount({
           </form>
         )}
       </section>
-      <details className={panelClass}>
-        <summary className="cursor-pointer font-semibold">
-          Business profile & service locations
-        </summary>
-        <div className="mt-4">
-          <ProfileForm
-            key={customerId}
-            profile={data.profile}
-            admin
-            onSave={async (p) => {
-              await commercialFetch('/api/admin/ops/commercial', 'POST', {
-                customer_id: customerId,
-              })
-              await commercialFetch(base, 'PATCH', p)
-              await load()
-            }}
-          />
-          <div className="mt-3 space-y-2">
-            {data.addresses.map((a) => (
-              <p key={a.id} className="text-sm text-slate-400">
-                {a.label} · {a.street_1}, {a.city}, {a.state} {a.zip_code}
-              </p>
-            ))}
-          </div>
-          <Link
-            className="mt-3 inline-block text-sm text-cyan-300"
-            href="/admin/operations/customers"
-          >
-            Manage customer addresses →
-          </Link>
-        </div>
-      </details>
+
       <section id="agreement-workflow" className={panelClass}>
         <h3 className="mb-3 text-lg font-semibold">Agreements</h3>
         <div className="flex flex-wrap gap-2">
