@@ -30,6 +30,13 @@ import {
 import { recordTomorrowFillReply } from '@/lib/ops/tomorrow-fill'
 import { recordCommercialSmsOptOut } from '@/lib/ops/commercial-sms'
 import { handleCleaningReminderPromptReply } from '@/lib/ops/cleaning-reminder-prompts'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
+import {
+  claimInboundMessage,
+  markInboundMessageDuplicate,
+  markInboundMessageFailed,
+  markInboundMessagePersisted,
+} from '@/lib/mcp/inbound-events'
 
 export const maxDuration = 60
 
@@ -382,6 +389,10 @@ async function determineSourceType(
 }
 
 export async function POST(request: NextRequest) {
+  let eventClaim: {
+    supabase: ReturnType<typeof createAdminClient>
+    messageSid: string
+  } | null = null
   try {
     const emptyTwiml = new NextResponse(
       '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
@@ -392,6 +403,12 @@ export async function POST(request: NextRequest) {
 
     // Parse Twilio webhook data (form-encoded)
     const formData = await request.formData()
+    const signedParams = Object.fromEntries(
+      [...formData.entries()].map(([key, value]) => [key, String(value)]),
+    )
+    if (!validateTwilioInboundRequest({ request, form: signedParams })) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
     const fromPhone = String(formData.get('From') || '').trim()
     const toNumber = String(formData.get('To') || '').trim() // number they texted (866 vs 719) – reply from this so thread stays correct
     const rawMessageBody = String(formData.get('Body') || '').trim()
@@ -399,6 +416,7 @@ export async function POST(request: NextRequest) {
     const inboundMedia = parseTwilioInboundMedia(formData)
     const messageBody = inboundMessageContent(rawMessageBody, inboundMedia)
     const twilioSid = String(formData.get('MessageSid') || '').trim()
+    const receivedAt = new Date().toISOString()
 
     if (!fromPhone || !twilioSid || !messageBody) {
       return NextResponse.json(
@@ -457,6 +475,13 @@ export async function POST(request: NextRequest) {
       return emptyTwiml
     }
     // ─────────────────────────────────────────────────────────────────────────
+
+    const claimed = await claimInboundMessage(supabase, twilioSid)
+    if (!claimed) {
+      console.log(`[MCP events] Duplicate inbound SID ${twilioSid} suppressed`)
+      return emptyTwiml
+    }
+    eventClaim = { supabase, messageSid: twilioSid }
 
     const { sourceType, matchedPartner } = await determineSourceType(
       rawMessageBody,
@@ -681,6 +706,12 @@ export async function POST(request: NextRequest) {
       console.log(
         `⚠️  Duplicate message detected (SID: ${twilioSid}) - skipping processing`,
       )
+      await markInboundMessageDuplicate({
+        supabase,
+        messageSid: twilioSid,
+        conversationId: conversation.id,
+      })
+      eventClaim = null
       return emptyTwiml
     }
 
@@ -777,7 +808,7 @@ export async function POST(request: NextRequest) {
     messages.push({
       role: 'user',
       content: messageBody,
-      timestamp: new Date().toISOString(),
+      timestamp: receivedAt,
       twilio_sid: twilioSid,
     })
 
@@ -806,19 +837,37 @@ export async function POST(request: NextRequest) {
       console.log(
         `[SMS] LSA disclaimer detected — saving to history but skipping AI response`,
       )
-      await supabase
+      const { error: persistError } = await supabase
         .from('conversations')
         .update({ messages, updated_at: new Date().toISOString() })
         .eq('id', conversation.id)
+      if (persistError) throw persistError
+      await markInboundMessagePersisted({
+        supabase,
+        messageSid: twilioSid,
+        conversationId: conversation.id,
+        receivedAt,
+        hasMedia: inboundMedia.length > 0,
+      })
+      eventClaim = null
       return emptyTwiml
     }
 
     if (isSmsReaction) {
       console.log('[SMS] Reaction-only inbound detected, no reply sent')
-      await supabase
+      const { error: persistError } = await supabase
         .from('conversations')
         .update({ messages, updated_at: new Date().toISOString() })
         .eq('id', conversation.id)
+      if (persistError) throw persistError
+      await markInboundMessagePersisted({
+        supabase,
+        messageSid: twilioSid,
+        conversationId: conversation.id,
+        receivedAt,
+        hasMedia: inboundMedia.length > 0,
+      })
+      eventClaim = null
       return emptyTwiml
     }
 
@@ -832,10 +881,19 @@ export async function POST(request: NextRequest) {
 
     // Persist the user message immediately so Twilio webhook retries see the
     // twilio_sid and hit the dedup check above.
-    await supabase
+    const { error: persistError } = await supabase
       .from('conversations')
       .update({ messages, updated_at: new Date().toISOString() })
       .eq('id', conversation.id)
+    if (persistError) throw persistError
+    await markInboundMessagePersisted({
+      supabase,
+      messageSid: twilioSid,
+      conversationId: conversation.id,
+      receivedAt,
+      hasMedia: inboundMedia.length > 0,
+    })
+    eventClaim = null
 
     const conversationMetadata =
       (conversation.metadata as Record<string, unknown> | null) || {}
@@ -912,6 +970,13 @@ export async function POST(request: NextRequest) {
     // No auto-reply — Charles answers from the Telegram relay.
     return emptyTwiml
   } catch (error) {
+    if (eventClaim) {
+      await markInboundMessageFailed(
+        eventClaim.supabase,
+        eventClaim.messageSid,
+        error,
+      )
+    }
     console.error('Inbound SMS webhook error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },

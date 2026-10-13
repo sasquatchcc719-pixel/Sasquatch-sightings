@@ -8,6 +8,7 @@ import {
   McpAuthorizationError,
   mcpWwwAuthenticate,
 } from '@/lib/mcp/auth'
+import { handleMcpEventsRequest, isMcpEventsMethod } from '@/lib/mcp/events'
 import { createSasquatchMcpServer } from '@/lib/mcp/server'
 import { createAdminClient } from '@/supabase/server'
 
@@ -94,21 +95,35 @@ export async function POST(request: NextRequest): Promise<Response> {
           ),
         })
       } else {
-        const server = createSasquatchMcpServer()
-        const transport = new WebStandardStreamableHTTPServerTransport({
-          sessionIdGenerator: undefined,
-          enableJsonResponse: true,
-          maxRequestBodySize: 256 * 1024,
-        })
-
-        try {
-          await server.connect(transport)
-          response = await transport.handleRequest(request, {
-            authInfo: authorization,
+        const body = (await request.clone().json()) as {
+          jsonrpc?: unknown
+          id?: unknown
+          method?: unknown
+          params?: unknown
+        }
+        if (isMcpEventsMethod(body.method)) {
+          response = await handleMcpEventsRequest({
+            request: body,
+            authorization,
+            supabase,
           })
-        } finally {
-          await transport.close()
-          await server.close()
+        } else {
+          const server = createSasquatchMcpServer()
+          const transport = new WebStandardStreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+            enableJsonResponse: true,
+            maxRequestBodySize: 256 * 1024,
+          })
+
+          try {
+            await server.connect(transport)
+            response = await transport.handleRequest(request, {
+              authInfo: authorization,
+            })
+          } finally {
+            await transport.close()
+            await server.close()
+          }
         }
       }
     }
