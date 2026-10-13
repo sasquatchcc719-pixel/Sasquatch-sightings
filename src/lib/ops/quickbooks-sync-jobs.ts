@@ -1,3 +1,4 @@
+import { excludeCashInvoiceFromQuickBooks } from '@/lib/quickbooks-api'
 import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
@@ -136,21 +137,15 @@ export async function ensureInvoiceQuickBooksSyncJob(
   if (appointment?.kind === 'estimate') {
     return { ok: true, queued: false, reason: 'estimate invoice' }
   }
+  if (invoice.payment_method === 'cash') {
+    await excludeCashInvoiceFromQuickBooks(supabase, invoiceId)
+    return { ok: true, queued: false, reason: 'cash payment' }
+  }
   if (invoice.quickbooks_invoice_id) {
     return { ok: true, queued: false, reason: 'already synced' }
   }
   if (invoice.status === 'draft') {
     return { ok: true, queued: false, reason: 'invoice still draft' }
-  }
-  if (invoice.payment_method === 'cash') {
-    await supabase
-      .from('ops_invoices')
-      .update({
-        sync_status: 'held',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', invoiceId)
-    return { ok: true, queued: false, reason: 'cash payment' }
   }
 
   const syncStatus = getQuickBooksSyncStatus()

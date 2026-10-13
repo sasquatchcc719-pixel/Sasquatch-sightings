@@ -1,3 +1,4 @@
+import { excludeCashInvoiceFromQuickBooks } from '@/lib/quickbooks-api'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
@@ -84,6 +85,26 @@ export async function reconcileMissingInvoiceQuickBooksJobs(
   promotedDrafts: number
   queuedInvoices: number
 }> {
+  // Backstop for failed voids and workers that finished after a cash save.
+  const { data: cashInvoices, error: cashError } = await supabase
+    .from('ops_invoices')
+    .select('id')
+    .eq('payment_method', 'cash')
+    .not('quickbooks_invoice_id', 'is', null)
+    .limit(500)
+  if (cashError) throw cashError
+  for (const invoice of cashInvoices || []) {
+    try {
+      await excludeCashInvoiceFromQuickBooks(supabase, invoice.id)
+    } catch (error) {
+      console.error(
+        '[QB reconciliation] Cash invoice cleanup failed:',
+        invoice.id,
+        error,
+      )
+    }
+  }
+
   const candidateSelect = `
     id,
     status,

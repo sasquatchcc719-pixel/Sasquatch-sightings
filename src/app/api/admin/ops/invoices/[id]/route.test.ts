@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   resyncInvoice: vi.fn(),
   syncAppointment: vi.fn(),
+  ensureInvoiceSync: vi.fn(),
+  excludeCashInvoice: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ requireAnyRole: mocks.access }))
@@ -17,12 +19,13 @@ vi.mock('@/lib/ops/tech-job-access', () => ({
 }))
 vi.mock('@/lib/quickbooks-api', () => ({
   voidQBInvoice: vi.fn(),
+  excludeCashInvoiceFromQuickBooks: mocks.excludeCashInvoice,
   resyncInvoiceToQuickBooks: mocks.resyncInvoice,
   syncAppointmentToQuickBooks: mocks.syncAppointment,
 }))
 vi.mock('@/lib/ops/pdf/generate', () => ({ generateInvoicePDF: vi.fn() }))
 vi.mock('@/lib/ops/quickbooks-sync-jobs', () => ({
-  ensureInvoiceQuickBooksSyncJob: vi.fn(),
+  ensureInvoiceQuickBooksSyncJob: mocks.ensureInvoiceSync,
 }))
 vi.mock('@/lib/server/lead-sources', () => ({
   leadSourceUpdatePayload: vi.fn(),
@@ -68,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.access.mockResolvedValue({ id: 'owner-a', role: 'owner' })
   mocks.assertAccess.mockResolvedValue(undefined)
+  mocks.excludeCashInvoice.mockResolvedValue(true)
   invoiceUpdate = null
   rpcCalls = []
   reportingUpdates = []
@@ -222,5 +226,25 @@ describe('invoice coupon tracking', () => {
       (invoiceUpdate?.discount_metadata as Record<string, unknown>).promo,
     ).toBeUndefined()
     expect(rpcCalls).toEqual([])
+  })
+})
+
+describe('cash invoice cleanup', () => {
+  it('cleans up a cash correction even when the invoice was already paid', async () => {
+    current.status = 'paid'
+    current.payment_method = 'square'
+    current.quickbooks_invoice_id = 'qb-a'
+    const response = await patchInvoice({ payment_method: 'cash' })
+    expect(response.status).toBe(200)
+    expect(mocks.excludeCashInvoice).toHaveBeenCalledWith(
+      expect.anything(),
+      'invoice-a',
+    )
+    expect(mocks.syncAppointment).not.toHaveBeenCalled()
+    expect((await response.json()).invoice).toMatchObject({
+      payment_method: 'cash',
+      quickbooks_invoice_id: null,
+      sync_status: 'held',
+    })
   })
 })

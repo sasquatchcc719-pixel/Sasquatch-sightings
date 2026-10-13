@@ -5,6 +5,7 @@ import { createAdminClient } from '@/supabase/server'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import {
   voidQBInvoice,
+  excludeCashInvoiceFromQuickBooks,
   resyncInvoiceToQuickBooks,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
@@ -830,33 +831,14 @@ export async function PATCH(
     // invoices stay open/unpaid in QB so Charles reconciles payments there.
     // (Cash is still handled separately below — it's kept out of QB entirely.)
 
-    // Cash stays in-app only: remove any QuickBooks invoice/payment linkage.
+    // Cash cleanup must also run when a previously paid invoice is corrected
+    // to cash, or when QBO finished creating it after the original paid save.
     if (
-      isBeingMarkedPaid &&
-      method === 'cash' &&
-      current.quickbooks_invoice_id
+      invoice.payment_method === 'cash' &&
+      (await excludeCashInvoiceFromQuickBooks(supabase, id))
     ) {
-      try {
-        await voidQBInvoice(current.quickbooks_invoice_id)
-        await supabase
-          .from('ops_invoices')
-          .update({
-            quickbooks_invoice_id: null,
-            sync_status: 'held',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', id)
-        await supabase
-          .from('ops_quickbooks_sync_jobs')
-          .delete()
-          .eq('entity_type', 'invoice')
-          .eq('entity_id', id)
-      } catch (qbErr) {
-        console.error(
-          '[ops/invoices/:id][PATCH] QB void for cash payment failed:',
-          qbErr,
-        )
-      }
+      invoice.quickbooks_invoice_id = null
+      invoice.sync_status = 'held'
     }
 
     if (current.appointment_id) {
@@ -871,7 +853,11 @@ export async function PATCH(
       if (appointmentError) throw appointmentError
     }
 
-    if (current.appointment_id && !invoice.quickbooks_invoice_id) {
+    if (
+      current.appointment_id &&
+      !invoice.quickbooks_invoice_id &&
+      invoice.payment_method !== 'cash'
+    ) {
       await ensureInvoiceQuickBooksSyncJob(supabase, id)
       void syncAppointmentToQuickBooks(current.appointment_id).catch((qbErr) =>
         console.error('[ops/invoices/:id][PATCH] QB sync:', qbErr),

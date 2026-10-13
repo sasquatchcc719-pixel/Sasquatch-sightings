@@ -379,6 +379,7 @@ export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
     throw new Error(`QB get invoice failed: ${getRes.status} ${text}`)
   }
   const getData = await getRes.json()
+  if (getData.Invoice.PrivateNote === 'Voided') return
   const syncToken = getData.Invoice.SyncToken
 
   const voidRes = await qbFetch(
@@ -394,6 +395,87 @@ export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
     const text = await voidRes.text()
     throw new Error(`QB void invoice failed: ${voidRes.status} ${text}`)
   }
+}
+
+/** Hold cash locally and retain any QBO link until its void succeeds. */
+export async function excludeCashInvoiceFromQuickBooks(
+  supabase: ReturnType<typeof createAdminClient>,
+  invoiceId: string,
+  createdQuickBooksId?: string,
+): Promise<boolean> {
+  const { data: invoice, error } = await supabase
+    .from('ops_invoices')
+    .select('payment_method, quickbooks_invoice_id')
+    .eq('id', invoiceId)
+    .single()
+  if (error) throw error
+  if (invoice.payment_method !== 'cash') return false
+
+  const qbId = createdQuickBooksId || invoice.quickbooks_invoice_id
+  const now = new Date().toISOString()
+  const { error: holdError } = await supabase
+    .from('ops_invoices')
+    .update({
+      sync_status: 'held',
+      ...(qbId ? { quickbooks_invoice_id: qbId } : {}),
+      updated_at: now,
+    })
+    .eq('id', invoiceId)
+  if (holdError) throw holdError
+
+  // On failure keep the link so the recurring cash reconciliation can retry.
+  if (qbId) {
+    await voidQBInvoice(qbId)
+    const { error: clearError } = await supabase
+      .from('ops_invoices')
+      .update({ quickbooks_invoice_id: null, sync_status: 'held' })
+      .eq('id', invoiceId)
+      .eq('quickbooks_invoice_id', qbId)
+    if (clearError) throw clearError
+  }
+
+  const { error: jobError } = await supabase
+    .from('ops_quickbooks_sync_jobs')
+    .update({
+      status: 'synced',
+      error_message: 'skipped: cash payment (not sent to QuickBooks)',
+      next_retry_at: null,
+      updated_at: now,
+    })
+    .eq('entity_type', 'invoice')
+    .eq('entity_id', invoiceId)
+  if (jobError) throw jobError
+  return true
+}
+
+/** Cash can be recorded while QBO is creating the invoice from an older read. */
+export async function finalizeQuickBooksInvoiceSync(
+  supabase: ReturnType<typeof createAdminClient>,
+  invoiceId: string,
+  qbInvoiceId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('ops_invoices')
+    .update({
+      quickbooks_invoice_id: qbInvoiceId,
+      sync_status: 'synced',
+      last_synced_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId)
+    .or('payment_method.is.null,payment_method.neq.cash')
+    .select('id')
+    .maybeSingle()
+  if (error) throw error
+  if (data) return true
+
+  // The conditional write lost to a cash save. Void the newly created QBO
+  // invoice even when the payment route never saw its ID.
+  if (
+    await excludeCashInvoiceFromQuickBooks(supabase, invoiceId, qbInvoiceId)
+  ) {
+    return false
+  }
+  throw new Error(`Invoice ${invoiceId} changed during QuickBooks sync`)
 }
 
 /**
@@ -1310,6 +1392,8 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
 
   if (!customer || !invoice) throw new Error('Missing customer or invoice data')
 
+  if (await excludeCashInvoiceFromQuickBooks(supabase, invoice.id)) return
+
   const address = Array.isArray(customer.ops_service_addresses)
     ? customer.ops_service_addresses[0]
     : customer.ops_service_addresses
@@ -1377,6 +1461,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
             }))
           : []
 
+        if (await excludeCashInvoiceFromQuickBooks(supabase, invoice.id)) return
         const qbInvoiceId = await createQBInvoice({
           qbCustomerId,
           serviceDate: appointment.appointment_date,
@@ -1390,14 +1475,12 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
               .invoice_number ?? null,
         })
 
-        await supabase
-          .from('ops_invoices')
-          .update({
-            quickbooks_invoice_id: qbInvoiceId,
-            sync_status: 'synced',
-            last_synced_at: new Date().toISOString(),
-          })
-          .eq('id', invoice.id)
+        const synced = await finalizeQuickBooksInvoiceSync(
+          supabase,
+          invoice.id,
+          qbInvoiceId,
+        )
+        if (!synced) return
 
         // Mark invoice queue row synced
         await supabase
@@ -1544,13 +1627,5 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
       null,
   })
 
-  await supabase
-    .from('ops_invoices')
-    .update({
-      quickbooks_invoice_id: qbInvoiceId,
-      sync_status: 'synced',
-      last_synced_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', invoiceId)
+  await finalizeQuickBooksInvoiceSync(supabase, invoiceId, qbInvoiceId)
 }

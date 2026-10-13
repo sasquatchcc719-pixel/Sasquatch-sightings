@@ -9,6 +9,8 @@ import { createAdminClient } from '@/supabase/server'
 import {
   createQBCustomer,
   createQBInvoice,
+  excludeCashInvoiceFromQuickBooks,
+  finalizeQuickBooksInvoiceSync,
   queryRecentQBPayments,
   reconcileStaleQuickBooksInvoiceLink,
   syncBatchInvoiceToQuickBooks,
@@ -315,22 +317,7 @@ export async function GET(request: NextRequest) {
             throw new Error(`Invoice ${invoiceId} not found`)
           }
 
-          if (invRow.payment_method === 'cash') {
-            await supabase
-              .from('ops_quickbooks_sync_jobs')
-              .update({
-                status: 'synced',
-                error_message: 'skipped: cash payment (not sent to QuickBooks)',
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', job.id)
-            await supabase
-              .from('ops_invoices')
-              .update({
-                sync_status: 'held',
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', invoiceId)
+          if (await excludeCashInvoiceFromQuickBooks(supabase, invoiceId)) {
             results.synced++
             continue
           }
@@ -405,14 +392,15 @@ export async function GET(request: NextRequest) {
                 .invoice_number ?? null,
           })
 
-          await supabase
-            .from('ops_invoices')
-            .update({
-              quickbooks_invoice_id: qbInvoiceId,
-              sync_status: 'synced',
-              last_synced_at: new Date().toISOString(),
-            })
-            .eq('id', invoiceId)
+          const synced = await finalizeQuickBooksInvoiceSync(
+            supabase,
+            invoiceId,
+            qbInvoiceId,
+          )
+          if (!synced) {
+            results.synced++
+            continue
+          }
         } else if (job.entity_type === 'batch_invoice') {
           const payload = job.payload as {
             invoice_id: string
