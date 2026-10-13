@@ -1,11 +1,8 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
-import type {
-  ServerNotification,
-  ServerRequest,
-} from '@modelcontextprotocol/sdk/types.js'
+import {
+  McpServer,
+  type AuthInfo,
+  type ServerContext,
+} from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import {
   MCP_AUTH_SCOPES,
@@ -473,10 +470,10 @@ const securitySchemes = [
   { type: 'oauth2' as const, scopes: [...MCP_AUTH_SCOPES] },
 ]
 
-type HandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>
+type HandlerExtra = ServerContext
 
 function authInfo(extra: HandlerExtra): AuthInfo {
-  const info = extra.authInfo
+  const info = extra.http?.authInfo
   const subject = info?.extra?.subject
   if (
     !info ||
@@ -1072,16 +1069,19 @@ export function createSasquatchMcpServer(): McpServer {
     )
   }
 
-  // SDK 1.32 exposes extension metadata through _meta but predates the current
-  // top-level securitySchemes type. Replace only tools/list so current OpenAI
-  // clients receive both the canonical field and its compatibility mirror.
-  server.server.setRequestHandler(ListToolsRequestSchema, () => ({
+  // OpenAI clients consume the canonical securitySchemes extension while
+  // older clients read its compatibility mirror in _meta.
+  server.server.setRequestHandler('tools/list', () => ({
     tools: toolDefinitions.map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,
-      inputSchema: z.toJSONSchema(tool.inputSchema, { target: 'draft-7' }),
-      outputSchema: z.toJSONSchema(tool.outputSchema, { target: 'draft-7' }),
+      inputSchema: z.toJSONSchema(tool.inputSchema, {
+        target: 'draft-7',
+      }) as { type: 'object'; [key: string]: unknown },
+      outputSchema: z.toJSONSchema(tool.outputSchema, {
+        target: 'draft-7',
+      }) as { type: 'object'; [key: string]: unknown },
       annotations: tool.annotations ?? annotations,
       securitySchemes,
       _meta: { securitySchemes },

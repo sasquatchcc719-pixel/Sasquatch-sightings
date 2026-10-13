@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
+import { createMcpHandler } from '@modelcontextprotocol/server'
 import { isHttpsRequest } from '@/lib/api-v1/http'
 import {
   authorizeMcpBearer,
@@ -11,6 +11,15 @@ import {
 import { handleMcpEventsRequest, isMcpEventsMethod } from '@/lib/mcp/events'
 import { createSasquatchMcpServer } from '@/lib/mcp/server'
 import { createAdminClient } from '@/supabase/server'
+
+const mcpHandler = createMcpHandler(() => createSasquatchMcpServer(), {
+  legacy: 'stateless',
+  responseMode: 'json',
+  maxRequestBodySize: 256 * 1024,
+  onerror(error) {
+    console.error('[mcp] Protocol request failed:', error)
+  },
+})
 
 function jsonError(message: string, status: number, headers?: HeadersInit) {
   return NextResponse.json(
@@ -108,22 +117,10 @@ export async function POST(request: NextRequest): Promise<Response> {
             supabase,
           })
         } else {
-          const server = createSasquatchMcpServer()
-          const transport = new WebStandardStreamableHTTPServerTransport({
-            sessionIdGenerator: undefined,
-            enableJsonResponse: true,
-            maxRequestBodySize: 256 * 1024,
+          response = await mcpHandler.fetch(request, {
+            authInfo: authorization,
+            parsedBody: body,
           })
-
-          try {
-            await server.connect(transport)
-            response = await transport.handleRequest(request, {
-              authInfo: authorization,
-            })
-          } finally {
-            await transport.close()
-            await server.close()
-          }
         }
       }
     }

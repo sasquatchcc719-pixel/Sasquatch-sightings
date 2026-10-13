@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import type { AuthInfo } from '@modelcontextprotocol/server'
 import { Webhook } from 'standardwebhooks'
 import { postVerifiedWebhook } from './events-webhook'
 

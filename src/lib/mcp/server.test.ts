@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { getCapabilityCatalog } from './operations'
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION, MCP_TOOL_NAMES } from './release'
 import { createSasquatchMcpServer } from './server'
