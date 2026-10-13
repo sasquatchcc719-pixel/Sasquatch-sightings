@@ -379,7 +379,12 @@ export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
     throw new Error(`QB get invoice failed: ${getRes.status} ${text}`)
   }
   const getData = await getRes.json()
-  if (getData.Invoice.PrivateNote === 'Voided') return
+  if (
+    getData.Invoice.PrivateNote === 'Voided' &&
+    getData.Invoice.TotalAmt === 0
+  ) {
+    return
+  }
   const syncToken = getData.Invoice.SyncToken
 
   const voidRes = await qbFetch(

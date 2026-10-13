@@ -187,13 +187,32 @@ describe('cash exclusion during QuickBooks sync', () => {
   it('clears a link to an invoice already voided in QuickBooks without voiding it again', async () => {
     invoice.quickbooks_invoice_id = 'qb-a'
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ Invoice: { PrivateNote: 'Voided' } })),
+      new Response(
+        JSON.stringify({ Invoice: { PrivateNote: 'Voided', TotalAmt: 0 } }),
+      ),
     )
     expect(await excludeCashInvoiceFromQuickBooks(database(), invoice.id)).toBe(
       true,
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(invoice.quickbooks_invoice_id).toBeNull()
+  })
+
+  it('does not mistake a manually entered void note for a voided invoice', async () => {
+    invoice.quickbooks_invoice_id = 'qb-a'
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          Invoice: { PrivateNote: 'Voided', TotalAmt: 472, SyncToken: '1' },
+        }),
+      ),
+    )
+    expect(await excludeCashInvoiceFromQuickBooks(database(), invoice.id)).toBe(
+      true,
+    )
+    expect(
+      fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST'),
+    ).toHaveLength(1)
   })
 
   it.each([null, 'square', 'check', 'venmo'])(
