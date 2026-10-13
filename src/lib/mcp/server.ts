@@ -7,16 +7,30 @@ import type {
   ServerRequest,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { MCP_AUTH_SCOPES, MCP_RESOURCE_METADATA } from './constants'
+import {
+  MCP_AUTH_SCOPES,
+  MCP_BUSINESS_SCOPE,
+  MCP_RESOURCE_METADATA,
+} from './constants'
 import {
   appointmentDetailOutputSchema,
   appointmentListOutputSchema,
   availabilityOutputSchema,
+  businessConfigurationOutputSchema,
+  businessSearchOutputSchema,
   callsOutputSchema,
+  capabilityCatalogOutputSchema,
   customerListOutputSchema,
   estimateDetailOutputSchema,
   estimateListOutputSchema,
+  operationalSummaryOutputSchema,
 } from './schemas'
+import {
+  getBusinessConfiguration,
+  getCapabilityCatalog,
+  getOperationalSummary,
+  searchBusinessRecords,
+} from './operations'
 import { getApiV1 } from './upstream'
 
 const dateSchema = z
@@ -104,6 +118,52 @@ const callsInput = z
     ...paginationFields,
   })
   .strict()
+const noInput = z.object({}).strict()
+const businessSearchInput = z
+  .object({
+    query: z
+      .string()
+      .trim()
+      .min(2)
+      .max(120)
+      .describe(
+        'Customer name, business name, phone, email, UUID, or invoice number.',
+      ),
+    entity: z
+      .enum([
+        'all',
+        'customer',
+        'appointment',
+        'estimate',
+        'invoice',
+        'conversation',
+      ])
+      .default('all'),
+    limit: z.number().int().min(1).max(50).default(20),
+  })
+  .strict()
+const operationalSummaryInput = z
+  .object({
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(30)
+      .default(7)
+      .describe(
+        'Look-back window for calls/notification failures and look-ahead window for jobs.',
+      ),
+    item_limit: z
+      .number()
+      .int()
+      .min(0)
+      .max(25)
+      .default(10)
+      .describe(
+        'Maximum example rows returned for each queue. Counts may be larger.',
+      ),
+  })
+  .strict()
 
 const annotations = {
   readOnlyHint: true,
@@ -119,8 +179,18 @@ const securitySchemes = [
 type HandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>
 
 function authInfo(extra: HandlerExtra): AuthInfo {
-  if (!extra.authInfo) throw new Error('OAuth authorization is required')
-  return extra.authInfo
+  const info = extra.authInfo
+  const subject = info?.extra?.subject
+  if (
+    !info ||
+    !info.scopes.includes(MCP_BUSINESS_SCOPE) ||
+    typeof subject !== 'string' ||
+    !subject ||
+    (typeof info.expiresAt === 'number' && info.expiresAt <= Date.now() / 1000)
+  ) {
+    throw new Error('OAuth authorization is required')
+  }
+  return info
 }
 
 function params(values: Record<string, unknown>): URLSearchParams {
@@ -248,14 +318,70 @@ const toolDefinitions: ToolDefinition[] = [
       return toolResult(await getApiV1('calls', params(input), authInfo(extra)))
     },
   },
+  {
+    name: 'get_capability_catalog',
+    title: 'Get MCP capability catalog',
+    description:
+      'Describe exactly which Sasquatch business workflows this MCP server can read, their limitations, and which consequential actions are deliberately not exposed. Use this before planning an operation; tool availability is not authorization to contact customers, book work, or make financial commitments.',
+    inputSchema: noInput,
+    outputSchema: capabilityCatalogOutputSchema,
+    async handler(_input, extra) {
+      authInfo(extra)
+      return toolResult(getCapabilityCatalog())
+    },
+  },
+  {
+    name: 'get_business_configuration',
+    title: 'Get business configuration',
+    description:
+      'Read the current America/Denver timezone, service-area ZIP tiers, travel charge, weekly business hours, dated availability overrides, service catalog pricing, durations, and buffers. Configuration is reference data; it does not quote, reserve, or book service.',
+    inputSchema: noInput,
+    outputSchema: businessConfigurationOutputSchema,
+    async handler(_input, extra) {
+      authInfo(extra)
+      return toolResult(await getBusinessConfiguration())
+    },
+  },
+  {
+    name: 'search_business_records',
+    title: 'Search business records',
+    description:
+      'Find compact references to customers and their linked appointments, estimates, invoices, and conversations. Search can also resolve a record UUID or invoice number. Results include stable IDs and Sightings app links, omit message bodies, and never mutate records.',
+    inputSchema: businessSearchInput,
+    outputSchema: businessSearchOutputSchema,
+    async handler(input, extra) {
+      authInfo(extra)
+      return toolResult(
+        await searchBusinessRecords(
+          input as z.infer<typeof businessSearchInput>,
+        ),
+      )
+    },
+  },
+  {
+    name: 'get_operational_summary',
+    title: 'Get operational attention queues',
+    description:
+      'Read bounded operational queues for unread customer messages, missed calls, pending estimates, unassigned jobs, failed notifications, service concerns, overdue customer-requested reminders, and unpaid invoices. Every response reports freshness and missing/partial sources. Scheduling conflicts are never guessed.',
+    inputSchema: operationalSummaryInput,
+    outputSchema: operationalSummaryOutputSchema,
+    async handler(input, extra) {
+      authInfo(extra)
+      return toolResult(
+        await getOperationalSummary(
+          input as z.infer<typeof operationalSummaryInput>,
+        ),
+      )
+    },
+  },
 ]
 
 export function createSasquatchMcpServer(): McpServer {
   const server = new McpServer(
-    { name: 'sasquatch-sightings-read', version: '1.0.0' },
+    { name: 'sasquatch-sightings-read', version: '1.1.0' },
     {
       instructions:
-        'Read-only Sasquatch Carpet Cleaning operations data. Availability is live scheduling capacity for a 120-minute job, not a booking. Never claim that a slot is reserved and never infer missing appointments, estimates, customers, or calls.',
+        'Read-only Sasquatch Carpet Cleaning operations data. Availability is live scheduling capacity for a 120-minute job, not a booking. Never claim that a slot is reserved, never infer missing records or queue states, and treat tool availability as distinct from authorization for any real-world action.',
     },
   )
 

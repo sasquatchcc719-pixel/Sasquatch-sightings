@@ -194,3 +194,116 @@ export const callsOutputSchema = z
     pagination: paginationSchema,
   })
   .strict()
+
+export const capabilityCatalogOutputSchema = z
+  .object({
+    generated_at: z.string(),
+    server: z.object({ name: z.string(), version: z.string() }).strict(),
+    capabilities: z.array(
+      z
+        .object({
+          area: z.string(),
+          workflows: z.array(z.string()),
+          tools: z.array(z.string()),
+          access: z.enum(['available', 'partial', 'not_exposed']),
+          scope: z.string(),
+          side_effects: z.array(z.string()),
+          approval: z.string(),
+          limitations: z.array(z.string()),
+        })
+        .strict(),
+    ),
+    unavailable: z.array(z.string()),
+  })
+  .strict()
+
+const freshnessSchema = z
+  .object({
+    generated_at: z.string(),
+    timezone: z.literal('America/Denver'),
+    partial: z.boolean(),
+    missing: z.array(z.string()),
+  })
+  .strict()
+
+export const businessConfigurationOutputSchema = z
+  .object({
+    freshness: freshnessSchema,
+    timezone: z.literal('America/Denver'),
+    service_area: z
+      .object({
+        description: z.string(),
+        standard_zip_codes: z.array(z.string()),
+        travel_charge_zip_codes: z.array(z.string()),
+        travel_charge_amount: z.number(),
+      })
+      .strict(),
+    business_hours: z.array(z.record(z.string(), z.unknown())),
+    availability_overrides: z.array(z.record(z.string(), z.unknown())),
+    service_catalog: z.array(z.record(z.string(), z.unknown())),
+    scheduling: z
+      .object({
+        availability_assumption_minutes: z.literal(120),
+        booking_effect: z.literal('informational_only'),
+      })
+      .strict(),
+  })
+  .strict()
+
+export const businessSearchOutputSchema = z
+  .object({
+    freshness: freshnessSchema,
+    query: z.string(),
+    data: z.array(
+      z
+        .object({
+          entity: z.enum([
+            'customer',
+            'appointment',
+            'estimate',
+            'invoice',
+            'conversation',
+          ]),
+          id: z.string(),
+          label: z.string(),
+          subtitle: nullableString,
+          status: nullableString,
+          updated_at: nullableString,
+          matched_on: z.string(),
+          app_url: z.string(),
+        })
+        .strict(),
+    ),
+    pagination: z
+      .object({ limit: z.number().int(), returned: z.number().int() })
+      .strict(),
+  })
+  .strict()
+
+export const operationalSummaryOutputSchema = z
+  .object({
+    freshness: freshnessSchema,
+    window: z.object({ from: z.string(), through: z.string() }).strict(),
+    queues: z.array(
+      z
+        .object({
+          name: z.enum([
+            'unanswered_messages',
+            'missed_calls',
+            'pending_estimates',
+            'unassigned_jobs',
+            'scheduling_conflicts',
+            'failed_notifications',
+            'service_concerns',
+            'overdue_followups',
+            'unpaid_invoices',
+          ]),
+          count: z.number().int().nonnegative().nullable(),
+          status: z.enum(['available', 'partial', 'unavailable']),
+          note: nullableString,
+          items: z.array(z.record(z.string(), z.unknown())),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
