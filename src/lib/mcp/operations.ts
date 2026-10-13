@@ -9,6 +9,7 @@ import { createAdminClient } from '@/supabase/server'
 
 const TIMEZONE = 'America/Denver' as const
 const APP_ORIGIN = 'https://sightings.sasquatchcarpet.com'
+type AdminClient = ReturnType<typeof createAdminClient>
 
 type SearchEntity =
   | 'all'
@@ -168,8 +169,9 @@ export function getCapabilityCatalog() {
   }
 }
 
-export async function getBusinessConfiguration() {
-  const supabase = createAdminClient()
+export async function getBusinessConfiguration(
+  supabase: AdminClient = createAdminClient(),
+) {
   const today = denverDate()
   const [services, templates, overrides] = await Promise.all([
     supabase
@@ -240,12 +242,14 @@ function isUuid(value: string) {
   )
 }
 
-export async function searchBusinessRecords(input: {
-  query: string
-  entity: SearchEntity
-  limit: number
-}) {
-  const supabase = createAdminClient()
+export async function searchBusinessRecords(
+  input: {
+    query: string
+    entity: SearchEntity
+    limit: number
+  },
+  supabase: AdminClient = createAdminClient(),
+) {
   const q = input.query.trim()
   const searchTerm = q.replace(/[,%_()]/g, ' ').trim()
   const exactId = isUuid(q) ? q : null
@@ -299,62 +303,100 @@ export async function searchBusinessRecords(input: {
           status: null,
           updated_at: row.updated_at || null,
           matched_on: row.matchedOn,
-          app_url: `${APP_ORIGIN}/admin/operations/customers?customer=${encodeURIComponent(row.id)}`,
+          app_url: `${APP_ORIGIN}/admin/operations/customers`,
         })
       }
     }
   }
 
   const customerIds = customers.map((row) => row.id)
-  if (
-    include(input.entity, 'appointment') ||
-    include(input.entity, 'estimate')
-  ) {
-    let query = supabase
+  const appointmentRows: Array<Record<string, any>> = []
+  const appointmentIdsForInvoices = new Set<string>()
+  const requestedKinds = [
+    ...(include(input.entity, 'appointment') ? ['appointment' as const] : []),
+    ...(include(input.entity, 'estimate') ? ['estimate' as const] : []),
+  ]
+
+  if (exactId && requestedKinds.length > 0) {
+    const response = await supabase
       .from('ops_appointments')
       .select(
         'id, customer_id, kind, appointment_date, start_time, status, estimate_status, updated_at, ops_customers!ops_appointments_customer_id_fkey(full_name, business_name)',
       )
-      .order('updated_at', { ascending: false })
-      .limit(perQuery)
-    if (exactId) query = query.eq('id', exactId)
-    else if (customerIds.length) query = query.in('customer_id', customerIds)
-    else query = query.eq('id', '00000000-0000-0000-0000-000000000000')
-    const response = await query
+      .eq('id', exactId)
+      .limit(1)
     if (response.error)
       missing.push(unavailable('appointment/estimate search', response.error))
-    for (const row of response.data || []) {
-      const customer = Array.isArray(row.ops_customers)
-        ? row.ops_customers[0]
-        : row.ops_customers
-      const entity = row.kind === 'estimate' ? 'estimate' : 'appointment'
-      if (!include(input.entity, entity)) continue
-      const base = entity === 'estimate' ? 'estimates' : ''
-      results.push({
-        entity,
-        id: row.id,
-        label:
-          customer?.business_name ||
-          customer?.full_name ||
-          `${entity} ${row.id.slice(0, 8)}`,
-        subtitle: `${row.appointment_date}${row.start_time ? ` ${String(row.start_time).slice(0, 5)}` : ''}`,
-        status: entity === 'estimate' ? row.estimate_status : row.status,
-        updated_at: row.updated_at || null,
-        matched_on: exactId ? 'id' : 'customer',
-        app_url:
-          entity === 'appointment'
-            ? `${APP_ORIGIN}/admin/operations/appointments/${row.id}`
-            : `${APP_ORIGIN}/admin/operations/${base}/${row.id}`,
-      })
+    appointmentRows.push(...(response.data || []))
+  } else if (customerIds.length > 0 && requestedKinds.length > 0) {
+    const responses = await Promise.all(
+      requestedKinds.map(async (kind) => {
+        let query = supabase
+          .from('ops_appointments')
+          .select(
+            'id, customer_id, kind, appointment_date, start_time, status, estimate_status, updated_at, ops_customers!ops_appointments_customer_id_fkey(full_name, business_name)',
+          )
+          .in('customer_id', customerIds)
+          .order('updated_at', { ascending: false })
+          .limit(perQuery)
+        query =
+          kind === 'estimate'
+            ? query.eq('kind', 'estimate')
+            : query.neq('kind', 'estimate')
+        return query
+      }),
+    )
+    for (const response of responses) {
+      if (response.error) {
+        missing.push(unavailable('appointment/estimate search', response.error))
+        continue
+      }
+      appointmentRows.push(...(response.data || []))
     }
   }
 
+  for (const row of appointmentRows) {
+    const customer = Array.isArray(row.ops_customers)
+      ? row.ops_customers[0]
+      : row.ops_customers
+    const entity = row.kind === 'estimate' ? 'estimate' : 'appointment'
+    if (!include(input.entity, entity)) continue
+    const base = entity === 'estimate' ? 'estimates' : ''
+    results.push({
+      entity,
+      id: row.id,
+      label:
+        customer?.business_name ||
+        customer?.full_name ||
+        `${entity} ${row.id.slice(0, 8)}`,
+      subtitle: `${row.appointment_date}${row.start_time ? ` ${String(row.start_time).slice(0, 5)}` : ''}`,
+      status: entity === 'estimate' ? row.estimate_status : row.status,
+      updated_at: row.updated_at || null,
+      matched_on: exactId ? 'id' : 'customer',
+      app_url:
+        entity === 'appointment'
+          ? `${APP_ORIGIN}/admin/operations/appointments/${row.id}`
+          : `${APP_ORIGIN}/admin/operations/${base}/${row.id}`,
+    })
+  }
+
   if (include(input.entity, 'invoice')) {
-    const appointmentIds = results
-      .filter(
-        (row) => row.entity === 'appointment' || row.entity === 'estimate',
-      )
-      .map((row) => row.id)
+    for (const row of appointmentRows) appointmentIdsForInvoices.add(row.id)
+    if (!exactId && customerIds.length > 0) {
+      const dependency = await supabase
+        .from('ops_appointments')
+        .select('id')
+        .in('customer_id', customerIds)
+        .order('updated_at', { ascending: false })
+        .limit(100)
+      if (dependency.error) {
+        missing.push(unavailable('invoice dependency search', dependency.error))
+      } else {
+        for (const row of dependency.data || [])
+          appointmentIdsForInvoices.add(row.id)
+      }
+    }
+    const appointmentIds = [...appointmentIdsForInvoices]
     let query = supabase
       .from('ops_invoices')
       .select(
@@ -413,7 +455,7 @@ export async function searchBusinessRecords(input: {
         status: row.status || null,
         updated_at: row.updated_at || null,
         matched_on: exactId ? 'id' : customerIds.length ? 'customer' : 'phone',
-        app_url: `${APP_ORIGIN}/admin/conversations?conversation=${row.id}`,
+        app_url: `${APP_ORIGIN}/admin/conversations`,
       })
     }
   }
@@ -447,25 +489,30 @@ type Queue = {
     | 'unpaid_invoices'
   count: number | null
   status: 'available' | 'partial' | 'unavailable'
+  window: string
   note: string | null
   items: Array<Record<string, unknown>>
 }
 
-export async function getOperationalSummary(input: {
-  days: number
-  item_limit: number
-}) {
-  const supabase = createAdminClient()
-  const through = denverDate(new Date(Date.now() + input.days * 86_400_000))
-  const from = denverDate()
-  const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
-  const now = nowIso()
+export async function getOperationalSummary(
+  input: {
+    days: number
+    item_limit: number
+  },
+  supabase: AdminClient = createAdminClient(),
+  clock = new Date(),
+) {
+  const clockMs = clock.getTime()
+  const through = denverDate(new Date(clockMs + input.days * 86_400_000))
+  const from = denverDate(clock)
+  const since = new Date(clockMs - input.days * 86_400_000).toISOString()
+  const now = clock.toISOString()
   const queries = await Promise.all([
     supabase
       .from('conversations')
       .select('id, phone_number, source, messages, admin_read_at, updated_at')
       .order('updated_at', { ascending: false })
-      .limit(500),
+      .limit(501),
     supabase
       .from('call_logs')
       .select('id, caller_phone, outcome, transcription, created_at')
@@ -473,7 +520,7 @@ export async function getOperationalSummary(input: {
       .gte('created_at', since)
       .in('outcome', ['voicemail', 'no-answer', 'inbound'])
       .order('created_at', { ascending: false })
-      .limit(200),
+      .limit(201),
     supabase
       .from('ops_appointments')
       .select(
@@ -482,7 +529,7 @@ export async function getOperationalSummary(input: {
       .eq('kind', 'estimate')
       .in('estimate_status', ['draft', 'sent'])
       .order('updated_at', { ascending: false })
-      .limit(200),
+      .limit(201),
     supabase
       .from('ops_appointments')
       .select(
@@ -494,14 +541,14 @@ export async function getOperationalSummary(input: {
       .is('assigned_staff_user_id', null)
       .not('status', 'in', '(completed,cancelled)')
       .order('appointment_date')
-      .limit(200),
+      .limit(201),
     supabase
       .from('sms_logs')
       .select('id, recipient_phone, message_type, status, sent_at')
       .eq('status', 'failed')
       .gte('sent_at', since)
       .order('sent_at', { ascending: false })
-      .limit(200),
+      .limit(201),
     supabase
       .from('ops_service_concerns')
       .select('id, customer_id, appointment_id, status, category, updated_at')
@@ -511,7 +558,7 @@ export async function getOperationalSummary(input: {
         'approved_return',
       ])
       .order('updated_at', { ascending: false })
-      .limit(200),
+      .limit(201),
     supabase
       .from('cleaning_reminders')
       .select(
@@ -520,23 +567,40 @@ export async function getOperationalSummary(input: {
       .eq('status', 'pending')
       .lt('scheduled_for', now)
       .order('scheduled_for')
-      .limit(200),
+      .limit(201),
     supabase
       .from('ops_invoices')
       .select(
         'id, invoice_number, appointment_id, status, payment_status, total, updated_at',
       )
+      .in('status', ['ready', 'pending', 'sent'])
       .or('payment_status.neq.paid,payment_status.is.null')
       .order('updated_at', { ascending: false })
-      .limit(200),
+      .limit(201),
   ])
   const missing: string[] = []
   const queues: Queue[] = []
+  const queueWindows: Record<Queue['name'], string> = {
+    unanswered_messages:
+      'Newest 500 conversation threads; all unread messages stored in each scanned thread.',
+    missed_calls: `Inbound voicemail/no-answer/pending calls created since ${since}.`,
+    pending_estimates:
+      'All outstanding draft or sent estimates, capped to the newest 200.',
+    unassigned_jobs: `Unassigned active jobs from ${from} through ${through}.`,
+    scheduling_conflicts: `Not available; intended window would be ${from} through ${through}.`,
+    failed_notifications: `Failed SMS log entries created since ${since}.`,
+    service_concerns:
+      'All concerns in awaiting_customer, ready_for_review, or approved_return.',
+    overdue_followups: `Pending customer-requested cleaning reminders scheduled before ${now}.`,
+    unpaid_invoices:
+      'Invoices in ready, pending, or sent status whose payment status is not paid.',
+  }
   const add = (
     name: Queue['name'],
     index: number,
     map: (rows: any[]) => any[],
     note: string | null = null,
+    sourceCap = 200,
   ) => {
     const result = queries[index]
     if (result.error) {
@@ -545,40 +609,55 @@ export async function getOperationalSummary(input: {
         name,
         count: null,
         status: 'unavailable',
+        window: queueWindows[name],
         note: 'Source unavailable.',
         items: [],
       })
       return
     }
-    const items = map(result.data || [])
+    const sourceRows = result.data || []
+    const sourceTruncated = sourceRows.length > sourceCap
+    const items = map(sourceRows.slice(0, sourceCap))
+    if (sourceTruncated) {
+      missing.push(`${name}: newest ${sourceCap} source records scanned`)
+    }
+    const truncationNote = sourceTruncated
+      ? `Lower-bound count from the newest ${sourceCap} source records; older matching records may exist.`
+      : null
     queues.push({
       name,
       count: items.length,
-      status: items.length >= 200 ? 'partial' : 'available',
-      note: items.length >= 200 ? 'Capped at 200 records.' : note,
+      status: sourceTruncated ? 'partial' : 'available',
+      window: queueWindows[name],
+      note: [truncationNote, note].filter(Boolean).join(' ') || null,
       items: items.slice(0, input.item_limit),
     })
   }
 
-  add('unanswered_messages', 0, (rows) =>
-    rows.flatMap((row) => {
-      const unread = countUnreadInboundMessages({
-        messages: Array.isArray(row.messages) ? row.messages : [],
-        admin_read_at: row.admin_read_at,
-      })
-      return unread > 0
-        ? [
-            {
-              id: row.id,
-              phone: row.phone_number || null,
-              source: row.source || null,
-              unread_messages: unread,
-              updated_at: row.updated_at,
-              app_url: `${APP_ORIGIN}/admin/conversations?conversation=${row.id}`,
-            },
-          ]
-        : []
-    }),
+  add(
+    'unanswered_messages',
+    0,
+    (rows) =>
+      rows.flatMap((row) => {
+        const unread = countUnreadInboundMessages({
+          messages: Array.isArray(row.messages) ? row.messages : [],
+          admin_read_at: row.admin_read_at,
+        })
+        return unread > 0
+          ? [
+              {
+                id: row.id,
+                phone: row.phone_number || null,
+                source: row.source || null,
+                unread_messages: unread,
+                updated_at: row.updated_at,
+                app_url: `${APP_ORIGIN}/admin/conversations`,
+              },
+            ]
+          : []
+      }),
+    'Count is unread conversation threads; unread_messages is the per-thread inbound-message count.',
+    500,
   )
   add('missed_calls', 1, (rows) =>
     rows.map((row) => ({
@@ -615,6 +694,7 @@ export async function getOperationalSummary(input: {
     name: 'scheduling_conflicts',
     count: null,
     status: 'unavailable',
+    window: queueWindows.scheduling_conflicts,
     note: 'The existing conflict checker is request-scoped and has no read-only batch queue. No conflicts are inferred.',
     items: [],
   })
@@ -652,7 +732,7 @@ export async function getOperationalSummary(input: {
         appointment_id: row.appointment_id,
         scheduled_for: row.scheduled_for,
         status: row.status,
-        app_url: `${APP_ORIGIN}/admin/operations/customers?customer=${row.customer_id}`,
+        app_url: `${APP_ORIGIN}/admin/operations/customers`,
       })),
     'Customer-requested cleaning reminders only; general promised follow-ups are not stored in one canonical queue.',
   )

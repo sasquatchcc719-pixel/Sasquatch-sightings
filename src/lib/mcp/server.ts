@@ -334,7 +334,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'get_business_configuration',
     title: 'Get business configuration',
     description:
-      'Read the current America/Denver timezone, service-area ZIP tiers, travel charge, weekly business hours, dated availability overrides, service catalog pricing, durations, and buffers. Configuration is reference data; it does not quote, reserve, or book service.',
+      'Read the current America/Denver timezone, service-area ZIP tiers, travel charge, weekly business hours, dated availability overrides, service catalog pricing, durations, and buffers. Configuration is reference data; it does not quote, reserve, or book service. generated_at is retrieval time, not proof that an external integration synchronized.',
     inputSchema: noInput,
     outputSchema: businessConfigurationOutputSchema,
     async handler(_input, extra) {
@@ -362,7 +362,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'get_operational_summary',
     title: 'Get operational attention queues',
     description:
-      'Read bounded operational queues for unread customer messages, missed calls, pending estimates, unassigned jobs, failed notifications, service concerns, overdue customer-requested reminders, and unpaid invoices. Every response reports freshness and missing/partial sources. Scheduling conflicts are never guessed.',
+      'Read bounded operational queues for unread customer messages, missed calls, pending estimates, unassigned jobs, failed notifications, service concerns, overdue customer-requested reminders, and collectible-status unpaid invoices. Every queue declares its own time window and every response reports retrieval time plus missing/partial sources. Scheduling conflicts are never guessed.',
     inputSchema: operationalSummaryInput,
     outputSchema: operationalSummaryOutputSchema,
     async handler(input, extra) {

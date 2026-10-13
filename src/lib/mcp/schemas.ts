@@ -300,6 +300,7 @@ export const operationalSummaryOutputSchema = z
           ]),
           count: z.number().int().nonnegative().nullable(),
           status: z.enum(['available', 'partial', 'unavailable']),
+          window: z.string(),
           note: nullableString,
           items: z.array(z.record(z.string(), z.unknown())),
         })
