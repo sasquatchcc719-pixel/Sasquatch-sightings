@@ -82,3 +82,60 @@ describe('schedule estimate history', () => {
     ])
   })
 })
+
+it('excludes a hidden active technician while retaining visible calendar staff', async () => {
+  const staff = [
+    {
+      id: 'owner',
+      display_name: 'Charles',
+      is_active: true,
+      show_on_calendar: true,
+    },
+    {
+      id: 'brianna',
+      display_name: 'Brianna',
+      is_active: true,
+      show_on_calendar: false,
+    },
+  ]
+  mocks.from.mockImplementation((table: string) => {
+    const filters: Array<[string, unknown]> = []
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      lt: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      not: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      eq: vi.fn((key: string, value: unknown) => {
+        filters.push([key, value])
+        return query
+      }),
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          data:
+            table === 'staff_users'
+              ? staff.filter((row) =>
+                  filters.every(
+                    ([key, value]) => row[key as keyof typeof row] === value,
+                  ),
+                )
+              : [],
+          error: null,
+        }).then(resolve),
+    }
+    return query
+  })
+  const response = await GET(
+    new NextRequest(
+      'https://example.test/api/admin/ops/schedule?start_date=2026-10-12&end_date=2026-10-18',
+    ),
+  )
+  expect(response.status).toBe(200)
+  expect(
+    (await response.json()).staff.map((row: { id: string }) => row.id),
+  ).toEqual(['owner'])
+})

@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
           'id, user_id, display_name, role, is_active, default_open, scheduling_priority',
         )
         .eq('is_active', true)
+        .eq('show_on_calendar', true)
         .order('scheduling_priority', { ascending: true }),
       supabase
         .from('staff_daily_availability')
@@ -117,6 +118,7 @@ export async function GET(request: NextRequest) {
 
     if (appointmentsResult.error) throw appointmentsResult.error
     if (eventsResult.error) throw eventsResult.error
+    if (staffResult.error) throw staffResult.error
 
     // Cancelled estimates remain in history, but are no longer measuring visits.
     const appointments = (appointmentsResult.data || []).filter(

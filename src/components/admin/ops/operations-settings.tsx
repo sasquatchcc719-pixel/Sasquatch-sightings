@@ -77,11 +77,14 @@ type StaffMember = {
   display_name: string
   role: string
   profile_image_url: string | null
+  show_on_calendar: boolean
 }
 
 function StaffPhotoCard() {
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
+  const [savingVisibility, setSavingVisibility] = useState<string | null>(null)
+  const [visibilityStatus, setVisibilityStatus] = useState<string | null>(null)
   const [impersonating, setImpersonating] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cropTarget, setCropTarget] = useState<{
@@ -128,6 +131,35 @@ function StaffPhotoCard() {
       .then((data: { staff: StaffMember[] }) => setStaff(data.staff || []))
       .catch(() => setError('Failed to load staff'))
   }, [])
+
+  async function toggleCalendarVisibility(member: StaffMember) {
+    setSavingVisibility(member.id)
+    setVisibilityStatus(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/ops/staff', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: member.id,
+          showOnCalendar: !member.show_on_calendar,
+        }),
+      })
+      const data = (await res.json()) as { staff?: StaffMember; error?: string }
+      if (!res.ok || !data.staff) {
+        throw new Error(data.error || 'Failed to update calendar visibility')
+      }
+      const updated = data.staff
+      setStaff((prev) => prev.map((s) => (s.id === member.id ? updated : s)))
+      setVisibilityStatus(
+        `${member.display_name} is ${updated.show_on_calendar ? 'shown on' : 'hidden from'} the calendar.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSavingVisibility(null)
+    }
+  }
 
   function handleFileSelected(staffId: string, file: File) {
     const reader = new FileReader()
@@ -184,12 +216,23 @@ function StaffPhotoCard() {
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Technician Profiles</h3>
         <p className="text-muted-foreground mt-1 text-sm">
-          Profile photos are used in customer-facing notifications.
+          Profile photos are used in customer-facing notifications. Turn off
+          “Show on calendar” to hide a lane while keeping the person’s login and
+          canvassing access active.
         </p>
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-red-400">
+            {error}
+          </p>
+        )}
+        {visibilityStatus && (
+          <p role="status" className="mt-3 text-sm text-emerald-500">
+            {visibilityStatus}
+          </p>
+        )}
         <div className="mt-4 flex flex-col gap-4">
           {staff.map((member) => (
-            <div key={member.id} className="flex items-center gap-4">
+            <div key={member.id} className="flex flex-wrap items-center gap-4">
               <div className="border-border/60 bg-muted relative h-16 w-16 shrink-0 overflow-hidden rounded-full border">
                 {member.profile_image_url ? (
                   <Image
@@ -225,7 +268,32 @@ function StaffPhotoCard() {
                   e.target.value = ''
                 }}
               />
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={member.show_on_calendar}
+                  aria-label={`Show ${member.display_name} on calendar`}
+                  disabled={savingVisibility !== null}
+                  onClick={() => void toggleCalendarVisibility(member)}
+                  className="border-border flex min-h-10 items-center gap-2 rounded-lg border px-3 text-sm disabled:opacity-60"
+                >
+                  <span>Show on calendar</span>
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full ${member.show_on_calendar ? 'bg-emerald-500' : 'bg-slate-500'}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${member.show_on_calendar ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+                    />
+                  </span>
+                  {savingVisibility === member.id && (
+                    <Loader2
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 animate-spin"
+                    />
+                  )}
+                </button>
                 {member.user_id ? (
                   <Button
                     variant="outline"

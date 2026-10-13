@@ -9,7 +9,9 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('staff_users')
-      .select('id, user_id, display_name, role, profile_image_url, hourly_rate')
+      .select(
+        'id, user_id, display_name, role, profile_image_url, hourly_rate, show_on_calendar',
+      )
       .eq('is_active', true)
       .order('scheduling_priority', { ascending: true })
 
@@ -32,30 +34,59 @@ export async function PATCH(request: NextRequest) {
     const staffId = String(body.staffId || '').trim()
 
     if (!staffId) {
-      return NextResponse.json({ error: 'staffId is required' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'staffId is required' },
+        { status: 400 },
+      )
     }
 
-    // An empty string clears the rate (unpaid, e.g. the owner); a number sets it.
-    // Only NEW timesheet entries pick this up — past entries keep what they were
-    // recorded at, so editing a rate never rewrites history.
-    const raw = body.hourlyRate
-    let hourlyRate: number | null = null
-    if (raw !== '' && raw !== null && raw !== undefined) {
-      const parsed = Number(raw)
-      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 500) {
+    const updates: {
+      updated_at: string
+      hourly_rate?: number | null
+      show_on_calendar?: boolean
+    } = { updated_at: new Date().toISOString() }
+
+    if ('showOnCalendar' in body) {
+      if (typeof body.showOnCalendar !== 'boolean') {
         return NextResponse.json(
-          { error: 'Hourly rate must be between 0 and 500' },
+          { error: 'showOnCalendar must be a boolean' },
           { status: 400 },
         )
       }
-      hourlyRate = Math.round(parsed * 100) / 100
+      updates.show_on_calendar = body.showOnCalendar
+    }
+
+    // Changing calendar visibility must not clear the saved payroll rate.
+    if ('hourlyRate' in body) {
+      const raw = body.hourlyRate
+      let hourlyRate: number | null = null
+      if (raw !== '' && raw !== null && raw !== undefined) {
+        const parsed = Number(raw)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 500) {
+          return NextResponse.json(
+            { error: 'Hourly rate must be between 0 and 500' },
+            { status: 400 },
+          )
+        }
+        hourlyRate = Math.round(parsed * 100) / 100
+      }
+      updates.hourly_rate = hourlyRate
+    }
+
+    if (!('hourlyRate' in body) && !('showOnCalendar' in body)) {
+      return NextResponse.json(
+        { error: 'Provide hourlyRate or showOnCalendar' },
+        { status: 400 },
+      )
     }
 
     const { data, error } = await supabase
       .from('staff_users')
-      .update({ hourly_rate: hourlyRate, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', staffId)
-      .select('id, user_id, display_name, role, profile_image_url, hourly_rate')
+      .select(
+        'id, user_id, display_name, role, profile_image_url, hourly_rate, show_on_calendar',
+      )
       .single()
 
     if (error) throw error
