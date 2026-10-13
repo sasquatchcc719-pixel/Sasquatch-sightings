@@ -42,6 +42,7 @@ type AppointmentDetail = {
   end_time: string
   status: string
   payment_status: string
+  assigned_staff_user_id: string | null
   service_concern_id?: string | null
   internal_notes: string | null
   quoted_total: number
@@ -143,11 +144,16 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [staff, setStaff] = useState<{ id: string; display_name: string }[]>([])
+  const [canOverrideConflict, setCanOverrideConflict] = useState(false)
+  const [allowConflict, setAllowConflict] = useState(false)
   const [appointment, setAppointment] = useState<AppointmentDetail | null>(null)
   const [form, setForm] = useState({
     appointment_date: '',
     start_time: '',
     end_time: '',
+    assigned_staff_user_id: '',
     status: 'booked',
     payment_status: 'unpaid',
     internal_notes: '',
@@ -198,10 +204,14 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           throw new Error(result.error || 'Failed to load appointment')
         }
         setAppointment(result.appointment)
+        setStaff(result.staff || [])
+        setCanOverrideConflict(result.can_override_conflict === true)
         setForm({
           appointment_date: result.appointment.appointment_date,
           start_time: String(result.appointment.start_time).slice(0, 5),
           end_time: String(result.appointment.end_time).slice(0, 5),
+          assigned_staff_user_id:
+            result.appointment.assigned_staff_user_id || '',
           status: result.appointment.status,
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
@@ -437,6 +447,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const handleSave = async () => {
     setSaving(true)
     setError(null)
+    setSaveMessage(null)
     try {
       const startM = timeToMinutes(form.start_time)
       const endM = timeToMinutes(form.end_time)
@@ -452,6 +463,8 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...form,
+            assigned_staff_user_id: form.assigned_staff_user_id || null,
+            allow_conflict: canOverrideConflict && allowConflict,
             notify_customer_on_reschedule: true,
           }),
         },
@@ -461,6 +474,8 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         throw new Error(result.error || 'Failed to update appointment')
       }
       await loadAppointment('refresh')
+      setAllowConflict(false)
+      setSaveMessage('Job saved.')
       router.refresh()
     } catch (saveError) {
       setError(
@@ -805,6 +820,28 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
           <h3 className="text-lg font-semibold">Schedule + Status</h3>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Label htmlFor="job-technician">Technician</Label>
+              <select
+                id="job-technician"
+                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                value={form.assigned_staff_user_id}
+                onChange={(event) => {
+                  setSaveMessage(null)
+                  setForm((current) => ({
+                    ...current,
+                    assigned_staff_user_id: event.target.value,
+                  }))
+                }}
+              >
+                <option value="">Unassigned</option>
+                {staff.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <Label htmlFor="job-date">Date</Label>
               <Input
@@ -941,6 +978,27 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
             </div>
           </div>
 
+          {canOverrideConflict ? (
+            <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={allowConflict}
+                  onChange={(event) => setAllowConflict(event.target.checked)}
+                />
+                Allow double booking
+              </label>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Save even if this overlaps another job or blocked time. You can
+                adjust the time or technician later.
+              </p>
+            </div>
+          ) : null}
+          {saveMessage ? (
+            <p role="status" className="mt-3 text-sm text-green-600">
+              {saveMessage}
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <Button onClick={handleSave} disabled={saving}>
               {saving ? (

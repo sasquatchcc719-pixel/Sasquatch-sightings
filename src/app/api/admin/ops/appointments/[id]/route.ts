@@ -242,7 +242,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'marketing',
+    ])
     const supabase = createAdminClient()
     const { id } = await params
 
@@ -254,7 +259,21 @@ export async function GET(
 
     if (error) throw error
 
-    return NextResponse.json({ appointment: data })
+    const { data: staff, error: staffError } = await supabase
+      .from('staff_users')
+      .select('id, display_name, is_active, show_on_calendar')
+      .order('scheduling_priority', { ascending: true })
+    if (staffError) throw staffError
+
+    return NextResponse.json({
+      appointment: data,
+      staff: (staff || []).filter(
+        (member) =>
+          member.id === data.assigned_staff_user_id ||
+          (member.is_active && member.show_on_calendar !== false),
+      ),
+      can_override_conflict: ['admin', 'owner'].includes(String(access.role)),
+    })
   } catch (error) {
     console.error('[ops/appointments/:id][GET] Error:', error)
     return NextResponse.json(
@@ -279,6 +298,13 @@ export async function PATCH(
     const { id } = await params
     await assertTechAppointmentAccess(supabase, access, id)
     const body = await request.json()
+    const allowConflict = body.allow_conflict === true
+    if (allowConflict && !['admin', 'owner'].includes(String(access.role))) {
+      return NextResponse.json(
+        { error: 'Only admins and owners can allow double booking' },
+        { status: 403 },
+      )
+    }
 
     const { data: current, error: currentError } = await supabase
       .from('ops_appointments')
@@ -299,6 +325,34 @@ export async function PATCH(
       .single()
 
     if (currentError) throw currentError
+
+    if (
+      body.assigned_staff_user_id !== undefined &&
+      (body.assigned_staff_user_id || null) !== current.assigned_staff_user_id
+    ) {
+      if (!['admin', 'owner', 'dispatcher'].includes(String(access.role))) {
+        return NextResponse.json(
+          { error: 'Not authorized to reassign a technician' },
+          { status: 403 },
+        )
+      }
+      if (body.assigned_staff_user_id) {
+        const { data: staff, error: staffError } = await supabase
+          .from('staff_users')
+          .select('id, is_active, show_on_calendar')
+          .eq('id', body.assigned_staff_user_id)
+          .maybeSingle()
+        if (staffError) throw staffError
+        if (!staff?.is_active || staff.show_on_calendar === false) {
+          return NextResponse.json(
+            {
+              error: 'Select an active technician who is shown on the calendar',
+            },
+            { status: 400 },
+          )
+        }
+      }
+    }
 
     const appointmentDate = body.appointment_date
       ? String(body.appointment_date).trim()
@@ -506,44 +560,52 @@ export async function PATCH(
       }
     }
 
-    const { data: updated, error: updateError } = await supabase
-      .from('ops_appointments')
-      .update({
-        appointment_date: appointmentDate,
-        start_time: nextStartDb,
-        end_time: nextEndDb,
-        status: nextStatus,
-        payment_status: nextPaymentStatus,
-        // Giving a parked job a date puts it back on the schedule.
-        ...(body.appointment_date || nextStatus === 'booked'
-          ? { parked_at: null }
-          : {}),
-        internal_notes:
-          body.internal_notes !== undefined
-            ? String(body.internal_notes || '').trim() || null
-            : current.internal_notes,
-        ...(normalizedLeadSource?.ok
-          ? leadSourceUpdatePayload(normalizedLeadSource.source)
-          : {
-              lead_source: current.lead_source,
-              lead_source_key: current.lead_source_key,
-              lead_source_detail: current.lead_source_detail,
-              original_lead_source: current.original_lead_source,
-            }),
-        assigned_staff_user_id:
-          body.assigned_staff_user_id !== undefined
-            ? body.assigned_staff_user_id || null
-            : current.assigned_staff_user_id,
-        on_my_way_at: nextOnMyWayAt,
-        completed_at: nextCompletedAt,
-        updated_at: nowIso,
-        ...(nextRecurringTemplateId !== undefined
-          ? { recurring_template_id: nextRecurringTemplateId }
-          : {}),
-      })
-      .eq('id', id)
-      .select()
-      .single()
+    const updates = {
+      appointment_date: appointmentDate,
+      start_time: nextStartDb,
+      end_time: nextEndDb,
+      status: nextStatus,
+      payment_status: nextPaymentStatus,
+      // Giving a parked job a date puts it back on the schedule.
+      ...(body.appointment_date || nextStatus === 'booked'
+        ? { parked_at: null }
+        : {}),
+      internal_notes:
+        body.internal_notes !== undefined
+          ? String(body.internal_notes || '').trim() || null
+          : current.internal_notes,
+      ...(normalizedLeadSource?.ok
+        ? leadSourceUpdatePayload(normalizedLeadSource.source)
+        : {
+            lead_source: current.lead_source,
+            lead_source_key: current.lead_source_key,
+            lead_source_detail: current.lead_source_detail,
+            original_lead_source: current.original_lead_source,
+          }),
+      assigned_staff_user_id:
+        body.assigned_staff_user_id !== undefined
+          ? body.assigned_staff_user_id || null
+          : current.assigned_staff_user_id,
+      on_my_way_at: nextOnMyWayAt,
+      completed_at: nextCompletedAt,
+      updated_at: nowIso,
+      ...(nextRecurringTemplateId !== undefined
+        ? { recurring_template_id: nextRecurringTemplateId }
+        : {}),
+    }
+    const { data: updated, error: updateError } = allowConflict
+      ? await supabase
+          .rpc('admin_override_appointment_schedule', {
+            p_appointment_id: id,
+            p_updates: updates,
+          })
+          .single()
+      : await supabase
+          .from('ops_appointments')
+          .update(updates)
+          .eq('id', id)
+          .select()
+          .single()
 
     if (updateError) throw updateError
 
