@@ -70,7 +70,9 @@ describe('Merlin bearer authentication', () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({ error: 'Unauthorized' })
-    expect(response.headers.get('www-authenticate')).toBe('Bearer')
+    expect(response.headers.get('www-authenticate')).toContain(
+      'resource_metadata="https://sightings.sasquatchcarpet.com/.well-known/oauth-protected-resource"',
+    )
     expect(handler).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalled()
   })

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/supabase/server'
+import { authorizeMcpBearer, mcpWwwAuthenticate } from '@/lib/mcp/auth'
 
 export const MERLIN_KEY_LABEL = 'merlin-read'
 const KEY_HASH_ENV = 'MERLIN_READ_API_KEY_SHA256'
@@ -103,12 +104,15 @@ async function logRequest(params: {
   }
 }
 
-async function consumeRateLimit(supabase: SupabaseClient): Promise<{
+async function consumeRateLimit(
+  supabase: SupabaseClient,
+  keyLabel: string,
+): Promise<{
   allowed: boolean
   retryAfterSeconds: number
 }> {
   const { data, error } = await supabase.rpc('consume_api_v1_token', {
-    p_key_label: MERLIN_KEY_LABEL,
+    p_key_label: keyLabel,
   })
 
   if (error) throw error
@@ -117,6 +121,19 @@ async function consumeRateLimit(supabase: SupabaseClient): Promise<{
   return {
     allowed: Boolean(result?.allowed),
     retryAfterSeconds: Math.max(1, Number(result?.retry_after_seconds || 1)),
+  }
+}
+
+async function apiCredentialLabel(
+  authorizationHeader: string | null,
+): Promise<string | null> {
+  if (hasValidBearerCredential(authorizationHeader)) return MERLIN_KEY_LABEL
+
+  try {
+    await authorizeMcpBearer(authorizationHeader)
+    return 'mcp-oauth-read'
+  } catch {
+    return null
   }
 }
 
@@ -132,18 +149,17 @@ export async function handleApiV1Get(
   try {
     if (!isHttpsRequest(request)) {
       response = jsonError('HTTPS is required', 400)
-    } else if (!process.env[KEY_HASH_ENV]) {
-      response = jsonError('API credential is not configured', 503)
     } else if (
-      !hasValidBearerCredential(request.headers.get('authorization'))
+      !(keyLabel = await apiCredentialLabel(
+        request.headers.get('authorization'),
+      ))
     ) {
       response = jsonError('Unauthorized', 401, {
-        'WWW-Authenticate': 'Bearer',
+        'WWW-Authenticate': mcpWwwAuthenticate(),
       })
     } else {
-      keyLabel = MERLIN_KEY_LABEL
       supabase = createAdminClient()
-      const rateLimit = await consumeRateLimit(supabase)
+      const rateLimit = await consumeRateLimit(supabase, keyLabel)
 
       if (!rateLimit.allowed) {
         response = jsonError('Rate limit exceeded', 429, {

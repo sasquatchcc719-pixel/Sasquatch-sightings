@@ -2,9 +2,14 @@ import { updateSession } from '@/supabase/proxy'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
-  // The external REST API authenticates exclusively with its bearer key.
-  // Keep cookie/session refresh completely outside this namespace.
-  if (request.nextUrl.pathname.startsWith('/api/v1/')) {
+  // Machine endpoints authenticate with Authorization bearer credentials.
+  // Keep cookie/session refresh completely outside these namespaces.
+  if (
+    request.nextUrl.pathname.startsWith('/api/v1/') ||
+    request.nextUrl.pathname === '/mcp' ||
+    request.nextUrl.pathname.startsWith('/mcp/') ||
+    request.nextUrl.pathname.startsWith('/.well-known/')
+  ) {
     return NextResponse.next()
   }
   return await updateSession(request)

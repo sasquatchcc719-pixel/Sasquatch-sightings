@@ -17,8 +17,9 @@ import { useState } from 'react'
 
 export function LoginForm({
   className,
+  nextPath,
   ...props
-}: React.ComponentPropsWithoutRef<'div'>) {
+}: React.ComponentPropsWithoutRef<'div'> & { nextPath?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +40,10 @@ export function LoginForm({
 
       // Server-side redirect page determines destination based on role.
       // Uses admin client so it works reliably right after sign-in.
-      window.location.href = '/redirect'
+      window.location.href =
+        nextPath?.startsWith('/') && !nextPath.startsWith('//')
+          ? nextPath
+          : '/redirect'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
