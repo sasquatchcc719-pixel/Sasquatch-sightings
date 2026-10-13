@@ -49,11 +49,21 @@ function validClaims(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function allowDatabaseChecks(options?: { grant?: boolean; owner?: boolean }) {
+function allowDatabaseChecks(options?: {
+  grant?: boolean
+  owner?: boolean
+  scopes?: string[]
+}) {
   mocks.from.mockImplementation((table: string) => {
     if (table === 'mcp_authorized_users') {
       return queryResult({
-        data: options?.grant === false ? null : { user_id: subject },
+        data:
+          options?.grant === false
+            ? null
+            : {
+                user_id: subject,
+                scopes: options?.scopes || ['business:read'],
+              },
         error: null,
       })
     }
@@ -142,5 +152,20 @@ describe('MCP OAuth authorization', () => {
     await expect(
       authorizeMcpBearer('Bearer valid.test.token'),
     ).rejects.toMatchObject({ oauthError: 'insufficient_scope' })
+  })
+
+  it('returns only internal scopes present in both the token and live grant', async () => {
+    mocks.jwtVerify.mockResolvedValue({
+      payload: validClaims({
+        mcp_scopes: ['business:read', 'customers:write', 'unknown:scope'],
+      }),
+    })
+    allowDatabaseChecks({
+      scopes: ['business:read', 'customers:write', 'customer:contact'],
+    })
+
+    const auth = await authorizeMcpBearer('Bearer valid.test.token')
+
+    expect(auth.scopes).toEqual(['business:read', 'customers:write'])
   })
 })

@@ -27,6 +27,7 @@
     "test:ci": "vitest run",
     "test:integration": "node scripts/run-integration-test.mjs",
     "test:ui": "vitest --ui",
+    "mcp:verify-release": "node scripts/verify-mcp-release.mjs",
     "analyze": "ANALYZE=true pnpm build",
     "backfill-locations": "tsx scripts/backfill-sighting-locations.ts",
     "backfill-job-cities": "tsx scripts/backfill-job-cities.ts",

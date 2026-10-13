@@ -70,6 +70,49 @@ export type CreateAiStyleBookingInput = {
   accepted_minimum_charge?: boolean
   /** Staff member to assign this appointment to. */
   assigned_staff_user_id?: string | null
+  /** Validate and calculate the exact booking without writing any records. */
+  preview_only?: boolean
+  /** Existing callers default to true. MCP can make customer contact explicit. */
+  notify_customer?: boolean
+  /** Existing callers default to true. Controls SMS/push/Telegram staff alerts. */
+  notify_internal?: boolean
+  /** Existing callers default to true. Controls QB job creation and immediate sync. */
+  sync_quickbooks?: boolean
+}
+
+export type CreateAiStyleBookingPreviewSuccess = {
+  ok: true
+  preview_only: true
+  appointment_status: 'booked' | 'pending_approval'
+  appointment_date: string
+  start_time: string
+  end_time: string
+  assigned_staff_user_id: string | null
+  technician_name: string
+  subtotal: number
+  discount_applied: number
+  total: number
+  line_items: Array<{
+    service_catalog_item_id: string | null
+    name_snapshot: string
+    quantity: number
+    unit_price: number
+    line_total: number
+    duration_minutes: number
+    pricing_unit: string
+  }>
+  lead_source: {
+    lead_source: string
+    lead_source_key: string | null
+    lead_source_detail: string | null
+    original_lead_source: string | null
+  }
+  side_effects: {
+    customer_notification: boolean
+    internal_notifications: boolean
+    quickbooks_sync: boolean
+    creates_invoice: true
+  }
 }
 
 export type CreateAiStyleBookingSuccess = {
@@ -208,9 +251,19 @@ export function calculateAiStyleBookingDiscount(params: {
   return 0
 }
 
+export function createAiStyleBooking(
+  input: CreateAiStyleBookingInput & { preview_only: true },
+): Promise<CreateAiStyleBookingPreviewSuccess | CreateAiStyleBookingFailure>
+export function createAiStyleBooking(
+  input: CreateAiStyleBookingInput,
+): Promise<CreateAiStyleBookingSuccess | CreateAiStyleBookingFailure>
 export async function createAiStyleBooking(
   input: CreateAiStyleBookingInput,
-): Promise<CreateAiStyleBookingSuccess | CreateAiStyleBookingFailure> {
+): Promise<
+  | CreateAiStyleBookingSuccess
+  | CreateAiStyleBookingPreviewSuccess
+  | CreateAiStyleBookingFailure
+> {
   const {
     supabase,
     customer,
@@ -442,8 +495,11 @@ export async function createAiStyleBooking(
     date: appointmentDate,
     requiredMinutes: buffered,
   })
-  const freeStaff = staffSlots.find((result) =>
-    result.slots.some((slot) => slot.start_time === requestedStart),
+  const freeStaff = staffSlots.find(
+    (result) =>
+      (!input.assigned_staff_user_id ||
+        result.staffUserId === input.assigned_staff_user_id) &&
+      result.slots.some((slot) => slot.start_time === requestedStart),
   )
   if (!freeStaff) {
     const union = await getUnionedSlots({
@@ -475,6 +531,44 @@ export async function createAiStyleBooking(
       console.error('[createAiStyleBooking] staff lookup:', staffError)
     }
     technicianSchedule = staffUser?.display_name || 'Unassigned'
+  }
+
+  const appointmentStatus =
+    bookingMode === 'direct' ? 'booked' : 'pending_approval'
+  const notifyCustomer = input.notify_customer !== false
+  const notifyInternal = input.notify_internal !== false
+  const syncQuickBooks = input.sync_quickbooks !== false
+
+  if (input.preview_only) {
+    return {
+      ok: true,
+      preview_only: true,
+      appointment_status: appointmentStatus,
+      appointment_date: appointmentDate,
+      start_time: startTime,
+      end_time: endTime.slice(0, 5),
+      assigned_staff_user_id: resolvedStaffUserId || null,
+      technician_name: technicianSchedule,
+      subtotal,
+      discount_applied: discountAmount,
+      total,
+      line_items: lineItems.map((item) => ({
+        service_catalog_item_id: item.service_catalog_item_id,
+        name_snapshot: item.name_snapshot,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: item.unit_price * item.quantity,
+        duration_minutes: item.duration_minutes,
+        pricing_unit: item.pricing_unit,
+      })),
+      lead_source: leadSourceUpdatePayload(resolvedLeadSource.source),
+      side_effects: {
+        customer_notification: appointmentStatus === 'booked' && notifyCustomer,
+        internal_notifications: notifyInternal,
+        quickbooks_sync: syncQuickBooks,
+        creates_invoice: true,
+      },
+    }
   }
 
   const fullName = `${firstName} ${lastName}`.trim()
@@ -509,9 +603,6 @@ export async function createAiStyleBooking(
     .from('ops_service_addresses')
     .update({ city, state, updated_at: new Date().toISOString() })
     .eq('id', addressId)
-
-  const appointmentStatus =
-    bookingMode === 'direct' ? 'booked' : 'pending_approval'
 
   const { data: appointment, error: appointmentError } = await supabase
     .from('ops_appointments')
@@ -594,32 +685,40 @@ export async function createAiStyleBooking(
       to_status: 'draft',
       notes: `Invoice created via ${actorLabel}`,
     }),
-    ensureCustomerQuickBooksSyncJob(
-      supabase,
-      customerId,
-      buildQuickBooksCustomerPayload({
-        customerId,
-        fullName,
-        email,
-        phone,
-        address: {
-          street_1: street1,
-          street_2: street2,
-          city,
-          state,
-          zip_code: zipCode,
-        },
-      }),
-    ),
+    ...(syncQuickBooks
+      ? [
+          ensureCustomerQuickBooksSyncJob(
+            supabase,
+            customerId,
+            buildQuickBooksCustomerPayload({
+              customerId,
+              fullName,
+              email,
+              phone,
+              address: {
+                street_1: street1,
+                street_2: street2,
+                city,
+                state,
+                zip_code: zipCode,
+              },
+            }),
+          ),
+        ]
+      : []),
   ])
 
   if (appointmentStatus === 'booked') {
     await Promise.allSettled([
-      sendOpsLifecycleCommunications({
-        event: 'job_scheduled',
-        appointmentId: appointment.id,
-      }),
-      syncAppointmentToQuickBooks(appointment.id),
+      ...(notifyCustomer
+        ? [
+            sendOpsLifecycleCommunications({
+              event: 'job_scheduled',
+              appointmentId: appointment.id,
+            }),
+          ]
+        : []),
+      ...(syncQuickBooks ? [syncAppointmentToQuickBooks(appointment.id)] : []),
     ])
   }
 
@@ -656,31 +755,33 @@ export async function createAiStyleBooking(
     timeZone: 'America/Denver',
   })
 
-  await Promise.allSettled([
-    sendAdminSMS(adminMsg, 'new_booking'),
-    sendOneSignalNotification({
-      heading: `New ${adminHeading}${statusLabel}`,
-      content: `${fullName} — $${total.toFixed(2)} · ${dateWithYear}`,
-      data: { type: 'new_booking', appointment_id: appointment.id },
-    }),
-    sendBookingNotification({
-      customerName: fullName,
-      phone,
-      appointmentDate,
-      startTime: startTime.slice(0, 5),
-      total,
-      leadSource: formatLeadSourceForNotification({
-        leadSource: resolvedLeadSource.source.lead_source,
-        leadSourceDetail: resolvedLeadSource.source.lead_source_detail,
+  if (notifyInternal) {
+    await Promise.allSettled([
+      sendAdminSMS(adminMsg, 'new_booking'),
+      sendOneSignalNotification({
+        heading: `New ${adminHeading}${statusLabel}`,
+        content: `${fullName} — $${total.toFixed(2)} · ${dateWithYear}`,
+        data: { type: 'new_booking', appointment_id: appointment.id },
       }),
-      bookingMethod: formatBookingMethodForNotification({
-        source: sourceLabel,
-        bookingChannel,
+      sendBookingNotification({
+        customerName: fullName,
+        phone,
+        appointmentDate,
+        startTime: startTime.slice(0, 5),
+        total,
+        leadSource: formatLeadSourceForNotification({
+          leadSource: resolvedLeadSource.source.lead_source,
+          leadSourceDetail: resolvedLeadSource.source.lead_source_detail,
+        }),
+        bookingMethod: formatBookingMethodForNotification({
+          source: sourceLabel,
+          bookingChannel,
+        }),
+        technicianSchedule,
+        services: lineItems.map((item) => item.name_snapshot),
       }),
-      technicianSchedule,
-      services: lineItems.map((item) => item.name_snapshot),
-    }),
-  ])
+    ])
+  }
 
   if (referrerName) {
     await linkPartnerReferralIfMatched({
@@ -695,7 +796,7 @@ export async function createAiStyleBooking(
   }
 
   // Schedule 30-minute job reminder
-  if (appointmentStatus === 'booked') {
+  if (appointmentStatus === 'booked' && notifyInternal) {
     scheduleJobReminder({
       appointmentDate,
       startTime: startTime.slice(0, 5),
@@ -720,7 +821,9 @@ export async function createAiStyleBooking(
     total,
     message:
       appointmentStatus === 'booked'
-        ? `Booking confirmed! Confirmation number: ${confirmationNumber}. The customer will receive a confirmation text and email.`
+        ? notifyCustomer
+          ? `Booking confirmed! Confirmation number: ${confirmationNumber}. The customer will receive a confirmation text and email.`
+          : `Booking confirmed! Confirmation number: ${confirmationNumber}. Customer notifications were intentionally suppressed.`
         : `Booking request submitted for approval. Confirmation number: ${confirmationNumber}. Sasquatch Carpet Cleaning will confirm shortly.`,
   }
 }

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
-import { sendCustomerSMS } from '@/lib/twilio'
+import { sendConversationReply } from '@/lib/ops/conversation-reply'
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,47 +26,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Fetch conversation
-    const { data: conversation, error: fetchError } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('id', conversationId)
-      .single()
-
-    if (fetchError || !conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 },
-      )
-    }
-
-    // Send SMS via Twilio
-    console.log(`📤 Sending admin reply to: ${conversation.phone_number}`)
-    await sendCustomerSMS(
-      conversation.phone_number,
+    await sendConversationReply({
+      supabase,
+      conversationId,
       message,
-      conversation.lead_id,
-      'admin_reply',
-    )
-    console.log(`✅ Admin reply sent successfully`)
-
-    // Add message to conversation history
-    const messages = (conversation.messages as any[]) || []
-    messages.push({
-      role: 'assistant',
-      content: message,
-      timestamp: new Date().toISOString(),
-      sent_by: 'admin', // Tag it as admin-sent
+      sentBy: user.email || role,
     })
-
-    // Update conversation
-    await supabase
-      .from('conversations')
-      .update({
-        messages,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversationId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

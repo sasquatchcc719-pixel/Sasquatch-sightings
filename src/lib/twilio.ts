@@ -239,6 +239,7 @@ export async function sendCustomerSMSWithResult(
   messageType: string = 'customer_notification',
   fromNumber?: string,
   meta?: CustomerSmsMeta,
+  mediaUrls: string[] = [],
 ): Promise<{ sid: string; to: string; from: string }> {
   if (!client || (!twilioPhone && !messagingServiceSid)) {
     throw new Error(
@@ -269,11 +270,13 @@ export async function sendCustomerSMSWithResult(
           body: normalizedMessage,
           messagingServiceSid,
           to: toPhone,
+          ...(mediaUrls.length > 0 ? { mediaUrl: mediaUrls } : {}),
         }
       : {
           body: normalizedMessage,
           from: sender,
           to: toPhone,
+          ...(mediaUrls.length > 0 ? { mediaUrl: mediaUrls } : {}),
         },
   )
 

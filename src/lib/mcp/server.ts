@@ -13,6 +13,11 @@ import {
   MCP_RESOURCE_METADATA,
 } from './constants'
 import {
+  assertMcpToolCatalog,
+  MCP_SERVER_NAME,
+  MCP_SERVER_VERSION,
+} from './release'
+import {
   appointmentDetailOutputSchema,
   appointmentListOutputSchema,
   availabilityOutputSchema,
@@ -20,10 +25,16 @@ import {
   businessSearchOutputSchema,
   callsOutputSchema,
   capabilityCatalogOutputSchema,
+  conversationDetailOutputSchema,
+  conversationListOutputSchema,
   customerListOutputSchema,
   estimateDetailOutputSchema,
   estimateListOutputSchema,
+  invoiceDetailOutputSchema,
   operationalSummaryOutputSchema,
+  actionExecutionOutputSchema,
+  actionPreviewOutputSchema,
+  savedConversationDraftOutputSchema,
 } from './schemas'
 import {
   getBusinessConfiguration,
@@ -31,6 +42,22 @@ import {
   getOperationalSummary,
   searchBusinessRecords,
 } from './operations'
+import {
+  executePreparedAction,
+  getConversation,
+  getInvoice,
+  listConversations,
+  previewAppointmentCreate,
+  previewAppointmentUpdate,
+  previewConversationSend,
+  previewCustomerUpdate,
+  previewEstimateDecision,
+  previewEstimateConversion,
+  previewEstimateSend,
+  previewEstimateSave,
+  saveConversationDraft,
+  type McpActor,
+} from './business-operations'
 import { getApiV1 } from './upstream'
 
 const dateSchema = z
@@ -165,11 +192,281 @@ const operationalSummaryInput = z
   })
   .strict()
 
+const conversationListInput = z
+  .object({
+    status: z.enum(['active', 'completed', 'escalated']).optional(),
+    source: z.string().trim().min(1).max(80).optional(),
+    customer_id: z.string().uuid().optional(),
+    phone: z.string().trim().min(7).max(32).optional(),
+    since: z.string().datetime({ offset: true }).optional(),
+    ...paginationFields,
+  })
+  .strict()
+const conversationDetailInput = z
+  .object({
+    id: z.string().uuid(),
+    message_limit: z.number().int().min(1).max(100).default(50),
+    message_offset: z.number().int().nonnegative().default(0),
+    include_media: z.boolean().default(true),
+  })
+  .strict()
+const idempotencyKey = z
+  .string()
+  .trim()
+  .min(8)
+  .max(200)
+  .describe('Caller-generated stable key for this exact requested action.')
+const saveConversationDraftInput = z
+  .object({
+    conversation_id: z.string().uuid(),
+    body: z.string().trim().min(1).max(4000),
+  })
+  .strict()
+const customerChanges = z
+  .object({
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    full_name: z.string().trim().max(200).optional(),
+    business_name: z.string().trim().max(200).nullable().optional(),
+    email: z.string().trim().email().max(254).nullable().optional(),
+    phone: z.string().trim().min(7).max(32).optional(),
+    notes: z.string().max(4000).nullable().optional(),
+    email_opt_out: z.boolean().optional(),
+  })
+  .strict()
+const addressChanges = z
+  .object({
+    id: z.string().uuid(),
+    label: z.string().trim().max(100).nullable().optional(),
+    street_1: z.string().trim().max(200).optional(),
+    street_2: z.string().trim().max(200).nullable().optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().length(2).optional(),
+    zip_code: z.string().trim().max(10).optional(),
+    gate_code: z.string().trim().max(100).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .strict()
+const previewCustomerUpdateInput = z
+  .object({
+    customer_id: z.string().uuid(),
+    customer: customerChanges.optional(),
+    address: addressChanges.optional(),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+  .refine((value) => value.customer || value.address, {
+    message: 'Provide customer and/or address changes',
+  })
+const previewConversationSendInput = z
+  .object({
+    conversation_id: z.string().uuid(),
+    body: z.string().trim().min(1).max(1600),
+    media_ids: z.array(z.string().uuid()).max(5).default([]),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+const previewAppointmentUpdateInput = z
+  .object({
+    appointment_id: z.string().uuid(),
+    appointment_date: dateSchema.optional(),
+    start_time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    assigned_staff_user_id: z.string().uuid().nullable().optional(),
+    internal_notes: z.string().max(8000).nullable().optional(),
+    cancel: z.boolean().default(false),
+    park_on_cancel: z.boolean().default(true),
+    notify_customer: z.boolean().default(false),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.cancel ||
+      value.appointment_date !== undefined ||
+      value.start_time !== undefined ||
+      value.assigned_staff_user_id !== undefined ||
+      value.internal_notes !== undefined,
+    { message: 'Provide a schedule, assignment, note, or cancellation change' },
+  )
+const previewAppointmentCreateInput = z
+  .object({
+    customer: z
+      .object({
+        first_name: z.string().trim().min(1).max(100),
+        last_name: z.string().trim().min(1).max(100),
+        email: z.string().trim().email().max(254),
+        phone: z.string().trim().min(7).max(32),
+      })
+      .strict(),
+    address: z
+      .object({
+        street_1: z.string().trim().min(1).max(200),
+        street_2: z.string().trim().max(200).optional(),
+        city: z.string().trim().min(1).max(100),
+        state: z.string().trim().length(2).default('CO'),
+        zip_code: z
+          .string()
+          .trim()
+          .regex(/^\d{5}(?:-\d{4})?$/),
+      })
+      .strict(),
+    appointment_date: dateSchema,
+    start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    line_items: z
+      .array(
+        z
+          .object({
+            service_id: z.string().uuid(),
+            quantity: z.number().positive().max(10000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+    assigned_staff_user_id: z.string().uuid().optional(),
+    lead_source: z.string().trim().min(1).max(120),
+    lead_source_detail: z.string().trim().max(500).nullable().optional(),
+    accepted_minimum_charge: z.boolean().default(false),
+    notify_customer: z.boolean().default(false),
+    notify_internal: z.boolean().default(true),
+    sync_quickbooks: z.boolean().default(true),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+const estimateLineInput = z
+  .object({
+    service_id: z.string().uuid().nullable().optional(),
+    description: z.string().trim().min(1).max(300),
+    quantity: z.number().positive().max(10000),
+    unit_price: z.number().nonnegative().max(1_000_000),
+  })
+  .strict()
+const previewEstimateSaveInput = z
+  .object({
+    estimate_id: z.string().uuid().optional(),
+    customer_id: z.string().uuid().optional(),
+    service_address_id: z.string().uuid().optional(),
+    appointment_date: dateSchema.optional(),
+    start_time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
+      .optional(),
+    end_time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
+      .optional(),
+    assigned_staff_user_id: z.string().uuid().nullable().optional(),
+    internal_notes: z.string().max(8000).nullable().optional(),
+    line_items: z.array(estimateLineInput).min(1).max(100).optional(),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (!value.estimate_id) {
+      for (const key of [
+        'customer_id',
+        'service_address_id',
+        'appointment_date',
+        'start_time',
+        'end_time',
+        'assigned_staff_user_id',
+        'line_items',
+      ] as const) {
+        if (!value[key]) {
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `${key} is required for a new estimate`,
+          })
+        }
+      }
+    }
+  })
+const previewEstimateDecisionInput = z
+  .object({
+    estimate_id: z.string().uuid(),
+    decision: z.enum(['accepted', 'declined']),
+    reason: z.string().trim().min(1).max(1000).nullable().optional(),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+const previewEstimateSendInput = z
+  .object({
+    estimate_id: z.string().uuid(),
+    reopen: z.boolean().default(false),
+    reason: z.string().trim().min(1).max(1000).nullable().optional(),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.reopen && !value.reason) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: 'A reason is required when reopen=true',
+      })
+    }
+  })
+const previewEstimateConversionInput = z
+  .object({
+    estimate_id: z.string().uuid(),
+    appointment_date: dateSchema,
+    start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end_time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .nullable()
+      .optional(),
+    assigned_staff_user_id: z.string().uuid(),
+    discount_amount: z.number().nonnegative().max(1_000_000).default(0),
+    notify_customer: z.boolean().default(false),
+    sync_quickbooks: z.boolean().default(true),
+    idempotency_key: idempotencyKey,
+  })
+  .strict()
+const executeConfirmedActionInput = z
+  .object({
+    confirmation_id: z.string().uuid(),
+    confirmed: z.literal(true),
+  })
+  .strict()
+
 const annotations = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
   openWorldHint: false,
+} as const
+
+const stateChangeAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const
+
+const customerContactAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const
+
+const financialActionAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const
+
+const cancellationAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: true,
 } as const
 
 const securitySchemes = [
@@ -214,10 +511,30 @@ type ToolDefinition = {
   description: string
   inputSchema: z.ZodType
   outputSchema: z.ZodType
+  annotations?: {
+    readOnlyHint: boolean
+    destructiveHint: boolean
+    idempotentHint: boolean
+    openWorldHint: boolean
+  }
   handler: (
     input: Record<string, unknown>,
     extra: HandlerExtra,
   ) => Promise<ReturnType<typeof toolResult>>
+}
+
+function actorInfo(extra: HandlerExtra): McpActor {
+  const info = authInfo(extra)
+  return {
+    subject: String(info.extra?.subject),
+    label:
+      typeof info.extra?.displayName === 'string'
+        ? info.extra.displayName
+        : typeof info.extra?.email === 'string'
+          ? info.extra.email
+          : String(info.extra?.subject),
+    scopes: [...info.scopes],
+  }
 }
 
 const toolDefinitions: ToolDefinition[] = [
@@ -374,14 +691,369 @@ const toolDefinitions: ToolDefinition[] = [
       )
     },
   },
+  {
+    name: 'list_conversations',
+    title: 'List customer conversations',
+    description:
+      'List real Sightings customer conversation threads with stable IDs, customer context, unread counts, last-message context, filters, and limit/offset pagination. Read-only; does not mark threads read.',
+    inputSchema: conversationListInput,
+    outputSchema: conversationListOutputSchema,
+    async handler(input, extra) {
+      authInfo(extra)
+      return toolResult(
+        await listConversations(input as z.infer<typeof conversationListInput>),
+      )
+    },
+  },
+  {
+    name: 'get_conversation',
+    title: 'Get customer conversation',
+    description:
+      'Read one Sightings conversation by stable UUID with paginated message bodies, customer context, current saved draft, and owner-authorized short-lived URLs for retained inbound media. Media remains in existing private storage; this tool creates no new retention.',
+    inputSchema: conversationDetailInput,
+    outputSchema: conversationDetailOutputSchema,
+    async handler(input, extra) {
+      authInfo(extra)
+      return toolResult(
+        await getConversation(input as z.infer<typeof conversationDetailInput>),
+      )
+    },
+  },
+  {
+    name: 'get_invoice',
+    title: 'Get invoice detail',
+    description:
+      'Read one existing invoice with customer, service address, appointment, technician, line items, totals, workflow status, payment status, and timestamps. Does not publish, send, charge, refund, or record payment.',
+    inputSchema: getByIdInput,
+    outputSchema: invoiceDetailOutputSchema,
+    async handler({ id }, extra) {
+      authInfo(extra)
+      return toolResult(await getInvoice(String(id)))
+    },
+  },
+  {
+    name: 'save_conversation_draft',
+    title: 'Save customer reply draft',
+    description:
+      'Create or replace the authorized owner’s saved Sightings reply draft for one conversation. This writes a draft only and never contacts the customer. Requires the separate communications:draft grant.',
+    inputSchema: saveConversationDraftInput,
+    outputSchema: savedConversationDraftOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await saveConversationDraft(
+          input as z.infer<typeof saveConversationDraftInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'preview_customer_update',
+    title: 'Preview customer or address update',
+    description:
+      'Prepare an exact, expiring preview of allowlisted customer and service-address changes. No customer record is changed until execute_customer_update is called with this preview after action-time confirmation.',
+    inputSchema: previewCustomerUpdateInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewCustomerUpdate(
+          input as z.infer<typeof previewCustomerUpdateInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_customer_update',
+    title: 'Execute confirmed customer update',
+    description:
+      'Execute one unexpired customer/address preview after explicit confirmation. Revalidates record versions, preserves blacklist linkage, queues address geocoding when needed, audits the result, and is idempotent.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'customer.update',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_customer_message',
+    title: 'Preview customer SMS or MMS',
+    description:
+      'Prepare an exact, expiring preview showing the conversation, recipient, retained business sender, complete body, and selected existing media. This does not contact the customer.',
+    inputSchema: previewConversationSendInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewConversationSend(
+          input as z.infer<typeof previewConversationSendInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_customer_message',
+    title: 'Send confirmed customer SMS or MMS',
+    description:
+      'Send one explicitly confirmed preview through Twilio from the original retained business number when available, then append the provider-confirmed result to Sightings. Never uses Telegram bot posts as a send path. Requires customer:contact.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: customerContactAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'conversation.send',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_appointment_create',
+    title: 'Preview appointment booking',
+    description:
+      'Validate and price a service booking with the existing catalog, service-area, minimum-charge, technician-priority, duration, buffer, and availability rules. Returns the exact appointment, draft-invoice, customer-contact, staff-notification, and QuickBooks effects. Writes nothing.',
+    inputSchema: previewAppointmentCreateInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: financialActionAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewAppointmentCreate(
+          input as z.infer<typeof previewAppointmentCreateInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_appointment_create',
+    title: 'Execute confirmed appointment booking',
+    description:
+      'Execute one confirmed, unexpired booking preview. Revalidates catalog, service area, pricing, minimum, technician, and live availability; then creates the appointment and draft invoice. Customer contact occurs only when the preview explicitly requested it.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: financialActionAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'appointment.create',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_appointment_update',
+    title: 'Preview appointment change',
+    description:
+      'Prepare an exact, expiring preview for a single appointment reschedule, technician reassignment, note edit, or cancellation. Shows before/after values and whether the existing customer communication workflow was requested. Does not change the appointment.',
+    inputSchema: previewAppointmentUpdateInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewAppointmentUpdate(
+          input as z.infer<typeof previewAppointmentUpdateInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_appointment_update',
+    title: 'Execute confirmed appointment change',
+    description:
+      'Execute one confirmed appointment preview with stale-record protection and live staff-calendar revalidation. Can reschedule, reassign, edit notes, or cancel/park one job. Customer notification sending remains blocked until its route-local senders are extracted into the shared confirmed-action service.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: cancellationAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'appointment.update',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_estimate_save',
+    title: 'Preview draft estimate save',
+    description:
+      'Prepare an exact, expiring preview to create or revise one Sightings draft estimate and its line items. Does not send, accept, decline, convert, book, publish an invoice, or contact the customer.',
+    inputSchema: previewEstimateSaveInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewEstimateSave(
+          input as z.infer<typeof previewEstimateSaveInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_estimate_save',
+    title: 'Execute confirmed draft estimate save',
+    description:
+      'Create or revise one confirmed draft estimate with stale-record protection, structured line items, an audit entry, and no customer contact. Sending and conversion remain separate confirmed actions.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'estimate.save',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_estimate_decision',
+    title: 'Preview estimate acceptance or decline',
+    description:
+      'Prepare an exact, expiring preview to mark one unconverted estimate accepted or declined. This records a business status only; it does not impersonate a customer response, contact anyone, book work, convert the estimate, or create an invoice.',
+    inputSchema: previewEstimateDecisionInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewEstimateDecision(
+          input as z.infer<typeof previewEstimateDecisionInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_estimate_decision',
+    title: 'Execute confirmed estimate acceptance or decline',
+    description:
+      'Execute one confirmed estimate-status preview with stale-record and converted-estimate protection. Records the status history and does not contact the customer or owner.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'estimate.decision',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_estimate_send',
+    title: 'Preview estimate email delivery',
+    description:
+      'Prepare the exact recipient, subject, body, total, signed 30-day accept link, status transition, and reopening reason for one estimate email. Enforces existing opt-out/blacklist suppression and does not send during preview.',
+    inputSchema: previewEstimateSendInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: customerContactAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewEstimateSend(
+          input as z.infer<typeof previewEstimateSendInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_estimate_send',
+    title: 'Send confirmed estimate email',
+    description:
+      'Send one confirmed estimate preview through the existing Resend/template/decision-token workflow. Revalidates recipient, suppression, status, total, record version, and email fingerprint; provider idempotency prevents duplicate email sends.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: customerContactAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'estimate.send',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_estimate_conversion',
+    title: 'Preview estimate conversion',
+    description:
+      'Prepare an exact, expiring preview to turn one unconverted estimate into booked work. Reuses the existing duration, buffer, staff-calendar, line-item, draft-invoice, communications, and QuickBooks behavior. It does not mutate data or contact anyone during preview.',
+    inputSchema: previewEstimateConversionInput,
+    outputSchema: actionPreviewOutputSchema,
+    annotations: financialActionAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await previewEstimateConversion(
+          input as z.infer<typeof previewEstimateConversionInput>,
+          actorInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'execute_estimate_conversion',
+    title: 'Execute confirmed estimate conversion',
+    description:
+      'Execute one confirmed conversion preview. The estimate lock, service appointment, copied measurements, draft invoice and lines, status histories, and final converted state commit atomically. Customer communication is off by default and only runs after commit when explicitly previewed.',
+    inputSchema: executeConfirmedActionInput,
+    outputSchema: actionExecutionOutputSchema,
+    annotations: financialActionAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executePreparedAction(
+          {
+            ...(input as z.infer<typeof executeConfirmedActionInput>),
+            expected_action_type: 'estimate.convert',
+          },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
 ]
+
+assertMcpToolCatalog(toolDefinitions.map((tool) => tool.name))
 
 export function createSasquatchMcpServer(): McpServer {
   const server = new McpServer(
-    { name: 'sasquatch-sightings-read', version: '1.1.0' },
+    { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     {
       instructions:
-        'Read-only Sasquatch Carpet Cleaning operations data. Availability is live scheduling capacity for a 120-minute job, not a booking. Never claim that a slot is reserved, never infer missing records or queue states, and treat tool availability as distinct from authorization for any real-world action.',
+        'Sasquatch Carpet Cleaning operations. Existing reads require the owner business:read grant. Drafts and business actions require separate server-side grants, an exact short-lived preview, action-time confirmation, idempotency, record-version checks, and audit. Never claim availability is a booking, never infer missing state, and never treat tool discovery as authorization to contact a customer or change a record.',
     },
   )
 
@@ -393,7 +1065,7 @@ export function createSasquatchMcpServer(): McpServer {
         description: tool.description,
         inputSchema: tool.inputSchema,
         outputSchema: tool.outputSchema,
-        annotations,
+        annotations: tool.annotations ?? annotations,
         _meta: { securitySchemes },
       },
       (input, extra) => tool.handler(input as Record<string, unknown>, extra),
@@ -410,7 +1082,7 @@ export function createSasquatchMcpServer(): McpServer {
       description: tool.description,
       inputSchema: z.toJSONSchema(tool.inputSchema, { target: 'draft-7' }),
       outputSchema: z.toJSONSchema(tool.outputSchema, { target: 'draft-7' }),
-      annotations,
+      annotations: tool.annotations ?? annotations,
       securitySchemes,
       _meta: { securitySchemes },
     })),

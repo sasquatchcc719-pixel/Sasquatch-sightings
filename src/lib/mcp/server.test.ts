@@ -3,21 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { getCapabilityCatalog } from './operations'
+import { MCP_SERVER_NAME, MCP_SERVER_VERSION, MCP_TOOL_NAMES } from './release'
 import { createSasquatchMcpServer } from './server'
 
-const expectedTools = [
-  'list_appointments',
-  'get_appointment',
-  'list_estimates',
-  'get_estimate',
-  'search_customers',
-  'get_availability',
-  'list_calls',
-  'get_capability_catalog',
-  'get_business_configuration',
-  'search_business_records',
-  'get_operational_summary',
-]
+const expectedTools = [...MCP_TOOL_NAMES]
+
+const originalReadTools = expectedTools.slice(0, 11)
 
 const openConnections: Array<{ close(): Promise<void> }> = []
 
@@ -47,16 +38,28 @@ describe('Sasquatch read-only MCP server', () => {
     for (const tool of tools) {
       expect(tool.description).toBeTruthy()
       expect(tool.outputSchema).toMatchObject({ type: 'object' })
-      expect(tool.annotations).toMatchObject({
+      expect(tool._meta?.securitySchemes).toEqual([
+        { type: 'oauth2', scopes: ['openid', 'email'] },
+      ])
+    }
+    for (const name of originalReadTools) {
+      expect(
+        tools.find((tool) => tool.name === name)?.annotations,
+      ).toMatchObject({
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false,
       })
-      expect(tool._meta?.securitySchemes).toEqual([
-        { type: 'oauth2', scopes: ['openid', 'email'] },
-      ])
     }
+    expect(
+      tools.find((tool) => tool.name === 'execute_customer_message')
+        ?.annotations,
+    ).toMatchObject({ readOnlyHint: false, openWorldHint: true })
+    expect(
+      tools.find((tool) => tool.name === 'execute_appointment_update')
+        ?.annotations,
+    ).toMatchObject({ readOnlyHint: false, destructiveHint: true })
   })
 
   it('rejects list_appointments without a date or complete range', async () => {
@@ -86,7 +89,7 @@ describe('Sasquatch read-only MCP server', () => {
     const result = getCapabilityCatalog()
 
     expect(result).toMatchObject({
-      server: { name: 'sasquatch-sightings-read', version: '1.1.0' },
+      server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     })
     expect(JSON.stringify(result)).toContain('customer contact or campaigns')
   })

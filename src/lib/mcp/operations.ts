@@ -6,6 +6,7 @@ import {
   getServiceAreaDescription,
 } from '@/lib/service-area'
 import { createAdminClient } from '@/supabase/server'
+import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from './release'
 
 const TIMEZONE = 'America/Denver' as const
 const APP_ORIGIN = 'https://sightings.sasquatchcarpet.com'
@@ -55,7 +56,7 @@ function unavailable(label: string, error: unknown) {
 export function getCapabilityCatalog() {
   return {
     generated_at: nowIso(),
-    server: { name: 'sasquatch-sightings-read', version: '1.1.0' },
+    server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     capabilities: [
       {
         area: 'appointments_and_dispatch',
@@ -63,27 +64,54 @@ export function getCapabilityCatalog() {
           'list appointments',
           'inspect appointment',
           'check availability',
+          'preview and confirm a priced service booking',
+          'preview and confirm reschedule, reassignment, notes, or cancellation',
         ],
-        tools: ['list_appointments', 'get_appointment', 'get_availability'],
-        access: 'available' as const,
-        scope: 'business:read',
-        side_effects: [],
-        approval: 'OAuth owner grant; no action-time confirmation for reads',
+        tools: [
+          'list_appointments',
+          'get_appointment',
+          'get_availability',
+          'preview_appointment_create',
+          'execute_appointment_create',
+          'preview_appointment_update',
+          'execute_appointment_update',
+        ],
+        access: 'partial' as const,
+        scope:
+          'business:read for reads; business:write for confirmed changes; finance:write for a booking that creates an invoice; customer:contact only when its preview requests customer confirmation',
+        side_effects: [
+          'appointment record/calendar changes',
+          'draft invoice creation and optional QuickBooks synchronization',
+          'optional customer and staff notifications disclosed in the preview',
+          'cancellation parking',
+        ],
+        approval:
+          'OAuth owner grant; exact preview and action-time confirmation for changes',
         limitations: [
           'Availability assumes a 120-minute visit and is not a booking.',
-          'Create, reschedule, assign, dispatch, complete, and cancel are not exposed.',
+          'Dispatch and completion are not yet exposed.',
+          'Booking core rows commit through one service-role-only transaction; geocoding, reactivation suppression, notifications, reminders, and optional QuickBooks work are post-commit follow-ups.',
         ],
       },
       {
         area: 'customers_and_history',
         workflows: ['search customers', 'locate linked operational records'],
-        tools: ['search_customers', 'search_business_records'],
+        tools: [
+          'search_customers',
+          'search_business_records',
+          'preview_customer_update',
+          'execute_customer_update',
+        ],
         access: 'partial' as const,
-        scope: 'business:read',
-        side_effects: [],
-        approval: 'OAuth owner grant',
+        scope: 'business:read for reads; customers:write for confirmed updates',
+        side_effects: [
+          'customer/contact/address record changes',
+          'address geocoding queue',
+        ],
+        approval:
+          'OAuth owner grant; exact preview and confirmation for updates',
         limitations: [
-          'Customer/location create, update, merge, blacklist, and delete are not exposed.',
+          'Standalone customer creation, merge, blacklist controls, billing-policy changes, and deletion are not exposed; a confirmed booking may create or reuse its customer and address.',
           'Search returns compact references; use the specific detail tool where available.',
         ],
       },
@@ -93,14 +121,39 @@ export function getCapabilityCatalog() {
           'list estimates',
           'inspect estimate',
           'inspect service catalog',
+          'create or revise a saved draft estimate',
+          'mark an unconverted estimate accepted or declined',
+          'preview and send an estimate email',
+          'convert an estimate to booked work and a draft invoice',
         ],
-        tools: ['list_estimates', 'get_estimate', 'get_business_configuration'],
-        access: 'available' as const,
-        scope: 'business:read',
-        side_effects: [],
-        approval: 'OAuth owner grant',
+        tools: [
+          'list_estimates',
+          'get_estimate',
+          'get_business_configuration',
+          'preview_estimate_save',
+          'execute_estimate_save',
+          'preview_estimate_decision',
+          'execute_estimate_decision',
+          'preview_estimate_send',
+          'execute_estimate_send',
+          'preview_estimate_conversion',
+          'execute_estimate_conversion',
+        ],
+        access: 'partial' as const,
+        scope:
+          'business:read for reads; estimates:write for confirmed estimate changes; business:write + finance:write for conversion; customer:contact only when a conversion preview requests communications',
+        side_effects: [
+          'draft estimate and line-item changes',
+          'confirmed estimate status transitions',
+          'confirmed customer estimate email through Resend',
+          'atomic booked appointment and draft invoice creation from a confirmed conversion',
+        ],
+        approval:
+          'OAuth owner grant; exact preview and confirmation for draft saves',
         limitations: [
-          'Drafting, sending, accepting, declining, converting, and repricing are not exposed.',
+          'Conversion customer communication is off by default and runs only after the atomic database commit when explicitly previewed.',
+          'The created invoice remains draft; publishing, sending, charging, and payment collection are not exposed.',
+          'Accepted/declined status changes record an internal business decision and do not impersonate a customer click or send owner alerts.',
           'Catalog prices are reference data, not a binding quote.',
         ],
       },
@@ -108,21 +161,34 @@ export function getCapabilityCatalog() {
         area: 'communications_and_calls',
         workflows: [
           'inspect inbound calls',
-          'find conversation records',
+          'list and read full conversation records',
+          'read retained inbound media',
+          'save a reply draft',
+          'preview and send one customer SMS or MMS',
           'review attention counts',
         ],
         tools: [
           'list_calls',
           'search_business_records',
           'get_operational_summary',
+          'list_conversations',
+          'get_conversation',
+          'save_conversation_draft',
+          'preview_customer_message',
+          'execute_customer_message',
         ],
-        access: 'partial' as const,
-        scope: 'business:read',
-        side_effects: [],
-        approval: 'OAuth owner grant',
+        access: 'available' as const,
+        scope:
+          'business:read for reads; communications:draft for saved drafts; customer:contact for confirmed sends',
+        side_effects: [
+          'saved draft changes',
+          'Twilio customer contact and message history',
+        ],
+        approval:
+          'OAuth owner grant; exact recipient/body/media preview and action-time confirmation before sends',
         limitations: [
-          'Message bodies and media are not returned by operational search.',
-          'Draft/send SMS, MMS, email, Telegram relay, and call-control actions are not exposed.',
+          'Operational search remains compact; use conversation detail for bodies and short-lived private-media URLs.',
+          'Email, Telegram control, and call-control actions are not exposed.',
         ],
       },
       {
@@ -148,23 +214,31 @@ export function getCapabilityCatalog() {
       },
       {
         area: 'financial_and_external_integrations',
-        workflows: ['find invoices', 'review unpaid invoice queue'],
-        tools: ['search_business_records', 'get_operational_summary'],
+        workflows: [
+          'find invoices',
+          'inspect invoice detail',
+          'review unpaid invoice queue',
+        ],
+        tools: [
+          'search_business_records',
+          'get_invoice',
+          'get_operational_summary',
+        ],
         access: 'partial' as const,
         scope: 'business:read',
         side_effects: [],
         approval: 'OAuth owner grant',
         limitations: [
-          'No payment links, charges, refunds, invoice publication, QuickBooks sync, or financial commitments.',
+          'No payment links, charges, refunds, invoice publication, or payment recording. There is no direct QuickBooks administration/sync tool; confirmed booking or conversion can request only the existing narrowly scoped sync follow-up disclosed in its preview.',
         ],
       },
     ],
     unavailable: [
       'arbitrary HTTP, SQL, shell, code execution, environment, token, or security administration',
-      'customer contact or campaigns',
-      'bookings, rescheduling, dispatch, cancellations, or status mutations',
-      'customer, location, estimate, invoice, recurring, commercial, restoration, referral, or Ranger mutations',
-      'payment collection, payment-link creation, refunds, or QuickBooks writes',
+      'bulk customer contact or campaigns',
+      'dispatch, completion, and customer notification execution for schedule changes',
+      'invoice publication/sending/payment and recurring, commercial, restoration, referral, or Ranger mutations',
+      'payment collection, payment-link creation, refunds, or direct QuickBooks administration/arbitrary sync control',
     ],
   }
 }

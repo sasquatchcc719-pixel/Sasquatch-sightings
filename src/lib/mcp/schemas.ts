@@ -308,3 +308,140 @@ export const operationalSummaryOutputSchema = z
     ),
   })
   .strict()
+
+const conversationMessageSchema = z
+  .object({
+    id: z.string(),
+    direction: z.enum(['inbound', 'outbound']),
+    content: z.string(),
+    timestamp: nullableString,
+    sent_by: nullableString,
+    provider_message_id: nullableString,
+  })
+  .strict()
+
+const conversationCustomerSchema = z
+  .object({
+    id: z.string(),
+    name: nullableString,
+    phone: nullableString,
+    email: nullableString,
+    notes: nullableString.optional(),
+  })
+  .strict()
+  .nullable()
+
+export const conversationListOutputSchema = z
+  .object({
+    data: z.array(
+      z
+        .object({
+          id: z.string(),
+          phone_number: z.string(),
+          source: nullableString,
+          status: z.string(),
+          ai_enabled: z.boolean(),
+          customer: conversationCustomerSchema,
+          unread_count: z.number().int().nonnegative(),
+          last_message: conversationMessageSchema.nullable(),
+          created_at: z.string(),
+          updated_at: z.string(),
+          app_url: z.string(),
+        })
+        .strict(),
+    ),
+    pagination: paginationSchema,
+  })
+  .strict()
+
+export const conversationDetailOutputSchema = z
+  .object({
+    data: z
+      .object({
+        id: z.string(),
+        phone_number: z.string(),
+        source: nullableString,
+        status: z.string(),
+        ai_enabled: z.boolean(),
+        customer: conversationCustomerSchema,
+        unread_count: z.number().int().nonnegative(),
+        messages: z.array(conversationMessageSchema),
+        message_pagination: paginationSchema,
+        media: z.array(
+          z
+            .object({
+              id: z.string(),
+              provider_message_id: z.string(),
+              content_type: z.string(),
+              byte_size: z.number().nullable(),
+              status: z.string(),
+              category: z.string(),
+              error: nullableString,
+              url: nullableString,
+              url_expires_at: nullableString,
+              created_at: z.string(),
+            })
+            .strict(),
+        ),
+        saved_draft: z
+          .object({
+            id: z.string(),
+            body: z.string(),
+            status: z.string(),
+            created_at: z.string(),
+            updated_at: z.string(),
+          })
+          .strict()
+          .nullable(),
+        created_at: z.string(),
+        updated_at: z.string(),
+        app_url: z.string(),
+      })
+      .strict(),
+  })
+  .strict()
+
+export const invoiceDetailOutputSchema = z
+  .object({
+    data: z
+      .object({
+        id: z.string(),
+        invoice_number: z.union([z.string(), z.number()]).nullable(),
+        appointment: z.record(z.string(), z.unknown()).nullable(),
+        customer: z.record(z.string(), z.unknown()).nullable(),
+        address: z.record(z.string(), z.unknown()).nullable(),
+        line_items: z.array(z.record(z.string(), z.unknown())),
+        subtotal: z.number(),
+        discounts: z.number(),
+        tax: z.number(),
+        minimum_charge_adjustment: z.number(),
+        total: z.number(),
+        status: z.string(),
+        payment_status: nullableString,
+        created_at: z.string(),
+        updated_at: z.string(),
+        app_url: z.string(),
+      })
+      .strict(),
+  })
+  .strict()
+
+export const savedConversationDraftOutputSchema = z
+  .object({
+    data: z.record(z.string(), z.unknown()),
+    effect: z.string(),
+  })
+  .strict()
+
+export const actionPreviewOutputSchema = z
+  .object({
+    confirmation_id: z.string().uuid(),
+    status: z.string(),
+    expires_at: z.string(),
+    preview: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+
+export const actionExecutionOutputSchema = z
+  .object({ result: z.record(z.string(), z.unknown()) })
+  .strict()

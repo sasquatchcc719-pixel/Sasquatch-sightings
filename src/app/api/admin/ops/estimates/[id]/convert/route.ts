@@ -1,34 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import {
+  executeAtomicEstimateConversion,
+  prepareEstimateConversion,
+} from '@/lib/ops/estimate-conversion'
 import { createAdminClient } from '@/supabase/server'
-import {
-  addMinutesToTimeWithinDay,
-  applyAppointmentBuffer,
-  calculateAppointmentDurationFromTotal,
-} from '@/lib/ops/availability'
-import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
-import {
-  buildQuickBooksCustomerPayload,
-  getQuickBooksSyncStatus,
-} from '@/lib/quickbooks'
-import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
-import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
-import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 
 /**
- * Convert an estimate into a real service appointment + invoice.
- *
- * Body:
- *   { appointment_date, start_time, assigned_staff_user_id, end_time?,
- *     allow_conflict?, skip_comms? }
- *
- * Effect:
- *   1. Creates a NEW ops_appointments row (kind='service') on the chosen date.
- *   2. Copies all line items from the estimate (length/width/notes preserved).
- *   3. Creates ops_invoices + ops_invoice_line_items.
- *   4. Fires QB sync + lifecycle comms (unless skip_comms=true).
- *   5. Sets estimate_status='converted' and converted_appointment_id on the
- *      original estimate. The measuring visit stays on the calendar.
+ * Convert an estimate into a booked service appointment and draft invoice.
+ * The core records are created by one transactional database function. External
+ * lifecycle communications and QuickBooks follow-up run only after commit.
  */
 export async function POST(
   request: NextRequest,
@@ -59,7 +40,7 @@ export async function POST(
     }
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate) ||
-      !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)
+      !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(startTime)
     ) {
       return NextResponse.json(
         { error: 'Choose a valid service date and start time.' },
@@ -67,327 +48,41 @@ export async function POST(
       )
     }
 
-    const { data: assignedStaff, error: assignedStaffError } = await supabase
-      .from('staff_users')
-      .select('id, user_id, display_name')
-      .eq('id', assignedStaffUserId)
-      .eq('is_active', true)
-      .maybeSingle()
-    if (assignedStaffError) throw assignedStaffError
-    if (!assignedStaff) {
-      return NextResponse.json(
-        { error: 'Choose an active technician.' },
-        { status: 400 },
-      )
-    }
-
-    // --- Load the estimate (with lines) ---
-    const { data: estimate, error: estimateError } = await supabase
-      .from('ops_appointments')
-      .select(
-        `
-          id,
-          kind,
-          customer_id,
-          service_address_id,
-          estimate_status,
-          converted_appointment_id,
-          internal_notes,
-          lead_source,
-          lead_source_key,
-          lead_source_detail,
-          original_lead_source,
-          ops_customers!ops_appointments_customer_id_fkey (
-            id,
-            full_name,
-            business_name,
-            email,
-            phone
-          ),
-          ops_service_addresses (
-            id,
-            street_1,
-            street_2,
-            city,
-            state,
-            zip_code
-          ),
-          ops_appointment_line_items (
-            id,
-            service_catalog_item_id,
-            name_snapshot,
-            notes,
-            quantity,
-            unit_price,
-            duration_minutes,
-            buffer_minutes,
-            line_total,
-            length_value,
-            width_value,
-            pricing_unit_snapshot,
-            area_segments
-          )
-        `,
-      )
-      .eq('id', estimateId)
-      .eq('kind', 'estimate')
-      .single()
-
-    if (estimateError) throw estimateError
-    if (!estimate) {
-      return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
-    }
-
-    if (estimate.converted_appointment_id) {
-      return NextResponse.json(
-        {
-          error: 'This estimate has already been converted.',
-          existing_appointment_id: estimate.converted_appointment_id,
-        },
-        { status: 409 },
-      )
-    }
-
-    const lineItems = estimate.ops_appointment_line_items || []
-    if (lineItems.length === 0) {
-      return NextResponse.json(
-        { error: 'Add at least one line item before converting' },
-        { status: 400 },
-      )
-    }
-
-    const customer = Array.isArray(estimate.ops_customers)
-      ? estimate.ops_customers[0]
-      : estimate.ops_customers
-    const address = Array.isArray(estimate.ops_service_addresses)
-      ? estimate.ops_service_addresses[0]
-      : estimate.ops_service_addresses
-
-    if (!customer || !address) {
-      return NextResponse.json(
-        { error: 'Estimate is missing customer or address' },
-        { status: 400 },
-      )
-    }
-
-    // --- Calculate subtotal and duration ---
-    const subtotal = lineItems.reduce(
-      (sum: number, item) => sum + Number(item.line_total || 0),
-      0,
-    )
-    const discountAmount = Math.max(0, Number(body.discount_amount || 0))
-    const total = Math.max(0, subtotal - discountAmount)
-
-    // Calculate duration based on dollar amount (simple tier system)
-    // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-    const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
-    const totalMinutesWithBuffer = applyAppointmentBuffer(appointmentDuration)
-
-    const providedEndTime = body.end_time ? String(body.end_time) : null
-    const endTime =
-      providedEndTime && /^\d{2}:\d{2}/.test(providedEndTime)
-        ? `${providedEndTime}:00`.slice(0, 8)
-        : addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer)
-    const syncStatus = getQuickBooksSyncStatus()
-
-    if (body.allow_conflict !== true) {
-      const conflict = await findAppointmentConflict(supabase, {
-        date: appointmentDate,
-        startTime,
-        endTime,
-        staffUserId: assignedStaffUserId,
-        staffAuthUserId: assignedStaff.user_id,
-      })
-      if (conflict) {
-        return NextResponse.json(
-          {
-            error: `That time overlaps existing work from ${String(conflict.start_time).slice(0, 5)} to ${String(conflict.end_time).slice(0, 5)} on ${assignedStaff.display_name}'s calendar. Choose an open window or use Custom time for an intentional override.`,
-            code: 'appointment_conflict',
-          },
-          { status: 409 },
-        )
-      }
-    }
-
-    // --- Create the service appointment ---
-    const { data: serviceAppt, error: serviceErr } = await supabase
-      .from('ops_appointments')
-      .insert({
-        customer_id: estimate.customer_id,
-        service_address_id: estimate.service_address_id,
-        appointment_date: appointmentDate,
-        start_time: `${startTime}:00`.slice(0, 8),
-        end_time: endTime,
-        assigned_staff_user_id: assignedStaffUserId,
-        status: 'booked',
-        payment_status: 'unpaid',
-        kind: 'service',
-        booking_channel: 'admin',
-        source: 'internal',
-        quickbooks_sync_status: syncStatus,
-        quoted_total: Number(total.toFixed(2)),
-        internal_notes: estimate.internal_notes ?? null,
-        // Carry full attribution — converting used to keep only the raw
-        // label and drop the structured key/detail.
-        lead_source: estimate.lead_source ?? null,
-        lead_source_key: estimate.lead_source_key ?? null,
-        lead_source_detail: estimate.lead_source_detail ?? null,
-        original_lead_source: estimate.original_lead_source ?? null,
-      })
-      .select('id')
-      .single()
-
-    if (serviceErr) throw serviceErr
-
-    // --- Copy line items onto the service appointment ---
-    const appointmentLinesPayload = lineItems.map((item) => ({
-      appointment_id: serviceAppt.id,
-      service_catalog_item_id: item.service_catalog_item_id,
-      name_snapshot: item.name_snapshot,
-      notes: item.notes,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      duration_minutes: item.duration_minutes,
-      buffer_minutes: item.buffer_minutes,
-      line_total: item.line_total,
-      length_value: item.length_value,
-      width_value: item.width_value,
-      pricing_unit_snapshot: item.pricing_unit_snapshot,
-      area_segments: item.area_segments ?? null,
-    }))
-
-    const { data: appointmentLines, error: appointmentLinesError } =
-      await supabase
-        .from('ops_appointment_line_items')
-        .insert(appointmentLinesPayload)
-        .select('id, name_snapshot, quantity, unit_price, line_total')
-
-    if (appointmentLinesError) throw appointmentLinesError
-
-    // --- Create invoice ---
-    const { data: invoice, error: invoiceError } = await supabase
-      .from('ops_invoices')
-      .insert({
-        appointment_id: serviceAppt.id,
-        status: 'draft',
-        payment_status: 'unpaid',
-        subtotal: Number(subtotal.toFixed(2)),
-        discount_amount: Number(discountAmount.toFixed(2)),
-        total: Number(total.toFixed(2)),
-        sync_status: syncStatus,
-      })
-      .select('id, subtotal, total')
-      .single()
-
-    if (invoiceError) throw invoiceError
-
-    const invoiceLinesPayload = (appointmentLines || []).map((item) => ({
-      invoice_id: invoice.id,
-      appointment_line_item_id: item.id,
-      description: item.name_snapshot,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      line_total: item.line_total,
-    }))
-
-    if (invoiceLinesPayload.length > 0) {
-      const { error: invoiceLinesError } = await supabase
-        .from('ops_invoice_line_items')
-        .insert(invoiceLinesPayload)
-      if (invoiceLinesError) throw invoiceLinesError
-    }
-
-    // --- Status events + QB sync jobs ---
-    await Promise.all([
-      supabase.from('ops_appointment_status_events').insert({
-        appointment_id: serviceAppt.id,
-        from_status: null,
-        to_status: 'booked',
-        changed_by: access.id,
-        notes: `Service appointment created from estimate ${estimateId}`,
-      }),
-      supabase.from('ops_invoice_status_events').insert({
-        invoice_id: invoice.id,
-        from_status: null,
-        to_status: 'draft',
-        changed_by: access.id,
-        notes: 'Invoice created from converted estimate',
-      }),
-      ensureCustomerQuickBooksSyncJob(
-        supabase,
-        estimate.customer_id,
-        buildQuickBooksCustomerPayload({
-          customerId: estimate.customer_id,
-          fullName: customer.full_name || 'Customer',
-          businessName: customer.business_name || null,
-          email: customer.email || null,
-          phone: customer.phone || null,
-          address: {
-            street_1: address.street_1,
-            street_2: address.street_2,
-            city: address.city,
-            state: address.state,
-            zip_code: address.zip_code,
-          },
-        }),
-      ),
-    ])
-
-    // --- Mark the estimate as converted ---
-    const { error: updateEstimateError } = await supabase
-      .from('ops_appointments')
-      .update({
-        estimate_status: 'converted',
-        converted_appointment_id: serviceAppt.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', estimateId)
-
-    if (updateEstimateError) throw updateEstimateError
-
-    await supabase.from('ops_appointment_status_events').insert({
-      appointment_id: estimateId,
-      from_status: estimate.estimate_status,
-      to_status: 'converted',
-      changed_by: access.id,
-      notes: `Converted to service appointment ${serviceAppt.id}`,
+    const allowConflict = body.allow_conflict === true
+    const runFollowUps = body.skip_comms !== true
+    const prepared = await prepareEstimateConversion({
+      supabase,
+      estimateId,
+      appointmentDate,
+      startTime,
+      endTime: body.end_time ? String(body.end_time) : null,
+      assignedStaffUserId,
+      discountAmount: Number(body.discount_amount || 0),
+      allowConflict,
+      notifyCustomer: runFollowUps,
+      syncQuickBooks: runFollowUps,
+    })
+    const result = await executeAtomicEstimateConversion({
+      supabase,
+      prepared,
+      actorId: access.id,
+      allowConflict,
+      notifyCustomer: runFollowUps,
+      syncQuickBooks: runFollowUps,
     })
 
-    // --- Fire comms + QB (non-blocking) ---
-    if (!body.skip_comms) {
-      const [commsResult, qbResult] = await Promise.allSettled([
-        sendOpsLifecycleCommunications({
-          event: 'job_scheduled',
-          appointmentId: serviceAppt.id,
-        }),
-        syncAppointmentToQuickBooks(serviceAppt.id),
-      ])
-      if (commsResult.status === 'rejected') {
-        console.error(
-          '[ops/estimates/:id/convert] Comms error:',
-          commsResult.reason,
-        )
-      }
-      if (qbResult.status === 'rejected') {
-        console.error(
-          '[ops/estimates/:id/convert] QB sync error:',
-          qbResult.reason,
-        )
-      }
-    }
-
-    return NextResponse.json(
-      {
-        appointment_id: serviceAppt.id,
-        invoice_id: invoice.id,
-      },
-      { status: 201 },
-    )
+    return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.error('[ops/estimates/:id/convert][POST] Error:', error)
+    const message =
+      error instanceof Error ? error.message : 'Failed to convert estimate'
+    const conflict =
+      /already been converted|changed after preview|changed during conversion|overlaps/i.test(
+        message,
+      )
     return NextResponse.json(
-      { error: 'Failed to convert estimate' },
-      { status: 500 },
+      { error: message },
+      { status: conflict ? 409 : 400 },
     )
   }
 }

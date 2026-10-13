@@ -1,26 +1,17 @@
-import { createHash } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAnyRole } from '@/lib/auth'
-import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
-import { buildEmailHtml } from '@/lib/ops/communications'
-import { isAreaUnit, isLinearUnit } from '@/lib/ops/estimates'
-import {
-  buildEstimateDecisionUrl,
-  createEstimateDecisionToken,
-} from '@/lib/ops/estimate-decision-token'
+import { requireAnyRole } from '@/lib/auth'
 import { isBlacklisted } from '@/lib/blacklist'
+import { buildEmailHtml } from '@/lib/ops/communications'
+import {
+  deliverPreparedEstimateQuote,
+  EstimateDeliveryError,
+  prepareEstimateQuote,
+} from '@/lib/ops/estimate-email-delivery'
+import { createAdminClient } from '@/supabase/server'
 
 type EmailType = 'booking_confirmation' | 'quote'
-
-function estimateEmailFingerprint(params: {
-  estimateId: string
-  recipient: string
-  subject: string
-  bodyText: string
-}) {
-  return createHash('sha256').update(JSON.stringify(params)).digest('hex')
-}
 
 function toLocalDate(iso: string): string {
   try {
@@ -48,33 +39,22 @@ function toLocalTime(hhmm: string): string {
 
 function buildBookingConfirmationBody(params: {
   firstName: string
-  fullName: string
   date: string
   startTime: string
   endTime: string
   address: string
 }): string {
-  const { firstName, date, startTime, endTime, address } = params
-  const greeting = firstName || 'there'
-
+  const greeting = params.firstName || 'there'
   return [
     `Hi ${greeting},`,
     `Thank you so much for reaching out to Sasquatch Carpet Cleaning — we truly appreciate the opportunity to earn your business.`,
-    `We're looking forward to visiting your property to take a look at everything and provide you with a detailed, no-obligation estimate. Here are your appointment details:\n\n- Date: ${date}\n- Time: ${startTime} – ${endTime}\n- Address: ${address}`,
+    `We're looking forward to visiting your property to take a look at everything and provide you with a detailed, no-obligation estimate. Here are your appointment details:\n\n- Date: ${params.date}\n- Time: ${params.startTime} – ${params.endTime}\n- Address: ${params.address}`,
     `Our goal is to give you a thorough, honest assessment of what your carpets need and what it will cost — no pressure, no surprises. We take pride in treating every home like our own.`,
     `If anything changes or you have questions before we arrive, please text us at (719) 249-8791 and we'll help.`,
     `We'll see you soon!\n\nWith appreciation,\nThe Sasquatch Carpet Cleaning Team`,
   ].join('\n\n')
 }
 
-function formatCurrency(n: number): string {
-  return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
-}
-
-/**
- * Where the customer-facing accept link points. Must resolve to sightings.*,
- * not www — app routes 404 on the marketing domain.
- */
 function publicSiteOrigin(request: NextRequest): string {
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -83,53 +63,210 @@ function publicSiteOrigin(request: NextRequest): string {
   ).replace(/\/+$/, '')
 }
 
-function buildQuoteBody(params: {
-  firstName: string
-  fullName: string
-  address: string
-  lineItems: Array<{
-    name: string
-    qty: number | null
-    unitPrice: number
-    lineTotal: number
-    notes: string | null
-    unit: string | null
-  }>
-  total: number
-}): string {
-  const { firstName, address, lineItems, total } = params
-  const greeting = firstName || 'there'
+function parseRequestId(value: unknown) {
+  if (value === undefined) return null
+  if (typeof value !== 'string' || !/^\d{13}-[0-9a-f-]{36}$/i.test(value)) {
+    throw new EstimateDeliveryError(
+      'This send confirmation has expired. Close it and review the estimate again.',
+      400,
+    )
+  }
+  const requestedAt = Number(value.split('-')[0])
+  if (
+    !Number.isFinite(requestedAt) ||
+    requestedAt < Date.now() - 86400000 ||
+    requestedAt > Date.now() + 300000
+  ) {
+    throw new EstimateDeliveryError(
+      'This send confirmation has expired. Close it and review the estimate again.',
+      400,
+    )
+  }
+  return { value, requestedAt }
+}
 
-  const lineDescriptions = lineItems
-    .map((item) => {
-      // Use the same unit helpers the estimate editor uses. Matching the unit
-      // strings by hand here meant 'per_sq_ft' and 'per_linear_ft' — almost
-      // every measured item in the catalog — fell through to the multiplier
-      // branch, so a commercial quote read "×2600 × $0.35" instead of
-      // "2600 sqft × $0.35".
-      const qtyLabel = isAreaUnit(item.unit)
-        ? `${item.qty ?? 0} sqft`
-        : isLinearUnit(item.unit)
-          ? `${item.qty ?? 0} linear ft`
-          : item.qty && item.qty !== 1
-            ? `×${item.qty}`
-            : null
-      const pricePart = qtyLabel
-        ? `${qtyLabel} × ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.lineTotal)}`
-        : formatCurrency(item.lineTotal)
-      return `- ${item.name}: ${pricePart}${item.notes ? `\n  (${item.notes})` : ''}`
+async function handleQuote(params: {
+  request: NextRequest
+  body: Record<string, unknown>
+  estimateId: string
+  actorId: string
+}) {
+  const requestId = parseRequestId(params.body.request_id)
+  const decisionExpiresAt = new Date(
+    (requestId?.requestedAt ?? Date.now()) + 30 * 86400000,
+  ).toISOString()
+  const supabase = createAdminClient()
+  const prepared = await prepareEstimateQuote({
+    supabase,
+    estimateId: params.estimateId,
+    publicOrigin: publicSiteOrigin(params.request),
+    decisionExpiresAt,
+  })
+
+  if (
+    params.body.expected_status !== undefined &&
+    params.body.expected_status !== prepared.previous_status
+  ) {
+    throw new EstimateDeliveryError(
+      'The estimate status changed. Refresh and review it before sending.',
+      409,
+    )
+  }
+  if (
+    params.body.expected_total !== undefined &&
+    Number(params.body.expected_total) !== prepared.total
+  ) {
+    throw new EstimateDeliveryError(
+      'The estimate total changed. Refresh and review the saved pricing before sending.',
+      409,
+    )
+  }
+  if (
+    params.body.expected_email !== undefined &&
+    (typeof params.body.expected_email !== 'string' ||
+      params.body.expected_email.trim().toLowerCase() !==
+        prepared.recipient.toLowerCase())
+  ) {
+    throw new EstimateDeliveryError(
+      'The saved customer email differs from the confirmation. Refresh and check the recipient before sending.',
+      409,
+    )
+  }
+
+  if (params.body.action === 'preview') {
+    return NextResponse.json({
+      to_email: prepared.recipient,
+      subject: prepared.subject,
+      body_text: prepared.body_text,
+      html: prepared.html,
+      total: prepared.total,
+      preview_fingerprint: prepared.preview_fingerprint,
     })
-    .join('\n')
+  }
+  if (
+    requestId &&
+    params.body.expected_fingerprint !== prepared.preview_fingerprint
+  ) {
+    throw new EstimateDeliveryError(
+      'The recipient, line items, pricing, notes, or email language changed after review. Review the refreshed email before sending.',
+      409,
+    )
+  }
 
-  return [
-    `Hi ${greeting},`,
-    `Thank you for letting us visit your property at ${address}. Based on what we measured and assessed during our walk-through, here is your personalized estimate from Sasquatch Carpet Cleaning:`,
-    `${lineDescriptions}\n\nEstimated Total: ${formatCurrency(total)}`,
-    `This estimate reflects our standard pricing for the areas and services listed above. All of our work is backed by our satisfaction guarantee — if it's not right, we'll make it right.`,
-    `When you're ready to schedule the cleaning, tap the button below to accept this estimate and we'll get you on the calendar right away. You can also just reply to this email or text us at (719) 249-8791.`,
-    `We look forward to making your carpets look and feel like new again. Thank you for considering Sasquatch Carpet Cleaning — we don't take that trust lightly.`,
-    `Warm regards,\nThe Sasquatch Carpet Cleaning Team`,
-  ].join('\n\n')
+  const result = await deliverPreparedEstimateQuote({
+    supabase,
+    prepared,
+    actorId: params.actorId,
+    reopen: params.body.reopen === true,
+    reason:
+      typeof params.body.reason === 'string' ? params.body.reason : undefined,
+    providerIdempotencyKey: `estimate-quote/${params.estimateId}/${requestId?.value || randomUUID()}`,
+  })
+  return NextResponse.json(result)
+}
+
+async function handleBookingConfirmation(params: {
+  estimateId: string
+  body: Record<string, unknown>
+  requestId: ReturnType<typeof parseRequestId>
+}) {
+  const supabase = createAdminClient()
+  const { data: estimate, error } = await supabase
+    .from('ops_appointments')
+    .select(
+      `id, appointment_date, start_time, end_time,
+       ops_customers!ops_appointments_customer_id_fkey(id, full_name, first_name, email, phone, email_opt_out),
+       ops_service_addresses(street_1, city, state, zip_code)`,
+    )
+    .eq('id', params.estimateId)
+    .eq('kind', 'estimate')
+    .maybeSingle()
+  if (error) throw error
+  if (!estimate) throw new EstimateDeliveryError('Estimate not found', 404)
+  const customer = Array.isArray(estimate.ops_customers)
+    ? estimate.ops_customers[0]
+    : estimate.ops_customers
+  const address = Array.isArray(estimate.ops_service_addresses)
+    ? estimate.ops_service_addresses[0]
+    : estimate.ops_service_addresses
+  if (!customer?.email) {
+    throw new EstimateDeliveryError(
+      'Customer has no email address — add one first.',
+      400,
+    )
+  }
+  if (
+    customer.email_opt_out === true ||
+    (customer.phone && (await isBlacklisted(customer.phone)))
+  ) {
+    throw new EstimateDeliveryError(
+      'Customer is suppressed from email communications.',
+      409,
+    )
+  }
+  if (
+    params.body.expected_email !== undefined &&
+    (typeof params.body.expected_email !== 'string' ||
+      params.body.expected_email.trim().toLowerCase() !==
+        customer.email.trim().toLowerCase())
+  ) {
+    throw new EstimateDeliveryError(
+      'The saved customer email differs from the confirmation. Refresh and check the recipient before sending.',
+      409,
+    )
+  }
+
+  const addressLine = address
+    ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
+    : 'your property'
+  const subject = 'Your Free Estimate Appointment — Sasquatch Carpet Cleaning'
+  const bodyText = buildBookingConfirmationBody({
+    firstName: customer.first_name || customer.full_name?.split(' ')[0] || '',
+    date: toLocalDate(estimate.appointment_date),
+    startTime: toLocalTime(estimate.start_time),
+    endTime: toLocalTime(estimate.end_time),
+    address: addressLine,
+  })
+  const html = buildEmailHtml(bodyText, 'booking_confirmation', { cta: null })
+  if (!process.env.RESEND_API_KEY) {
+    throw new EstimateDeliveryError('Email service not configured', 500)
+  }
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const { data: sent, error: sendError } = await resend.emails.send(
+    {
+      from:
+        process.env.OPS_FROM_EMAIL ||
+        'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>',
+      to: customer.email,
+      bcc: process.env.OPS_EMAIL_BCC || undefined,
+      subject,
+      html,
+    },
+    params.requestId
+      ? {
+          idempotencyKey: `estimate-booking_confirmation/${params.estimateId}/${params.requestId.value}`,
+        }
+      : undefined,
+  )
+  if (sendError) throw new Error(sendError.message || 'Failed to send email')
+
+  const { error: logError } = await supabase.from('ops_email_log').insert({
+    appointment_id: params.estimateId,
+    customer_id: customer.id,
+    template_key: 'booking_confirmation',
+    to_email: customer.email,
+    subject,
+    body_text: bodyText,
+    resend_id: (sent as { id?: string } | null)?.id || null,
+  })
+  return NextResponse.json({
+    success: true,
+    email_type: 'booking_confirmation' as const,
+    to_email: customer.email,
+    warning: logError
+      ? 'Email was sent, but email history could not be saved. Check the email outbox before resending.'
+      : null,
+  })
 }
 
 export async function POST(
@@ -143,374 +280,22 @@ export async function POST(
     return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
   }
   try {
-    const supabase = createAdminClient()
     const { id } = await params
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, unknown>
     const emailType: EmailType =
       body.type === 'quote' ? 'quote' : 'booking_confirmation'
-    const action = body.action === 'preview' ? 'preview' : 'send'
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
-    const requestId = body.request_id
-    const requestedAt =
-      typeof requestId === 'string' ? Number(requestId.split('-')[0]) : NaN
-    if (
-      requestId !== undefined &&
-      (typeof requestId !== 'string' ||
-        !/^\d{13}-[0-9a-f-]{36}$/i.test(requestId) ||
-        !Number.isFinite(requestedAt) ||
-        requestedAt < Date.now() - 86400000 ||
-        requestedAt > Date.now() + 300000)
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'This send confirmation has expired. Close it and review the estimate again.',
-        },
-        { status: 400 },
-      )
-    }
-
-    // Load the estimate with customer, address, and line items
-    const { data: estimate, error: estimateError } = await supabase
-      .from('ops_appointments')
-      .select(
-        `
-        id,
-        appointment_date,
-        start_time,
-        end_time,
-        quoted_total,
-        estimate_status,
-        converted_appointment_id,
-        ops_customers!ops_appointments_customer_id_fkey (
-          id, full_name, first_name, email, phone, email_opt_out
-        ),
-        ops_service_addresses (
-          street_1, city, state, zip_code
-        ),
-        ops_appointment_line_items (
-          name_snapshot,
-          quantity,
-          unit_price,
-          line_total,
-          notes,
-          pricing_unit_snapshot
-        )
-      `,
-      )
-      .eq('id', id)
-      .eq('kind', 'estimate')
-      .single()
-
-    if (estimateError || !estimate) {
-      return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
-    }
-
-    const previousStatus = estimate.estimate_status || 'draft'
-    const needsReopen =
-      previousStatus === 'accepted' || previousStatus === 'declined'
     if (emailType === 'quote') {
-      if (estimate.converted_appointment_id || previousStatus === 'converted') {
-        return NextResponse.json(
-          {
-            error:
-              'This estimate has already been converted to a job and cannot be reopened or resent.',
-          },
-          { status: 409 },
-        )
-      }
-      if (
-        body.expected_status !== undefined &&
-        body.expected_status !== previousStatus
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              'The estimate status changed. Refresh and review it before sending.',
-          },
-          { status: 409 },
-        )
-      }
-      if (action === 'send' && needsReopen && body.reopen !== true) {
-        return NextResponse.json(
-          {
-            error:
-              'Use Reopen & resend to request a new decision on this estimate.',
-          },
-          { status: 409 },
-        )
-      }
-      if (
-        action === 'send' &&
-        needsReopen &&
-        (!reason || reason.length > 1000)
-      ) {
-        return NextResponse.json(
-          { error: 'Enter a reason for reopening (up to 1,000 characters).' },
-          { status: 400 },
-        )
-      }
-      if (
-        body.expected_total !== undefined &&
-        Number(body.expected_total) !== Number(estimate.quoted_total ?? 0)
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              'The estimate total changed. Refresh and review the saved pricing before sending.',
-          },
-          { status: 409 },
-        )
-      }
-    }
-
-    const customer = Array.isArray(estimate.ops_customers)
-      ? estimate.ops_customers[0]
-      : estimate.ops_customers
-    const addr = Array.isArray(estimate.ops_service_addresses)
-      ? estimate.ops_service_addresses[0]
-      : estimate.ops_service_addresses
-
-    if (!customer?.email) {
-      return NextResponse.json(
-        { error: 'Customer has no email address — add one first.' },
-        { status: 400 },
-      )
-    }
-    if (
-      body.expected_email !== undefined &&
-      (typeof body.expected_email !== 'string' ||
-        body.expected_email.trim().toLowerCase() !==
-          customer.email.trim().toLowerCase())
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'The saved customer email differs from the confirmation. Refresh and check the recipient before sending.',
-        },
-        { status: 409 },
-      )
-    }
-
-    if (
-      customer.email_opt_out === true ||
-      (customer.phone && (await isBlacklisted(customer.phone)))
-    ) {
-      return NextResponse.json(
-        { error: 'Customer is suppressed from email communications.' },
-        { status: 409 },
-      )
-    }
-
-    const firstName =
-      customer.first_name || customer.full_name?.split(' ')[0] || ''
-    const fullName = customer.full_name || firstName
-    const addressLine = addr
-      ? `${addr.street_1}, ${addr.city}, ${addr.state} ${addr.zip_code}`
-      : 'your property'
-
-    const lineItems = (
-      Array.isArray(estimate.ops_appointment_line_items)
-        ? estimate.ops_appointment_line_items
-        : []
-    ).map((li) => ({
-      name: li.name_snapshot,
-      qty: li.quantity != null ? Number(li.quantity) : null,
-      unitPrice: Number(li.unit_price ?? 0),
-      lineTotal: Number(li.line_total ?? 0),
-      notes: li.notes || null,
-      unit: li.pricing_unit_snapshot || null,
-    }))
-
-    let subject: string
-    let bodyText: string
-
-    if (emailType === 'booking_confirmation') {
-      subject = 'Your Free Estimate Appointment — Sasquatch Carpet Cleaning'
-      bodyText = buildBookingConfirmationBody({
-        firstName,
-        fullName,
-        date: toLocalDate(estimate.appointment_date),
-        startTime: toLocalTime(estimate.start_time),
-        endTime: toLocalTime(estimate.end_time),
-        address: addressLine,
-      })
-    } else {
-      subject = 'Your Estimate from Sasquatch Carpet Cleaning'
-      bodyText = buildQuoteBody({
-        firstName,
-        fullName,
-        address: addressLine,
-        lineItems,
-        total: Number(estimate.quoted_total ?? 0),
+      return await handleQuote({
+        request,
+        body,
+        estimateId: id,
+        actorId: access.id,
       })
     }
-
-    const html = buildEmailHtml(bodyText, emailType, {
-      cta:
-        emailType === 'quote'
-          ? {
-              label: 'Accept this estimate',
-              url: buildEstimateDecisionUrl(
-                publicSiteOrigin(request),
-                createEstimateDecisionToken({
-                  estimateId: id,
-                  // A retry must generate exactly the same email payload.
-                  expiresAt: requestId
-                    ? new Date(requestedAt + 30 * 86400000)
-                    : undefined,
-                }),
-              ),
-            }
-          : null,
-    })
-
-    const previewFingerprint = estimateEmailFingerprint({
+    return await handleBookingConfirmation({
       estimateId: id,
-      recipient: customer.email.trim().toLowerCase(),
-      subject,
-      bodyText,
-    })
-
-    if (emailType === 'quote' && action === 'preview') {
-      return NextResponse.json({
-        to_email: customer.email,
-        subject,
-        body_text: bodyText,
-        html,
-        total: Number(estimate.quoted_total ?? 0),
-        preview_fingerprint: previewFingerprint,
-      })
-    }
-
-    if (
-      emailType === 'quote' &&
-      requestId &&
-      body.expected_fingerprint !== previewFingerprint
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'The recipient, line items, pricing, notes, or email language changed after review. Review the refreshed email before sending.',
-        },
-        { status: 409 },
-      )
-    }
-
-    const resendKey = process.env.RESEND_API_KEY
-    if (!resendKey) {
-      return NextResponse.json(
-        { error: 'Email service not configured' },
-        { status: 500 },
-      )
-    }
-    const resend = new Resend(resendKey)
-
-    const fromEmail =
-      process.env.OPS_FROM_EMAIL ||
-      'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>'
-    const bcc = process.env.OPS_EMAIL_BCC || undefined
-
-    const { data: sent, error: sendError } = await resend.emails.send(
-      {
-        from: fromEmail,
-        to: customer.email,
-        bcc,
-        subject,
-        html,
-      },
-      requestId
-        ? { idempotencyKey: `estimate-${emailType}/${id}/${requestId}` }
-        : undefined,
-    )
-
-    if (sendError) {
-      console.error('[estimates/send-email] Resend error:', sendError)
-      return NextResponse.json(
-        { error: sendError.message || 'Failed to send email' },
-        { status: 500 },
-      )
-    }
-
-    // Once the provider accepts the email, never return a generic send failure
-    // for a database error: that would encourage sending the customer a duplicate.
-    const warnings: string[] = []
-    try {
-      const { error: logError } = await supabase.from('ops_email_log').insert({
-        appointment_id: id,
-        customer_id: customer.id,
-        template_key: emailType,
-        to_email: customer.email,
-        subject,
-        body_text: bodyText,
-        resend_id: (sent as { id?: string } | null)?.id ?? null,
-      })
-      if (logError) throw logError
-    } catch (error) {
-      console.error('[estimates/send-email] Email history error:', error)
-      warnings.push(
-        'Email was sent, but email history could not be saved. Check the email outbox before resending.',
-      )
-    }
-
-    if (emailType === 'quote') {
-      try {
-        let update = supabase
-          .from('ops_appointments')
-          .update({
-            estimate_status: 'sent',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', id)
-          .eq('kind', 'estimate')
-          .is('converted_appointment_id', null)
-        update =
-          estimate.estimate_status === null
-            ? update.is('estimate_status', null)
-            : update.eq('estimate_status', estimate.estimate_status)
-        const { data: changed, error: statusError } = await update
-          .select('id')
-          .maybeSingle()
-        if (statusError || !changed) {
-          console.error(
-            '[estimates/send-email] Status not updated:',
-            statusError,
-          )
-          warnings.push(
-            'Email was sent, but the estimate status could not be updated or changed during sending. Refresh and check the status before scheduling; do not resend just to fix it.',
-          )
-        } else if (previousStatus !== 'sent') {
-          const { error: auditError } = await supabase
-            .from('ops_appointment_status_events')
-            .insert({
-              appointment_id: id,
-              from_status: previousStatus,
-              to_status: 'sent',
-              changed_by: access.id,
-              notes: needsReopen
-                ? `Estimate reopened and emailed to ${customer.email}. Reason: ${reason}`
-                : `Estimate emailed to ${customer.email}`,
-            })
-          if (auditError) {
-            console.error('[estimates/send-email] Audit error:', auditError)
-            warnings.push(
-              'Email was sent and status updated, but the status history could not be saved. Record the reopening reason in internal notes.',
-            )
-          }
-        }
-      } catch (error) {
-        console.error('[estimates/send-email] Status history error:', error)
-        warnings.push(
-          'Email was sent, but the status/history update could not be confirmed. Refresh and check the estimate; do not resend just to fix it.',
-        )
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      email_type: emailType,
-      to_email: customer.email,
-      warning: warnings.join(' ') || null,
+      body,
+      requestId: parseRequestId(body.request_id),
     })
   } catch (error) {
     console.error('[estimates/send-email] Error:', error)
@@ -518,7 +303,7 @@ export async function POST(
       {
         error: error instanceof Error ? error.message : 'Failed to send email',
       },
-      { status: 500 },
+      { status: error instanceof EstimateDeliveryError ? error.status : 500 },
     )
   }
 }

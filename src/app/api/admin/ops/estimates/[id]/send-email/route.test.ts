@@ -75,6 +75,7 @@ beforeEach(() => {
   filters = []
   emailLog = vi.fn().mockResolvedValue({ error: null })
   audit = vi.fn().mockResolvedValue({ error: null })
+  let isUpdate = false
   const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn((...args: unknown[]) => {
@@ -86,8 +87,15 @@ beforeEach(() => {
       return builder
     }),
     single: vi.fn(async () => ({ data: current, error: null })),
-    maybeSingle: vi.fn(async () => ({ data: updated, error: null })),
-    update: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn(async () => {
+      const data = isUpdate ? updated : current
+      isUpdate = false
+      return { data, error: null }
+    }),
+    update: vi.fn(() => {
+      isUpdate = true
+      return builder
+    }),
   }
   update = builder.update
   mocks.db.mockReturnValue({

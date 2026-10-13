@@ -1,6 +1,15 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+
+vi.mock('@/supabase/server', () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }),
+  }),
+}))
+
 import { POST } from './route'
 
 describe('/mcp authentication', () => {

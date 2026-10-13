@@ -3,6 +3,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { createAdminClient } from '@/supabase/server'
 import {
   MCP_BUSINESS_SCOPE,
+  MCP_INTERNAL_SCOPES,
   MCP_RESOURCE,
   MCP_RESOURCE_METADATA,
   supabaseAuthIssuer,
@@ -56,6 +57,14 @@ function hasBusinessReadScope(claims: McpClaims): boolean {
   )
 }
 
+function claimedInternalScopes(claims: McpClaims): string[] {
+  if (!Array.isArray(claims.mcp_scopes)) return []
+  const allowed = new Set<string>(MCP_INTERNAL_SCOPES)
+  return claims.mcp_scopes.filter(
+    (scope): scope is string => typeof scope === 'string' && allowed.has(scope),
+  )
+}
+
 export async function authorizeMcpBearer(
   authorizationHeader: string | null,
 ): Promise<AuthInfo> {
@@ -89,22 +98,32 @@ export async function authorizeMcpBearer(
     )
   }
 
+  const claimedScopes = claimedInternalScopes(claims)
+
   const admin = createAdminClient()
   const { data: grant, error: grantError } = await admin
     .from('mcp_authorized_users')
     .select('user_id, scopes')
     .eq('user_id', claims.sub)
     .is('revoked_at', null)
-    .contains('scopes', [MCP_BUSINESS_SCOPE])
     .maybeSingle()
 
   if (grantError) throw grantError
-  if (!grant) {
+  if (!grant || !grant.scopes?.includes(MCP_BUSINESS_SCOPE)) {
     throw new McpAuthorizationError(
       'This account is not authorized for Sasquatch business data',
       'insufficient_scope',
     )
   }
+
+  const grantedScopes = new Set(
+    (grant.scopes || []).filter(
+      (scope: unknown): scope is string => typeof scope === 'string',
+    ),
+  )
+  const effectiveScopes = claimedScopes.filter((scope) =>
+    grantedScopes.has(scope),
+  )
 
   const { data: owner, error } = await admin
     .from('staff_users')
@@ -125,7 +144,7 @@ export async function authorizeMcpBearer(
   return {
     token,
     clientId: claims.client_id,
-    scopes: [MCP_BUSINESS_SCOPE],
+    scopes: effectiveScopes,
     expiresAt: claims.exp,
     resource: new URL(MCP_RESOURCE),
     extra: {
