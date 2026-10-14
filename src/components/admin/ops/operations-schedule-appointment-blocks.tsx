@@ -469,7 +469,7 @@ export function AppointmentBlocks({
           ) : null}
           {!isWarranty && !isEstimate ? (
             <>
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
                 <span className="shrink-0 font-semibold text-slate-700 tabular-nums">
                   {placement.startLabel} - {placement.endLabel}
                 </span>
