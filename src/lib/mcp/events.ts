@@ -14,6 +14,27 @@ type JsonRpcRequest = {
   params?: unknown
 }
 
+type McpEventDiagnostic = {
+  method: string
+  phase:
+    | 'request_validation'
+    | 'subscription_lookup'
+    | 'callback_verification'
+    | 'subscription_persistence'
+  outcome: 'rejected' | 'failed' | 'succeeded'
+  reason: string
+  callback_host?: string
+  callback_status?: number
+  duration_ms?: number
+  subscription_id?: string
+}
+
+type McpEventDiagnosticLogger = (diagnostic: McpEventDiagnostic) => void
+type McpEventDiagnosticDetails = Omit<
+  McpEventDiagnostic,
+  'method' | 'callback_host' | 'subscription_id'
+>
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   if (value && typeof value === 'object') {
@@ -44,6 +65,51 @@ function jsonRpcError(
     id: id ?? null,
     error: { code, message, ...(data ? { data } : {}) },
   })
+}
+
+function callbackHost(value: unknown) {
+  if (typeof value !== 'string') return undefined
+  try {
+    return new URL(value).hostname
+  } catch {
+    return undefined
+  }
+}
+
+function callbackFailureReason(error: unknown) {
+  const message = error instanceof Error ? error.message : ''
+  if (
+    ['callback_invalid', 'callback_not_public', 'callback_timeout'].includes(
+      message,
+    )
+  ) {
+    return message
+  }
+
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : ''
+  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code)) return 'callback_dns_error'
+  if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code)) {
+    return 'callback_timeout'
+  }
+  if (code === 'ECONNREFUSED') return 'callback_connection_refused'
+  if (['ECONNRESET', 'EPIPE'].includes(code)) {
+    return 'callback_connection_reset'
+  }
+  if (
+    code.startsWith('ERR_TLS_') ||
+    code.startsWith('CERT_') ||
+    code.includes('CERTIFICATE')
+  ) {
+    return 'callback_tls_error'
+  }
+  return 'callback_connection_failed'
+}
+
+function defaultDiagnosticLogger(diagnostic: McpEventDiagnostic) {
+  console.info('[mcp-events]', JSON.stringify(diagnostic))
 }
 
 function parseArguments(value: unknown) {
@@ -78,8 +144,15 @@ function parseDelivery(value: unknown, requireSecret: boolean) {
     if (typeof secret !== 'string' || !secret.startsWith('whsec_')) {
       throw new Error('secret_invalid')
     }
-    const decoded = Buffer.from(secret.slice(6), 'base64')
-    if (decoded.length < 24 || decoded.length > 64) {
+    const encoded = secret.slice(6)
+    const decoded = Buffer.from(encoded, 'base64')
+    if (
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) ||
+      encoded.length % 4 !== 0 ||
+      decoded.toString('base64') !== encoded ||
+      decoded.length < 24 ||
+      decoded.length > 64
+    ) {
       throw new Error('secret_invalid')
     }
   }
@@ -119,10 +192,30 @@ export async function handleMcpEventsRequest(params: {
   authorization: AuthInfo
   supabase: SupabaseClient
   postWebhook?: typeof postVerifiedWebhook
+  logDiagnostic?: McpEventDiagnosticLogger
 }) {
   const { request, authorization, supabase } = params
+  const logDiagnostic = params.logDiagnostic ?? defaultDiagnosticLogger
+  const method = typeof request.method === 'string' ? request.method : 'unknown'
+  let phase: McpEventDiagnostic['phase'] = 'request_validation'
+  let callbackHostValue: string | undefined
+  let subscriptionIdValue: string | undefined
+  const diagnose = (details: McpEventDiagnosticDetails) =>
+    logDiagnostic({
+      method,
+      ...details,
+      ...(callbackHostValue ? { callback_host: callbackHostValue } : {}),
+      ...(subscriptionIdValue ? { subscription_id: subscriptionIdValue } : {}),
+    })
   const owner = String(authorization.extra?.subject || '')
-  if (!owner) return jsonRpcError(request.id, -32001, 'Unauthorized')
+  if (!owner) {
+    diagnose({
+      phase,
+      outcome: 'rejected',
+      reason: 'owner_missing',
+    })
+    return jsonRpcError(request.id, -32001, 'Unauthorized')
+  }
 
   if (request.method === 'server/discover') {
     return jsonResult(request.id, {
@@ -179,7 +272,14 @@ export async function handleMcpEventsRequest(params: {
       ? (request.params as Record<string, unknown>)
       : {}
   if (requestParams.name !== INBOUND_MESSAGE_EVENT) {
-    return jsonRpcError(request.id, -32602, 'Invalid event name')
+    diagnose({
+      phase,
+      outcome: 'rejected',
+      reason: 'event_name_invalid',
+    })
+    return jsonRpcError(request.id, -32602, 'Invalid event name', {
+      reason: 'event_name_invalid',
+    })
   }
 
   try {
@@ -188,23 +288,32 @@ export async function handleMcpEventsRequest(params: {
       requestParams.delivery,
       request.method === 'events/subscribe',
     )
+    callbackHostValue = callbackHost(delivery.url)
     const id = subscriptionId({
       owner,
       name: INBOUND_MESSAGE_EVENT,
       arguments: args,
       callbackUrl: delivery.url,
     })
+    subscriptionIdValue = id
 
     if (request.method === 'events/unsubscribe') {
+      phase = 'subscription_persistence'
       const { error } = await supabase
         .from('mcp_event_subscriptions')
         .update({ status: 'revoked', updated_at: new Date().toISOString() })
         .eq('id', id)
         .eq('owner_user_id', owner)
       if (error) throw error
+      diagnose({
+        phase,
+        outcome: 'succeeded',
+        reason: 'subscription_revoked',
+      })
       return jsonResult(request.id, {})
     }
 
+    phase = 'subscription_lookup'
     const { data: existing, error: existingError } = await supabase
       .from('mcp_event_subscriptions')
       .select(
@@ -223,6 +332,21 @@ export async function handleMcpEventsRequest(params: {
         new Date(existing.expires_at).getTime() > Date.now())
 
     if (!verificationIsFresh) {
+      phase = 'callback_verification'
+      const verificationStartedAt = Date.now()
+      const callbackError = (reason: string, status?: number) => {
+        diagnose({
+          phase,
+          outcome: 'failed',
+          reason,
+          ...(status === undefined ? {} : { callback_status: status }),
+          duration_ms: Date.now() - verificationStartedAt,
+        })
+        return jsonRpcError(request.id, -32015, 'CallbackEndpointError', {
+          reason,
+          ...(status === undefined ? {} : { status }),
+        })
+      }
       const challenge = randomBytes(32).toString('base64url')
       const verificationId = `msg_${randomBytes(16).toString('hex')}`
       const body = JSON.stringify({ type: 'verification', challenge })
@@ -243,30 +367,35 @@ export async function handleMcpEventsRequest(params: {
           },
         })
       } catch (error) {
-        return jsonRpcError(request.id, -32015, 'CallbackEndpointError', {
-          reason: error instanceof Error ? error.message : 'connection_failed',
-        })
+        return callbackError(callbackFailureReason(error))
       }
-      let returnedChallenge = ''
+      if (verification.status < 200 || verification.status >= 300) {
+        return callbackError('callback_http_error', verification.status)
+      }
+      let returnedChallenge: unknown
       try {
-        returnedChallenge = String(
-          JSON.parse(verification.body).challenge || '',
-        )
+        returnedChallenge = JSON.parse(verification.body).challenge
       } catch {
-        // Report the categorized callback error below.
+        return callbackError('callback_response_invalid', verification.status)
+      }
+      if (typeof returnedChallenge !== 'string') {
+        return callbackError('callback_response_invalid', verification.status)
       }
       const expected = Buffer.from(challenge)
       const actual = Buffer.from(returnedChallenge)
       if (
-        verification.status < 200 ||
-        verification.status >= 300 ||
         expected.length !== actual.length ||
         !timingSafeEqual(expected, actual)
       ) {
-        return jsonRpcError(request.id, -32015, 'CallbackEndpointError', {
-          reason: 'challenge_failed',
-        })
+        return callbackError('challenge_failed', verification.status)
       }
+      diagnose({
+        phase,
+        outcome: 'succeeded',
+        reason: 'callback_verified',
+        callback_status: verification.status,
+        duration_ms: Date.now() - verificationStartedAt,
+      })
     }
 
     const requestedTtl = requestParams.ttlMs
@@ -276,6 +405,7 @@ export async function handleMcpEventsRequest(params: {
         ? Math.max(15 * 60 * 1000, Math.min(maximumTtl, requestedTtl))
         : maximumTtl
     const refreshBefore = new Date(Date.now() + ttl).toISOString()
+    phase = 'subscription_persistence'
     const { error } = await supabase.from('mcp_event_subscriptions').upsert(
       {
         id,
@@ -305,6 +435,11 @@ export async function handleMcpEventsRequest(params: {
       { onConflict: 'id' },
     )
     if (error) throw error
+    diagnose({
+      phase,
+      outcome: 'succeeded',
+      reason: 'subscription_active',
+    })
     return jsonResult(request.id, {
       id,
       refreshBefore,
@@ -318,9 +453,21 @@ export async function handleMcpEventsRequest(params: {
         reason,
       )
     ) {
+      diagnose({
+        phase,
+        outcome: 'rejected',
+        reason,
+      })
       return jsonRpcError(request.id, -32602, 'Invalid params', { reason })
     }
-    console.error('[mcp-events] request failed:', error)
+    diagnose({
+      phase,
+      outcome: 'failed',
+      reason:
+        phase === 'subscription_lookup' || phase === 'subscription_persistence'
+          ? 'subscription_database_error'
+          : 'internal_error',
+    })
     return jsonRpcError(request.id, -32603, 'Internal error')
   }
 }

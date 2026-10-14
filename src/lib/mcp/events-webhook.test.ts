@@ -4,6 +4,7 @@ import { resolvePublicCallback } from './events-webhook'
 
 describe('MCP event callback URL validation', () => {
   it.each([
+    'not-a-url',
     'http://events.example.com/hook',
     'https://user:password@events.example.com/hook',
     'https://events.example.com:8443/hook',

@@ -43,7 +43,12 @@ function isPublicIp(address: string) {
 }
 
 export async function resolvePublicCallback(urlValue: string) {
-  const url = new URL(urlValue)
+  let url: URL
+  try {
+    url = new URL(urlValue)
+  } catch {
+    throw new Error('callback_invalid')
+  }
   if (
     url.protocol !== 'https:' ||
     url.username ||
