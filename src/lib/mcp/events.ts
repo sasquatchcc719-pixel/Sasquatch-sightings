@@ -144,15 +144,8 @@ function parseDelivery(value: unknown, requireSecret: boolean) {
     if (typeof secret !== 'string' || !secret.startsWith('whsec_')) {
       throw new Error('secret_invalid')
     }
-    const encoded = secret.slice(6)
-    const decoded = Buffer.from(encoded, 'base64')
-    if (
-      !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) ||
-      encoded.length % 4 !== 0 ||
-      decoded.toString('base64') !== encoded ||
-      decoded.length < 24 ||
-      decoded.length > 64
-    ) {
+    const decoded = Buffer.from(secret.slice(6), 'base64')
+    if (decoded.length < 24 || decoded.length > 64) {
       throw new Error('secret_invalid')
     }
   }

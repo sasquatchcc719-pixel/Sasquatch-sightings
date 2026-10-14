@@ -276,9 +276,7 @@ describe('MCP Events protocol extension', () => {
   it('distinguishes request validation from callback failures', async () => {
     const db = database()
     const logDiagnostic = vi.fn()
-    const malformedSecret = `whsec_${Buffer.alloc(32, 5)
-      .toString('base64')
-      .replace('B', '_')}`
+    const malformedSecret = `whsec_${Buffer.alloc(8, 5).toString('base64')}`
     const response = await handleMcpEventsRequest({
       request: subscribeRequest(malformedSecret),
       authorization,
