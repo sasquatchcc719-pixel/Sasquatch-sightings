@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
-import { resolvePublicCallback } from './events-webhook'
+import { describe, expect, it, vi } from 'vitest'
+import { createPinnedLookup, resolvePublicCallback } from './events-webhook'
 
 describe('MCP event callback URL validation', () => {
   it.each([
@@ -16,5 +16,18 @@ describe('MCP event callback URL validation', () => {
     await expect(
       resolvePublicCallback('https://localhost/hook'),
     ).rejects.toThrow('callback_not_public')
+  })
+
+  it('returns the callback shape requested by the Node runtime', () => {
+    const address = { address: '93.184.216.34', family: 4 }
+    const lookup = createPinnedLookup(address)
+    const one = vi.fn()
+    const all = vi.fn()
+
+    lookup('events.example.com', { all: false }, one)
+    lookup('events.example.com', { all: true }, all)
+
+    expect(one).toHaveBeenCalledWith(null, address.address, address.family)
+    expect(all).toHaveBeenCalledWith(null, [address])
   })
 })

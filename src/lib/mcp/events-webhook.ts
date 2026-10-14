@@ -1,7 +1,7 @@
 import type { LookupAddress } from 'node:dns'
 import { lookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
-import { isIP } from 'node:net'
+import { isIP, type LookupFunction } from 'node:net'
 
 function isPublicIpv4(address: string) {
   const parts = address.split('.').map(Number)
@@ -67,6 +67,16 @@ export async function resolvePublicCallback(urlValue: string) {
   return { url, address: addresses[0] as LookupAddress }
 }
 
+export function createPinnedLookup(address: LookupAddress): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [address])
+      return
+    }
+    callback(null, address.address, address.family)
+  }
+}
+
 export async function postVerifiedWebhook(params: {
   url: string
   body: string
@@ -84,8 +94,7 @@ export async function postVerifiedWebhook(params: {
           'Content-Length': String(Buffer.byteLength(params.body, 'utf8')),
         },
         servername: resolved.url.hostname,
-        lookup: (_hostname, _options, callback) =>
-          callback(null, resolved.address.address, resolved.address.family),
+        lookup: createPinnedLookup(resolved.address),
       },
       (response) => {
         let body = ''
