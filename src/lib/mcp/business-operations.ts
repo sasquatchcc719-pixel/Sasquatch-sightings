@@ -1494,6 +1494,7 @@ async function executeConversationSend(
     message: payload.body,
     mediaIds: payload.media_ids,
     sentBy: actor.label,
+    telegramMirrorLabel: 'Harry',
   })
 }
 

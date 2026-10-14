@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
+import { postToTopic } from '@/lib/telegram/relay'
 
 type SendSms = typeof sendCustomerSMSWithResult
+type PostToTelegram = typeof postToTopic
 
 export async function sendConversationReply(params: {
   supabase: SupabaseClient
@@ -10,6 +12,8 @@ export async function sendConversationReply(params: {
   sentBy: string
   mediaIds?: string[]
   sendSms?: SendSms
+  telegramMirrorLabel?: string
+  postToTelegram?: PostToTelegram
 }) {
   const message = params.message.trim()
   if (!message) throw new Error('Message is required')
@@ -67,7 +71,7 @@ export async function sendConversationReply(params: {
 
   const { data: relayThread, error: relayError } = await params.supabase
     .from('telegram_relay_threads')
-    .select('business_number')
+    .select('business_number, group_chat_id, topic_id')
     .eq('phone', conversation.phone_number)
     .maybeSingle()
   if (relayError) throw relayError
@@ -114,6 +118,41 @@ export async function sendConversationReply(params: {
     )
   }
 
+  let telegramMirrored: boolean | null = null
+  let telegramWarning: string | null = null
+  const telegramMirrorLabel = params.telegramMirrorLabel?.trim()
+  if (telegramMirrorLabel) {
+    telegramMirrored = false
+    if (
+      relayThread &&
+      Number.isFinite(Number(relayThread.group_chat_id)) &&
+      Number.isFinite(Number(relayThread.topic_id))
+    ) {
+      try {
+        const postToTelegram = params.postToTelegram ?? postToTopic
+        telegramMirrored = await postToTelegram(
+          Number(relayThread.group_chat_id),
+          Number(relayThread.topic_id),
+          `${telegramMirrorLabel}:\n${message}`,
+        )
+        if (!telegramMirrored) {
+          telegramWarning =
+            'Telegram mirror failed after the customer SMS was sent; do not resend the SMS.'
+        }
+      } catch (error) {
+        console.error(
+          '[conversation-reply] SMS/MMS sent but Telegram mirror failed:',
+          error,
+        )
+        telegramWarning =
+          'Telegram mirror failed after the customer SMS was sent; do not resend the SMS.'
+      }
+    } else {
+      telegramWarning =
+        'No existing Telegram customer topic was found; the customer SMS was still sent and saved in Sightings.'
+    }
+  }
+
   return {
     conversation_id: params.conversationId,
     twilio_sid: sent.sid,
@@ -121,6 +160,8 @@ export async function sendConversationReply(params: {
     from: sent.from,
     media_count: attachedMedia.length,
     history_recorded: !updateError,
+    telegram_mirrored: telegramMirrored,
+    telegram_warning: telegramWarning,
     warning: updateError
       ? 'Twilio accepted the message, but Sightings history could not be updated. Check Twilio before retrying.'
       : null,

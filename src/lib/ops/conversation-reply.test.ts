@@ -50,7 +50,11 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
     }
     if (this.table === 'telegram_relay_threads') {
       return Promise.resolve({
-        data: { business_number: '+17192498791' },
+        data: {
+          business_number: '+17192498791',
+          group_chat_id: -1001234567890,
+          topic_id: 321,
+        },
         error: null,
       })
     }
@@ -95,6 +99,7 @@ describe('sendConversationReply', () => {
       to: '+17195550123',
       from: '+17192498791',
     })
+    const postToTelegram = vi.fn().mockResolvedValue(true)
     const supabase = {
       from(table: string) {
         return new Query(table, state)
@@ -118,6 +123,7 @@ describe('sendConversationReply', () => {
       sentBy: 'Charles',
       mediaIds: ['30000000-0000-4000-8000-000000000001'],
       sendSms,
+      postToTelegram,
     })
 
     expect(sendSms).toHaveBeenCalledWith(
@@ -138,6 +144,7 @@ describe('sendConversationReply', () => {
       media_count: 1,
     })
     expect(state.updates).toHaveLength(1)
+    expect(postToTelegram).not.toHaveBeenCalled()
     expect(state.updates[0].value).toMatchObject({
       status: 'active',
       messages: [
@@ -149,5 +156,116 @@ describe('sendConversationReply', () => {
         }),
       ],
     })
+  })
+
+  it('mirrors a successful MCP reply once in the existing topic as Harry', async () => {
+    const state = { updates: [] as Array<{ table: string; value: unknown }> }
+    const sendSms = vi.fn().mockResolvedValue({
+      sid: 'SM456',
+      to: '+17195550123',
+      from: '+17192498791',
+    })
+    const postToTelegram = vi.fn().mockImplementation(async () => {
+      expect(state.updates).toHaveLength(1)
+      return true
+    })
+    const supabase = {
+      from(table: string) {
+        return new Query(table, state)
+      },
+      storage: { from: vi.fn() },
+    }
+
+    const result = await sendConversationReply({
+      supabase: supabase as never,
+      conversationId: '10000000-0000-4000-8000-000000000001',
+      message: 'We can be there Tuesday.',
+      sentBy: 'Charles',
+      telegramMirrorLabel: 'Harry',
+      sendSms,
+      postToTelegram,
+    })
+
+    expect(sendSms).toHaveBeenCalledTimes(1)
+    expect(postToTelegram).toHaveBeenCalledTimes(1)
+    expect(postToTelegram).toHaveBeenCalledWith(
+      -1001234567890,
+      321,
+      'Harry:\nWe can be there Tuesday.',
+    )
+    expect(result).toMatchObject({
+      twilio_sid: 'SM456',
+      history_recorded: true,
+      telegram_mirrored: true,
+      telegram_warning: null,
+    })
+  })
+
+  it('does not retry the customer SMS when the Telegram mirror fails', async () => {
+    const state = { updates: [] as Array<{ table: string; value: unknown }> }
+    const sendSms = vi.fn().mockResolvedValue({
+      sid: 'SM789',
+      to: '+17195550123',
+      from: '+17192498791',
+    })
+    const postToTelegram = vi
+      .fn()
+      .mockRejectedValue(new Error('Telegram unavailable'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const supabase = {
+      from(table: string) {
+        return new Query(table, state)
+      },
+      storage: { from: vi.fn() },
+    }
+
+    const result = await sendConversationReply({
+      supabase: supabase as never,
+      conversationId: '10000000-0000-4000-8000-000000000001',
+      message: 'We can be there Tuesday.',
+      sentBy: 'Charles',
+      telegramMirrorLabel: 'Harry',
+      sendSms,
+      postToTelegram,
+    })
+
+    expect(sendSms).toHaveBeenCalledTimes(1)
+    expect(postToTelegram).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      twilio_sid: 'SM789',
+      history_recorded: true,
+      telegram_mirrored: false,
+    })
+    expect(result.telegram_warning).toContain('Telegram mirror failed')
+    expect(consoleError).toHaveBeenCalledOnce()
+    consoleError.mockRestore()
+  })
+
+  it('does not mirror when Twilio rejects the customer SMS', async () => {
+    const state = { updates: [] as Array<{ table: string; value: unknown }> }
+    const sendSms = vi.fn().mockRejectedValue(new Error('Twilio unavailable'))
+    const postToTelegram = vi.fn().mockResolvedValue(true)
+    const supabase = {
+      from(table: string) {
+        return new Query(table, state)
+      },
+      storage: { from: vi.fn() },
+    }
+
+    await expect(
+      sendConversationReply({
+        supabase: supabase as never,
+        conversationId: '10000000-0000-4000-8000-000000000001',
+        message: 'We can be there Tuesday.',
+        sentBy: 'Charles',
+        telegramMirrorLabel: 'Harry',
+        sendSms,
+        postToTelegram,
+      }),
+    ).rejects.toThrow('Twilio unavailable')
+
+    expect(sendSms).toHaveBeenCalledTimes(1)
+    expect(postToTelegram).not.toHaveBeenCalled()
+    expect(state.updates).toHaveLength(0)
   })
 })
