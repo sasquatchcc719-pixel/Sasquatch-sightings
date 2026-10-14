@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   executePreparedAction,
+  payloadHash,
   previewConversationSend,
   previewEstimateDecision,
 } from './business-operations'
@@ -112,6 +113,28 @@ function fixture() {
 }
 
 describe('MCP confirmed operation previews', () => {
+  it('hashes JSON objects canonically while preserving array order', () => {
+    const preparedPayload = {
+      conversation_id: '10000000-0000-4000-8000-000000000001',
+      body: 'We can be there Tuesday.',
+      media_ids: ['media-a', 'media-b'],
+      nested: { z: 1, a: 2 },
+      expected_updated_at: '2026-10-12T20:00:00Z',
+    }
+    const jsonbRoundTrip = {
+      body: 'We can be there Tuesday.',
+      expected_updated_at: '2026-10-12T20:00:00Z',
+      conversation_id: '10000000-0000-4000-8000-000000000001',
+      nested: { a: 2, z: 1 },
+      media_ids: ['media-a', 'media-b'],
+    }
+
+    expect(payloadHash(preparedPayload)).toBe(payloadHash(jsonbRoundTrip))
+    expect(
+      payloadHash({ ...preparedPayload, media_ids: ['media-b', 'media-a'] }),
+    ).not.toBe(payloadHash(preparedPayload))
+  })
+
   it('stores the exact recipient, retained sender, body, scope, and stale-record guard', async () => {
     const { client, state } = fixture()
 

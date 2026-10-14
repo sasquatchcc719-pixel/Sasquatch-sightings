@@ -469,8 +469,32 @@ type ActionType =
   | 'estimate.send'
   | 'estimate.convert'
 
-function payloadHash(value: unknown) {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+function canonicalJson(value: unknown): string {
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) {
+    throw new TypeError('Confirmation payload must be JSON-serializable')
+  }
+
+  const normalized = JSON.parse(serialized) as unknown
+  const serialize = (current: unknown): string => {
+    if (Array.isArray(current)) {
+      return `[${current.map(serialize).join(',')}]`
+    }
+    if (current !== null && typeof current === 'object') {
+      const record = current as Record<string, unknown>
+      return `{${Object.keys(record)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${serialize(record[key])}`)
+        .join(',')}}`
+    }
+    return JSON.stringify(current)
+  }
+
+  return serialize(normalized)
+}
+
+export function payloadHash(value: unknown) {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex')
 }
 
 async function storePreview(params: {
