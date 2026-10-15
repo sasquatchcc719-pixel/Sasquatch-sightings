@@ -208,9 +208,11 @@ export function CustomersDirectory({
   canDeleteCustomers?: boolean
   canManageBlacklist?: boolean
 }) {
-  const [loading, setLoading] = useState(true)
-  const [searching, setSearching] = useState(false)
+  const [searching, setSearching] = useState(true)
+  const [completedQuery, setCompletedQuery] = useState<string | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [searchFailed, setSearchFailed] = useState(false)
   const [query, setQuery] = useState('')
   const [customers, setCustomers] = useState<CustomerRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -223,43 +225,53 @@ export function CustomersDirectory({
     {},
   )
 
-  const fetchCustomers = async () => {
-    const hasQuery = query.trim().length > 0
-    if (hasQuery) {
-      setSearching(true)
-    } else {
-      setLoading(true)
-    }
-    setError(null)
-    try {
-      const response = await fetch(
-        `/api/admin/ops/customers?q=${encodeURIComponent(query.trim())}`,
-        { cache: 'no-store' },
-      )
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load customers')
-      }
-      setCustomers(result.customers || [])
-    } catch (searchError) {
-      setError(
-        searchError instanceof Error
-          ? searchError.message
-          : 'Failed to load customers',
-      )
-    } finally {
-      setLoading(false)
-      setSearching(false)
-    }
-  }
-
   useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+
+    const fetchCustomers = async () => {
+      setSearching(true)
+      setError(null)
+      setSearchFailed(false)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/customers?q=${encodeURIComponent(query.trim())}`,
+          { cache: 'no-store', signal: controller.signal },
+        )
+        const result = await response.json()
+        if (!active) return
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load customers')
+        }
+        setCustomers(result.customers || [])
+      } catch (searchError) {
+        if (!active) return
+        setCustomers([])
+        setSearchFailed(true)
+        setError(
+          searchError instanceof Error
+            ? searchError.message
+            : 'Failed to load customers',
+        )
+      } finally {
+        if (active) {
+          setCompletedQuery(query.trim())
+          setSearching(false)
+        }
+      }
+    }
+
     const timeoutId = window.setTimeout(() => {
       void fetchCustomers()
     }, 250)
-    return () => window.clearTimeout(timeoutId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query])
+    return () => {
+      active = false
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [query, refreshVersion])
+
+  const searchPending = searching || completedQuery !== query.trim()
 
   const startEdit = (customer: CustomerRow) => {
     setEditForm({
@@ -333,7 +345,8 @@ export function CustomersDirectory({
       }
       setEditingId(null)
       setEditForm(null)
-      await fetchCustomers()
+      setSearching(true)
+      setRefreshVersion((version) => version + 1)
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -365,15 +378,6 @@ export function CustomersDirectory({
       addresses[addrIndex] = { ...addresses[addrIndex], ...patch }
       return { ...prev, addresses }
     })
-  }
-
-  if (loading) {
-    return (
-      <div className="text-muted-foreground flex items-center gap-2">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Loading customers...
-      </div>
-    )
   }
 
   return (
@@ -415,22 +419,23 @@ export function CustomersDirectory({
         </div>
       </Card>
 
-      {error ? (
+      {error && !searchPending ? (
         <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
           {error}
         </Card>
       ) : null}
 
-      {searching ? (
+      {searchPending ? (
         <Card className="border-border/60 bg-card/80 p-4 text-sm shadow-sm backdrop-blur">
-          <div className="text-muted-foreground flex items-center gap-2">
+          <div
+            role="status"
+            className="text-muted-foreground flex items-center gap-2"
+          >
             <Loader2 className="h-4 w-4 animate-spin" />
             Searching...
           </div>
         </Card>
-      ) : null}
-
-      {customers.length === 0 ? (
+      ) : searchFailed ? null : customers.length === 0 ? (
         <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
           <div className="text-muted-foreground text-sm">
             No customers found yet. If you already imported customers, try a
