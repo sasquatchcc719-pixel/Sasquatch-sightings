@@ -74,6 +74,20 @@
 .intro {
   margin: 16px 0 20px;
 }
+.priceLink {
+  display: block;
+  margin: 0 0 18px;
+  color: #39593d;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.priceLink span {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 400;
+}
 .call {
   display: flex;
   align-items: center;
@@ -203,6 +217,33 @@
   max-width: 840px;
   margin: auto;
   padding: 30px 36px;
+}
+.package {
+  margin: 22px 0;
+  padding: 22px;
+  border: 1px solid #cbd8c4;
+  border-radius: 14px;
+}
+.package p,
+.package details {
+  margin-top: 12px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.package .eyebrow {
+  margin-top: 0;
+  font-size: 12px;
+}
+.package summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+  color: #39593d;
+  font-weight: 650;
+}
+.package summary:focus-visible {
+  outline: 3px solid #658267;
+  outline-offset: 4px;
 }
 .prices {
   display: grid;
@@ -394,6 +435,13 @@
   }
   .pricing {
     padding: 24px 22px;
+  }
+  .package {
+    padding: 16px;
+  }
+  .package p,
+  .package details {
+    font-size: 14px;
   }
   .prices {
     grid-template-columns: 1fr;

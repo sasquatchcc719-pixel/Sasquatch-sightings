@@ -69,16 +69,16 @@ const treatments = [
 
 const steps = [
   [
+    'Start With Your Water Source',
+    'Tell us about spots, scale, taste, odors or particles. We confirm whether your home uses utility water or a private well and choose the appropriate package.',
+  ],
+  [
     'Collect & Test',
-    'We collect a water sample and send it to a lab for testing.',
+    'We collect a water sample and send it to the lab for the selected panel. For utility water, we also review the report from your actual supplier.',
   ],
   [
-    'Understand Your Results',
-    'See the findings and treatment categories worth evaluating.',
-  ],
-  [
-    'Professional Assessment',
-    'A qualified plumbing professional makes the final system recommendation and quote.',
+    'Understand Your Options',
+    'We explain the results and their limits. If treatment would help, final equipment selection requires a qualified plumber’s assessment and separate quote.',
   ],
 ]
 
@@ -114,11 +114,17 @@ export default function WaterSolutionsPage() {
             </h1>
             <p className={styles.intro}>
               Water can vary by supply, neighborhood, and the plumbing inside
-              your home. The right solution starts with understanding your
-              water.
+              your home. We help you understand your water and whether
+              softening, filtration or another option makes sense.
             </p>
+            <a href="#water-pricing-title" className={styles.priceLink}>
+              Municipal assessment $149 • Private well testing $349
+              <span>
+                During an existing cleaning appointment. Separate visit +$75.
+              </span>
+            </a>
             <a href="tel:+17192498791" className={styles.call}>
-              Arrange My Water Test{' '}
+              Discuss My Water Assessment{' '}
               <ChevronRight size={22} aria-hidden="true" />
             </a>
           </div>
@@ -198,8 +204,8 @@ export default function WaterSolutionsPage() {
               systems can help detect leaks and limit water damage.
             </p>
             <p>
-              A plumbing professional checks your home’s setup and recommends
-              compatible equipment.
+              A qualified plumber would need to check your home’s setup and
+              quote compatible equipment and installation separately.
             </p>
           </div>
         </section>
@@ -228,29 +234,87 @@ export default function WaterSolutionsPage() {
           className={styles.pricing}
           aria-labelledby="water-pricing-title"
         >
-          <h2 id="water-pricing-title">Start with a water test.</h2>
-          <dl className={styles.prices}>
-            <div>
-              <dt>During an existing Sasquatch appointment</dt>
-              <dd>
-                <span>$</span>250
-              </dd>
-            </div>
-            <div>
-              <dt>Separate collection visit</dt>
-              <dd>
-                <span>$</span>300
-              </dd>
-            </div>
-          </dl>
+          <h2 id="water-pricing-title">Get answers about your water.</h2>
           <p>
-            Includes one sampling location, the selected baseline laboratory
-            panel, sample handling and delivery of results.
+            We collect your sample, handle shipping and laboratory testing, and
+            walk you through the results. Each package covers one sampling
+            location.
           </p>
+          <article className={styles.package} aria-labelledby="municipal-title">
+            <p className={styles.eyebrow}>City or utility water</p>
+            <h3 id="municipal-title">Municipal Water Assessment</h3>
+            <dl className={styles.prices}>
+              <div>
+                <dt>During an existing cleaning appointment</dt>
+                <dd>
+                  <span>$</span>149
+                </dd>
+              </div>
+              <div>
+                <dt>Separate collection visit</dt>
+                <dd>
+                  <span>$</span>224
+                </dd>
+              </div>
+            </dl>
+            <p>
+              Get a clearer picture of your water’s hardness and mineral balance
+              before choosing softening or filtration. Your assessment includes
+              mineral testing, a review of your utility’s water report, and help
+              understanding what the findings mean for your home.
+            </p>
+            <details>
+              <summary>See what we test</summary>
+              <p>
+                Bicarbonate, calcium, carbonate, chloride, fluoride, iron,
+                magnesium, nitrate, potassium, sodium, sulfate, total hardness,
+                total alkalinity, electrical conductivity, pH, estimated total
+                dissolved solids and cation/anion balance.
+              </p>
+            </details>
+          </article>
+          <article className={styles.package} aria-labelledby="well-title">
+            <p className={styles.eyebrow}>Private well water</p>
+            <h3 id="well-title">Private Well Testing</h3>
+            <dl className={styles.prices}>
+              <div>
+                <dt>During an existing cleaning appointment</dt>
+                <dd>
+                  <span>$</span>349
+                </dd>
+              </div>
+              <div>
+                <dt>Separate collection visit</dt>
+                <dd>
+                  <span>$</span>424
+                </dd>
+              </div>
+            </dl>
+            <p>
+              Take a broader look at your well water with testing for bacteria,
+              minerals and selected metals, including lead and arsenic. We
+              explain the findings and help you understand which treatment
+              options may suit your home.
+            </p>
+            <details>
+              <summary>See what we test</summary>
+              <p>
+                Total coliform and E. coli bacteria, alkalinity, hardness,
+                chloride, fluoride, nitrate, nitrite, phosphate, sodium, total
+                dissolved solids, pH, arsenic, cadmium, copper, iron, lead and
+                manganese.
+              </p>
+            </details>
+            <p>
+              Typical laboratory turnaround is 8–10 business days; allow
+              additional time for shipping.
+            </p>
+          </article>
           <p>
-            Your water test provides a baseline to help guide treatment choices.
-            Filtration equipment and plumbing installation are quoted
-            separately.
+            A separate collection visit adds $75 to either package, as shown
+            above. Equipment, plumbing installation and any additional testing
+            are separate. Call to discuss your water source and arrange
+            collection.
           </p>
           <a href="tel:+17192498791" className={styles.call}>
             <Phone size={20} aria-hidden="true" /> Call (719) 249-8791{' '}
