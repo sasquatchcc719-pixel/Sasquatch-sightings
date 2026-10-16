@@ -15,6 +15,7 @@ import { TechDaySchedule } from '@/components/tech/tech-day-schedule'
 import { getMountainDateKey, shiftDateKey } from '@/lib/tech/day-schedule'
 import { getSemiMonthlyPayPeriod } from '@/lib/ops/timesheet-pay'
 import { loadAddOnBonuses } from '@/lib/ops/add-on-bonuses'
+import { TruckWeatherCard } from '@/components/truck-weather-card'
 
 type TechHomePageProps = {
   searchParams?: Promise<{ date?: string }>
@@ -72,6 +73,7 @@ export default async function TechHomePage({
 
   return (
     <div className="space-y-5">
+      <TruckWeatherCard />
       <section className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 p-5 shadow-2xl shadow-emerald-950/30">
         <p className="flex items-center gap-2 text-sm font-medium text-emerald-200">
           <CalendarDays className="h-4 w-4" />
