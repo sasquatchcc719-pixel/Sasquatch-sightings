@@ -16,11 +16,9 @@ export async function isBlacklisted(phone: string): Promise<boolean> {
     )
     if (normalized.length < 10) return false
     const supabase = createAdminClient()
-    const { data, error } = await supabase
-      .from('blacklist')
-      .select('id')
-      .eq('phone', normalized)
-      .maybeSingle()
+    const { data, error } = await supabase.rpc('is_phone_blacklisted', {
+      p_phone: normalized,
+    })
 
     if (error) {
       console.error('[blacklist] DB query error:', error)
@@ -28,7 +26,7 @@ export async function isBlacklisted(phone: string): Promise<boolean> {
       return true
     }
 
-    const isBlocked = data !== null
+    const isBlocked = data === true
     console.log(
       `[blacklist] ${normalized} is ${isBlocked ? 'BLOCKED' : 'allowed'}`,
     )

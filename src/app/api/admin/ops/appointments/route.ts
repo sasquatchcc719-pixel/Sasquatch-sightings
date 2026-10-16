@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { isBlacklisted } from '@/lib/blacklist'
 import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
@@ -175,6 +176,35 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 },
       )
+    }
+
+    if (await isBlacklisted(phone)) {
+      return NextResponse.json(
+        { error: 'This customer is blacklisted and cannot book appointments.' },
+        { status: 403 },
+      )
+    }
+
+    // Check the saved number too, before a manual booking can overwrite it.
+    if (body.customer_id) {
+      const { data: selectedCustomer, error: selectedCustomerError } =
+        await supabase
+          .from('ops_customers')
+          .select('phone')
+          .eq('id', String(body.customer_id).trim())
+          .maybeSingle()
+      if (selectedCustomerError) throw selectedCustomerError
+      if (
+        selectedCustomer?.phone &&
+        (await isBlacklisted(selectedCustomer.phone))
+      ) {
+        return NextResponse.json(
+          {
+            error: 'This customer is blacklisted and cannot book appointments.',
+          },
+          { status: 403 },
+        )
+      }
     }
 
     const addressId =

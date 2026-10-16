@@ -86,6 +86,27 @@ describe('POST /api/twilio/call-router', () => {
     expect(twiml).toContain('/api/twilio/dial-failover?mode=open-line')
   })
 
+  it('rejects a blocked caller without dialing or playing a menu', async () => {
+    isBlacklistedMock.mockResolvedValue(true)
+    const response = await POST(twilioRequest())
+    const twiml = await response.text()
+    expect(twiml).toContain('<Reject/>')
+    expect(twiml).not.toMatch(/<Dial|<Gather|<Redirect/)
+    expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
+    expect(sendOneSignalNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it('still rejects a blocked caller if recording the attempt throws', async () => {
+    isBlacklistedMock.mockResolvedValue(true)
+    createAdminClientMock.mockImplementation(() => {
+      throw new Error('Log unavailable')
+    })
+    const response = await POST(twilioRequest())
+    const twiml = await response.text()
+    expect(twiml).toContain('<Reject/>')
+    expect(twiml).not.toContain('<Redirect')
+  })
+
   it('uses option 2 for water damage during business hours', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-07T16:00:00Z'))

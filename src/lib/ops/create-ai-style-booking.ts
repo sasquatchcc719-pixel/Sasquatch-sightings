@@ -25,6 +25,7 @@ import {
 } from '@/lib/server/lead-sources'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
+import { isBlacklisted } from '@/lib/blacklist'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -306,6 +307,9 @@ export async function createAiStyleBooking(
       ok: false,
       error: 'Customer first name, last name, email, and phone are required',
     }
+  }
+  if (await isBlacklisted(phone)) {
+    return { ok: false, error: 'We are unable to accept this booking.' }
   }
   if (!street1 || !city || !zipCode) {
     return { ok: false, error: 'Street, city, and zip are required' }

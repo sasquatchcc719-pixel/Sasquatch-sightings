@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
   getAgentPromoSettings: vi.fn(),
   normalizeLeadSourceForWrite: vi.fn(),
   checkServiceArea: vi.fn(),
+  blacklist: vi.fn(),
 }))
+
+vi.mock('@/lib/blacklist', () => ({ isBlacklisted: mocks.blacklist }))
 
 vi.mock('@/lib/ops/staff-availability', () => ({
   getAllStaffSlots: mocks.getAllStaffSlots,
@@ -63,6 +66,7 @@ class ReadQuery {
 
 describe('AI-style booking preview', () => {
   beforeEach(() => {
+    mocks.blacklist.mockResolvedValue(false)
     mocks.getAllStaffSlots.mockResolvedValue([
       {
         staffUserId: '20000000-0000-4000-8000-000000000001',

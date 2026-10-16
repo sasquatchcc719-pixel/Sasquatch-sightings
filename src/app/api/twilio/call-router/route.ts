@@ -25,17 +25,23 @@ export async function POST(request: NextRequest) {
     const callerPhone = formData.get('From') as string
 
     if (await isBlacklisted(callerPhone)) {
-      const supabase = createAdminClient()
-      await supabase.from('call_logs').upsert(
-        {
-          call_sid: formData.get('CallSid') as string,
-          caller_phone: callerPhone,
-          outcome: 'blacklisted',
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'call_sid' },
-      )
-      notifyBlockedAttempt(callerPhone, 'call')
+      try {
+        const supabase = createAdminClient()
+        const { error } = await supabase.from('call_logs').upsert(
+          {
+            call_sid: formData.get('CallSid') as string,
+            caller_phone: callerPhone,
+            outcome: 'blacklisted',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'call_sid' },
+        )
+        if (error)
+          console.error('[Call Router] Could not log blocked call:', error)
+        notifyBlockedAttempt(callerPhone, 'call')
+      } catch (error) {
+        console.error('[Call Router] Could not log blocked call:', error)
+      }
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>',
         { status: 200, headers: { 'Content-Type': 'text/xml' } },

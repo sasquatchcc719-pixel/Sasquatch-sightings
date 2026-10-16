@@ -36,6 +36,7 @@ import {
 import { createCustomerPhotoUploadToken } from '@/lib/ops/customer-photo-upload-token'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
+import { isBlacklisted } from '@/lib/blacklist'
 import {
   finalizeTomorrowFillBooking,
   releaseTomorrowFillOffer,
@@ -124,6 +125,13 @@ export async function POST(request: NextRequest) {
             'First name, last name, email, and a valid phone number are required',
         },
         { status: 400, headers: CORS },
+      )
+    }
+
+    if (await isBlacklisted(phone)) {
+      return NextResponse.json(
+        { error: 'We are unable to accept this booking.' },
+        { status: 403, headers: CORS },
       )
     }
 
