@@ -308,6 +308,16 @@ export const capabilityCatalogOutputSchema = z
   .object({
     generated_at: z.string(),
     server: z.object({ name: z.string(), version: z.string() }).strict(),
+    operating_policy: z
+      .object({
+        objective: z.string(),
+        direct_instruction: z.string(),
+        standing_authority: z.array(z.string()),
+        ask_once_before: z.array(z.string()),
+        never_exposed: z.array(z.string()),
+        client_confirmation_note: z.string(),
+      })
+      .strict(),
     capabilities: z.array(
       z
         .object({

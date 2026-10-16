@@ -57,6 +57,30 @@ export function getCapabilityCatalog() {
   return {
     generated_at: nowIso(),
     server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+    operating_policy: {
+      objective:
+        "Operate as Charles's trusted secretary: complete routine work without unnecessary back-and-forth while stopping before a new consequential commitment.",
+      direct_instruction:
+        'A direct instruction from the authenticated owner to perform an exact exposed action is authorization for that action. Preview and revalidate it, then execute without asking the same question again when the preview matches the instruction.',
+      standing_authority: [
+        'Read, search, summarize, organize, and monitor Sightings business records.',
+        'Save requested drafts and internal appointment notes without contacting a customer.',
+        'Send one routine factual reply to the latest customer message when the recipient and complete reply are clear and the reply creates no new price, schedule, service, payment, refund, or liability commitment.',
+        'Complete the exact booking or schedule change a customer explicitly accepted after Sightings supplied the real slot, services, and price; never invent or broaden the accepted terms.',
+      ],
+      ask_once_before: [
+        'Any customer contact that is not a routine factual reply or was not directly requested by the owner.',
+        'Any new or materially changed booking, cancellation, price, discount, estimate, invoice, payment, refund, or liability commitment that is not already explicit in the owner instruction or customer acceptance.',
+        'Any action whose preview differs materially from the instruction or accepted customer terms.',
+      ],
+      never_exposed: [
+        'Bulk customer contact, campaigns, or silent multi-customer actions.',
+        'Business-record deletion, credential changes, user or permission administration, arbitrary SQL, shell, HTTP, or code execution.',
+        'Charges, refunds, payment collection, or direct QuickBooks administration.',
+      ],
+      client_confirmation_note:
+        'ChatGPT may still display its own native approval control for a write tool. Treat that single control as the confirmation; do not add a second conversational confirmation unless this policy requires one.',
+    },
     capabilities: [
       {
         area: 'appointments_and_dispatch',
@@ -88,7 +112,7 @@ export function getCapabilityCatalog() {
           'cancellation parking',
         ],
         approval:
-          'OAuth owner grant; exact preview and action-time confirmation for changes',
+          'OAuth owner grant; exact preview; a matching direct owner instruction or exact customer acceptance under the standing policy is sufficient authorization',
         limitations: [
           'Availability assumes a 120-minute visit and is not a booking.',
           'The Unscheduled appointment view exactly means parked_at is set; it excludes the separate restoration-monitor queue and never implies unresponsiveness or automatic-outreach eligibility.',
@@ -113,7 +137,7 @@ export function getCapabilityCatalog() {
           'address geocoding queue',
         ],
         approval:
-          'OAuth owner grant; exact preview and confirmation for updates',
+          'OAuth owner grant; exact preview; a matching direct owner instruction is sufficient authorization',
         limitations: [
           'Standalone customer creation, merge, blacklist controls, billing-policy changes, and deletion are not exposed; a confirmed booking may create or reuse its customer and address.',
           'Search returns compact references; use the specific detail tool where available.',
@@ -153,7 +177,7 @@ export function getCapabilityCatalog() {
           'atomic booked appointment and draft invoice creation from a confirmed conversion',
         ],
         approval:
-          'OAuth owner grant; exact preview and confirmation for draft saves',
+          'OAuth owner grant; exact preview; a matching direct owner instruction is sufficient authorization',
         limitations: [
           'Conversion customer communication is off by default and runs only after the atomic database commit when explicitly previewed.',
           'The created invoice remains draft; publishing, sending, charging, and payment collection are not exposed.',
@@ -189,7 +213,7 @@ export function getCapabilityCatalog() {
           'Twilio customer contact and message history',
         ],
         approval:
-          'OAuth owner grant; exact recipient/body/media preview and action-time confirmation before sends',
+          'OAuth owner grant; exact recipient/body/media preview; direct owner instructions and routine factual replies follow the operating policy',
         limitations: [
           'Operational search remains compact; use conversation detail for bodies and short-lived private-media URLs.',
           'Email, Telegram control, and call-control actions are not exposed.',

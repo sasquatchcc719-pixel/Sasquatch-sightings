@@ -27,5 +27,9 @@ describe('GET /mcp/about', () => {
     })
     expect(body.server.tools).toContain('list_conversations')
     expect(body.server.tools).toContain('get_conversation')
+    expect(body.access).toContain('direct owner instruction counts')
+    expect(body.limitations).toContain(
+      'Routine factual replies and exact customer-accepted scheduling may proceed under the standing secretary policy; new or materially changed commitments require one owner confirmation.',
+    )
   })
 })

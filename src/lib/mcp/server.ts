@@ -476,6 +476,9 @@ const securitySchemes = [
   { type: 'oauth2' as const, scopes: [...MCP_AUTH_SCOPES] },
 ]
 
+export const MCP_SERVER_INSTRUCTIONS =
+  "Operate as Charles's trusted secretary. A direct instruction from the authenticated owner to perform an exact exposed action counts as authorization; preview and revalidate it, then execute without asking the same question again when the preview matches. A single native ChatGPT approval is enough. Standing authority covers routine factual replies and exact customer-accepted bookings or schedule changes, but never invent terms. Ask once before a new or materially changed customer, schedule, price, estimate, invoice, payment, refund, or liability commitment. Never perform bulk contact, deletion, credential or permission administration, arbitrary code/HTTP/SQL/shell, charges, or refunds. Availability is not a booking."
+
 type HandlerExtra = ServerContext
 
 function authInfo(extra: HandlerExtra): AuthInfo {
@@ -788,7 +791,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_customer_update',
     title: 'Execute confirmed customer update',
     description:
-      'Execute one unexpired customer/address preview after explicit confirmation. Revalidates record versions, preserves blacklist linkage, queues address geocoding when needed, audits the result, and is idempotent.',
+      'Execute one unexpired customer/address preview. A matching direct owner instruction is sufficient authorization; do not ask the same question again. Revalidates record versions, preserves blacklist linkage, queues address geocoding when needed, audits the result, and is idempotent.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: stateChangeAnnotations,
@@ -825,7 +828,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_customer_message',
     title: 'Send confirmed customer SMS or MMS',
     description:
-      'Send one explicitly confirmed preview through Twilio from the original retained business number when available, then append the provider-confirmed result to Sightings. Never uses Telegram bot posts as a send path. Requires customer:contact.',
+      'Send one authorized preview through Twilio from the original retained business number when available, then append the provider-confirmed result to Sightings. A matching direct owner instruction or a routine factual reply allowed by the server operating policy is sufficient; use one native client approval if shown and do not add a second conversational confirmation. Never uses Telegram bot posts as a send path. Requires customer:contact.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: customerContactAnnotations,
@@ -862,7 +865,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_appointment_create',
     title: 'Execute confirmed appointment booking',
     description:
-      'Execute one confirmed, unexpired booking preview. Revalidates catalog, service area, pricing, minimum, technician, and live availability; then creates the appointment and draft invoice. Customer contact occurs only when the preview explicitly requested it.',
+      'Execute one authorized, unexpired booking preview. A matching direct owner instruction or the customer’s explicit acceptance of the exact Sightings-supplied slot, services, and price is sufficient; do not ask the same question again. Revalidates catalog, service area, pricing, minimum, technician, and live availability; then creates the appointment and draft invoice. Customer contact occurs only when the preview explicitly requested it.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: financialActionAnnotations,
@@ -899,7 +902,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_appointment_update',
     title: 'Execute confirmed appointment change',
     description:
-      'Execute one confirmed appointment preview with stale-record protection and live staff-calendar revalidation. Can reschedule, reassign, edit notes, or cancel/park one job. Customer notification sending remains blocked until its route-local senders are extracted into the shared confirmed-action service.',
+      'Execute one authorized appointment preview with stale-record protection and live staff-calendar revalidation. A matching direct owner instruction, or the customer’s explicit acceptance of the exact schedule change, is sufficient; do not ask the same question again. Can reschedule, reassign, edit notes, or cancel/park one job. Customer notification sending remains blocked until its route-local senders are extracted into the shared confirmed-action service.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: cancellationAnnotations,
@@ -936,7 +939,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_estimate_save',
     title: 'Execute confirmed draft estimate save',
     description:
-      'Create or revise one confirmed draft estimate with stale-record protection, structured line items, an audit entry, and no customer contact. Sending and conversion remain separate confirmed actions.',
+      'Create or revise one authorized draft estimate with stale-record protection, structured line items, an audit entry, and no customer contact. A matching direct owner instruction is sufficient; do not ask the same question again. Sending and conversion remain separate actions.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: stateChangeAnnotations,
@@ -973,7 +976,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_estimate_decision',
     title: 'Execute confirmed estimate acceptance or decline',
     description:
-      'Execute one confirmed estimate-status preview with stale-record and converted-estimate protection. Records the status history and does not contact the customer or owner.',
+      'Execute one authorized estimate-status preview with stale-record and converted-estimate protection. A matching direct owner instruction is sufficient; do not ask the same question again. Records the status history and does not contact the customer or owner.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: stateChangeAnnotations,
@@ -1010,7 +1013,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_estimate_send',
     title: 'Send confirmed estimate email',
     description:
-      'Send one confirmed estimate preview through the existing Resend/template/decision-token workflow. Revalidates recipient, suppression, status, total, record version, and email fingerprint; provider idempotency prevents duplicate email sends.',
+      'Send one authorized estimate preview through the existing Resend/template/decision-token workflow. A matching direct owner instruction is sufficient; use one native client approval if shown and do not add a second conversational confirmation. Revalidates recipient, suppression, status, total, record version, and email fingerprint; provider idempotency prevents duplicate email sends.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: customerContactAnnotations,
@@ -1047,7 +1050,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'execute_estimate_conversion',
     title: 'Execute confirmed estimate conversion',
     description:
-      'Execute one confirmed conversion preview. The estimate lock, service appointment, copied measurements, draft invoice and lines, status histories, and final converted state commit atomically. Customer communication is off by default and only runs after commit when explicitly previewed.',
+      'Execute one authorized conversion preview. A matching direct owner instruction or the customer’s explicit acceptance of the exact estimate and schedule is sufficient; do not ask the same question again. The estimate lock, service appointment, copied measurements, draft invoice and lines, status histories, and final converted state commit atomically. Customer communication is off by default and only runs after commit when explicitly previewed.',
     inputSchema: executeConfirmedActionInput,
     outputSchema: actionExecutionOutputSchema,
     annotations: financialActionAnnotations,
@@ -1071,8 +1074,7 @@ export function createSasquatchMcpServer(): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     {
-      instructions:
-        'Sasquatch Carpet Cleaning operations. Existing reads require the owner business:read grant. Drafts and business actions require separate server-side grants, an exact short-lived preview, action-time confirmation, idempotency, record-version checks, and audit. Never claim availability is a booking, never infer missing state, and never treat tool discovery as authorization to contact a customer or change a record.',
+      instructions: MCP_SERVER_INSTRUCTIONS,
     },
   )
 

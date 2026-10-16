@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { getCapabilityCatalog } from './operations'
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION, MCP_TOOL_NAMES } from './release'
-import { createSasquatchMcpServer } from './server'
+import { createSasquatchMcpServer, MCP_SERVER_INSTRUCTIONS } from './server'
 
 const expectedTools = [...MCP_TOOL_NAMES]
 
@@ -91,5 +91,14 @@ describe('Sasquatch read-only MCP server', () => {
       server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     })
     expect(JSON.stringify(result)).toContain('customer contact or campaigns')
+    expect(result.operating_policy.direct_instruction).toContain(
+      'without asking the same question again',
+    )
+    expect(result.operating_policy.client_confirmation_note).toContain(
+      'single control',
+    )
+    expect(MCP_SERVER_INSTRUCTIONS).toContain(
+      'direct instruction from the authenticated owner',
+    )
   })
 })
