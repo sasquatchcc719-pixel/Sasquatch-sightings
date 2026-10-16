@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   admin: vi.fn(),
   rpc: vi.fn(),
   update: vi.fn(),
+  blacklisted: vi.fn(),
   communicate: vi.fn().mockResolvedValue({ sent: [] }),
 }))
 vi.mock('@/lib/auth', () => ({ requireAnyRole: mocks.access }))
@@ -25,11 +26,13 @@ vi.mock('@/lib/quickbooks-api', () => ({
 vi.mock('@/lib/ops/add-on-bonuses', () => ({
   captureAddOnBonusBaseline: vi.fn(),
 }))
+vi.mock('@/lib/blacklist', () => ({ isBlacklisted: mocks.blacklisted }))
 
 import { GET, PATCH } from './route'
 
 const current = {
   id: 'job-1',
+  customer_id: 'customer-1',
   appointment_date: '2026-10-15',
   start_time: '12:00:00',
   end_time: '15:00:00',
@@ -40,13 +43,16 @@ const current = {
   ops_appointment_line_items: [],
 }
 let technician = { id: 'charles', is_active: true, show_on_calendar: true }
+let customer = { phone: '+17195550191' }
 let writeError: { message: string } | null
 const params = { params: Promise.resolve({ id: current.id }) }
 
 beforeEach(() => {
   vi.clearAllMocks()
   technician = { id: 'charles', is_active: true, show_on_calendar: true }
+  customer = { phone: '+17195550191' }
   writeError = null
+  mocks.blacklisted.mockResolvedValue(false)
   mocks.access.mockResolvedValue({ id: 'admin-user', role: 'admin' })
   mocks.rpc.mockImplementation((_name, args) => ({
     single: async () => ({
@@ -70,7 +76,10 @@ beforeEach(() => {
           data: { ...current, ...updates },
           error: writeError,
         }),
-        maybeSingle: async () => ({ data: technician, error: null }),
+        maybeSingle: async () => ({
+          data: table === 'ops_customers' ? customer : technician,
+          error: null,
+        }),
         order: async () => ({
           data:
             table === 'staff_users'
@@ -131,6 +140,29 @@ describe('appointment technician assignment and admin override', () => {
     )
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
+
+  it.each(['admin', 'owner'])(
+    'lets %s reschedule an existing blacklisted appointment without bypassing conflicts',
+    async (role) => {
+      mocks.access.mockResolvedValue({ id: 'staff-user', role })
+      mocks.blacklisted.mockResolvedValue(true)
+
+      const response = await save({ appointment_date: '2026-10-16' })
+
+      expect(response.status).toBe(200)
+      expect(mocks.blacklisted).toHaveBeenCalledWith('+17195550191')
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        'admin_reschedule_blacklisted_appointment',
+        {
+          p_appointment_id: 'job-1',
+          p_updates: expect.objectContaining({
+            appointment_date: '2026-10-16',
+          }),
+        },
+      )
+      expect(mocks.update).not.toHaveBeenCalled()
+    },
+  )
 
   it.each(['admin', 'owner'])(
     'allows %s to override a website booking without rewriting its source',

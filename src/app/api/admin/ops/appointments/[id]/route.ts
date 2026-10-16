@@ -418,6 +418,27 @@ export async function PATCH(
     }
 
     const nextStatus = body.status ? String(body.status) : current.status
+    const scheduleChanged =
+      dateChanged ||
+      startChanged ||
+      normStartStr(nextEndDb) !== normStartStr(String(current.end_time))
+    let useBlacklistRescheduleOverride = false
+    if (
+      scheduleChanged &&
+      !['cancelled', 'completed'].includes(nextStatus) &&
+      ['admin', 'owner'].includes(String(access.role))
+    ) {
+      const { data: customer, error: customerError } = await supabase
+        .from('ops_customers')
+        .select('phone')
+        .eq('id', current.customer_id)
+        .maybeSingle()
+      if (customerError) throw customerError
+      useBlacklistRescheduleOverride = Boolean(
+        customer?.phone && (await isBlacklisted(customer.phone)),
+      )
+    }
+
     if (access.role === 'tech' && body.status !== undefined) {
       const transitionError = getTechStatusTransitionError(
         current.status,
@@ -600,12 +621,19 @@ export async function PATCH(
             p_updates: updates,
           })
           .single()
-      : await supabase
-          .from('ops_appointments')
-          .update(updates)
-          .eq('id', id)
-          .select()
-          .single()
+      : useBlacklistRescheduleOverride
+        ? await supabase
+            .rpc('admin_reschedule_blacklisted_appointment', {
+              p_appointment_id: id,
+              p_updates: updates,
+            })
+            .single()
+        : await supabase
+            .from('ops_appointments')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single()
 
     if (updateError) throw updateError
 

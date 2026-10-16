@@ -77,12 +77,29 @@ begin
   exception when sqlstate 'P0001' then
     if sqlerrm <> 'This customer is blacklisted and cannot book appointments.' then raise; end if;
   end;
+  perform set_config('app.admin_blacklist_reschedule_override', 'on', true);
+  update blacklist_booking_fixture
+  set appointment_date = '2099-01-02'
+  where status = 'booked';
+
+  begin
+    insert into blacklist_booking_fixture (customer_id, booking_channel)
+    values ('b1000000-0000-4000-8000-000000000001', 'admin');
+    raise exception using errcode = 'P9999', message = 'Override allowed a new blacklisted booking';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'This customer is blacklisted and cannot book appointments.' then raise; end if;
+  end;
+
+  perform set_config('app.admin_blacklist_reschedule_override', '', true);
   update blacklist_booking_fixture set status = 'confirmed' where status = 'booked';
   update blacklist_booking_fixture set status = 'cancelled' where status = 'confirmed';
 
   if has_function_privilege('anon', 'public.is_phone_blacklisted(text)', 'execute')
     or has_function_privilege('authenticated', 'public.is_phone_blacklisted(text)', 'execute')
-    or not has_function_privilege('service_role', 'public.is_phone_blacklisted(text)', 'execute') then
+    or not has_function_privilege('service_role', 'public.is_phone_blacklisted(text)', 'execute')
+    or has_function_privilege('anon', 'public.admin_reschedule_blacklisted_appointment(uuid, jsonb)', 'execute')
+    or has_function_privilege('authenticated', 'public.admin_reschedule_blacklisted_appointment(uuid, jsonb)', 'execute')
+    or not has_function_privilege('service_role', 'public.admin_reschedule_blacklisted_appointment(uuid, jsonb)', 'execute') then
     raise exception 'Blacklist lookup permissions incorrect';
   end if;
 end;
