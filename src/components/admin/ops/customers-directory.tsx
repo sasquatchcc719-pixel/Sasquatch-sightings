@@ -16,6 +16,7 @@ import {
   Image as ImageIcon,
   Loader2,
   Pencil,
+  Phone,
   Search,
   UserRound,
 } from 'lucide-react'
@@ -801,7 +802,7 @@ export function CustomersDirectory({
                   /* ── View mode ─────────────────────────────── */
                   <>
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <UserRound className="h-4 w-4" />
                           <div className="font-semibold">
@@ -813,12 +814,24 @@ export function CustomersDirectory({
                             Contact: {customer.full_name}
                           </div>
                         ) : null}
-                        <div className="text-muted-foreground mt-1 text-sm">
+                        <div className="text-muted-foreground mt-1 text-sm break-words">
                           {customer.phone}
                           {customer.email ? ` · ${customer.email}` : ''}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-2">
+                        {customer.phone?.replace(/\D/g, '') &&
+                        !customer.is_blacklisted ? (
+                          <Button asChild className="min-h-11 gap-2 px-4">
+                            <a
+                              href={`tel:${customer.phone.replace(/[^+\d]/g, '')}`}
+                              aria-label={`Call ${customer.business_name || customer.full_name} at ${customer.phone}`}
+                            >
+                              <Phone className="h-4 w-4" />
+                              Call
+                            </a>
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="outline"

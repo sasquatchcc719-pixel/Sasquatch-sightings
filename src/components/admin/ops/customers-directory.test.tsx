@@ -265,3 +265,37 @@ describe('CustomersDirectory search', () => {
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled()
   })
 })
+
+describe('CustomersDirectory phone actions', () => {
+  it('offers a direct call link with an accessible customer label', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response(['Renee Carrasco']),
+    )
+    render(<CustomersDirectory />)
+    await debounce()
+    const call = screen.getByRole('link', {
+      name: 'Call Renee Carrasco at +15555550100',
+    })
+    expect(call).toHaveAttribute('href', 'tel:+15555550100')
+    expect(call).toHaveTextContent('Call')
+    expect(call).toHaveClass('min-h-11')
+  })
+
+  it('does not offer outbound calling for blacklisted customers or missing phone numbers', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          customers: [
+            { ...customer('Blacklisted Customer'), is_blacklisted: true },
+            { ...customer('No Phone'), phone: '' },
+          ],
+        }),
+      ),
+    )
+    render(<CustomersDirectory />)
+    await debounce()
+    expect(
+      screen.queryByRole('link', { name: /^Call / }),
+    ).not.toBeInTheDocument()
+  })
+})

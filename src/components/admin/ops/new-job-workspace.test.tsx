@@ -121,6 +121,8 @@ beforeEach(() => {
         payload = { applied: true, discount_amount: 10 }
       } else if (url.startsWith('/api/admin/ops/slots?')) {
         payload = { slots: [{ start_time: '09:00', end_time: '12:00' }] }
+      } else if (url === '/api/admin/ops/appointments') {
+        payload = { appointment_id: 'new-job' }
       } else if (url === '/api/admin/ops/residential-estimate') {
         payload =
           body.action === 'preview'
@@ -371,5 +373,132 @@ describe('Book Job residential estimate mode', () => {
       screen.queryByText('Please select a lead source before saving.'),
     ).not.toBeInTheDocument()
     expect(postRequests()).toEqual([])
+  })
+})
+
+describe('Book Job automatic minimum', () => {
+  beforeEach(() => {
+    navigation.params = new URLSearchParams()
+  })
+
+  it('shrinks and removes the adjustment as services grow, then restores it when reduced', async () => {
+    render(<NewJobWorkspace />)
+    const quantity = await screen.findByLabelText(
+      'Room Carpet Cleaning quantity',
+    )
+    expect(
+      screen.queryByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).not.toBeInTheDocument()
+    fireEvent.change(quantity, { target: { value: '1' } })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(125)
+    expect(screen.getAllByText('$175.00').length).toBeGreaterThan(0)
+    fireEvent.change(quantity, { target: { value: '2' } })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(75)
+    fireEvent.change(quantity, { target: { value: '4' } })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(0)
+    expect(screen.getAllByText('$200.00').length).toBeGreaterThan(0)
+    fireEvent.change(quantity, { target: { value: '1' } })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(125)
+    fireEvent.change(quantity, { target: { value: '0' } })
+    expect(
+      screen.queryByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0)
+  })
+
+  it('saves the displayed adjustment as a custom line and allows an intentional override', async () => {
+    const { container } = render(<NewJobWorkspace />)
+    const quantity = await screen.findByLabelText(
+      'Room Carpet Cleaning quantity',
+    )
+    fireEvent.change(quantity, { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Lead Source *'), {
+      target: { value: 'repeat_customer' },
+    })
+    // Submit directly: this test covers the payload boundary without browser-required fields.
+    fireEvent.submit(container.querySelector('form')!)
+    await waitFor(() => expect(postRequests()).toHaveLength(1))
+    expect(postRequests()[0].body?.line_items).toEqual([
+      expect.objectContaining({
+        service_catalog_item_id: 'carpet-room',
+        quantity: 1,
+        unit_price: 50,
+      }),
+      expect.objectContaining({
+        service_catalog_item_id: null,
+        name_snapshot: 'Minimum Dispatch Adjustment',
+        quantity: 1,
+        unit_price: 125,
+        duration_minutes: 0,
+      }),
+    ])
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save Job' })).toBeEnabled(),
+    )
+    fireEvent.change(screen.getByLabelText('Minimum Dispatch Adjustment ($)'), {
+      target: { value: '0' },
+    })
+    fireEvent.change(quantity, { target: { value: '2' } })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(0)
+    expect(screen.getAllByText('$100.00').length).toBeGreaterThan(0)
+    fireEvent.submit(container.querySelector('form')!)
+    await waitFor(() => expect(postRequests()).toHaveLength(2))
+    expect(postRequests()[1].body?.line_items).toEqual([
+      expect.objectContaining({ quantity: 2, unit_price: 50 }),
+    ])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Use automatic minimum' }),
+    )
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(75)
+  })
+
+  it('counts custom charges and prices the minimum before an intentional discount', async () => {
+    render(<NewJobWorkspace />)
+    fireEvent.change(
+      await screen.findByLabelText('Room Carpet Cleaning quantity'),
+      { target: { value: '1' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add Custom Line' }))
+    fireEvent.change(screen.getAllByLabelText('Unit Price')[1], {
+      target: { value: '25.50' },
+    })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(99.5)
+    await openCouponCodes()
+    fireEvent.change(screen.getByLabelText('Custom discount ($)'), {
+      target: { value: '10' },
+    })
+    expect(
+      screen.getByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).toHaveValue(99.5)
+    expect(screen.getAllByText('$165.00').length).toBeGreaterThan(0)
+  })
+
+  it('does not add a minimum to warranty work', async () => {
+    render(<NewJobWorkspace />)
+    fireEvent.change(
+      await screen.findByLabelText('Room Carpet Cleaning quantity'),
+      { target: { value: '1' } },
+    )
+    fireEvent.change(screen.getByLabelText('Display Name'), {
+      target: { value: 'Warranty Re-clean' },
+    })
+    expect(
+      screen.queryByLabelText('Minimum Dispatch Adjustment ($)'),
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByText('$50.00').length).toBeGreaterThan(0)
   })
 })

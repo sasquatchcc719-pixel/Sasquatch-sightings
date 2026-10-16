@@ -32,6 +32,7 @@ import {
 import { DayTimePicker } from './day-time-picker'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
+import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 import { getWarrantyWorkDurationMinutes } from '@/lib/ops/warranty-appointment'
 import { ResidentialEstimatePanel } from './residential-estimate-panel'
 
@@ -349,6 +350,8 @@ export function NewJobWorkspace() {
   >([])
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([])
+  // null follows the service subtotal; a typed amount is an intentional override.
+  const [minimumOverride, setMinimumOverride] = useState<string | null>(null)
 
   const [customerForm, setCustomerForm] = useState({
     first_name: '',
@@ -784,7 +787,7 @@ export function NewJobWorkspace() {
     isStaffOpenForPreviewDate,
   ])
 
-  const subtotalQuote = lineItems.reduce((sum, item) => {
+  const servicesSubtotal = lineItems.reduce((sum, item) => {
     const service = servicesById.get(item.service_catalog_item_id)
     const quantity = Number(item.quantity || 0)
     const unitPrice = Number(item.unit_price || service?.base_price || 0)
@@ -792,8 +795,6 @@ export function NewJobWorkspace() {
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) return sum
     return sum + quantity * unitPrice
   }, 0)
-  const discountAmount = Math.max(0, Number(discount || 0))
-  const totalQuote = Math.max(0, subtotalQuote - discountAmount)
   const totalSelectedUnits = lineItems.reduce(
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
@@ -810,6 +811,37 @@ export function NewJobWorkspace() {
       }
     }),
   })
+  const minimumApplies =
+    !estimateMode && !serviceConcernId && manualWarrantyMinutes == null
+  const automaticMinimum = Math.max(
+    0,
+    Math.round((MINIMUM_JOB_TOTAL - servicesSubtotal) * 100) / 100,
+  )
+  const minimumAdjustment =
+    minimumApplies && servicesSubtotal > 0
+      ? minimumOverride === null
+        ? automaticMinimum
+        : Math.max(0, Number(minimumOverride) || 0)
+      : 0
+  // Derive the charge rather than syncing another editable line through effects.
+  // The quote, scheduling, estimate preview, and saved job use the same lines.
+  const pricedLineItems: LineItemForm[] =
+    minimumAdjustment > 0
+      ? [
+          ...lineItems,
+          {
+            service_catalog_item_id: '',
+            name_snapshot: 'Minimum Dispatch Adjustment',
+            quantity: '1',
+            unit_price: minimumAdjustment.toFixed(2),
+            duration_minutes: 0,
+            buffer_minutes: 0,
+          },
+        ]
+      : lineItems
+  const subtotalQuote = servicesSubtotal + minimumAdjustment
+  const discountAmount = Math.max(0, Number(discount || 0))
+  const totalQuote = Math.max(0, subtotalQuote - discountAmount)
   // The reserved calendar block is sized by the dollar subtotal (2h / 3h / 4h
   // tiers) — exactly what the server stores when it creates the appointment
   // (see calculateAppointmentDurationFromTotal in /api/admin/ops/appointments).
@@ -1053,22 +1085,25 @@ export function NewJobWorkspace() {
     // that was actually billed. When a line came from an invoice it has no
     // catalog link, so match it back to a service by name to recover the
     // catalog id + duration/buffer for scheduling (price stays the billed one).
+    setMinimumOverride(null)
     setLineItems(
-      job.line_items.map((li) => {
-        const matched = li.service_catalog_item_id
-          ? servicesById.get(li.service_catalog_item_id)
-          : serviceByName.get(li.name_snapshot.trim().toLowerCase())
-        return {
-          service_catalog_item_id:
-            li.service_catalog_item_id || matched?.id || '',
-          name_snapshot: li.name_snapshot,
-          quantity: String(li.quantity || 1),
-          unit_price: li.unit_price != null ? String(li.unit_price) : '',
-          duration_minutes:
-            li.duration_minutes || matched?.default_duration_minutes || 0,
-          buffer_minutes: li.buffer_minutes || matched?.buffer_minutes || 0,
-        }
-      }),
+      job.line_items
+        .filter((li) => li.name_snapshot !== 'Minimum Dispatch Adjustment')
+        .map((li) => {
+          const matched = li.service_catalog_item_id
+            ? servicesById.get(li.service_catalog_item_id)
+            : serviceByName.get(li.name_snapshot.trim().toLowerCase())
+          return {
+            service_catalog_item_id:
+              li.service_catalog_item_id || matched?.id || '',
+            name_snapshot: li.name_snapshot,
+            quantity: String(li.quantity || 1),
+            unit_price: li.unit_price != null ? String(li.unit_price) : '',
+            duration_minutes:
+              li.duration_minutes || matched?.default_duration_minutes || 0,
+            buffer_minutes: li.buffer_minutes || matched?.buffer_minutes || 0,
+          }
+        }),
     )
 
     // Use that job's service address when we have it saved on the customer.
@@ -1229,7 +1264,7 @@ export function NewJobWorkspace() {
         lead_source_key: leadSource.trim() || null,
         lead_source_detail: leadSourceDetail.trim() || null,
         is_commercial: isCommercial,
-        line_items: lineItems.map((item) => ({
+        line_items: pricedLineItems.map((item) => ({
           service_catalog_item_id: item.service_catalog_item_id || null,
           name_snapshot: item.name_snapshot,
           quantity: Number(item.quantity || 1),
@@ -1798,6 +1833,46 @@ export function NewJobWorkspace() {
               </div>
             </div>
 
+            {minimumApplies && servicesSubtotal > 0 ? (
+              <div className="border-border/60 bg-background/70 mt-4 rounded-2xl border p-4">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor="minimum-adjustment">
+                      Minimum Dispatch Adjustment ($)
+                    </Label>
+                    <p
+                      id="minimum-adjustment-help"
+                      className="text-muted-foreground mt-1 text-xs"
+                    >
+                      {minimumOverride === null
+                        ? `Automatically adjusts to the $${MINIMUM_JOB_TOTAL} minimum before discounts as services change.`
+                        : 'Custom adjustment. Set to 0 to book below the minimum.'}
+                    </p>
+                  </div>
+                  <Input
+                    id="minimum-adjustment"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="h-11 w-28"
+                    aria-describedby="minimum-adjustment-help"
+                    value={minimumOverride ?? minimumAdjustment.toFixed(2)}
+                    onChange={(event) => setMinimumOverride(event.target.value)}
+                  />
+                </div>
+                {minimumOverride !== null ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3 min-h-11"
+                    onClick={() => setMinimumOverride(null)}
+                  >
+                    Use automatic minimum
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="border-border/60 bg-background/80 mt-4 rounded-2xl border p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1947,7 +2022,7 @@ export function NewJobWorkspace() {
                     : addressForm,
                 promo_code: selectedPromoCode || null,
                 discount_amount: selectedPromoCode ? 0 : discountAmount,
-                line_items: lineItems
+                line_items: pricedLineItems
                   .filter((item) => Number(item.quantity) > 0)
                   .map((item) => ({
                     service_catalog_item_id:
