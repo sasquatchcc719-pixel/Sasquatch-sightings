@@ -1,0 +1,4 @@
+export const INVOICE_CHECK_PAYEE = 'Sasquatch Carpet Cleaning'
+export const INVOICE_MAILING_STREET = 'PO Box 1651'
+export const INVOICE_MAILING_CITY_STATE_ZIP = 'Palmer Lake, CO 80133'
+export const INVOICE_MAILING_ADDRESS = `${INVOICE_MAILING_STREET}, ${INVOICE_MAILING_CITY_STATE_ZIP}`

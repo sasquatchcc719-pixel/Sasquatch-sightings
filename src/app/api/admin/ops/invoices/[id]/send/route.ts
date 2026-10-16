@@ -22,6 +22,10 @@ import {
 } from '@/lib/payments/signed-payment-link'
 import { isBlacklisted } from '@/lib/blacklist'
 import { paymentTextSenderName } from '@/lib/ops/payment-texts'
+import {
+  INVOICE_CHECK_PAYEE,
+  INVOICE_MAILING_ADDRESS,
+} from '@/lib/ops/invoice-remittance'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -134,6 +138,7 @@ function buildEmailHtml(
   const paymentCta = isReceipt
     ? ''
     : `
+      <p style="font-size:14px;line-height:1.6;">Make checks payable to ${INVOICE_CHECK_PAYEE} and mail to:<br />${INVOICE_MAILING_ADDRESS}</p>
       <a href="${venmoUrl}" style="display:inline-block;background:#008CFF;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">
         Pay with Venmo — $${total.toFixed(2)}
       </a>`
@@ -613,6 +618,7 @@ export async function POST(
           const isReceipt = type === 'receipt'
           const pdfBuffer = await generateInvoicePDF({
             invoiceId: id,
+            invoiceNumber,
             isPaid: isReceipt || invoice.payment_status === 'paid',
             customerName,
             serviceAddress: addressText,

@@ -8,6 +8,7 @@ import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 type Params = { params: Promise<{ id: string }> }
@@ -122,6 +123,13 @@ export async function POST(request: NextRequest, { params }: Params) {
         userId: access.id,
         note: 'Job completed while recording stats',
       })
+      if (appt) {
+        await emailInvoiceOnJobCompletion(supabase, {
+          appointmentId: inv.appointment_id,
+          previousStatus: appt.status,
+          skipCustomerCommunications,
+        })
+      }
 
       const noChargeWarranty =
         appt &&

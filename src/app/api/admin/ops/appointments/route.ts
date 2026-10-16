@@ -18,6 +18,7 @@ import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
@@ -993,6 +994,14 @@ export async function PATCH(request: NextRequest) {
           console.error('[ops/appointments][PATCH] QB sync:', qbErr),
         )
       }
+    }
+
+    if (nextStatus === 'completed') {
+      await emailInvoiceOnJobCompletion(supabase, {
+        appointmentId,
+        previousStatus: appointment.status,
+        skipCustomerCommunications,
+      })
     }
 
     if (nextStatus === 'completed' && !isWarrantyWork) {

@@ -10,6 +10,7 @@ import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
 import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 
 export async function GET(
@@ -193,6 +194,11 @@ export async function PATCH(
       } catch (e) {
         console.error('[tech/appointments/:id] invoice promotion failed', e)
       }
+      await emailInvoiceOnJobCompletion(supabase, {
+        appointmentId: id,
+        previousStatus: current.status,
+        skipCustomerCommunications,
+      })
     }
 
     const statusChanged =

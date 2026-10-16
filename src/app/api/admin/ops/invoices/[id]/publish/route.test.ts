@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   enroll: vi.fn(),
   promote: vi.fn(),
+  invoiceEmail: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ requireAnyRole: mocks.access }))
@@ -20,6 +21,9 @@ vi.mock('@/lib/ops/drip-campaign', () => ({
 }))
 vi.mock('@/lib/ops/invoice-on-completion', () => ({
   promoteInvoiceOnJobCompletion: mocks.promote,
+}))
+vi.mock('@/lib/ops/invoice-email-delivery', () => ({
+  emailInvoiceOnJobCompletion: mocks.invoiceEmail,
 }))
 vi.mock('@/lib/echo/enqueue', () => ({ enqueue: vi.fn() }))
 
@@ -43,6 +47,7 @@ beforeEach(() => {
     ops_invoice_line_items: [{ line_total: 328 }],
     ops_appointments: {
       id: 'appointment-a',
+      status: 'in_progress',
       appointment_date: '2026-09-30',
       start_time: '14:00',
       end_time: '17:00',
@@ -100,6 +105,10 @@ describe('publishing an invoice-backed job', () => {
       appointmentId: 'appointment-a',
       userId: 'owner-a',
       note: 'Job completed while publishing map post',
+    })
+    expect(mocks.invoiceEmail).toHaveBeenCalledWith(expect.anything(), {
+      appointmentId: 'appointment-a',
+      previousStatus: 'in_progress',
     })
   })
 })

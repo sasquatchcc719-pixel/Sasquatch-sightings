@@ -1,5 +1,10 @@
 import React from 'react'
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
+import {
+  INVOICE_CHECK_PAYEE,
+  INVOICE_MAILING_STREET,
+  INVOICE_MAILING_CITY_STATE_ZIP,
+} from '@/lib/ops/invoice-remittance'
 
 export type InvoiceLineItem = {
   description: string
@@ -10,6 +15,8 @@ export type InvoiceLineItem = {
 
 export type InvoicePDFData = {
   invoiceId: string
+  invoiceNumber?: string | number | null
+  dueDate?: string | null
   isPaid: boolean
   paymentMethod?: string | null
   customerName: string
@@ -207,6 +214,25 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#1d4ed8',
   },
+  checkBox: {
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: BG_ROW,
+    borderRadius: 6,
+    padding: 14,
+  },
+  checkLabel: {
+    fontSize: 10,
+    color: DARK,
+    fontFamily: 'Helvetica-Bold',
+    marginBottom: 6,
+  },
+  checkText: {
+    fontSize: 9,
+    color: MID,
+    lineHeight: 1.5,
+  },
   // ── PAID stamp ─────────────────────────────────────────────────────────
   paidStampContainer: {
     position: 'absolute',
@@ -286,17 +312,26 @@ function formatPaymentMethod(method: string | null | undefined): string {
 }
 
 export function InvoicePDF({ data }: { data: InvoicePDFData }) {
-  const ref = shortRef(data.invoiceId)
+  const invoiceNumber = String(data.invoiceNumber ?? '').trim()
+  const ref = invoiceNumber
+    ? `Invoice #${invoiceNumber}`
+    : shortRef(data.invoiceId)
   const docTitle = data.isPaid ? 'Receipt' : 'Invoice'
 
   return (
-    <Document title={`Sasquatch Carpet Cleaning ${docTitle} ${ref}`}>
+    <Document
+      title={`Sasquatch Carpet Cleaning ${docTitle} ${invoiceNumber || ref}`}
+    >
       <Page size="LETTER" style={styles.page}>
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.companyName}>Sasquatch Carpet Cleaning</Text>
             <Text style={styles.companyTagline}>sasquatchcarpet.com</Text>
+            <Text style={styles.companyTagline}>{INVOICE_MAILING_STREET}</Text>
+            <Text style={styles.companyTagline}>
+              {INVOICE_MAILING_CITY_STATE_ZIP}
+            </Text>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.docLabel}>{docTitle.toUpperCase()}</Text>
@@ -324,6 +359,9 @@ export function InvoicePDF({ data }: { data: InvoicePDFData }) {
             <View style={styles.infoBlock}>
               <Text style={styles.infoLabel}>Service Date</Text>
               <Text style={styles.infoValue}>{data.serviceDate}</Text>
+              {!data.isPaid && data.dueDate && (
+                <Text style={styles.infoSub}>Payment due: {data.dueDate}</Text>
+              )}
             </View>
             <View style={styles.infoBlock}>
               <Text style={styles.infoLabel}>Reference</Text>
@@ -385,6 +423,25 @@ export function InvoicePDF({ data }: { data: InvoicePDFData }) {
               <Text style={styles.grandTotalValue}>{fmt(data.total)}</Text>
             </View>
           </View>
+
+          {!data.isPaid && (
+            <View style={styles.checkBox} wrap={false}>
+              <Text style={styles.checkLabel}>Pay by check</Text>
+              <Text style={styles.checkText}>
+                Make checks payable to {INVOICE_CHECK_PAYEE}.
+              </Text>
+              <Text style={styles.checkText}>
+                Mail to: {INVOICE_CHECK_PAYEE}
+              </Text>
+              <Text style={styles.checkText}>{INVOICE_MAILING_STREET}</Text>
+              <Text style={styles.checkText}>
+                {INVOICE_MAILING_CITY_STATE_ZIP}
+              </Text>
+              <Text style={[styles.checkText, { marginTop: 6 }]}>
+                Include {ref} on the memo line.
+              </Text>
+            </View>
+          )}
 
           {/* ── Invoice CTA: Venmo ── */}
           {!data.isPaid && data.venmoUrl && (

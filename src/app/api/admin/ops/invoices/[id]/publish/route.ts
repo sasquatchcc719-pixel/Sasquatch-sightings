@@ -11,6 +11,7 @@ import { enqueue } from '@/lib/echo/enqueue'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -93,6 +94,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         ),
         ops_appointments (
           id,
+          status,
           appointment_date,
           start_time,
           end_time,
@@ -159,6 +161,10 @@ export async function POST(request: NextRequest, { params }: Params) {
       appointmentId: appointment.id,
       userId: access.id,
       note: 'Job completed while publishing map post',
+    })
+    await emailInvoiceOnJobCompletion(supabase, {
+      appointmentId: appointment.id,
+      previousStatus: appointment.status,
     })
 
     await enrollCustomerInDrip(appointment.id)

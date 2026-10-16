@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
+import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
@@ -958,6 +959,11 @@ export async function PATCH(
         appointmentId: id,
         userId: access.id,
         note: 'Job completed from operations',
+      })
+      await emailInvoiceOnJobCompletion(supabase, {
+        appointmentId: id,
+        previousStatus: current.status,
+        skipCustomerCommunications,
       })
     }
 
