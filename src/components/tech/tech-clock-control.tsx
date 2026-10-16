@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Clock, Coffee, Loader2, LogIn, LogOut, RotateCcw } from 'lucide-react'
+import type { TruckWeather } from '@/lib/tech/truck-weather'
 
 type ClockEntry = {
   id: string
@@ -92,6 +93,8 @@ export function TechClockControl() {
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmArmed, setConfirmArmed] = useState(false)
+  const [truckWeather, setTruckWeather] = useState<TruckWeather | null>(null)
+  const [weatherLoading, setWeatherLoading] = useState(false)
 
   const [meterAssets, setMeterAssets] = useState<MeterAsset[] | null>(null)
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
@@ -99,6 +102,30 @@ export function TechClockControl() {
   const [meterError, setMeterError] = useState<string | null>(null)
 
   const busyRef = useRef(false)
+
+  const loadTruckWeather = useCallback(async () => {
+    setWeatherLoading(true)
+    setTruckWeather(null)
+    try {
+      const res = await fetchWithTimeout('/api/tech/truck-weather', {
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error('Forecast unavailable')
+      const weather: TruckWeather = await res.json()
+      if (typeof weather.lowF !== 'number' || !Number.isFinite(weather.lowF)) {
+        throw new Error('Forecast unavailable')
+      }
+      setTruckWeather(weather)
+    } catch {
+      setTruckWeather({ lowF: null, cold: false, forecastUpdatedAt: null })
+    } finally {
+      setWeatherLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!entry && recentClockOut?.id) void loadTruckWeather()
+  }, [entry, recentClockOut?.id, loadTruckWeather])
 
   const applyStatus = useCallback((status: Partial<ClockStatus>) => {
     const nextEntry = status.entry ?? null
@@ -302,6 +329,7 @@ export function TechClockControl() {
   function openConfirmation(action: ConfirmAction) {
     setConfirmArmed(false)
     setConfirmAction(action)
+    if (action === 'clock_out') void loadTruckWeather()
   }
 
   function closeConfirmation() {
@@ -313,8 +341,54 @@ export function TechClockControl() {
   const isOnBreak = entry?.clockState === 'on_break'
   const isLoadingStatus = loading === 'status'
 
+  const weatherReminder = (
+    <div
+      role="status"
+      className={`rounded-xl border p-3 text-sm ${
+        truckWeather?.cold || truckWeather?.lowF === null
+          ? 'border-amber-400/50 bg-amber-500/15 text-amber-100'
+          : 'border-white/10 bg-white/5 text-slate-200'
+      }`}
+    >
+      {weatherLoading ? (
+        <p>Checking overnight weather in Palmer Lake…</p>
+      ) : truckWeather?.lowF != null ? (
+        <>
+          <p className="font-semibold">
+            Palmer Lake overnight low: {Math.round(truckWeather.lowF)}°F
+          </p>
+          {truckWeather.cold ? (
+            <>
+              <p className="mt-1 font-semibold">
+                Protect the truck before you leave
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                <li>Put a heater in the truck.</li>
+                <li>Close and latch the back door.</li>
+              </ul>
+            </>
+          ) : (
+            <p className="mt-1">
+              Close and latch the truck’s back door before you leave.
+            </p>
+          )}
+          <p className="mt-2 text-xs opacity-70">
+            National Weather Service · Updated{' '}
+            {formatClockTime(truckWeather.forecastUpdatedAt!)} MT
+          </p>
+        </>
+      ) : (
+        <p>
+          Overnight forecast unavailable. Check Palmer Lake’s overnight low; at
+          33°F or colder, put a heater in the truck. Close and latch the back
+          door before you leave.
+        </p>
+      )}
+    </div>
+  )
+
   return (
-    <div className="fixed right-0 bottom-0 left-0 z-[220] border-t border-white/10 bg-slate-950/95 px-4 py-3 backdrop-blur">
+    <div className="fixed right-0 bottom-0 left-0 z-[220] border-t border-white/10 bg-slate-950/95 px-4 py-3">
       <div className="mx-auto flex max-w-3xl items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
@@ -419,13 +493,17 @@ export function TechClockControl() {
         <p className="mx-auto mt-2 max-w-3xl text-xs text-red-300">{error}</p>
       ) : null}
 
+      {!entry && recentClockOut && (truckWeather || weatherLoading) ? (
+        <div className="mx-auto mt-3 max-w-3xl">{weatherReminder}</div>
+      ) : null}
+
       {confirmAction && entry ? (
         <div
           className="fixed inset-0 z-[230] flex items-end justify-center bg-black/70 p-4 sm:items-center"
           onClick={closeConfirmation}
         >
           <div
-            className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-slate-900 p-5"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-sm space-y-4 overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div>
@@ -456,6 +534,7 @@ export function TechClockControl() {
                 </p>
               ) : null}
             </div>
+            {confirmAction === 'clock_out' ? weatherReminder : null}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -468,7 +547,11 @@ export function TechClockControl() {
               </button>
               <button
                 type="button"
-                disabled={!confirmArmed || loading !== null}
+                disabled={
+                  !confirmArmed ||
+                  loading !== null ||
+                  (confirmAction === 'clock_out' && weatherLoading)
+                }
                 onClick={() => void runAction(confirmAction)}
                 className={`flex-1 rounded-lg py-3 text-sm font-semibold text-white disabled:opacity-40 ${
                   confirmAction === 'clock_out'

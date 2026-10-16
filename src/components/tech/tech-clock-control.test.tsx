@@ -97,3 +97,94 @@ describe('TechClockControl break confirmation', () => {
     )
   })
 })
+
+describe('TechClockControl truck reminder', () => {
+  function mockWeather(lowF: number | null, fail = false) {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === '/api/tech/truck-weather') {
+          if (fail) throw new Error('offline')
+          return new Response(
+            JSON.stringify({
+              lowF,
+              cold: lowF !== null && lowF <= 33,
+              forecastUpdatedAt: '2026-10-16T22:00:00Z',
+            }),
+          )
+        }
+        if (init?.method === 'POST') {
+          return new Response(
+            JSON.stringify({
+              entry: null,
+              recentClockOut: {
+                id: 'entry-1',
+                startedAt: '2026-10-16T15:00:00Z',
+                endedAt: new Date().toISOString(),
+                canUndoUntil: new Date(Date.now() + 600_000).toISOString(),
+                clockInAllowedAt: new Date(Date.now() + 90_000).toISOString(),
+                payableMinutes: 60,
+              },
+            }),
+          )
+        }
+        return new Response(JSON.stringify(clockStatus('active')))
+      },
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('shows the cold warning before clock-out and retains it afterward', async () => {
+    const fetchMock = mockWeather(33)
+    render(<TechClockControl />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Clock Out' }))
+    expect(
+      await screen.findByText('Palmer Lake overnight low: 33°F'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Put a heater in the truck.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Close and latch the back door.'),
+    ).toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === 'POST'),
+    ).toBe(false)
+    const confirmButton = screen.getByRole('button', { name: 'Yes, clock out' })
+    await waitFor(() => expect(confirmButton).toBeEnabled(), { timeout: 2_000 })
+    fireEvent.click(confirmButton)
+    await screen.findByRole('button', { name: 'Undo Clock Out' })
+    expect(
+      await screen.findByText('Put a heater in the truck.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the low without a heater warning above 33°F', async () => {
+    mockWeather(34)
+    render(<TechClockControl />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Clock Out' }))
+    expect(
+      await screen.findByText('Palmer Lake overnight low: 34°F'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Put a heater in the truck.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it.each([false, true])(
+    'keeps clock-out available with an explicit forecast fallback (network error: %s)',
+    async (fail) => {
+      mockWeather(null, fail)
+      render(<TechClockControl />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Clock Out' }))
+      expect(
+        await screen.findByText(/Overnight forecast unavailable/),
+      ).toHaveTextContent('33°F or colder')
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('button', { name: 'Yes, clock out' }),
+          ).toBeEnabled(),
+        { timeout: 2_000 },
+      )
+    },
+  )
+})
