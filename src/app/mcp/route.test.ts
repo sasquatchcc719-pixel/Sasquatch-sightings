@@ -42,6 +42,11 @@ vi.mock('@/supabase/server', () => ({
 }))
 
 import { POST } from './route'
+import {
+  MCP_SERVER_NAME,
+  MCP_SERVER_VERSION,
+  MCP_TOOL_NAMES,
+} from '@/lib/mcp/release'
 
 const endpoint = 'https://sightings.sasquatchcarpet.com/mcp'
 
@@ -150,10 +155,11 @@ describe('/mcp authentication', () => {
     )
     expect(list.status).toBe(200)
     const listed = await rpcPayload(list)
-    expect(listed.result.tools).toHaveLength(31)
+    expect(listed.result.tools).toHaveLength(MCP_TOOL_NAMES.length)
     expect(listed.result.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'get_capability_catalog' }),
+        expect.objectContaining({ name: 'list_unscheduled_appointments' }),
       ]),
     )
 
@@ -182,7 +188,7 @@ describe('/mcp authentication', () => {
     expect(called).toMatchObject({
       result: {
         structuredContent: {
-          server: { name: 'sasquatch-sightings-read', version: '1.5.1' },
+          server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         },
       },
     })
@@ -205,7 +211,7 @@ describe('/mcp authentication', () => {
     expect(await rpcPayload(initialize)).toMatchObject({
       result: {
         protocolVersion: '2025-11-25',
-        serverInfo: { name: 'sasquatch-sightings-read', version: '1.5.1' },
+        serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
       },
     })
 
@@ -221,6 +227,8 @@ describe('/mcp authentication', () => {
       ),
     )
     expect(list.status).toBe(200)
-    expect((await rpcPayload(list)).result.tools).toHaveLength(31)
+    expect((await rpcPayload(list)).result.tools).toHaveLength(
+      MCP_TOOL_NAMES.length,
+    )
   })
 })

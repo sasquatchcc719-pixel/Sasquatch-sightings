@@ -22,6 +22,7 @@ export async function GET() {
       )
       .not('parked_at', 'is', null)
       .order('parked_at', { ascending: true })
+      .order('id', { ascending: true })
       .limit(50)
 
     if (error) throw error
@@ -35,8 +36,12 @@ export async function GET() {
       })),
     })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to load parked jobs'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    const message =
+      e instanceof Error ? e.message : 'Failed to load parked jobs'
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }
 

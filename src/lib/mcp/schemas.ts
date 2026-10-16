@@ -67,6 +67,17 @@ export const lineItemSchema = z
   })
   .strict()
 
+const conversationMessageSchema = z
+  .object({
+    id: z.string(),
+    direction: z.enum(['inbound', 'outbound']),
+    content: z.string(),
+    timestamp: nullableString,
+    sent_by: nullableString,
+    provider_message_id: nullableString,
+  })
+  .strict()
+
 export const appointmentSummarySchema = z
   .object({
     id: z.string(),
@@ -157,6 +168,104 @@ export const appointmentListOutputSchema = z
 
 export const appointmentDetailOutputSchema = z
   .object({ data: appointmentDetailSchema })
+  .strict()
+
+export const unscheduledAppointmentListOutputSchema = z
+  .object({
+    data: z.array(
+      z
+        .object({
+          id: z.string(),
+          queue_reason: z.literal('parked_for_rescheduling'),
+          parked_at: z.string(),
+          status: z.string(),
+          kind: nullableString,
+          last_scheduled_time_window: timeWindowSchema,
+          duration_minutes: z.number().int().positive(),
+          price: nullableNumber,
+          notes: nullableString,
+          customer: z
+            .object({
+              id: z.string(),
+              name: nullableString,
+              phone: nullableString,
+              email: nullableString,
+            })
+            .strict()
+            .nullable(),
+          address: addressSchema,
+          tech: technicianSchema,
+          services: z.array(
+            z
+              .object({
+                id: z.string(),
+                name: nullableString,
+                quantity: nullableNumber,
+                amount: nullableNumber,
+                duration_minutes: z.number().int().nullable(),
+              })
+              .strict(),
+          ),
+          contact_controls: z
+            .object({
+              sms: z
+                .object({
+                  status: z.enum([
+                    'blocked_by_sightings',
+                    'not_blocked_by_sightings',
+                    'unknown',
+                  ]),
+                  source: z.literal('Sightings blacklist'),
+                  reason: nullableString,
+                })
+                .strict(),
+              email_opt_out: z.boolean(),
+            })
+            .strict(),
+          conversation: z
+            .object({
+              id: z.string(),
+              match_basis: z.enum(['customer_id', 'unlinked_phone']),
+              status: z.string(),
+              source: nullableString,
+              latest_message: conversationMessageSchema.nullable(),
+              latest_inbound_message: conversationMessageSchema.nullable(),
+              latest_inbound_after_parking:
+                conversationMessageSchema.nullable(),
+              inbound_after_parking: z.enum(['yes', 'no']),
+              updated_at: z.string(),
+              app_url: z.string(),
+            })
+            .strict()
+            .nullable(),
+          follow_up_assessment: z
+            .object({
+              automatic_outreach_eligibility: z.literal('not_determined'),
+              needs_conversation_review: z.literal(true),
+              explanation: z.string(),
+            })
+            .strict(),
+          created_at: z.string(),
+          updated_at: z.string(),
+          app_url: z.string(),
+        })
+        .strict(),
+    ),
+    pagination: paginationSchema,
+    semantics: z
+      .object({
+        source: z.string(),
+        criterion: z.literal('ops_appointments.parked_at IS NOT NULL'),
+        order: z.string(),
+        restoration_monitor_visits_included: z.literal(false),
+        note: z.string(),
+        contact_controls_note: z.string(),
+      })
+      .strict(),
+    follow_up_tracking: z
+      .object({ available: z.literal(false), reason: z.string() })
+      .strict(),
+  })
   .strict()
 
 export const estimateListOutputSchema = z
@@ -306,17 +415,6 @@ export const operationalSummaryOutputSchema = z
         })
         .strict(),
     ),
-  })
-  .strict()
-
-const conversationMessageSchema = z
-  .object({
-    id: z.string(),
-    direction: z.enum(['inbound', 'outbound']),
-    content: z.string(),
-    timestamp: nullableString,
-    sent_by: nullableString,
-    provider_message_id: nullableString,
   })
   .strict()
 

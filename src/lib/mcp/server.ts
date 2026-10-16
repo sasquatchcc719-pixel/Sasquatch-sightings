@@ -17,6 +17,7 @@ import {
 import {
   appointmentDetailOutputSchema,
   appointmentListOutputSchema,
+  unscheduledAppointmentListOutputSchema,
   availabilityOutputSchema,
   businessConfigurationOutputSchema,
   businessSearchOutputSchema,
@@ -43,6 +44,7 @@ import {
   executePreparedAction,
   getConversation,
   getInvoice,
+  listUnscheduledAppointments,
   listConversations,
   previewAppointmentCreate,
   previewAppointmentUpdate,
@@ -105,6 +107,10 @@ const listAppointmentsInput = z
       })
     }
   })
+
+const listUnscheduledAppointmentsInput = z
+  .object({ ...paginationFields })
+  .strict()
 
 const getByIdInput = z.object({ id: z.string().uuid() }).strict()
 const listEstimatesInput = z
@@ -561,6 +567,22 @@ const toolDefinitions: ToolDefinition[] = [
           `appointments/${encodeURIComponent(String(id))}`,
           new URLSearchParams(),
           authInfo(extra),
+        ),
+      )
+    },
+  },
+  {
+    name: 'list_unscheduled_appointments',
+    title: 'List unscheduled appointments',
+    description:
+      "List the exact parked-appointment half of Sightings' calendar Unscheduled tray: appointments where parked_at is set, oldest first, with stable customer/conversation references, recorded message context, and Sightings blacklist status. The separate restoration-monitor queue is excluded. Queue membership never proves unresponsiveness or permission for automatic outreach, and a non-blocked result does not verify provider/carrier opt-out state. No messages are sent and no records are changed.",
+    inputSchema: listUnscheduledAppointmentsInput,
+    outputSchema: unscheduledAppointmentListOutputSchema,
+    async handler(input, extra) {
+      authInfo(extra)
+      return toolResult(
+        await listUnscheduledAppointments(
+          input as z.infer<typeof listUnscheduledAppointmentsInput>,
         ),
       )
     },

@@ -83,6 +83,272 @@ function projectMessage(conversationId: string, index: number, value: unknown) {
   }
 }
 
+function durationMinutes(start: string | null, end: string | null): number {
+  const toMinutes = (value: string | null) => {
+    const match = /^(\d{1,2}):(\d{2})/.exec(value ?? '')
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null
+  }
+  const from = toMinutes(start)
+  const to = toMinutes(end)
+  return from == null || to == null || to <= from ? 120 : to - from
+}
+
+/**
+ * The appointment half of the calendar's Unscheduled tray.
+ *
+ * Queue membership is deliberately factual: the UI includes every appointment
+ * with parked_at set. It is not a claim that the customer is unresponsive or
+ * eligible for automated outreach.
+ */
+export async function listUnscheduledAppointments(
+  input: { limit: number; offset: number },
+  supplied?: Db,
+) {
+  const supabase = client(supplied)
+  const { data, error, count } = await supabase
+    .from('ops_appointments')
+    .select(
+      `id, customer_id, appointment_date, start_time, end_time, status,
+       quoted_total, kind, internal_notes, parked_at, created_at, updated_at,
+       customer:ops_customers!ops_appointments_customer_id_fkey (
+         id, full_name, business_name, phone, email, email_opt_out
+       ),
+       address:ops_service_addresses!ops_appointments_service_address_id_fkey (
+         id, label, street_1, street_2, city, state, zip_code
+       ),
+       tech:staff_users!ops_appointments_assigned_staff_user_id_fkey (
+         id, display_name
+       ),
+       services:ops_appointment_line_items (
+         id, name_snapshot, quantity, line_total, duration_minutes
+       )`,
+      { count: 'exact' },
+    )
+    .not('parked_at', 'is', null)
+    .order('parked_at', { ascending: true })
+    .order('id', { ascending: true })
+    .range(input.offset, input.offset + input.limit - 1)
+  if (error) throw error
+
+  const appointments = data || []
+  const customerIds = Array.from(
+    new Set(appointments.map((row) => row.customer_id).filter(Boolean)),
+  ) as string[]
+  const customers = appointments
+    .map((row) => one(row.customer))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+  const normalizedPhones = Array.from(
+    new Set(
+      customers
+        .map((row) => normalizePhone(String(row.phone || '')))
+        .filter((phone) => phone.length === 10),
+    ),
+  )
+  const conversationPhones = normalizedPhones.flatMap((phone) => [
+    phone,
+    `1${phone}`,
+    `+1${phone}`,
+  ])
+
+  const [{ data: linkedConversations, error: linkedError }, phoneResult] =
+    await Promise.all([
+      customerIds.length
+        ? supabase
+            .from('conversations')
+            .select(
+              'id, phone_number, source, ops_customer_id, messages, status, created_at, updated_at',
+            )
+            .in('ops_customer_id', customerIds)
+            .order('updated_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      conversationPhones.length
+        ? supabase
+            .from('conversations')
+            .select(
+              'id, phone_number, source, ops_customer_id, messages, status, created_at, updated_at',
+            )
+            .in('phone_number', conversationPhones)
+            .order('updated_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+    ])
+  if (linkedError) throw linkedError
+  if (phoneResult.error) throw phoneResult.error
+
+  const conversations = Array.from(
+    new Map(
+      [...(linkedConversations || []), ...(phoneResult.data || [])].map(
+        (row) => [row.id, row],
+      ),
+    ).values(),
+  ).sort((left, right) =>
+    String(right.updated_at).localeCompare(String(left.updated_at)),
+  )
+
+  const { data: blacklistRows, error: blacklistError } = normalizedPhones.length
+    ? await supabase.from('blacklist').select('phone, reason')
+    : { data: [], error: null }
+  if (blacklistError) throw blacklistError
+  const blacklistByPhone = new Map(
+    (blacklistRows || []).map((row) => [normalizePhone(row.phone), row]),
+  )
+
+  return {
+    data: appointments.map((appointment) => {
+      const customer = one(appointment.customer)
+      const address = one(appointment.address)
+      const tech = one(appointment.tech)
+      const phone = normalizePhone(String(customer?.phone || ''))
+      const linkedConversation = conversations.find(
+        (row) => row.ops_customer_id === appointment.customer_id,
+      )
+      const unlinkedPhoneConversation = conversations.find(
+        (row) =>
+          !row.ops_customer_id &&
+          phone.length === 10 &&
+          normalizePhone(String(row.phone_number || '')) === phone,
+      )
+      const conversation = linkedConversation || unlinkedPhoneConversation
+      const conversationMatchBasis = linkedConversation
+        ? ('customer_id' as const)
+        : unlinkedPhoneConversation
+          ? ('unlinked_phone' as const)
+          : null
+      const messages = Array.isArray(conversation?.messages)
+        ? conversation.messages
+        : []
+      const projectedMessages = messages.map((message, index) =>
+        projectMessage(conversation?.id || 'unlinked', index, message),
+      )
+      const latestMessage = projectedMessages.at(-1) || null
+      const latestInbound =
+        projectedMessages.findLast(
+          (message) => message.direction === 'inbound',
+        ) || null
+      const parkedAt = String(appointment.parked_at)
+      const parkedAtMs = Date.parse(parkedAt)
+      const inboundAfterParking = projectedMessages.filter((message) => {
+        if (message.direction !== 'inbound' || message.timestamp === null) {
+          return false
+        }
+        const messageAtMs = Date.parse(message.timestamp)
+        return (
+          Number.isFinite(parkedAtMs) &&
+          Number.isFinite(messageAtMs) &&
+          messageAtMs > parkedAtMs
+        )
+      })
+      const latestInboundAfterParking = inboundAfterParking.at(-1) || null
+      const blacklist = phone.length === 10 ? blacklistByPhone.get(phone) : null
+
+      return {
+        id: appointment.id,
+        queue_reason: 'parked_for_rescheduling' as const,
+        parked_at: parkedAt,
+        status: appointment.status,
+        kind: appointment.kind,
+        last_scheduled_time_window: {
+          date: appointment.appointment_date,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          timezone: 'America/Denver' as const,
+        },
+        duration_minutes: durationMinutes(
+          appointment.start_time,
+          appointment.end_time,
+        ),
+        price: appointment.quoted_total,
+        notes: appointment.internal_notes,
+        customer: customer
+          ? {
+              id: customer.id,
+              name: customer.business_name || customer.full_name || null,
+              phone: customer.phone || null,
+              email: customer.email || null,
+            }
+          : null,
+        address: address
+          ? {
+              id: address.id,
+              label: address.label || null,
+              street_1: address.street_1 || null,
+              street_2: address.street_2 || null,
+              city: address.city || null,
+              state: address.state || null,
+              zip_code: address.zip_code || null,
+            }
+          : null,
+        tech: tech
+          ? { id: tech.id, name: tech.display_name || 'Unknown technician' }
+          : null,
+        services: (appointment.services || []).map((service) => ({
+          id: service.id,
+          name: service.name_snapshot || null,
+          quantity: service.quantity,
+          amount: service.line_total,
+          duration_minutes: service.duration_minutes,
+        })),
+        contact_controls: {
+          sms: {
+            status: blacklist
+              ? ('blocked_by_sightings' as const)
+              : phone.length === 10
+                ? ('not_blocked_by_sightings' as const)
+                : ('unknown' as const),
+            source: 'Sightings blacklist' as const,
+            reason: blacklist?.reason || null,
+          },
+          email_opt_out: Boolean(customer?.email_opt_out),
+        },
+        conversation: conversation
+          ? {
+              id: conversation.id,
+              match_basis: conversationMatchBasis,
+              status: conversation.status,
+              source: conversation.source,
+              latest_message: latestMessage,
+              latest_inbound_message: latestInbound,
+              latest_inbound_after_parking: latestInboundAfterParking,
+              inbound_after_parking:
+                latestInboundAfterParking === null
+                  ? ('no' as const)
+                  : ('yes' as const),
+              updated_at: conversation.updated_at,
+              app_url: `${APP_ORIGIN}/admin/conversations`,
+            }
+          : null,
+        follow_up_assessment: {
+          automatic_outreach_eligibility: 'not_determined' as const,
+          needs_conversation_review: true,
+          explanation:
+            'Queue membership and missing post-parking messages do not prove unresponsiveness or permission to contact. Review the stored conversation and contact controls.',
+        },
+        created_at: appointment.created_at,
+        updated_at: appointment.updated_at,
+        app_url: `${APP_ORIGIN}/admin/operations/schedule`,
+      }
+    }),
+    pagination: {
+      limit: input.limit,
+      offset: input.offset,
+      total: count ?? appointments.length,
+    },
+    semantics: {
+      source: 'Sightings calendar Unscheduled appointment cards',
+      criterion: 'ops_appointments.parked_at IS NOT NULL',
+      order: 'parked_at ascending, then appointment id ascending',
+      restoration_monitor_visits_included: false,
+      note: 'This is only the parked-appointment half of the UI tray. Restoration monitor visits use a separate queue.',
+      contact_controls_note:
+        'not_blocked_by_sightings means only that the normalized phone does not match the Sightings blacklist. Provider or carrier opt-out state is not verified by this tool.',
+    },
+    follow_up_tracking: {
+      available: false,
+      reason:
+        'Sightings does not record a dedicated reliable follow-up-attempt count or next-contact date for this queue.',
+    },
+  }
+}
+
 export async function listConversations(
   input: {
     status?: 'active' | 'completed' | 'escalated'

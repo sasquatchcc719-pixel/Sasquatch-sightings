@@ -63,6 +63,7 @@ export function getCapabilityCatalog() {
         workflows: [
           'list appointments',
           'inspect appointment',
+          'review parked appointments in the Unscheduled tray',
           'check availability',
           'preview and confirm a priced service booking',
           'preview and confirm reschedule, reassignment, notes, or cancellation',
@@ -70,6 +71,7 @@ export function getCapabilityCatalog() {
         tools: [
           'list_appointments',
           'get_appointment',
+          'list_unscheduled_appointments',
           'get_availability',
           'preview_appointment_create',
           'execute_appointment_create',
@@ -89,6 +91,8 @@ export function getCapabilityCatalog() {
           'OAuth owner grant; exact preview and action-time confirmation for changes',
         limitations: [
           'Availability assumes a 120-minute visit and is not a booking.',
+          'The Unscheduled appointment view exactly means parked_at is set; it excludes the separate restoration-monitor queue and never implies unresponsiveness or automatic-outreach eligibility.',
+          'Dedicated follow-up attempt counts and next-contact dates are not tracked for the parked queue, so the tool reports them unavailable instead of inferring zero.',
           'Dispatch and completion are not yet exposed.',
           'Booking core rows commit through one service-role-only transaction; geocoding, reactivation suppression, notifications, reminders, and optional QuickBooks work are post-commit follow-ups.',
         ],
