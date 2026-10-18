@@ -3087,6 +3087,7 @@ export function CreateTemplateForm({
                           min={1}
                           max={31}
                           value={rule.day_of_month}
+                          aria-label={`Rule ${idx + 1} day of month`}
                           onChange={(e) =>
                             handleRuleChange(
                               idx,
@@ -3179,9 +3180,9 @@ export function CreateTemplateForm({
 
         <div className="mt-4">
           <p className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
-            Recurring cleaning uses weekdays. Weekend rule dates move to Monday.
+            Weekdays only. Monthly visits stay in their original calendar month.
             {schedulingMode === 'flexible'
-              ? ' Searches the same day, then up to 14 calendar days ahead, before the next rule date. The assigned technician stays the same. Each adjustment applies to one visit only.'
+              ? ' Searches earlier or later weekdays within each monthly period; other frequencies search up to 14 days ahead, before the next rule date. The assigned technician stays the same. Each adjustment applies to one visit only.'
               : ' Calendar conflicts must be resolved before booking.'}{' '}
             All times are Mountain Time. The start is the scheduled arrival; the
             end is the estimated completion.

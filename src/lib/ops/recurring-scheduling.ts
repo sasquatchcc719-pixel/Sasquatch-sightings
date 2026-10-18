@@ -20,6 +20,9 @@ export type RecurringCandidate = {
   original_date: string
   date: string
   start_time: string
+  /** Monthly visits may move within this period, never into another calendar month. */
+  earliest_date?: string
+  latest_date?: string
   /** Retained when a preview is sliced, so its final visit cannot cross the next due date. */
   next_original_date?: string
 }
@@ -140,7 +143,10 @@ export async function planRecurringSchedule(
     if (
       !validDate(candidate.original_date) ||
       !validDate(candidate.date) ||
-      (candidate.next_original_date && !validDate(candidate.next_original_date))
+      (candidate.next_original_date &&
+        !validDate(candidate.next_original_date)) ||
+      (candidate.earliest_date && !validDate(candidate.earliest_date)) ||
+      (candidate.latest_date && !validDate(candidate.latest_date))
     )
       throw new Error('Each recurring visit needs a valid date.')
     normalizedTime(candidate.start_time)
@@ -169,8 +175,16 @@ export async function planRecurringSchedule(
   }
   if (!candidates.length) return result
 
-  const startDate = candidates[0].original_date
-  const endDate = addDays(candidates[candidates.length - 1].original_date, 14)
+  const startDate = candidates
+    .map((candidate) => candidate.earliest_date || candidate.original_date)
+    .sort()[0]
+  const endDate = candidates
+    .map(
+      (candidate) =>
+        candidate.latest_date || addDays(candidate.original_date, 14),
+    )
+    .sort()
+    .at(-1)!
   const staffEvents = [
     `assigned_staff_user_id.eq.${staff.id}`,
     staff.user_id ? `assigned_staff_user_id.eq.${staff.user_id}` : '',
@@ -408,26 +422,28 @@ export async function planRecurringSchedule(
       .sort()[0]
     const withinBounds = (date: string) =>
       validDate(date) &&
-      date >= candidate.original_date &&
-      date <= addDays(candidate.original_date, 14) &&
+      date >= (candidate.earliest_date || candidate.original_date) &&
+      date <= (candidate.latest_date || addDays(candidate.original_date, 14)) &&
       (!nextDue || date < nextDue)
     const initial = withinBounds(selectedDate)
       ? check(selectedDate, selectedTime)
       : {
           clear: false,
-          reason:
-            'Choose a weekday within 14 days of this visit and before its next due date.',
+          reason: candidate.latest_date
+            ? 'Choose an available weekday in this visit’s original calendar month and within the plan dates.'
+            : 'Choose a weekday within 14 days of this visit and before its next due date.',
           conflict: null,
           endTime: minutesToTime(
             timeToMinutes(selectedTime) + input.durationMinutes,
           ),
         }
     const available: RecurringScheduleAlternative[] = []
-    // Start on the preferred weekday. Weekend normalization never permits crossing the next due date.
+    // Monthly searches include earlier weekdays, with reads covering the entire bounded month.
     let searchDate =
-      candidate.date < candidate.original_date
+      candidate.earliest_date ||
+      (candidate.date < candidate.original_date
         ? candidate.original_date
-        : candidate.date
+        : candidate.date)
     while (withinBounds(searchDate)) {
       const bundle = day(searchDate)
       if (bundle.open && bundle.templates.length) {
@@ -468,7 +484,10 @@ export async function planRecurringSchedule(
         ? available
             .sort(
               (a, b) =>
-                a.date.localeCompare(b.date) ||
+                (candidate.earliest_date
+                  ? Math.abs(Date.parse(a.date) - Date.parse(candidate.date)) -
+                    Math.abs(Date.parse(b.date) - Date.parse(candidate.date))
+                  : a.date.localeCompare(b.date)) ||
                 Math.abs(
                   timeToMinutes(a.start_time) -
                     timeToMinutes(candidate.start_time),
@@ -477,6 +496,7 @@ export async function planRecurringSchedule(
                     timeToMinutes(b.start_time) -
                       timeToMinutes(candidate.start_time),
                   ) ||
+                a.date.localeCompare(b.date) ||
                 a.start_time.localeCompare(b.start_time),
             )
             .shift()
@@ -495,7 +515,7 @@ export async function planRecurringSchedule(
         chosen.date !== candidate.original_date ||
         chosen.start_time !== normalizedTime(candidate.start_time),
       reason: automatic
-        ? `${initial.reason || 'The preferred visit is unavailable'} Scheduled in the next available window.`
+        ? `${initial.reason || 'The preferred visit is unavailable'} Scheduled in an available weekday window.`
         : override && !clear
           ? `The selected visit is unavailable. ${initial.reason}`
           : initial.reason,

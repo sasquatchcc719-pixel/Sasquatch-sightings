@@ -102,6 +102,34 @@ describe('recurring weekday scheduling', () => {
     expect(moveRecurringDateToWeekday('2026-11-16')).toBe('2026-11-16')
   })
 
+  it('keeps a monthly month-end weekend in February and preserves other frequencies', () => {
+    expect(moveRecurringDateToWeekday('2027-02-28', true)).toBe('2027-02-26')
+    expect(moveRecurringDateToWeekday('2027-02-28')).toBe('2027-03-01')
+    expect(
+      previewDateDetails(
+        [
+          {
+            id: 'monthly',
+            template_id: 'plan',
+            frequency: 'monthly',
+            day_of_month: 28,
+            day_of_week: null,
+            week_of_month: null,
+            interval_days: null,
+            effective_from: '2027-02-01',
+            effective_until: '2027-03-31',
+            override_start_time: null,
+          },
+        ],
+        2,
+        new Date('2027-02-01T00:00:00'),
+      ),
+    ).toEqual([
+      { original_date: '2027-02-28', date: '2027-02-26', shifted: true },
+      { original_date: '2027-03-28', date: '2027-03-29', shifted: true },
+    ])
+  })
+
   it('shows the original and shifted dates in recurring previews', () => {
     const rule: RecurrenceRule = {
       id: 'rule-a',

@@ -609,6 +609,197 @@ describe('recurring candidate and generator correspondence', () => {
     ).toThrow()
   })
 
+  const monthEndRule: RecurrenceRule = {
+    ...rule,
+    frequency: 'monthly',
+    day_of_week: null,
+    day_of_month: 28,
+    effective_from: '2027-02-01',
+    effective_until: '2027-03-31',
+  }
+  const monthEndCandidates = () =>
+    recurringScheduleCandidates([monthEndRule], '13:00', {
+      fromDate: '2027-02-01',
+      horizonMonths: 2,
+    })
+
+  it('keeps February and March visits in their original months and on weekdays', async () => {
+    const { plan } = fixture()
+    const candidates = monthEndCandidates()
+    expect(candidates[0]).toMatchObject({
+      original_date: '2027-02-28',
+      date: '2027-02-26',
+      earliest_date: '2027-02-01',
+      latest_date: '2027-02-28',
+    })
+    const visits = (await plan(candidates, { durationMinutes: 240 }))
+      .occurrences
+    expect(visits.map((v) => v.date)).toEqual(['2027-02-26', '2027-03-29'])
+    expect(new Set(visits.map((v) => v.date.slice(0, 7))).size).toBe(2)
+    for (const visit of visits)
+      for (const option of [visit, ...visit.alternatives]) {
+        expect(option.date.slice(0, 7)).toBe(visit.original_date.slice(0, 7))
+        expect([0, 6]).not.toContain(
+          new Date(option.date + 'T12:00:00Z').getUTCDay(),
+        )
+      }
+  })
+
+  it('reads earlier-month closures and conflicts when finding a replacement weekday', async () => {
+    const { busy, plan, tables } = fixture()
+    busy('2027-02-26', '00:00:00', '23:59:00')
+    tables.staff_daily_availability.push({
+      date: '2027-02-25',
+      staff_user_id: 'staff-a',
+      is_open: false,
+    })
+    expect(
+      (await plan(monthEndCandidates(), { durationMinutes: 240 }))
+        .occurrences[0],
+    ).toMatchObject({ date: '2027-02-24', status: 'clear' })
+  })
+
+  it('flags a full month instead of booking a second visit in March', async () => {
+    const { tables, plan } = fixture()
+    tables.ops_calendar_events.push({
+      title: 'February closed',
+      event_kind: 'block',
+      start_date: '2027-02-01',
+      end_date: '2027-02-28',
+      is_all_day: true,
+      assigned_staff_user_id: 'auth-a',
+      start_time: null,
+      end_time: null,
+    })
+    const [feb, march] = (
+      await plan(monthEndCandidates(), { durationMinutes: 240 })
+    ).occurrences
+    expect(feb).toMatchObject({
+      original_date: '2027-02-28',
+      status: 'conflict',
+      alternatives: [],
+    })
+    expect(feb.date.slice(0, 7)).toBe('2027-02')
+    expect(march).toMatchObject({ date: '2027-03-29', status: 'clear' })
+  })
+
+  it.each(['2027-02-27', '2027-02-28', '2027-03-01'])(
+    'rejects a weekend or cross-month reviewed choice: %s',
+    async (date) => {
+      const { plan, tables } = fixture()
+      // Explicitly opening a Saturday/Sunday must never turn it into a bookable recurring weekday.
+      tables.staff_daily_availability.push({
+        date,
+        staff_user_id: 'staff-a',
+        is_open: true,
+      })
+      const [visit] = (
+        await plan(monthEndCandidates(), {
+          durationMinutes: 240,
+          visitOverrides: { '2027-02-28': { date, start_time: '13:00' } },
+        })
+      ).occurrences
+      expect(visit.status).toBe('conflict')
+      expect(visit.date).toBe(date)
+      expect(
+        visit.alternatives.every((slot) => slot.date.slice(0, 7) === '2027-02'),
+      ).toBe(true)
+    },
+  )
+
+  it('respects the plan start date even when the only remaining month-end days are weekends', async () => {
+    const { plan } = fixture()
+    const candidates = recurringScheduleCandidates(
+      [{ ...monthEndRule, effective_from: '2027-02-27' }],
+      '13:00',
+      { fromDate: '2027-02-27', horizonMonths: 1, count: 1 },
+    )
+    const [visit] = (await plan(candidates)).occurrences
+    expect(visit.status).toBe('conflict')
+    expect(visit.alternatives).toEqual([])
+  })
+
+  it('keeps fixed monthly generation inside February when its shifted Friday is occupied', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-02-01T15:00:00Z'))
+    const { busy, client, tables, state } = fixture()
+    busy('2027-02-26', '00:00:00', '23:59:00')
+    seedPlan(
+      tables,
+      { scheduling_mode: 'fixed', scheduled_duration_minutes: 240 },
+      [{ ...monthEndRule, effective_until: '2027-02-28' }],
+    )
+    const result = await generateRecurringAppointments(
+      client as unknown as SupabaseClient,
+      'plan-a',
+      1,
+    )
+    expect(result.created).toBe(0)
+    expect(result.errors.join(' ')).toContain('no open weekday')
+    expect(state.writes).toEqual([])
+  })
+
+  it('generates exactly the reviewed February weekday with four hours and retains monthly identity', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-02-01T15:00:00Z'))
+    const { plan, client, tables, state } = fixture()
+    const candidates = monthEndCandidates()
+    const visits = (await plan(candidates, { durationMinutes: 240 }))
+      .occurrences
+    seedPlan(
+      tables,
+      {
+        scheduled_duration_minutes: 240,
+        visit_overrides: Object.fromEntries(
+          visits.map((visit) => [
+            visit.original_date,
+            { date: visit.date, start_time: visit.start_time },
+          ]),
+        ),
+      },
+      [monthEndRule],
+    )
+    const result = await generateRecurringAppointments(
+      client as unknown as SupabaseClient,
+      'plan-a',
+      2,
+    )
+    expect(result.errors).toEqual([])
+    expect(
+      state.writes
+        .filter((w) => w.table === 'ops_appointments')
+        .map((w) => ({
+          date: w.row.appointment_date,
+          original: w.row.original_recurring_date,
+          start: w.row.start_time,
+          end: w.row.end_time,
+        })),
+    ).toEqual([
+      {
+        date: '2027-02-26',
+        original: '2027-02-28',
+        start: '13:00:00',
+        end: '17:00:00',
+      },
+      {
+        date: '2027-03-29',
+        original: '2027-03-28',
+        start: '13:00:00',
+        end: '17:00:00',
+      },
+    ])
+    vi.setSystemTime(new Date('2027-02-27T15:00:00Z'))
+    const regenerated = await generateRecurringAppointments(
+      client as unknown as SupabaseClient,
+      'plan-a',
+      2,
+    )
+    expect(regenerated).toMatchObject({ created: 0, skipped: 2, errors: [] })
+    expect(
+      state.writes.filter((write) => write.table === 'ops_appointments'),
+    ).toHaveLength(2)
+  })
+
   it('expands fourth Mondays without retaining the former day-of-month pattern', () => {
     const candidates = recurringScheduleCandidates(
       [

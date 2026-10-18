@@ -225,15 +225,22 @@ function formatDate(d: Date): string {
 }
 
 /**
- * Push a Saturday or Sunday recurring date to the following Monday.
+ * Move weekends to Monday, or Friday when a monthly visit would cross month-end.
  * The nominal rule date is still stored as original_recurring_date, so
  * regeneration remains idempotent even when the visible appointment moves.
  */
-export function moveRecurringDateToWeekday(ymd: string): string {
+export function moveRecurringDateToWeekday(
+  ymd: string,
+  stayInMonth = false,
+): string {
   const d = new Date(ymd + 'T12:00:00')
   const dow = d.getDay()
   if (dow !== 0 && dow !== 6) return ymd
   d.setDate(d.getDate() + (dow === 6 ? 2 : 1))
+  if (stayInMonth && formatDate(d).slice(0, 7) !== ymd.slice(0, 7)) {
+    d.setTime(new Date(ymd + 'T12:00:00').getTime())
+    d.setDate(d.getDate() - (dow === 6 ? 1 : 2))
+  }
   return formatDate(d)
 }
 
@@ -365,7 +372,29 @@ export function recurringScheduleCandidates(
       const original = formatDate(date)
       candidates.set(original, {
         original_date: original,
-        date: moveRecurringDateToWeekday(original),
+        date: moveRecurringDateToWeekday(
+          original,
+          rule.frequency === 'monthly',
+        ),
+        ...(rule.frequency === 'monthly'
+          ? {
+              earliest_date: [
+                original.slice(0, 7) + '-01',
+                rule.effective_from,
+                startKey,
+              ]
+                .sort()
+                .at(-1)!,
+              latest_date: [
+                formatDate(
+                  new Date(date.getFullYear(), date.getMonth() + 1, 0),
+                ),
+                rule.effective_until,
+              ]
+                .filter((value): value is string => Boolean(value))
+                .sort()[0],
+            }
+          : {}),
         start_time: `${(rule.override_start_time || startTime).slice(0, 5)}:00`,
       })
     }
@@ -406,25 +435,14 @@ export function previewDateDetails(
   fromDate?: Date,
 ): RecurringPreviewDate[] {
   const start = fromDate || new Date(`${mountainDateKey(new Date())}T00:00:00`)
-  const end = new Date(start)
-  end.setFullYear(end.getFullYear() + 1)
-
-  const allDates: Date[] = []
-  for (const rule of rules) {
-    allDates.push(...expandRule(rule, start, end))
-  }
-
-  return [...new Set(allDates.map((d) => formatDate(d)))]
-    .sort()
-    .slice(0, count)
-    .map((originalDate) => {
-      const date = moveRecurringDateToWeekday(originalDate)
-      return {
-        date,
-        original_date: originalDate,
-        shifted: date !== originalDate,
-      }
-    })
+  return recurringScheduleCandidates(rules, '09:00', {
+    fromDate: formatDate(start),
+    count,
+  }).map((candidate) => ({
+    date: candidate.date,
+    original_date: candidate.original_date,
+    shifted: candidate.date !== candidate.original_date,
+  }))
 }
 
 // ─── Generation ─────────────────────────────────────────────────────────
@@ -519,6 +537,7 @@ export async function generateRecurringAppointments(
   const uniqueDates = candidates.map((candidate) => ({
     date: candidate.original_date,
     startTime: candidate.start_time.slice(0, 5),
+    scheduledDate: candidate.date,
   }))
 
   if (uniqueDates.length === 0) {
@@ -534,7 +553,7 @@ export async function generateRecurringAppointments(
   const rangeStartStr = formatDate(rangeStart)
   const rangeEndStr = formatDate(rangeEnd)
   const scheduledCandidateDates = [
-    ...new Set(uniqueDates.map(({ date }) => moveRecurringDateToWeekday(date))),
+    ...new Set(candidates.map((candidate) => candidate.date)),
   ]
 
   const [
@@ -697,13 +716,16 @@ export async function generateRecurringAppointments(
     }
   }
 
-  for (const { date, startTime } of uniqueDates) {
+  for (const { date, startTime, scheduledDate: preferredDate } of uniqueDates) {
     const rule = dateToRule.get(date)
     if (!rule) {
       result.errors.push(`${date}: missing recurrence rule (internal)`)
       continue
     }
-    let scheduledDate = moveRecurringDateToWeekday(date)
+    let scheduledDate = preferredDate
+    const candidate = candidates.find(
+      (candidate) => candidate.original_date === date,
+    )!
     const monthIsSingleInstance =
       (countDatesPerMonth.get(monthKeyFromYmd(date)) || 0) === 1
     if (
@@ -718,6 +740,16 @@ export async function generateRecurringAppointments(
       })
     ) {
       result.skipped++
+      continue
+    }
+
+    if (
+      (candidate.earliest_date && scheduledDate < candidate.earliest_date) ||
+      (candidate.latest_date && scheduledDate > candidate.latest_date)
+    ) {
+      result.errors.push(
+        `${date}: no weekday is available within this calendar month and the plan dates.`,
+      )
       continue
     }
 
@@ -773,9 +805,11 @@ export async function generateRecurringAppointments(
           if (!conflict) break
           attempts += 1
           if (movedOffWeekend && attempts < 15) {
-            scheduledDate = nextWeekdayOnOrAfter(
+            const nextDate = nextWeekdayOnOrAfter(
               addCalendarDays(scheduledDate, 1),
             )
+            if (candidate.latest_date && nextDate > candidate.latest_date) break
+            scheduledDate = nextDate
           }
         }
         if (conflict) {
