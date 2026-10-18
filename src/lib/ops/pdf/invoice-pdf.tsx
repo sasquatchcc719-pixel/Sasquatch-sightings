@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   Document,
-  Image,
+  Image as PDFImage,
   Page,
   StyleSheet,
   Text,
