@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -669,7 +670,8 @@ export async function POST(request: NextRequest) {
     }
 
     const appointmentLinesPayload = normalizedLineItems.map(
-      (item: NormalizedLineItem) => ({
+      (item: NormalizedLineItem, sortOrder: number) => ({
+        sort_order: sortOrder,
         appointment_id: appointment.id,
         ...item,
       }),
@@ -718,14 +720,17 @@ export async function POST(request: NextRequest) {
       if (invoiceError) throw invoiceError
       invoice = insertedInvoice
 
-      const invoiceLinesPayload = (appointmentLines || []).map((item) => ({
-        invoice_id: invoice!.id,
-        appointment_line_item_id: item.id,
-        description: item.name_snapshot,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        line_total: item.line_total,
-      }))
+      const invoiceLinesPayload = sortLineItems(appointmentLines || []).map(
+        (item, sortOrder) => ({
+          sort_order: sortOrder,
+          invoice_id: invoice!.id,
+          appointment_line_item_id: item.id,
+          description: item.name_snapshot,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          line_total: item.line_total,
+        }),
+      )
 
       if (invoiceLinesPayload.length > 0) {
         const { error: invoiceLinesError } = await supabase

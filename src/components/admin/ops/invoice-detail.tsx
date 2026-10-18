@@ -1,5 +1,7 @@
 'use client'
 
+import { useLineItemReorder } from '@/components/ops/line-item-reorder'
+
 import { ServiceCategoryPicker } from '@/components/ops/service-category-picker'
 import type { ServicePhotoIdentity } from '@/lib/ops/service-photos'
 
@@ -424,6 +426,11 @@ export function InvoiceDetail({
       excluded_original_total?: number | null
     }>
   >([])
+  const reorderLines = useLineItemReorder(
+    lineItems,
+    setLineItems,
+    (line) => line.id,
+  )
   const lineItemServices = useMemo(
     () =>
       new Map(
@@ -2573,15 +2580,18 @@ export function InvoiceDetail({
             )
           : null}
         <div className="mt-3 space-y-2">
+          {reorderLines.status}
           {lineItems.map((item, index) => (
             <div
               key={item.id}
-              className={`rounded-xl p-3 shadow-sm ${
+              {...reorderLines.cardProps(item.id)}
+              className={`relative rounded-xl p-3 pr-12 shadow-sm ${
                 item.excluded_at
                   ? 'border-2 border-red-500/60 bg-red-50 opacity-90'
                   : 'bg-white'
               }`}
             >
+              {reorderLines.handle(item.id, index, item.description)}
               {item.excluded_at ? (
                 <div className="mb-2 rounded-lg bg-red-600 px-2.5 py-1.5">
                   <p className="text-xs font-bold tracking-wide text-white uppercase">
@@ -2611,6 +2621,7 @@ export function InvoiceDetail({
                     </Label>
                     <div className="flex items-center gap-2">
                       <ServicePhoto
+                        size="invoice"
                         name={
                           lineItemServices.get(item.id)?.name ||
                           item.description

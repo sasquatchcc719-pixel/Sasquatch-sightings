@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createAdminClient } from '@/supabase/server'
 import { requiresFiberCheck } from '@/lib/fiber/requires-check'
 import type { FiberVerdict } from '@/lib/fiber/types'
@@ -145,6 +146,8 @@ const TECH_APPOINTMENT_SELECT = `
   ),
   ops_appointment_line_items (
     id,
+    sort_order,
+    created_at,
     name_snapshot,
     quantity,
     unit_price,
@@ -359,22 +362,26 @@ export function mapTechAppointment(
         }>
       | null,
   )
-  const lineItems = Array.isArray(row.ops_appointment_line_items)
-    ? (row.ops_appointment_line_items as Array<{
-        id: string
-        name_snapshot?: string | null
-        quantity?: number | null
-        unit_price?: number | null
-        line_total?: number | null
-        notes?: string | null
-        service_catalog_item_id?: string | null
-        excluded_at?: string | null
-        excluded_reason?: string | null
-        excluded_original_total?: number | null
-        fiber_check_id?: string | null
-        service_catalog_items?: unknown
-      }>)
-    : []
+  const lineItems = sortLineItems(
+    Array.isArray(row.ops_appointment_line_items)
+      ? (row.ops_appointment_line_items as Array<{
+          id: string
+          sort_order?: number | null
+          created_at?: string | null
+          name_snapshot?: string | null
+          quantity?: number | null
+          unit_price?: number | null
+          line_total?: number | null
+          notes?: string | null
+          service_catalog_item_id?: string | null
+          excluded_at?: string | null
+          excluded_reason?: string | null
+          excluded_original_total?: number | null
+          fiber_check_id?: string | null
+          service_catalog_items?: unknown
+        }>)
+      : [],
+  )
   const fiberCheckRows = Array.isArray(row.fiber_checks)
     ? (row.fiber_checks as Array<Record<string, unknown>>)
     : []

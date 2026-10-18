@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
@@ -98,7 +99,7 @@ async function loadInvoice(supabase: SupabaseClient, appointmentId: string) {
     .select(
       `id, invoice_number, status, payment_status, subtotal, total,
       discount_amount, percentage_discount_amount,
-      ops_invoice_line_items(description, quantity, unit_price, line_total, excluded_at, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category)))`,
+      ops_invoice_line_items(id, sort_order, created_at, description, quantity, unit_price, line_total, excluded_at, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category)))`,
     )
     .eq('appointment_id', appointmentId)
     .maybeSingle()
@@ -117,7 +118,7 @@ async function loadInvoice(supabase: SupabaseClient, appointmentId: string) {
     return null
   if (!address || !invoice.invoice_number)
     throw new Error('Invoice address or number is missing')
-  const lines = (invoice.ops_invoice_line_items || []).filter(
+  const lines = sortLineItems(invoice.ops_invoice_line_items || []).filter(
     (line) => !line.excluded_at,
   )
   return { appt, customer, address, invoice, lines }

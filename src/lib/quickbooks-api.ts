@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import {
   getValidQBAccessToken,
   getQBConnectionStatus,
@@ -1369,7 +1370,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       ),
       ops_invoices (
         id, status, payment_method, subtotal, total, discount_amount, percentage_discount_amount, invoice_number, quickbooks_invoice_id,
-        ops_invoice_line_items ( description, quantity, unit_price, line_total, service_catalog_item_id )
+        ops_invoice_line_items ( id, sort_order, created_at, description, quantity, unit_price, line_total, service_catalog_item_id )
       )
     `,
     )
@@ -1460,7 +1461,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
         )
       } else {
         const lineItems = Array.isArray(invoice.ops_invoice_line_items)
-          ? invoice.ops_invoice_line_items.map((line) => ({
+          ? sortLineItems(invoice.ops_invoice_line_items).map((line) => ({
               ...line,
               product_name: line.description,
             }))
@@ -1550,7 +1551,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
       invoice_number,
       quickbooks_invoice_id,
       appointment_id,
-      ops_invoice_line_items ( description, quantity, unit_price, line_total )
+      ops_invoice_line_items ( id, sort_order, created_at, description, quantity, unit_price, line_total )
     `,
     )
     .eq('id', invoiceId)
@@ -1604,7 +1605,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
   }
 
   const lineItems = Array.isArray(inv.ops_invoice_line_items)
-    ? inv.ops_invoice_line_items.map((line) => ({
+    ? sortLineItems(inv.ops_invoice_line_items).map((line) => ({
         ...line,
         product_name: line.description,
       }))

@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import React from 'react'
 import {
   Document,
@@ -16,6 +17,9 @@ import {
 import type { InvoiceServiceLinks } from '@/lib/ops/service-photos'
 
 export type InvoiceLineItem = InvoiceServiceLinks & {
+  id?: string
+  sort_order?: number | null
+  created_at?: string | null
   description: string
   photo_data_url?: string
   quantity: number
@@ -152,7 +156,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  servicePhoto: { width: 24, height: 24, borderRadius: 3 },
+  servicePhoto: { width: 40, height: 40, borderRadius: 3 },
   colQty: { flex: 1, textAlign: 'right' },
   colUnit: { flex: 1, textAlign: 'right' },
   colTotal: { flex: 1, textAlign: 'right' },
@@ -396,7 +400,7 @@ export function InvoicePDF({ data }: { data: InvoicePDFData }) {
             <Text style={[styles.thText, styles.colUnit]}>Unit Price</Text>
             <Text style={[styles.thText, styles.colTotal]}>Total</Text>
           </View>
-          {data.lineItems.map((item, idx) => (
+          {sortLineItems(data.lineItems).map((item, idx) => (
             <View
               key={idx}
               wrap={false}

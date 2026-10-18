@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 /**
  * QuickBooks Sync Cron
  * Reads pending sync jobs and pushes customers + invoices to QBO.
@@ -306,7 +307,7 @@ export async function GET(request: NextRequest) {
               invoice_number,
               quickbooks_invoice_id,
               appointment_id,
-              ops_invoice_line_items ( description, quantity, unit_price, line_total ),
+              ops_invoice_line_items ( id, sort_order, created_at, description, quantity, unit_price, line_total ),
               ops_appointments!inner ( appointment_date, customer_id )
             `,
             )
@@ -373,7 +374,7 @@ export async function GET(request: NextRequest) {
           }
 
           const lineItems = Array.isArray(invRow.ops_invoice_line_items)
-            ? invRow.ops_invoice_line_items.map((line) => ({
+            ? sortLineItems(invRow.ops_invoice_line_items).map((line) => ({
                 ...line,
                 product_name: line.description,
               }))

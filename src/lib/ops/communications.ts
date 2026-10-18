@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { Resend } from 'resend'
 import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
@@ -202,6 +203,7 @@ const APPOINTMENT_SELECT = `
     zip_code
   ),
   ops_appointment_line_items (
+    id, sort_order, created_at,
     name_snapshot,
     quantity,
     line_total,
@@ -551,6 +553,9 @@ async function getAppointmentContext(
   }
 
   const appointment = data as AppointmentWithRelations
+  appointment.ops_appointment_line_items = sortLineItems(
+    appointment.ops_appointment_line_items || [],
+  )
   const customer = unwrapRelation(appointment.ops_customers)
   const address = unwrapRelation(appointment.ops_service_addresses)
   const firstName =

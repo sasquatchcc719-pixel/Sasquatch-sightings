@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -53,7 +54,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
           notes
         ),
         ops_appointment_line_items (
-          id,
+          id, sort_order, created_at,
           service_catalog_item_id,
           name_snapshot,
           quantity,
@@ -98,7 +99,15 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
     // Return in the same shape the client expects
     const { ops_recurring_templates: _tpl, ...apptWithoutTpl } = appointment
-    return NextResponse.json({ appointment: apptWithoutTpl, template })
+    return NextResponse.json({
+      appointment: {
+        ...apptWithoutTpl,
+        ops_appointment_line_items: sortLineItems(
+          apptWithoutTpl.ops_appointment_line_items || [],
+        ),
+      },
+      template,
+    })
   } catch (error) {
     console.error('[recurring/visit/:id][GET]', error)
     return NextResponse.json({ error: 'Failed to load visit' }, { status: 500 })

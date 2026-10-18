@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import 'server-only'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -137,7 +138,7 @@ export async function contentFromEstimate(
         .filter(Boolean)
         .join(', ')
     : ''
-  content.lines = data.ops_appointment_line_items
+  content.lines = sortLineItems(data.ops_appointment_line_items)
     .filter((l) => !l.excluded_at)
     .map((l) => ({
       id: crypto.randomUUID(),

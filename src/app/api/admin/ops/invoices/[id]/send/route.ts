@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import {
   getServicePhoto,
   invoicePhotoService,
@@ -283,6 +284,7 @@ export async function POST(
           )
         ),
         ops_invoice_line_items (
+          id, sort_order, created_at,
           description,
           quantity,
           unit_price,
@@ -338,7 +340,7 @@ export async function POST(
 
     // Excluded work (fiber we could not safely clean, customer declines) stays
     // on the internal record but never reaches the customer's invoice.
-    const lineItems = (
+    const lineItems = sortLineItems(
       (invoice.ops_invoice_line_items || []) as Array<
         {
           description: string
@@ -347,7 +349,7 @@ export async function POST(
           line_total: number
           excluded_at?: string | null
         } & InvoiceServiceLinks
-      >
+      >,
     ).filter((line) => !line.excluded_at)
 
     const venmoUrl = buildVenmoPaymentLink({

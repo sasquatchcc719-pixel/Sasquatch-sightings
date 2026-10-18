@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import {
   invoiceCatalogService,
   type InvoiceServiceLinks,
@@ -103,6 +104,8 @@ const INVOICE_SELECT = `
     excluded_at,
     excluded_reason,
     excluded_original_total,
+    sort_order,
+    created_at,
     service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))
   )
 `
@@ -233,7 +236,9 @@ export async function GET(
     return NextResponse.json({
       invoice: {
         ...data,
-        ops_invoice_line_items: (data.ops_invoice_line_items || []).map(
+        ops_invoice_line_items: sortLineItems<
+          InvoiceServiceLinks & { description: string }
+        >(data.ops_invoice_line_items || []).map(
           (item: InvoiceServiceLinks & { description: string }) => ({
             ...item,
             photo_service: invoiceCatalogService(item),
@@ -473,7 +478,7 @@ export async function PATCH(
         }
       }
 
-      for (const item of lineItems) {
+      for (const [sortOrder, item] of lineItems.entries()) {
         const lineId = String(item.id || '').trim()
         const description = String(item.description || '').trim()
         const unitPrice = Number(item.unit_price || 0)
@@ -529,6 +534,7 @@ export async function PATCH(
             const { data: apptLine, error: apptLineError } = await supabase
               .from('ops_appointment_line_items')
               .insert({
+                sort_order: sortOrder,
                 appointment_id: current.appointment_id,
                 service_catalog_item_id: catalogService?.id || null,
                 name_snapshot: description,
@@ -554,6 +560,7 @@ export async function PATCH(
           const { error: insertError } = await supabase
             .from('ops_invoice_line_items')
             .insert({
+              sort_order: sortOrder,
               invoice_id: id,
               appointment_line_item_id: appointmentLineItemId,
               service_catalog_item_id: catalogService?.id || null,
@@ -577,11 +584,26 @@ export async function PATCH(
           // original price if the screen has not reloaded since the item was
           // removed, and writing that back would silently re-bill a rug we
           // told the customer we could not clean.
-          if (existingLine.excluded_at) continue
+          if (existingLine.excluded_at) {
+            const { error: orderError } = await supabase
+              .from('ops_invoice_line_items')
+              .update({ sort_order: sortOrder })
+              .eq('id', lineId)
+            if (orderError) throw orderError
+            if (existingLine.appointment_line_item_id) {
+              const { error: linkedOrderError } = await supabase
+                .from('ops_appointment_line_items')
+                .update({ sort_order: sortOrder })
+                .eq('id', existingLine.appointment_line_item_id)
+              if (linkedOrderError) throw linkedOrderError
+            }
+            continue
+          }
 
           const { error: invoiceLineError } = await supabase
             .from('ops_invoice_line_items')
             .update({
+              sort_order: sortOrder,
               description,
               quantity,
               unit_price: unitPrice,
@@ -594,6 +616,7 @@ export async function PATCH(
             const { error: appointmentLineError } = await supabase
               .from('ops_appointment_line_items')
               .update({
+                sort_order: sortOrder,
                 name_snapshot: description,
                 // Without the quantity the appointment row kept the old count
                 // beside the new line_total — "1 room" charged at the price of
@@ -943,11 +966,11 @@ export async function PATCH(
           const { data: receiptLines } = await supabase
             .from('ops_invoice_line_items')
             .select(
-              'description, quantity, unit_price, line_total, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))',
+              'sort_order, created_at, id, description, quantity, unit_price, line_total, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))',
             )
             .eq('invoice_id', id)
 
-          const lineItems = receiptLines || []
+          const lineItems = sortLineItems(receiptLines || [])
 
           const pdfBuffer = await generateInvoicePDF({
             invoiceId: id,
@@ -1010,7 +1033,14 @@ export async function PATCH(
       })()
     }
 
-    return NextResponse.json({ invoice })
+    return NextResponse.json({
+      invoice: {
+        ...invoice,
+        ops_invoice_line_items: sortLineItems(
+          invoice.ops_invoice_line_items || [],
+        ),
+      },
+    })
   } catch (error) {
     console.error('[ops/invoices/:id][PATCH] Error:', error)
     return NextResponse.json(

@@ -1,5 +1,7 @@
 'use client'
 
+import { useLineItemReorder } from '@/components/ops/line-item-reorder'
+
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ServicePhoto } from '@/components/ops/service-photo'
@@ -439,6 +441,11 @@ export function EstimateDetail({
   const [estimate, setEstimate] = useState<EstimateDetail | null>(null)
 
   const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const reorderLines = useLineItemReorder(
+    lineItems,
+    setLineItems,
+    (line) => line.id,
+  )
   const [internalNotes, setInternalNotes] = useState('')
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleStart, setScheduleStart] = useState('')
@@ -2059,6 +2066,7 @@ export function EstimateDetail({
         ) : null}
 
         <div className="mt-2 space-y-2">
+          {reorderLines.status}
           {lineItems.map((line, idx) => {
             const isCollapsed = collapsedLines.has(line.id)
             const unit = line.pricing_unit_snapshot
@@ -2085,10 +2093,12 @@ export function EstimateDetail({
             return (
               <div
                 key={line.id}
+                {...reorderLines.cardProps(line.id)}
                 id={`estimate-line-${line.id}`}
                 tabIndex={-1}
-                className={`border-border/60 scroll-mt-6 rounded-lg border p-3 focus:outline-none ${recentlyAddedLine?.id === line.id ? 'ring-2 ring-emerald-400/70 motion-safe:animate-[estimate-line-arrive_400ms_ease-out]' : ''}`}
+                className={`border-border/60 relative scroll-mt-6 rounded-lg border p-3 pr-12 focus:outline-none ${recentlyAddedLine?.id === line.id ? 'ring-2 ring-emerald-400/70 motion-safe:animate-[estimate-line-arrive_400ms_ease-out]' : ''}`}
               >
+                {reorderLines.handle(line.id, idx, line.name_snapshot)}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     {!isCredit ? (

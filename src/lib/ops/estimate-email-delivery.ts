@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
@@ -101,7 +102,7 @@ export async function prepareEstimateQuote(params: {
       `id, quoted_total, estimate_status, converted_appointment_id, updated_at,
        ops_customers!ops_appointments_customer_id_fkey(id, full_name, first_name, email, phone, email_opt_out),
        ops_service_addresses(street_1, city, state, zip_code),
-       ops_appointment_line_items(name_snapshot, quantity, unit_price, line_total, notes, pricing_unit_snapshot)`,
+       ops_appointment_line_items(id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total, notes, pricing_unit_snapshot)`,
     )
     .eq('id', params.estimateId)
     .eq('kind', 'estimate')
@@ -145,7 +146,9 @@ export async function prepareEstimateQuote(params: {
   const addressLine = address
     ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
     : 'your property'
-  const lineItems = (estimate.ops_appointment_line_items || []).map((line) => ({
+  const lineItems = sortLineItems(
+    estimate.ops_appointment_line_items || [],
+  ).map((line) => ({
     name: line.name_snapshot,
     qty: line.quantity == null ? null : Number(line.quantity),
     unitPrice: Number(line.unit_price || 0),

@@ -648,7 +648,8 @@ export async function POST(request: NextRequest) {
     if (invoiceError) throw invoiceError
 
     // --- Insert line items ---
-    const invoiceLines = lineItems.map((item) => ({
+    const invoiceLines = lineItems.map((item, sortOrder) => ({
+      sort_order: sortOrder,
       invoice_id: invoice.id,
       description: item.name_snapshot,
       service_catalog_item_id: item.service_catalog_item_id ?? null,
@@ -660,7 +661,8 @@ export async function POST(request: NextRequest) {
     await supabase.from('ops_invoice_line_items').insert(invoiceLines)
 
     // --- Insert appointment line items ---
-    const appointmentLines = lineItems.map((item) => ({
+    const appointmentLines = lineItems.map((item, sortOrder) => ({
+      sort_order: sortOrder,
       appointment_id: appointment.id,
       name_snapshot: item.name_snapshot,
       quantity: item.quantity,

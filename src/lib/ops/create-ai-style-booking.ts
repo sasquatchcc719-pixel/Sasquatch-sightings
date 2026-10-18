@@ -653,7 +653,8 @@ export async function createAiStyleBooking(
     return { ok: false, error: 'Could not create invoice' }
   }
 
-  const invoiceLines = lineItems.map((item) => ({
+  const invoiceLines = lineItems.map((item, sortOrder) => ({
+    sort_order: sortOrder,
     invoice_id: invoice.id,
     description: item.name_snapshot,
     quantity: item.quantity,
@@ -663,7 +664,8 @@ export async function createAiStyleBooking(
 
   await supabase.from('ops_invoice_line_items').insert(invoiceLines)
 
-  const appointmentLines = lineItems.map((item) => ({
+  const appointmentLines = lineItems.map((item, sortOrder) => ({
+    sort_order: sortOrder,
     appointment_id: appointment.id,
     service_catalog_item_id: item.service_catalog_item_id,
     name_snapshot: item.name_snapshot,

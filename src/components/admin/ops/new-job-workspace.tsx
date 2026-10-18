@@ -1,5 +1,7 @@
 'use client'
 
+import { useLineItemReorder } from '@/components/ops/line-item-reorder'
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -113,6 +115,7 @@ type SchedulePreview = {
 }
 
 type LineItemForm = {
+  client_id: string
   service_catalog_item_id: string
   name_snapshot: string
   quantity: string
@@ -352,6 +355,11 @@ export function NewJobWorkspace() {
   >([])
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([])
+  const reorderLines = useLineItemReorder(
+    lineItems,
+    setLineItems,
+    (line) => line.client_id,
+  )
   // null follows the service subtotal; a typed amount is an intentional override.
   const [minimumOverride, setMinimumOverride] = useState<string | null>(null)
 
@@ -832,6 +840,7 @@ export function NewJobWorkspace() {
       ? [
           ...lineItems,
           {
+            client_id: 'minimum-dispatch-adjustment',
             service_catalog_item_id: '',
             name_snapshot: 'Minimum Dispatch Adjustment',
             quantity: '1',
@@ -1025,6 +1034,7 @@ export function NewJobWorkspace() {
         })
         setLineItems([
           {
+            client_id: crypto.randomUUID(),
             service_catalog_item_id: '',
             name_snapshot: `Warranty Return — ${WARRANTY_CATEGORY_LABELS[concern.category] || 'Service Concern'}`,
             quantity: '1',
@@ -1096,6 +1106,7 @@ export function NewJobWorkspace() {
             ? servicesById.get(li.service_catalog_item_id)
             : serviceByName.get(li.name_snapshot.trim().toLowerCase())
           return {
+            client_id: crypto.randomUUID(),
             service_catalog_item_id:
               li.service_catalog_item_id || matched?.id || '',
             name_snapshot: li.name_snapshot,
@@ -1198,6 +1209,7 @@ export function NewJobWorkspace() {
       return [
         ...current,
         {
+          client_id: crypto.randomUUID(),
           service_catalog_item_id: service.id,
           name_snapshot: service.name,
           quantity: String(nextQuantity),
@@ -1628,6 +1640,7 @@ export function NewJobWorkspace() {
                   setLineItems((current) => [
                     ...current,
                     {
+                      client_id: crypto.randomUUID(),
                       service_catalog_item_id: '',
                       name_snapshot: '',
                       quantity: '1',
@@ -1734,13 +1747,20 @@ export function NewJobWorkspace() {
                   })}
                 </div>
 
+                {reorderLines.status}
                 {lineItems.map((item, index) => {
                   const service = servicesById.get(item.service_catalog_item_id)
                   return (
                     <div
-                      key={`${item.service_catalog_item_id}-${index}`}
-                      className="border-border/60 bg-background/70 rounded-2xl border p-4"
+                      key={item.client_id}
+                      {...reorderLines.cardProps(item.client_id)}
+                      className="border-border/60 bg-background/70 relative rounded-2xl border p-4 pr-12"
                     >
+                      {reorderLines.handle(
+                        item.client_id,
+                        index,
+                        item.name_snapshot,
+                      )}
                       <div className="flex items-start gap-3">
                         <ServicePhoto
                           name={service?.name || item.name_snapshot}

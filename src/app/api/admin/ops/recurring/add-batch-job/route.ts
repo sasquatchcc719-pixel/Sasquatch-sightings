@@ -129,7 +129,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Create line items
-    const linePayload = lineItems.map((l) => ({
+    const linePayload = lineItems.map((l, sortOrder) => ({
+      sort_order: sortOrder,
       appointment_id: appointment.id,
       service_catalog_item_id: l.service_catalog_item_id || null,
       name_snapshot: l.name_snapshot,

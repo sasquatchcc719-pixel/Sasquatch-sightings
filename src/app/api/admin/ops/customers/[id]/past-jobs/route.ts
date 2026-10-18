@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -49,12 +50,12 @@ export async function GET(_request: NextRequest, { params }: Params) {
             id, label, street_1, street_2, city, state, zip_code, gate_code, notes
           ),
           ops_appointment_line_items (
-            service_catalog_item_id, name_snapshot, quantity, unit_price,
+            id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price,
             duration_minutes, buffer_minutes, line_total
           ),
           ops_invoices (
             id, total, status, payment_status,
-            ops_invoice_line_items ( description, quantity, unit_price, line_total )
+            ops_invoice_line_items ( id, sort_order, created_at, description, quantity, unit_price, line_total )
           )
         `,
       )
@@ -69,8 +70,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
       .map((row) => {
         const address = unwrap(row.ops_service_addresses)
         const invoice = unwrap(row.ops_invoices)
-        const invoiceLines = invoice?.ops_invoice_line_items || []
-        const apptLines = row.ops_appointment_line_items || []
+        const invoiceLines = sortLineItems(
+          invoice?.ops_invoice_line_items || [],
+        )
+        const apptLines = sortLineItems(row.ops_appointment_line_items || [])
 
         let lineItems: OutLineItem[]
         if (invoiceLines.length > 0) {

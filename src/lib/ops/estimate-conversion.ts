@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
@@ -104,7 +105,7 @@ export async function prepareEstimateConversion(params: {
        converted_appointment_id, updated_at,
        ops_customers!ops_appointments_customer_id_fkey(id, full_name, business_name, email, phone),
        ops_service_addresses(id, street_1, street_2, city, state, zip_code),
-       ops_appointment_line_items(id, name_snapshot, quantity, unit_price, line_total,
+       ops_appointment_line_items(id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total,
          length_value, width_value, pricing_unit_snapshot, area_segments)`,
     )
     .eq('id', params.estimateId)
@@ -121,9 +122,11 @@ export async function prepareEstimateConversion(params: {
 
   const customer = one(estimate.ops_customers)
   const address = one(estimate.ops_service_addresses)
-  const sourceLines = Array.isArray(estimate.ops_appointment_line_items)
-    ? estimate.ops_appointment_line_items
-    : []
+  const sourceLines = sortLineItems(
+    Array.isArray(estimate.ops_appointment_line_items)
+      ? estimate.ops_appointment_line_items
+      : [],
+  )
   if (!customer || !address) {
     throw new Error('Estimate is missing its customer or service address')
   }

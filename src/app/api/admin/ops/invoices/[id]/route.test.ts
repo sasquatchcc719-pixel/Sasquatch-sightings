@@ -66,6 +66,11 @@ let promo: Record<string, unknown>
 let invoiceUpdate: Record<string, unknown> | null
 let rpcCalls: Array<{ name: string; args: unknown }>
 let reportingUpdates: Array<{ table: string; payload: Record<string, unknown> }>
+let lineWrites: Array<{
+  table: string
+  id: string | null
+  payload: Record<string, unknown>
+}>
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -75,6 +80,7 @@ beforeEach(() => {
   invoiceUpdate = null
   rpcCalls = []
   reportingUpdates = []
+  lineWrites = []
   current = {
     id: 'invoice-a',
     appointment_id: null,
@@ -106,11 +112,23 @@ beforeEach(() => {
   mocks.db.mockReturnValue({
     from: (table: string) => {
       let updatePayload: Record<string, unknown> | null = null
+      let lineWrite: (typeof lineWrites)[number] | undefined
       const builder = {
         select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
+        eq: vi.fn((key: string, value: string) => {
+          if (key === 'id' && lineWrite) lineWrite.id = value
+          return builder
+        }),
         update: vi.fn((payload: Record<string, unknown>) => {
           updatePayload = payload
+          if (
+            ['ops_invoice_line_items', 'ops_appointment_line_items'].includes(
+              table,
+            )
+          ) {
+            lineWrite = { table, id: null, payload }
+            lineWrites.push(lineWrite)
+          }
           if (table === 'ops_invoices') invoiceUpdate = payload
           if (table === 'jobs' || table === 'revenue_entries')
             reportingUpdates.push({ table, payload })
@@ -150,6 +168,57 @@ async function patchInvoice(body: Record<string, unknown>) {
 }
 
 describe('invoice coupon tracking', () => {
+  it('persists submitted order on existing invoice and appointment lines without rebilling excluded work', async () => {
+    current.ops_invoice_line_items = [
+      { id: 'line-a', appointment_line_item_id: 'appt-a' },
+      {
+        id: 'line-b',
+        appointment_line_item_id: 'appt-b',
+        excluded_at: '2026-10-18',
+      },
+      { id: 'line-c', appointment_line_item_id: 'appt-c' },
+    ]
+    const response = await patchInvoice({
+      line_items: [
+        {
+          id: 'line-c',
+          description: 'Third room',
+          quantity: 1,
+          unit_price: 200,
+        },
+        {
+          id: 'line-b',
+          description: 'Excluded room',
+          quantity: 1,
+          unit_price: 100,
+        },
+        {
+          id: 'line-a',
+          description: 'First room',
+          quantity: 1,
+          unit_price: 366,
+        },
+      ],
+    })
+    expect(response.status).toBe(200)
+    expect(
+      lineWrites.map(({ id, payload }) => [id, payload.sort_order]),
+    ).toEqual([
+      ['line-c', 0],
+      ['appt-c', 0],
+      ['line-b', 1],
+      ['appt-b', 1],
+      ['line-a', 2],
+      ['appt-a', 2],
+    ])
+    expect(lineWrites.find((write) => write.id === 'line-b')?.payload).toEqual({
+      sort_order: 1,
+    })
+    expect(
+      lineWrites.find((write) => write.id === 'line-c')?.payload,
+    ).toMatchObject({ quantity: 1, unit_price: 200, line_total: 200 })
+  })
+
   it('updates existing reporting amounts when an invoice discount changes', async () => {
     const response = await patchInvoice({ discount_amount: 566 })
     expect(response.status).toBe(200)

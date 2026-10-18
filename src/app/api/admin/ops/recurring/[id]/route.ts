@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -49,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
         `id, appointment_date, start_time, end_time, status, payment_status,
          quoted_total, on_my_way_at, completed_at, internal_notes,
          ops_appointment_line_items (
-           id, service_catalog_item_id, name_snapshot,
+           id, sort_order, created_at, service_catalog_item_id, name_snapshot,
            quantity, unit_price, duration_minutes, line_total, notes
          ),
          ops_invoices ( id )`,
@@ -65,7 +66,12 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
     return NextResponse.json({
       template,
-      appointments: appointments || [],
+      appointments: (appointments || []).map((appointment) => ({
+        ...appointment,
+        ops_appointment_line_items: sortLineItems(
+          appointment.ops_appointment_line_items || [],
+        ),
+      })),
       batch_invoices: batchInvoices || [],
     })
   } catch (error) {

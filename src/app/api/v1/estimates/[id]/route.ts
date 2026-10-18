@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   ApiRequestError,
@@ -18,7 +19,7 @@ const ESTIMATE_DETAIL_SELECT = `
     id, label, street_1, street_2, city, state, zip_code, gate_code, notes
   ),
   line_items:ops_appointment_line_items (
-    id, service_catalog_item_id, name_snapshot, quantity, unit_price,
+    id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price,
     duration_minutes, line_total, notes
   )
 `
@@ -39,7 +40,12 @@ export async function GET(
     if (error) throw error
     if (!data) throw new ApiRequestError('Estimate not found', 404)
 
-    return NextResponse.json({ data: serializeEstimateDetail(data) })
+    return NextResponse.json({
+      data: serializeEstimateDetail({
+        ...data,
+        line_items: sortLineItems(data.line_items || []),
+      }),
+    })
   })
 }
 

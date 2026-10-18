@@ -35,6 +35,42 @@ function textOf(node: React.ReactNode): string {
 }
 
 describe('InvoicePDF remittance', () => {
+  it('prints saved line order before unpositioned new work without changing charges', () => {
+    const text = textOf(
+      InvoicePDF({
+        data: {
+          ...invoice,
+          lineItems: [
+            {
+              description: 'New work',
+              quantity: 1,
+              unit_price: 10,
+              line_total: 10,
+              sort_order: null,
+            },
+            {
+              description: 'Last room',
+              quantity: 1,
+              unit_price: 20,
+              line_total: 20,
+              sort_order: 1,
+            },
+            {
+              description: 'First room',
+              quantity: 1,
+              unit_price: 30,
+              line_total: 30,
+              sort_order: 0,
+            },
+          ],
+        },
+      }),
+    )
+    expect(text.indexOf('First room')).toBeLessThan(text.indexOf('Last room'))
+    expect(text.indexOf('Last room')).toBeLessThan(text.indexOf('New work'))
+    expect(text).toContain('Total Due$1049.94')
+  })
+
   it('renders an unpaid invoice with check mailing instructions and its actual number', async () => {
     const document = InvoicePDF({ data: invoice })
     const text = textOf(document)

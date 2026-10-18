@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { firstTouchForCustomer } from '@/lib/ops/attribution'
 import {
@@ -642,7 +643,8 @@ export async function generateRecurringAppointments(
         continue
       }
 
-      const apptLinePayload = lineItems.map((item) => ({
+      const apptLinePayload = lineItems.map((item, sortOrder) => ({
+        sort_order: sortOrder,
         pricing_unit_snapshot: item.pricing_unit_snapshot || null,
         length_value: item.length_value ?? null,
         width_value: item.width_value ?? null,
@@ -685,14 +687,17 @@ export async function generateRecurringAppointments(
         if (invErr || !invoice) {
           result.errors.push(`${date} invoice: ${invErr?.message || 'failed'}`)
         } else {
-          const invLinePayload = (apptLines || []).map((item) => ({
-            invoice_id: invoice.id,
-            appointment_line_item_id: item.id,
-            description: item.name_snapshot,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            line_total: item.line_total,
-          }))
+          const invLinePayload = sortLineItems(apptLines || []).map(
+            (item, sortOrder) => ({
+              sort_order: sortOrder,
+              invoice_id: invoice.id,
+              appointment_line_item_id: item.id,
+              description: item.name_snapshot,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              line_total: item.line_total,
+            }),
+          )
 
           if (invLinePayload.length > 0) {
             await supabase.from('ops_invoice_line_items').insert(invLinePayload)
@@ -833,7 +838,7 @@ export async function generateBatchInvoice(
       `
       id, appointment_date, quoted_total,
       ops_appointment_line_items (
-        name_snapshot, quantity, unit_price, line_total, service_catalog_item_id
+        id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total, service_catalog_item_id
       )
     `,
     )
@@ -860,9 +865,11 @@ export async function generateBatchInvoice(
   )
 
   for (const appt of sortedAppts) {
-    const lines = Array.isArray(appt.ops_appointment_line_items)
-      ? appt.ops_appointment_line_items
-      : []
+    const lines = sortLineItems(
+      Array.isArray(appt.ops_appointment_line_items)
+        ? appt.ops_appointment_line_items
+        : [],
+    )
     const apptSubtotal = lines.reduce(
       (s: number, l: { line_total: number }) => s + Number(l.line_total),
       0,

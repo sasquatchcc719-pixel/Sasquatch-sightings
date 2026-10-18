@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import {
@@ -131,7 +132,7 @@ export async function PATCH(
       (existingLines ?? []).map((line) => [String(line.id), line]),
     )
 
-    const normalized = lineItems.map((line) => {
+    const normalized = lineItems.map((line, sortOrder) => {
       const quantity = Math.max(1, Number(line.quantity || 1))
       const unitPrice = Math.max(0, Number(line.unitPrice || 0))
       const existingId =
@@ -144,19 +145,24 @@ export async function PATCH(
         existingId,
         isExcluded,
         row: {
+          sort_order: sortOrder,
           appointment_id: id,
           name_snapshot: String(line.name || '').trim() || 'Service',
           quantity,
           unit_price: isExcluded ? 0 : unitPrice,
           buffer_minutes: 0,
-          line_total: isExcluded ? 0 : Number((quantity * unitPrice).toFixed(2)),
+          line_total: isExcluded
+            ? 0
+            : Number((quantity * unitPrice).toFixed(2)),
           notes: line.notes ? String(line.notes).trim() || null : null,
         },
       }
     })
 
     const keptIds = new Set(
-      normalized.map((n) => n.existingId).filter((v): v is string => Boolean(v)),
+      normalized
+        .map((n) => n.existingId)
+        .filter((v): v is string => Boolean(v)),
     )
     const removedIds = (existingLines ?? [])
       .map((line) => String(line.id))
@@ -181,9 +187,7 @@ export async function PATCH(
     if (toInsert.length > 0) {
       const { error: insertLinesError } = await supabase
         .from('ops_appointment_line_items')
-        .insert(
-          toInsert.map((n) => ({ ...n.row, duration_minutes: 60 })),
-        )
+        .insert(toInsert.map((n) => ({ ...n.row, duration_minutes: 60 })))
       if (insertLinesError) throw insertLinesError
     }
 
@@ -191,7 +195,7 @@ export async function PATCH(
       await supabase
         .from('ops_appointment_line_items')
         .select(
-          'id, name_snapshot, quantity, unit_price, line_total, excluded_at, excluded_reason, excluded_original_total',
+          'id, created_at, sort_order, name_snapshot, quantity, unit_price, line_total, excluded_at, excluded_reason, excluded_original_total',
         )
         .eq('appointment_id', id)
         .order('created_at', { ascending: true })
@@ -207,7 +211,8 @@ export async function PATCH(
       const { error: invoiceLinesError } = await supabase
         .from('ops_invoice_line_items')
         .insert(
-          appointmentLines.map((line) => ({
+          sortLineItems(appointmentLines).map((line, sortOrder) => ({
+            sort_order: sortOrder,
             invoice_id: invoice.id,
             appointment_line_item_id: line.id,
             description: line.name_snapshot,

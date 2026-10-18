@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
@@ -53,7 +54,8 @@ const ESTIMATE_DETAIL_SELECT = `
     width_value,
     pricing_unit_snapshot,
     area_segments,
-    created_at
+    created_at,
+    sort_order
   ),
   ops_job_photos (
     id,
@@ -98,7 +100,12 @@ async function loadEstimate(
     .single()
 
   if (error) throw error
-  return data
+  return {
+    ...data,
+    ops_appointment_line_items: sortLineItems(
+      data.ops_appointment_line_items || [],
+    ),
+  }
 }
 
 export async function GET(
@@ -317,7 +324,7 @@ export async function PATCH(
 
       const serviceMap = new Map((services || []).map((s) => [s.id, s]))
 
-      for (const item of lineItemsPayload) {
+      for (const [sortOrder, item] of lineItemsPayload.entries()) {
         const lineId = String(item.id || '').trim()
         const isNew = !lineId || lineId.startsWith('new-')
 
@@ -394,6 +401,7 @@ export async function PATCH(
         const lineTotal = Number((unitPrice * quantity).toFixed(2))
 
         const row = {
+          sort_order: sortOrder,
           service_catalog_item_id: item.service_catalog_item_id
             ? String(item.service_catalog_item_id)
             : null,

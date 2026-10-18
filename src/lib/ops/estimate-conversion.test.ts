@@ -12,6 +12,7 @@ const ESTIMATE_ID = '50000000-0000-4000-8000-000000000001'
 function fixture() {
   const state = {
     firstLineTotal: 910,
+    firstSortOrder: 0,
     rpcCalls: [] as Array<{ name: string; params: Record<string, unknown> }>,
   }
   const estimate = () => ({
@@ -41,6 +42,7 @@ function fixture() {
       {
         id: '60000000-0000-4000-8000-000000000001',
         name_snapshot: 'Commercial carpet',
+        sort_order: state.firstSortOrder,
         quantity: 2600,
         unit_price: 0.35,
         line_total: state.firstLineTotal,
@@ -52,6 +54,7 @@ function fixture() {
       {
         id: '60000000-0000-4000-8000-000000000002',
         name_snapshot: 'Deodorizer',
+        sort_order: 1,
         quantity: 2600,
         unit_price: 0.04,
         line_total: 104,
@@ -138,6 +141,29 @@ describe('atomic estimate conversion service', () => {
       pricing_unit: 'per_sq_ft',
       area_segments: [{ length: 40, width: 60 }],
     })
+  })
+
+  it('preserves saved room order and changes the preview fingerprint for order-only edits', async () => {
+    const { client, state } = fixture()
+    const params = {
+      supabase: client as never,
+      estimateId: ESTIMATE_ID,
+      appointmentDate: '2030-01-16',
+      startTime: '09:00',
+      assignedStaffUserId: STAFF_ID,
+      allowConflict: true,
+      notifyCustomer: false,
+      syncQuickBooks: false,
+    }
+    const first = await prepareEstimateConversion(params)
+    state.firstSortOrder = 2
+    const reordered = await prepareEstimateConversion(params)
+    expect(reordered.line_items.map((line) => line.name)).toEqual([
+      'Deodorizer',
+      'Commercial carpet',
+    ])
+    expect(reordered.total).toBe(first.total)
+    expect(reordered.preview_fingerprint).not.toBe(first.preview_fingerprint)
   })
 
   it('revalidates the fingerprint and calls only the atomic RPC', async () => {

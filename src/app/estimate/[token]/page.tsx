@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/supabase/server'
 import {
@@ -79,7 +80,7 @@ async function loadEstimate(token: string): Promise<LoadResult> {
       ops_customers!ops_appointments_customer_id_fkey ( full_name, first_name, business_name ),
       ops_service_addresses ( street_1, street_2, city, state, zip_code ),
       ops_appointment_line_items (
-        name_snapshot, quantity, unit_price, line_total, notes,
+        id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total, notes,
         pricing_unit_snapshot, area_segments
       )
     `,
@@ -99,7 +100,7 @@ async function loadEstimate(token: string): Promise<LoadResult> {
   const customer = unwrapRelation(estimate.ops_customers)
   const addr = unwrapRelation(estimate.ops_service_addresses)
 
-  const lines: LoadedLine[] = (
+  const lines: LoadedLine[] = sortLineItems(
     Array.isArray(estimate.ops_appointment_line_items)
       ? estimate.ops_appointment_line_items
       : []

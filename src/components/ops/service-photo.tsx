@@ -5,10 +5,12 @@ export function ServicePhoto({
   name,
   slug,
   category,
+  size = 'compact',
 }: {
   name: string
   slug?: string | null
   category?: string | null
+  size?: 'compact' | 'invoice'
 }) {
   const photo = getServicePhoto({ name, slug, category })
   if (!photo) return null
@@ -25,9 +27,9 @@ export function ServicePhoto({
       <Image
         src={photo.src}
         alt={photo.alt}
-        width={40}
-        height={40}
-        className={`h-10 w-10 shrink-0 rounded-md border ${photo.contain ? 'bg-white object-contain' : 'object-cover'}`}
+        width={size === 'invoice' ? 96 : 40}
+        height={size === 'invoice' ? 96 : 40}
+        className={`${size === 'invoice' ? 'h-20 w-20 sm:h-24 sm:w-24' : 'h-10 w-10'} shrink-0 rounded-md border ${photo.contain ? 'bg-white object-contain' : 'object-cover'}`}
       />
     </a>
   )

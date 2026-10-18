@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
 import { emailInvoiceOnJobCompletion } from '@/lib/ops/invoice-email-delivery'
@@ -88,7 +89,7 @@ const APPOINTMENT_SELECT = `
     notes
   ),
   ops_appointment_line_items (
-    id,
+    id, sort_order, created_at,
     service_catalog_item_id,
     name_snapshot,
     quantity,
@@ -267,7 +268,12 @@ export async function GET(
     if (staffError) throw staffError
 
     return NextResponse.json({
-      appointment: data,
+      appointment: {
+        ...data,
+        ops_appointment_line_items: sortLineItems(
+          data.ops_appointment_line_items || [],
+        ),
+      },
       staff: (staff || []).filter(
         (member) =>
           member.id === data.assigned_staff_user_id ||
@@ -655,6 +661,7 @@ export async function PATCH(
         quantity: number
         unit_price: number
         line_total: number
+        sort_order: number | null
       }> = []
 
       if (body.line_items.length > 0) {
@@ -667,11 +674,12 @@ export async function PATCH(
             duration_minutes?: number | string
             notes?: string | null
           }>
-        ).map((item) => {
+        ).map((item, sortOrder) => {
           const qty = Math.max(1, Number(item.quantity) || 1)
           const price = Math.max(0, Number(item.unit_price) || 0)
           return {
             appointment_id: id,
+            sort_order: sortOrder,
             service_catalog_item_id: item.service_catalog_item_id || null,
             name_snapshot: String(item.name_snapshot || '').trim() || 'Service',
             quantity: qty,
@@ -686,10 +694,12 @@ export async function PATCH(
         const { data: apptLines, error: lineItemsErr } = await supabase
           .from('ops_appointment_line_items')
           .insert(lineItemsPayload)
-          .select('id, name_snapshot, quantity, unit_price, line_total')
+          .select(
+            'id, name_snapshot, quantity, unit_price, line_total, sort_order',
+          )
 
         if (lineItemsErr) throw lineItemsErr
-        insertedApptLines = apptLines || []
+        insertedApptLines = sortLineItems(apptLines || [])
       }
 
       const newTotal = (
@@ -731,6 +741,7 @@ export async function PATCH(
               insertedApptLines.map((line) => ({
                 invoice_id: invRow.id,
                 appointment_line_item_id: line.id,
+                sort_order: line.sort_order,
                 description: line.name_snapshot,
                 quantity: line.quantity,
                 unit_price: line.unit_price,

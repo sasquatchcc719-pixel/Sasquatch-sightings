@@ -1,3 +1,4 @@
+import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   ApiRequestError,
@@ -26,7 +27,7 @@ const APPOINTMENT_DETAIL_SELECT = `
     id, display_name
   ),
   services:ops_appointment_line_items (
-    id, service_catalog_item_id, name_snapshot, quantity, unit_price,
+    id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price,
     duration_minutes, line_total, notes
   ),
   invoices:ops_invoices (
@@ -50,7 +51,12 @@ export async function GET(
     if (error) throw error
     if (!data) throw new ApiRequestError('Appointment not found', 404)
 
-    return NextResponse.json({ data: serializeAppointmentDetail(data) })
+    return NextResponse.json({
+      data: serializeAppointmentDetail({
+        ...data,
+        services: sortLineItems(data.services || []),
+      }),
+    })
   })
 }
 
