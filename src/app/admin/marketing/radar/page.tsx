@@ -7,6 +7,7 @@ import {
   describeOrganicObservation,
   type OrganicAudit,
 } from '@/lib/radar-organic-evidence'
+import { mountainDay, sameOrganicMethod } from '@/lib/radar-history'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -566,15 +567,27 @@ export default function RadarPage() {
   const latestMap = new Map<string, number | null>()
   const latestMapPack = new Map<string, number>()
   const previousMap = new Map<string, number | null>()
+  const latestRows = new Map<string, Ranking>()
   for (const r of rankings) {
     const key = `${r.keyword_id}:${r.domain_id}`
     const organicRank =
       r.scan_run_id == null && r.rank_position === 50 ? null : r.rank_position
     if (!latestMap.has(key)) {
+      latestRows.set(key, r)
       latestMap.set(key, organicRank)
       latestObservation.set(key, observationFor(r))
       if (r.map_rank != null) latestMapPack.set(key, r.map_rank)
-    } else if (!previousMap.has(key)) {
+    } else if (
+      !previousMap.has(key) &&
+      mountainDay(r.created_at) !==
+        mountainDay(latestRows.get(key)!.created_at) &&
+      sameOrganicMethod(
+        latestRows.get(key)?.scan_run_id
+          ? scanAudits[latestRows.get(key)!.scan_run_id!]
+          : null,
+        r.scan_run_id ? scanAudits[r.scan_run_id] : null,
+      )
+    ) {
       previousMap.set(
         key,
         observationFor(r).status === 'checked' ? organicRank : null,
@@ -587,7 +600,13 @@ export default function RadarPage() {
   const OUT_OF_PACK = 21
   const ORGANIC_OUT = 51
   const myDomainIds = new Set(
-    domains.filter((d) => d.is_my_domain).map((d) => d.id),
+    domains
+      .filter(
+        (d) =>
+          d.is_my_domain &&
+          d.domain.replace(/^www\./, '') === 'sasquatchcarpet.com',
+      )
+      .map((d) => d.id),
   )
   const myChartRows = rankings.filter(
     (r) =>
@@ -614,7 +633,8 @@ export default function RadarPage() {
     const rowsForMetric =
       metric === 'organic'
         ? myChartRows.filter(
-            (row) => row.scan_run_id && scanAudits[row.scan_run_id],
+            (row) =>
+              row.scan_run_id && scanAudits[row.scan_run_id]?.version === 2,
           )
         : myChartRows
     // Only chart towns we've placed in at least once in the window — towns we
@@ -638,15 +658,12 @@ export default function RadarPage() {
     for (const r of rowsForMetric) {
       const s = series.find((ss) => ss.id === r.keyword_id)
       if (!s) continue
-      const date = r.created_at.slice(0, 10)
+      const date = mountainDay(r.created_at)
       if (!byDate.has(date)) byDate.set(date, { date })
       const row = byDate.get(date)!
       const value = placedAt(r, metric) ?? (metric === 'map' ? outValue : null)
-      const prev = row[s.label]
-      // Best (lowest) placement that day — we own more than one domain, and a
-      // day can hold more than one scan.
-      if (typeof prev !== 'number' || (value != null && value < prev))
-        row[s.label] = value
+      // Rows are newest first: preserve the latest daily reading, including a miss.
+      if (!(s.label in row)) row[s.label] = value
     }
     const data = Array.from(byDate.values()).sort((a, b) =>
       (a.date as string) < (b.date as string) ? -1 : 1,
@@ -1433,7 +1450,7 @@ export default function RadarPage() {
                 drag the slider under the chart to zoom and scroll.
                 {chartMetric === 'map'
                   ? ' Comparable Maps history begins Jun 6, 2026.'
-                  : ' Independent history begins with the October 17 repair.'}
+                  : ' Comparable spot checks begin October 18. The Radar Daily page includes Google-recorded organic history for the previous 90 days.'}
               </p>
               {activeChart.data.length > 0 && activeChart.series.length > 0 ? (
                 <div className="h-[300px] w-full">

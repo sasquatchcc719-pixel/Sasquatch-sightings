@@ -194,6 +194,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ## 11. Project Learnings
 
+- Ranking reports must graph each town’s actual position over dates, show organic and Maps separately, and validate returned query/topic/location; a count of visible towns is not a rank graph. Never join different search methods into one history.
+
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**
 
 - Show Palmer Lake's overnight low and the 33°F truck-protection warning at the top of both the technician and admin dashboards, with automatic refresh throughout the day.

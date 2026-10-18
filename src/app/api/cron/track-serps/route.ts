@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
     // below makes the incomplete cron run visible to monitoring.
     let digestSent = false
     let digestImageSent = false
+    let reportDeliveryError: string | null = null
     try {
       if (!result.success) {
         throw new Error(result.error_detail || 'Radar scan was incomplete')
@@ -91,8 +92,17 @@ export async function GET(request: NextRequest) {
         })
         digestSent = delivery.textSent
         digestImageSent = delivery.imageSent
+        if (!delivery.textSent || !delivery.imageSent) {
+          throw new Error(
+            `Radar report delivery incomplete: text=${delivery.textSent}, image=${delivery.imageSent}`,
+          )
+        }
       }
     } catch (digestErr) {
+      reportDeliveryError =
+        digestErr instanceof Error
+          ? digestErr.message
+          : 'Report delivery failed'
       console.error('[Radar Cron] digest send failed:', digestErr)
     }
 
@@ -102,8 +112,9 @@ export async function GET(request: NextRequest) {
         review_sync: reviewSync,
         digestSent,
         digestImageSent,
+        reportDeliveryError,
       },
-      { status: result.success ? 200 : 502 },
+      { status: result.success && !reportDeliveryError ? 200 : 502 },
     )
   } catch (err) {
     console.error('[Radar Cron] Error:', err)

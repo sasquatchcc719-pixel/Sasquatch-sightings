@@ -1,8 +1,8 @@
 /**
  * Shared logic for running a Radar SERP scan (used by cron and manual refresh).
  * Fetches rankings for all active keywords and inserts into radar_rankings.
- * Organic rank and Maps local finder both use DataForSEO from fixed town
- * centroids, so the two daily readings share one location and device model.
+ * Maps uses fixed town-center coordinates. Organic spot checks use an explicit
+ * town-qualified query; Google Search Console supplies the historical trend.
  */
 
 import { createAdminClient } from '@/supabase/server'
@@ -10,10 +10,17 @@ import { fetchMapsLocalFinder } from '@/lib/dataforseo'
 import { fetchAuditedOrganicRanks } from '@/lib/radar-organic'
 import {
   organicObservation,
-  describeOrganicObservation,
   type OrganicAudit,
 } from '@/lib/radar-organic-evidence'
-import type { ReportCardInput, ReportCardTone } from '@/lib/reports/report-card'
+import {
+  buildMapsRankPanel,
+  buildGoogleOrganicPanel,
+  sameOrganicMethod,
+  mountainDay,
+  type GscDailyRow,
+} from '@/lib/radar-history'
+import { fetchRadarGoogleHistory } from '@/lib/radar-gsc-history'
+import type { ReportCardInput } from '@/lib/reports/report-card'
 
 const PRIMARY_RADAR_DOMAIN = 'sasquatchcarpet.com'
 
@@ -86,7 +93,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
           .from('radar_scan_runs')
           .insert({
             keyword_id: kw.id,
-            provider: 'dataforseo+serpapi',
+            provider: 'serpapi-organic+dataforseo-maps',
             organic_audit: organic.audit,
             device: organic.device,
             latitude: organic.lat,
@@ -234,7 +241,6 @@ export async function runRadarScan(): Promise<RadarScanResult> {
 
 /** How deep the Maps town-centre sample checks. */
 const MAPS_DEPTH = 20
-const ORGANIC_MISS_FLOOR = 51
 // DataForSEO's fixed town-centre coordinates replaced SerpApi's town-name
 // search on this date. Earlier finder_rank rows are real observations, but
 // they are not comparable enough to put on the same progress graph.
@@ -253,21 +259,6 @@ export type MapsHistoryRow = {
   keyword_id: string
   finder_rank: number | null
   created_at: string
-}
-
-type ScanRunRow = {
-  organic_audit?: OrganicAudit | null
-  id: string
-  provider: string
-  requested_depth: number
-  returned_depth: number
-  created_at: string
-}
-
-type RankSample = {
-  value: number | null
-  createdAt: string
-  scanRunId: string | null
 }
 
 type LocalFalconRow = {
@@ -404,53 +395,6 @@ export function buildWeeklyMapsVisibility(
     .slice(-13)
 }
 
-function bestRank(rows: RankRow[], metric: 'map' | 'organic'): number | null {
-  const positions = rows
-    .map((row) => {
-      if (metric === 'map') return row.map_rank
-      // Before scan_run_id existed, 50 was the fake not-found sentinel. New
-      // scans store NULL, so a provider-backed #50 is now allowed through.
-      if (row.scan_run_id == null && row.rank_position === 50) return null
-      return row.rank_position
-    })
-    .filter((value): value is number => value != null)
-  return positions.length ? Math.min(...positions) : null
-}
-
-function samplesFor(rows: RankRow[], metric: 'map' | 'organic'): RankSample[] {
-  const groups = new Map<
-    string,
-    { rows: RankRow[]; createdAt: string; scanRunId: string | null }
-  >()
-  for (const row of rows) {
-    const key = row.scan_run_id ?? row.created_at
-    const group = groups.get(key) ?? {
-      rows: [],
-      createdAt: row.created_at,
-      scanRunId: row.scan_run_id,
-    }
-    group.rows.push(row)
-    if (row.created_at > group.createdAt) group.createdAt = row.created_at
-    groups.set(key, group)
-  }
-  return [...groups.values()]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((group) => ({
-      value: bestRank(group.rows, metric),
-      createdAt: group.createdAt,
-      scanRunId: group.scanRunId,
-    }))
-}
-
-function arrowFor(values: Array<number | null>, missFloor: number): string {
-  if (values.length < 4) return ''
-  const current = rollingMedianRank(values, missFloor) ?? missFloor
-  const previous = rollingMedianRank(values.slice(1), missFloor) ?? missFloor
-  if (current < previous) return ' ↑'
-  if (current > previous) return ' ↓'
-  return ''
-}
-
 function localFalconBelongsToUs(
   row: LocalFalconRow,
   myDomains: string[],
@@ -505,28 +449,22 @@ function mountainDateKey(date = new Date()): string {
  */
 export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> {
   const supabase = createAdminClient()
-
   const { data: domains } = await supabase
     .from('radar_domains')
     .select('id, domain, is_my_domain')
-  const mine = (domains ?? []).filter((domain) => domain.is_my_domain)
-  const primaryDomain = mine.find(
+  const primaryDomain = (domains ?? []).find(
     (domain) =>
-      domain.domain.toLowerCase().replace(/^www\./, '') ===
-      PRIMARY_RADAR_DOMAIN,
+      domain.domain.replace(/^www\./, '') === PRIMARY_RADAR_DOMAIN &&
+      domain.is_my_domain,
   )
   if (!primaryDomain) return null
-  const myDomainIds = [primaryDomain.id]
-  const myDomains = [PRIMARY_RADAR_DOMAIN]
-
-  const { data: keywords } = await supabase
+  const { data: keywords, error: keywordError } = await supabase
     .from('radar_keywords')
     .select('id, keyword, location')
     .eq('active', true)
+  if (keywordError) throw new Error(keywordError.message)
   if (!keywords?.length) return null
-
-  const since = new Date(Date.now() - 100 * 86_400_000).toISOString()
-  const { data: ranks } = await supabase
+  const { data: ranks, error: rankError } = await supabase
     .from('radar_rankings')
     .select(
       'keyword_id, map_rank, finder_rank, rank_position, created_at, scan_run_id',
@@ -535,36 +473,32 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       'keyword_id',
       keywords.map((k) => k.id),
     )
-    .in('domain_id', myDomainIds)
-    .gte('created_at', since)
+    .eq('domain_id', primaryDomain.id)
+    .gte('created_at', new Date(Date.now() - 100 * 86400000).toISOString())
     .order('created_at', { ascending: false })
+    .limit(1000)
+  if (rankError) throw new Error(rankError.message)
   if (!ranks?.length) return null
   const rankRows = ranks as RankRow[]
-  const weeklyMapsVisibility = buildWeeklyMapsVisibility(
-    rankRows,
-    keywords.map((keyword) => keyword.id),
-  )
-
   const runIds = [
     ...new Set(
-      rankRows
-        .map((row) => row.scan_run_id)
-        .filter((id): id is string => Boolean(id)),
+      rankRows.flatMap((row) => (row.scan_run_id ? [row.scan_run_id] : [])),
     ),
   ]
-  const { data: scanRuns } = runIds.length
+  const { data: runs, error: runError } = runIds.length
     ? await supabase
         .from('radar_scan_runs')
-        .select(
-          'id, provider, requested_depth, returned_depth, created_at, organic_audit',
-        )
+        .select('id, organic_audit')
         .in('id', runIds)
-    : { data: [] }
-  const scanRunById = new Map(
-    ((scanRuns ?? []) as ScanRunRow[]).map((run) => [run.id, run]),
+    : { data: [], error: null }
+  if (runError) throw new Error(runError.message)
+  const audits = new Map(
+    (runs ?? []).map((run) => [
+      run.id,
+      run.organic_audit as OrganicAudit | null,
+    ]),
   )
-
-  const { data: localFalconData } = await supabase
+  const { data: gridData } = await supabase
     .from('local_falcon_scans')
     .select(
       'keyword, scanned_at, arp, solv, found_in, points_total, location, grid_size, radius, measurement, center_lat, center_lng',
@@ -572,237 +506,132 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     .eq('platform', 'google')
     .order('scanned_at', { ascending: false })
     .limit(50)
-  const localFalconCandidates = (
-    (localFalconData ?? []) as LocalFalconRow[]
-  ).filter(
+  const grids = ((gridData ?? []) as LocalFalconRow[]).filter(
     (row) =>
       row.keyword.trim().toLowerCase() === 'carpet cleaning' &&
-      localFalconBelongsToUs(row, myDomains),
+      localFalconBelongsToUs(row, [PRIMARY_RADAR_DOMAIN]),
   )
-  const newestLocalFalconGrid = localFalconCandidates[0]
-  const localFalcon = newestLocalFalconGrid
-    ? localFalconCandidates
-        .filter((row) => sameLocalFalconGrid(row, newestLocalFalconGrid))
-        .slice(0, 6)
-    : []
-
-  const fmtMap = (p: number | null) =>
-    p == null ? `not in top ${MAPS_DEPTH}` : `#${p}`
-
-  const mapGroups = new Map<string, string[]>()
-  const organicGroups = new Map<string, string[]>()
-  const mapCurrent: Array<{ town: string; rank: number | null }> = []
-  const organicCurrent: Array<{
-    town: string
-    rank: number | null
-    checked: boolean
-  }> = []
-
-  for (const kw of keywords) {
-    const keywordRows = rankRows.filter((row) => row.keyword_id === kw.id)
-    if (!keywordRows.length) continue
-    const town = kw.location.split(',')[0].trim()
-
-    for (const metric of ['map', 'organic'] as const) {
-      const rowsForMetric =
-        metric === 'organic'
-          ? keywordRows.filter(
-              (row) =>
-                row.scan_run_id &&
-                scanRunById.get(row.scan_run_id)?.organic_audit,
-            )
-          : keywordRows
-      const samples = samplesFor(rowsForMetric, metric)
-      const values = samples.map((sample) => sample.value)
-      const missFloor = metric === 'map' ? MAPS_DEPTH + 1 : ORGANIC_MISS_FLOOR
-      const organicSummary = summarizeOrganicSamples(values)
-      const current =
-        metric === 'map'
-          ? rollingMedianRank(values, missFloor)
-          : organicSummary.latest
-      const arrow = metric === 'map' ? arrowFor(values, missFloor) : ''
-      const newestRun = samples[0]?.scanRunId
-        ? scanRunById.get(samples[0].scanRunId!)
-        : null
-      const observation = organicObservation(
-        newestRun?.organic_audit,
-        primaryDomain.id,
+  const latestGrid = grids[0]
+  const previousGrid = latestGrid
+    ? grids.find(
+        (row, index) => index > 0 && sameLocalFalconGrid(latestGrid, row),
       )
-      const icon =
-        current === 1
-          ? '🥇'
-          : current == null
-            ? metric === 'map'
-              ? '⚠️'
-              : '•'
-            : current <= 3
-              ? '🟢'
-              : '•'
-      const value =
-        metric === 'map'
-          ? fmtMap(current)
-          : describeOrganicObservation(observation)
-      const baseline =
-        samples.length < (metric === 'map' ? 3 : 7) ? ' · new baseline' : ''
-      const line = `${icon} ${town}: ${value}${arrow}${baseline}`
-      const groups = metric === 'map' ? mapGroups : organicGroups
-      const list = groups.get(kw.keyword) ?? []
-      list.push(line)
-      groups.set(kw.keyword, list)
-
-      if (metric === 'map') mapCurrent.push({ town, rank: current })
-      else
-        organicCurrent.push({
-          town,
-          rank: observation.status === 'checked' ? observation.rank : null,
-          checked: newestRun?.organic_audit?.verification != null,
-        })
-    }
+    : null
+  const gridLine = latestGrid
+    ? `MAPS SERVICE-AREA GRID · Local Falcon\nAverage rank ${latestGrid.arp?.toFixed(1) ?? '—'} · coverage ${latestGrid.found_in ?? '—'}/${latestGrid.points_total ?? '—'} points · visibility ${latestGrid.solv?.toFixed(1) ?? '—'}%${previousGrid?.solv != null && latestGrid.solv != null ? ` (previous ${previousGrid.solv.toFixed(1)}%)` : ''}`
+    : 'MAPS SERVICE-AREA GRID · awaiting Local Falcon data'
+  const mapsPanel = buildMapsRankPanel(keywords, rankRows)
+  let googleHistory: GscDailyRow[] = []
+  let googleUnavailable = false
+  try {
+    googleHistory = await fetchRadarGoogleHistory()
+  } catch (error) {
+    googleUnavailable = true
+    console.error('[Radar] Google organic history unavailable', error)
   }
-  if (mapGroups.size === 0 && organicGroups.size === 0) return null
-
+  const organicPanel = buildGoogleOrganicPanel(keywords, googleHistory)
+  if (googleUnavailable) {
+    organicPanel.subtitle =
+      'Google history temporarily unavailable; no ranking-loss inference'
+    organicPanel.series.forEach((series) => {
+      series.latestLabel = 'History unavailable'
+    })
+  }
+  const mapLines = mapsPanel.series.map((series) => {
+    const points = series.points
+    const latest = points.at(-1)
+    const prior = points.at(-2)
+    const rank = latest?.rank
+    const move =
+      rank != null && prior?.rank != null
+        ? rank === prior.rank
+          ? ' · unchanged'
+          : rank < prior.rank
+            ? ` · up ${prior.rank - rank}`
+            : ` · down ${rank - prior.rank}`
+        : ''
+    return `• ${series.town}: ${rank != null ? `#${rank}` : latest ? 'outside top 20' : 'scan unavailable'}${move}`
+  })
+  const organicLines = organicPanel.series.map((series) => {
+    const current = series.points.at(-1)
+    const prior = series.points.at(-2)
+    const movement =
+      current?.rank != null && prior?.rank != null
+        ? ` · previous recorded ${prior.rank.toFixed(1)} (${prior.date.slice(5)})`
+        : ''
+    return `• ${series.town}: ${series.latestLabel}${movement}`
+  })
+  const spotLines = keywords.map((kw) => {
+    const town = kw.location.split(',')[0].trim()
+    const rows = rankRows.filter((row) => row.keyword_id === kw.id)
+    const latest = rows[0]
+    const audit = latest?.scan_run_id ? audits.get(latest.scan_run_id) : null
+    if (audit?.version !== 2) return `• ${town}: new search check pending`
+    const observation = organicObservation(audit, primaryDomain.id)
+    const previous = rows
+      .slice(1)
+      .find(
+        (row) =>
+          row.scan_run_id &&
+          sameOrganicMethod(audit, audits.get(row.scan_run_id)) &&
+          mountainDay(row.created_at) !== mountainDay(latest.created_at),
+      )
+    const priorAudit = previous?.scan_run_id
+      ? audits.get(previous.scan_run_id)
+      : null
+    const prior = organicObservation(priorAudit, primaryDomain.id)
+    const value =
+      observation.status === 'checked'
+        ? `#${observation.rank}`
+        : observation.status === 'not_seen'
+          ? `not on checked pages (${observation.depth} results)`
+          : 'check failed; no ranking conclusion'
+    const movement =
+      observation.rank != null && prior.rank != null
+        ? observation.rank === prior.rank
+          ? ' · unchanged'
+          : observation.rank < prior.rank
+            ? ` · up ${prior.rank - observation.rank}`
+            : ` · down ${observation.rank - prior.rank}`
+        : ''
+    const failedDepth =
+      audit.errors.length && observation.status === 'not_seen'
+        ? ' · deeper search unavailable'
+        : ''
+    return `• ${town}: ${value}${movement}${failedDepth}`
+  })
+  const day = mountainDateKey()
   const date = new Date().toLocaleDateString('en-US', {
     timeZone: 'America/Denver',
     month: 'short',
     day: 'numeric',
   })
-  const block = (groups: Map<string, string[]>) =>
-    [...groups.entries()]
-      .map(([keyword, lines]) => `📍 ${keyword}\n${lines.join('\n')}`)
-      .join('\n\n')
-
-  const parts = [`🗺️ Radar Daily · ${date}`]
-  if (mapGroups.size > 0) {
-    parts.push(
-      `— Google Maps Business Profile rank · town-center spot check · 3-scan median (top ${MAPS_DEPTH}) —\n${block(mapGroups)}`,
-    )
-  }
-  if (organicGroups.size > 0) {
-    parts.push(
-      `— Website organic rank · independent first-page desktop check —\n${block(organicGroups)}`,
-    )
-  }
-  if (mapGroups.size > 0 && organicGroups.size > 0) {
-    parts.push(
-      `Maps and website organic are separate Google result systems. Their rank numbers are not comparable.`,
-    )
-  }
-
-  const latestGrid = localFalcon[0]
-  const previousGrid = localFalcon[1]
-  if (latestGrid) {
-    const coverage =
-      latestGrid.found_in != null && latestGrid.points_total
-        ? `${latestGrid.found_in}/${latestGrid.points_total} points`
-        : 'coverage unavailable'
-    parts.push(
-      `— Local Falcon service-area grid —\n` +
-        `Average rank ${latestGrid.arp?.toFixed(1) ?? '—'} · ` +
-        `SoLV ${latestGrid.solv?.toFixed(1) ?? '—'}% · ${coverage}\n` +
-        (previousGrid
-          ? `This comparable grid trend is the best Maps progress signal; town rows above are single points.`
-          : `New grid baseline; wait for the same grid configuration before calling movement.`),
-    )
-  }
-  parts.push(
-    `🥇 #1 · 🟢 top 3 · ⚠️ not found · arrows apply only to the 3-scan Maps trend`,
-  )
-
-  const mapVisible = mapCurrent.filter((row) => row.rank != null).length
-  const organicVisible = organicCurrent.filter((row) => row.rank != null).length
-  const bestMap = mapCurrent
-    .filter((row): row is { town: string; rank: number } => row.rank != null)
-    .sort((a, b) => a.rank - b.rank)[0]
-  const coveragePct =
-    latestGrid?.found_in != null && latestGrid.points_total
-      ? Math.round((latestGrid.found_in / latestGrid.points_total) * 100)
-      : null
-  const solvChange =
-    latestGrid?.solv != null && previousGrid?.solv != null
-      ? latestGrid.solv - previousGrid.solv
-      : null
-  let tone: ReportCardTone = 'neutral'
-  let verdict = latestGrid
-    ? 'Latest Local Falcon grid is a new comparison baseline.'
-    : 'Local Falcon is awaiting a comparable service-area grid.'
-  if (solvChange != null && solvChange >= 1) {
-    tone = 'good'
-    verdict = `Local Maps visibility improved ${solvChange.toFixed(1)} points.`
-  } else if (solvChange != null && solvChange <= -1) {
-    tone = 'warn'
-    verdict = `Local Maps visibility slipped ${Math.abs(solvChange).toFixed(1)} points.`
-  } else if (solvChange != null) {
-    verdict = 'Local Maps visibility is holding steady.'
-  }
-
+  const text = [
+    `Radar Daily · ${date}`,
+    'MAPS · actual town-center rank today\n' + mapLines.join('\n'),
+    'ORGANIC TREND · Google-recorded average position\n' +
+      organicLines.join('\n'),
+    gridLine,
+    'Organic graph: weekly US desktop searches for carpet cleaning + each town; lower is better. Averages are not a fixed-location spot rank. No impressions means no reported data, not no ranking.',
+    'ORGANIC SPOT CHECK · "carpet cleaning [town] co"\n' + spotLines.join('\n'),
+    'Daily first-page checks; weekly Sunday pagination when absent. Wrong-topic/city responses are rejected. Graphs attached: town Maps ranks + 90-day Google organic history.',
+  ].join('\n\n')
   const card: ReportCardInput = {
     eyebrow: 'Radar Daily',
     title: date,
-    subtitle:
-      `${weeklyMapsVisibility.length}-week fixed-location Maps history · ` +
-      'separate website organic spot check · service-area grid',
-    verdict: { text: verdict, tone },
-    metrics: [
-      {
-        label: 'Best town center',
-        value: bestMap ? `#${bestMap.rank}` : 'Out',
-        note: bestMap?.town ?? 'No top-20 town sample',
-        tone: bestMap?.rank === 1 ? 'good' : 'neutral',
-      },
-      {
-        label: 'Map towns visible',
-        value: `${mapVisible}/${mapCurrent.length}`,
-        note: 'Fixed town-center samples',
-        tone: 'neutral',
-      },
-      {
-        label: 'Organic ranks found',
-        value: organicCurrent.some((row) => row.checked)
-          ? `${organicVisible}/${organicCurrent.filter((row) => row.checked).length}`
-          : '—',
-        note: `${organicCurrent.filter((row) => !row.checked).length} checks unavailable · first page only`,
-        tone: 'neutral',
-      },
-      {
-        label: 'Grid coverage',
-        value: coveragePct != null ? `${coveragePct}%` : '—',
-        note:
-          latestGrid?.found_in != null && latestGrid.points_total
-            ? `${latestGrid.found_in} of ${latestGrid.points_total} points`
-            : 'Awaiting Local Falcon',
-        tone: coveragePct != null && coveragePct >= 80 ? 'good' : 'neutral',
-      },
-    ],
-    series:
-      weeklyMapsVisibility.length > 0
-        ? {
-            label: `Town centers visible in Maps top 20 (of ${keywords.length})`,
-            points: weeklyMapsVisibility,
-            maxValue: keywords.length,
-          }
-        : null,
-    footer:
-      'Maps and website organic ranks are separate. Grid coverage is Local Falcon.',
+    metrics: [],
+    rankHistory: {
+      date: day,
+      panels: [mapsPanel, organicPanel],
+      note: 'Organic: Google Search Console, US desktop, weekly impression-weighted positions. Both www and non-www properties. Latest data is delayed about 4 days. Gaps mean no measurement; positions are not filled in.',
+    },
   }
-
-  const caption = [
-    `Radar · ${date}`,
-    verdict,
-    weeklyMapsVisibility.length > 0
-      ? `${weeklyMapsVisibility.length}-week fixed-location Maps history attached`
-      : null,
-    latestGrid
-      ? `Grid: rank ${latestGrid.arp?.toFixed(1) ?? '—'} · ${coveragePct ?? '—'}% coverage`
-      : null,
-  ]
-    .filter(Boolean)
-    .join('\n')
-
+  const lastRun = rankRows[0]?.scan_run_id ?? day
   return {
-    text: parts.join('\n\n'),
-    caption,
+    text,
+    caption: `Radar · ${date}\nTown-by-town Maps ranks and Google organic position history. Lower positions are better.`,
     card,
-    runKey: mountainDateKey(),
+    runKey: `${day}-rank-history-v2-${lastRun}`,
   }
 }
 

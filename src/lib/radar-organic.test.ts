@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ primary: vi.fn(), verify: vi.fn() }))
-vi.mock('@/lib/dataforseo', () => ({ fetchOrganicRanks: mocks.primary }))
-vi.mock('@/lib/serpapi-budget', () => ({ fetchSerpApiJson: mocks.verify }))
-import { fetchAuditedOrganicRanks } from './radar-organic'
+const mocks = vi.hoisted(() => ({ fetch: vi.fn() }))
+vi.mock('@/lib/serpapi-budget', () => ({ fetchSerpApiJson: mocks.fetch }))
 import {
-  describeOrganicObservation,
-  organicObservation,
-} from './radar-organic-evidence'
+  fetchAuditedOrganicRanks,
+  isRelevantOrganicPage,
+  townOrganicQuery,
+} from './radar-organic'
 const domains = [
   {
     id: 'ours',
@@ -15,137 +14,146 @@ const domains = [
     is_my_domain: true,
   },
 ]
-function primary(rank: number | null) {
+function page(own = false) {
   return {
-    ranks: [{ domain_id: 'ours', rank_position: rank }],
-    snapshot: rank
-      ? [
-          {
-            domain: 'sasquatchcarpet.com',
-            position: rank,
-            url: 'https://www.sasquatchcarpet.com/',
-          },
-        ]
-      : [],
-    requestedDepth: 50,
-    returnedDepth: 47,
-    taskId: 'dfs-task',
-    cost: 0.01,
-  }
-}
-function verification(rank: number | null) {
-  return {
-    search_metadata: { status: 'Success', id: 'verify-task' },
-    search_parameters: { location_used: 'Monument,Colorado,United States' },
+    search_metadata: { status: 'Success' },
+    search_parameters: {
+      q: 'carpet cleaning monument co',
+      location_used: 'Monument,Colorado,United States',
+    },
     organic_results: [
-      { position: 9, link: 'https://example.com/' },
-      ...(rank
+      {
+        position: 1,
+        link: 'https://example.com/monument-carpet-cleaning',
+        title: 'Carpet cleaning Monument',
+      },
+      {
+        position: 2,
+        link: 'https://other.test/monument-carpet-cleaning',
+        title: 'Monument carpet cleaning',
+      },
+      ...(own
         ? [
             {
-              position: rank,
+              position: 3,
               link: 'https://www.sasquatchcarpet.com/',
-              title: 'Sasquatch',
+              title: 'Monument carpet cleaning',
             },
           ]
         : []),
     ],
+    serpapi_pagination: { next: 'next' },
   }
 }
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.primary.mockResolvedValue(primary(null))
-  mocks.verify.mockResolvedValue(verification(1))
+  mocks.fetch.mockResolvedValue(page(true))
 })
-describe('audited organic measurements', () => {
-  it('repairs the reproduced false miss with independent #1 and saves both sources', async () => {
-    const result = await fetchAuditedOrganicRanks(
+describe('comparable town organic searches', () => {
+  it('records explicit query and exact first-page position', async () => {
+    const r = await fetchAuditedOrganicRanks(
       'carpet cleaning',
-      'Monument, Colorado, United States',
+      'Monument, CO',
       domains,
+      { deep: false },
     )
-    expect(result.ranks[0].rank_position).toBe(1)
-    expect(result.audit.observations.ours).toEqual({
-      status: 'checked',
-      source: 'serpapi',
-      rank: 1,
-      depth: 9,
+    expect(r.audit).toMatchObject({
+      version: 2,
+      query: 'carpet cleaning monument co',
     })
-    expect(result.audit.primary).toMatchObject({ taskId: 'dfs-task' })
-    expect(result.audit.verification).toMatchObject({
-      taskId: 'verify-task',
-      returnedDepth: 9,
+    expect(r.ranks[0].rank_position).toBe(3)
+    expect(mocks.fetch.mock.calls[0][0].params.get('q')).toBe(
+      'carpet cleaning monument co',
+    )
+  })
+  it('does not repeat a town already present in the configured query', () => {
+    expect(townOrganicQuery('carpet cleaning monument co', 'Monument,CO')).toBe(
+      'carpet cleaning monument co',
+    )
+  })
+  it('rejects unrelated household cleaning despite matching location metadata', async () => {
+    const p = page()
+    p.organic_results = p.organic_results.map((r) => ({
+      ...r,
+      title: 'General cleaning',
+      link: 'https://example.org/cleaning',
+    }))
+    mocks.fetch.mockResolvedValue(p)
+    const r = await fetchAuditedOrganicRanks(
+      'carpet cleaning',
+      'Monument,CO',
+      domains,
+      { deep: false },
+    )
+    expect(r.audit.observations.ours.status).toBe('unverified')
+    expect(r.audit.errors).toHaveLength(1)
+  })
+  it('accepts literal percent signs in legitimate service snippets', () => {
+    const p = page(true)
+    p.organic_results[0].title = 'Monument carpet cleaning 100% satisfaction'
+    expect(
+      isRelevantOrganicPage(p, 'carpet cleaning monument co', 'Monument,CO'),
+    ).toBe(true)
+  })
+  it('rejects the reproduced wrong-city response', () => {
+    const p = page()
+    p.organic_results = p.organic_results.map((r) => ({
+      ...r,
+      title: 'Denver carpet cleaning',
+      link: 'https://example.org/denver-carpet-cleaning',
+    }))
+    expect(
+      isRelevantOrganicPage(p, 'carpet cleaning monument co', 'Monument,CO'),
+    ).toBe(false)
+  })
+  it('rejects a provider response for a different query', () => {
+    const p = page()
+    p.search_parameters.q = 'carpet'
+    expect(
+      isRelevantOrganicPage(p, 'carpet cleaning monument co', 'Monument,CO'),
+    ).toBe(false)
+  })
+  it('finds an exact deeper rank through actual pagination', async () => {
+    mocks.fetch.mockResolvedValueOnce(page()).mockResolvedValueOnce({
+      ...page(true),
+      organic_results: [
+        {
+          position: 1,
+          link: 'https://www.sasquatchcarpet.com/',
+          title: 'Monument carpet cleaning',
+        },
+      ],
     })
-    expect(mocks.verify.mock.calls[0][0].params.has('num')).toBe(false)
-  })
-  it.each([16, 25, 50])(
-    'preserves the deeper observed #%i when the first-page check misses it',
-    async (rank) => {
-      mocks.primary.mockResolvedValue(primary(rank))
-      mocks.verify.mockResolvedValue(verification(null))
-      const result = await fetchAuditedOrganicRanks(
-        'carpet cleaning',
-        'Monument, CO',
-        domains,
-      )
-      expect(result.ranks[0].rank_position).toBe(rank)
-      expect(result.audit.observations.ours.status).toBe('observed')
-      expect(
-        describeOrganicObservation(result.audit.observations.ours),
-      ).toContain('not independently verified')
-    },
-  )
-  it('scopes two misses to the actual first-page depth and never fabricates rank 51', async () => {
-    mocks.verify.mockResolvedValue(verification(null))
-    const result = await fetchAuditedOrganicRanks(
+    const r = await fetchAuditedOrganicRanks(
       'carpet cleaning',
-      'Monument, CO',
+      'Monument,CO',
+      domains,
+      { deep: true },
+    )
+    expect(r.ranks[0].rank_position).toBe(11)
+    expect(mocks.fetch.mock.calls[1][0].params.get('start')).toBe('10')
+    expect(r.audit.observations.ours.status).toBe('checked')
+  })
+  it('rejects repeated pagination without inventing an outside-top50 position', async () => {
+    mocks.fetch.mockResolvedValue(page())
+    const r = await fetchAuditedOrganicRanks(
+      'carpet cleaning',
+      'Monument,CO',
+      domains,
+      { deep: true },
+    )
+    expect(r.ranks[0].rank_position).toBeNull()
+    expect(r.returnedDepth).toBe(2)
+    expect(r.audit.errors).toContain('Search repeated an earlier page')
+  })
+  it('keeps quota failure as unknown', async () => {
+    mocks.fetch.mockRejectedValue(new Error('quota'))
+    const r = await fetchAuditedOrganicRanks(
+      'carpet cleaning',
+      'Monument,CO',
       domains,
     )
-    expect(result.ranks[0].rank_position).toBeNull()
-    expect(describeOrganicObservation(result.audit.observations.ours)).toBe(
-      'not seen in 9 checked · deeper rank unknown',
-    )
-  })
-  it('keeps a quota failure unknown instead of declaring a lost ranking', async () => {
-    mocks.verify.mockRejectedValue(new Error('quota exhausted'))
-    const result = await fetchAuditedOrganicRanks(
-      'carpet cleaning',
-      'Monument, CO',
-      domains,
-    )
-    expect(result.audit.observations.ours.status).toBe('unverified')
-    expect(result.audit.errors).toHaveLength(1)
-  })
-  it('survives the deeper provider failing when independent evidence succeeds', async () => {
-    mocks.primary.mockRejectedValue(new Error('timeout'))
-    const result = await fetchAuditedOrganicRanks(
-      'carpet cleaning',
-      'Monument, CO',
-      domains,
-    )
-    expect(result.ranks[0].rank_position).toBe(1)
-    expect(result.audit.observations.ours.status).toBe('checked')
-  })
-  it.each(['empty', 'wrong location', 'provider error'])(
-    'rejects an invalid independent response: %s',
-    async (failure) => {
-      const payload = verification(null)
-      if (failure === 'empty') payload.organic_results = []
-      if (failure === 'wrong location')
-        payload.search_parameters.location_used =
-          'Denver, Colorado, United States'
-      if (failure === 'provider error') payload.search_metadata.status = 'Error'
-      mocks.verify.mockResolvedValue(payload)
-      const result = await fetchAuditedOrganicRanks(
-        'carpet cleaning',
-        'Monument, CO',
-        domains,
-      )
-      expect(result.audit.observations.ours.status).toBe('unverified')
-      expect(result.audit.observations.ours.depth).toBe(0)
-    },
-  )
-  it('does not upgrade unaudited legacy history to a verified observation', () => {
-    expect(organicObservation(null, 'ours').status).toBe('unverified')
+    expect(r.audit.observations.ours.status).toBe('unverified')
+    expect(r.ranks[0].rank_position).toBeNull()
   })
 })

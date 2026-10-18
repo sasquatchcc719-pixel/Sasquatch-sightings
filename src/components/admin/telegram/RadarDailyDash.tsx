@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -88,6 +89,7 @@ export function RadarDailyDash() {
   const [location, setLocation] = useState(
     'Colorado Springs, Colorado, United States',
   )
+  const [chartFailed, setChartFailed] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -185,7 +187,7 @@ export function RadarDailyDash() {
     <ReportShell
       kicker="Telegram channel"
       title="Radar Daily"
-      lede="Maps uses fixed town-center pins. Website ranks use separate desktop checks localized to each town. Add or pause towns here — the midnight report follows this list."
+      lede="See each town’s Maps rank and 90 days of Google-recorded organic positions. Exact spot checks use carpet cleaning plus the town name. The midnight report includes these graphs."
       when="Every night at midnight"
       lastSent={formatWhen(lastSent)}
       message={digest}
@@ -291,6 +293,38 @@ export function RadarDailyDash() {
           {error}
         </p>
       ) : null}
+
+      <section className="overflow-hidden rounded-3xl border border-sky-400/20 bg-slate-950 p-4">
+        <h2 className="mb-3 text-xl font-semibold text-white">
+          Ranking history
+        </h2>
+        <p className="mb-4 text-sm text-white/65">
+          Maps shows each town’s daily rank. Organic shows Google’s weekly
+          average position for town searches. Lower numbers are better; missing
+          data leaves gaps.
+        </p>
+        {chartFailed ? (
+          <p role="alert" className="text-amber-200">
+            The history image could not load. Refresh to try again.
+          </p>
+        ) : (
+          <a
+            href="/api/admin/comms/telegram/radar/image"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Image
+              unoptimized
+              src={`/api/admin/comms/telegram/radar/image?run=${encodeURIComponent(lastSent ?? 'latest')}`}
+              width={900}
+              height={1800}
+              className="h-auto w-full rounded-xl"
+              alt="Town-by-town Maps rank and Google organic average-position history"
+              onError={() => setChartFailed(true)}
+            />
+          </a>
+        )}
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="relative min-h-[22rem] overflow-hidden rounded-3xl border border-white/10 bg-[#0b1220]">

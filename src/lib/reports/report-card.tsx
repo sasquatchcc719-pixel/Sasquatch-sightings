@@ -13,6 +13,10 @@
  */
 
 import { ImageResponse } from 'next/og'
+import {
+  renderRankHistoryCardPng,
+  type RankHistoryPanel,
+} from './rank-history-card'
 
 export type ReportCardTone = 'good' | 'warn' | 'bad' | 'neutral'
 
@@ -36,6 +40,7 @@ export type ReportCardIncomeCostSeries = {
 }
 
 export type ReportCardInput = {
+  rankHistory?: { date: string; panels: RankHistoryPanel[]; note?: string }
   eyebrow: string
   title: string
   subtitle?: string | null
@@ -700,6 +705,7 @@ function ReportCard({ input }: { input: ReportCardInput }) {
 export async function renderReportCardPng(
   input: ReportCardInput,
 ): Promise<Buffer> {
+  if (input.rankHistory) return renderRankHistoryCardPng(input.rankHistory)
   const height = input.incomeCostSeries ? INCOME_COST_HEIGHT : HEIGHT
   const response = new ImageResponse(<ReportCard input={input} />, {
     width: WIDTH,

@@ -7,7 +7,9 @@ export type OrganicObservation = {
 }
 
 export type OrganicAudit = {
-  version: 1
+  version: 1 | 2
+  method?: string
+  query?: string
   keyword: string
   location: string
   device: 'desktop'
@@ -36,11 +38,10 @@ export function describeOrganicObservation(
   observation: OrganicObservation,
 ): string {
   const { status, rank, depth } = observation
-  if (status === 'checked' && rank != null)
-    return `#${rank} · independent desktop check`
+  if (status === 'checked' && rank != null) return `#${rank} · desktop search`
   if (status === 'observed' && rank != null)
     return `#${rank} observed in deeper scan · not independently verified`
   if (status === 'not_seen')
-    return `not seen in ${depth} checked · deeper rank unknown`
-  return 'scan unverified · ranking unknown'
+    return `not found through position #${depth}; exact rank unknown`
+  return 'Search unavailable; ranking unknown'
 }
