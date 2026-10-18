@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ServicePhoto } from '@/components/ops/service-photo'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1734,102 +1735,113 @@ export function NewJobWorkspace() {
                   })}
                 </div>
 
-                {lineItems.map((item, index) => (
-                  <div
-                    key={`${item.service_catalog_item_id}-${index}`}
-                    className="border-border/60 bg-background/70 rounded-2xl border p-4"
-                  >
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <div>
-                        <Label htmlFor={`service-${index}`}>Service</Label>
-                        <select
-                          id={`service-${index}`}
-                          className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                          value={item.service_catalog_item_id}
-                          onChange={(event) =>
-                            handleLineItemChange(
-                              index,
-                              'service_catalog_item_id',
-                              event.target.value,
-                            )
-                          }
-                        >
-                          <option value="">Select service</option>
-                          {services.map((service) => (
-                            <option key={service.id} value={service.id}>
-                              {service.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <Label htmlFor={`name-${index}`}>Display Name</Label>
-                        <Input
-                          id={`name-${index}`}
-                          value={item.name_snapshot}
-                          onChange={(event) =>
-                            handleLineItemChange(
-                              index,
-                              'name_snapshot',
-                              event.target.value,
-                            )
-                          }
+                {lineItems.map((item, index) => {
+                  const service = servicesById.get(item.service_catalog_item_id)
+                  return (
+                    <div
+                      key={`${item.service_catalog_item_id}-${index}`}
+                      className="border-border/60 bg-background/70 rounded-2xl border p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <ServicePhoto
+                          name={service?.name || item.name_snapshot}
+                          slug={service?.slug}
+                          category={service?.category}
                         />
+                        <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <Label htmlFor={`service-${index}`}>Service</Label>
+                            <select
+                              id={`service-${index}`}
+                              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                              value={item.service_catalog_item_id}
+                              onChange={(event) =>
+                                handleLineItemChange(
+                                  index,
+                                  'service_catalog_item_id',
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              <option value="">Select service</option>
+                              {services.map((service) => (
+                                <option key={service.id} value={service.id}>
+                                  {service.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <Label htmlFor={`name-${index}`}>
+                              Display Name
+                            </Label>
+                            <Input
+                              id={`name-${index}`}
+                              value={item.name_snapshot}
+                              onChange={(event) =>
+                                handleLineItemChange(
+                                  index,
+                                  'name_snapshot',
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`qty-${index}`}>Quantity</Label>
+                            <Input
+                              id={`qty-${index}`}
+                              type="number"
+                              value={item.quantity}
+                              onChange={(event) =>
+                                handleLineItemChange(
+                                  index,
+                                  'quantity',
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`price-${index}`}>Unit Price</Label>
+                            <Input
+                              id={`price-${index}`}
+                              type="number"
+                              step="0.01"
+                              value={item.unit_price}
+                              onChange={(event) =>
+                                handleLineItemChange(
+                                  index,
+                                  'unit_price',
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <Label htmlFor={`qty-${index}`}>Quantity</Label>
-                        <Input
-                          id={`qty-${index}`}
-                          type="number"
-                          value={item.quantity}
-                          onChange={(event) =>
-                            handleLineItemChange(
-                              index,
-                              'quantity',
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`price-${index}`}>Unit Price</Label>
-                        <Input
-                          id={`price-${index}`}
-                          type="number"
-                          step="0.01"
-                          value={item.unit_price}
-                          onChange={(event) =>
-                            handleLineItemChange(
-                              index,
-                              'unit_price',
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
+                      {lineItems.length > 1 ? (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              setLineItems((current) =>
+                                current.filter(
+                                  (_, itemIndex) => itemIndex !== index,
+                                ),
+                              )
+                            }
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove Line
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
-
-                    {lineItems.length > 1 ? (
-                      <div className="mt-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setLineItems((current) =>
-                              current.filter(
-                                (_, itemIndex) => itemIndex !== index,
-                              ),
-                            )
-                          }
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Remove Line
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
+import { ServicePhoto } from '@/components/ops/service-photo'
 import {
   ArrowRight,
   CalendarClock,
@@ -2085,21 +2085,9 @@ export function EstimateDetail({
                 ? describeSegmentsSummary(segNumeric, unit)
                 : null
 
-            const serviceName =
-              catalog.find((item) => item.id === line.service_catalog_item_id)
-                ?.name || line.name_snapshot
-            const servicePhoto =
-              !isCredit && /wall.*tile|tile.*wall/i.test(serviceName)
-                ? {
-                    src: '/images/services/wall-tile-cleaning.png',
-                    alt: 'Wall tile cleaning',
-                  }
-                : !isCredit && /tile.*grout|grout.*tile/i.test(serviceName)
-                  ? {
-                      src: '/images/services/floor-tile-cleaning.webp',
-                      alt: 'Floor tile and grout cleaning',
-                    }
-                  : null
+            const catalogService = catalog.find(
+              (item) => item.id === line.service_catalog_item_id,
+            )
 
             return (
               <div
@@ -2110,23 +2098,12 @@ export function EstimateDetail({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    {servicePhoto ? (
-                      <a
-                        href={servicePhoto.src}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`View ${servicePhoto.alt.toLowerCase()} photo`}
-                        title="View larger photo"
-                        className="focus-visible:ring-ring shrink-0 rounded-md focus-visible:ring-2"
-                      >
-                        <Image
-                          src={servicePhoto.src}
-                          alt={servicePhoto.alt}
-                          width={40}
-                          height={40}
-                          className="h-10 w-10 shrink-0 rounded-md border object-cover"
-                        />
-                      </a>
+                    {!isCredit ? (
+                      <ServicePhoto
+                        name={catalogService?.name || line.name_snapshot}
+                        slug={catalogService?.slug}
+                        category={catalogService?.category}
+                      />
                     ) : null}
                     <button
                       type="button"
