@@ -142,6 +142,16 @@ const WEEKDAY_LABELS = [
   'Saturday',
 ] as const
 
+const PRICING_UNIT_OPTIONS = [
+  { value: 'fixed', label: 'Fixed price / quantity' },
+  { value: 'per_sqft', label: 'Square foot — length × width' },
+  { value: 'per_linear_foot', label: 'Linear foot — measured length' },
+  { value: 'per_unit', label: 'Per item / unit' },
+  { value: 'per_room', label: 'Per room' },
+  { value: 'per_step', label: 'Per step' },
+  { value: 'per_hour', label: 'Per hour' },
+]
+
 type OperationsDashboardProps = {
   view?: 'calendar' | 'services'
 }
@@ -1195,8 +1205,10 @@ export function OperationsDashboard({
                 </div>
                 <div>
                   <Label htmlFor="service-unit">Pricing Unit</Label>
-                  <Input
+                  <select
                     id="service-unit"
+                    className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                    aria-describedby="service-unit-help"
                     value={serviceForm.pricing_unit}
                     onChange={(event) =>
                       setServiceForm((current) => ({
@@ -1204,7 +1216,27 @@ export function OperationsDashboard({
                         pricing_unit: event.target.value,
                       }))
                     }
-                  />
+                  >
+                    {!PRICING_UNIT_OPTIONS.some(
+                      (option) => option.value === serviceForm.pricing_unit,
+                    ) ? (
+                      <option value={serviceForm.pricing_unit}>
+                        Current unit: {serviceForm.pricing_unit}
+                      </option>
+                    ) : null}
+                    {PRICING_UNIT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p
+                    id="service-unit-help"
+                    className="mt-1 text-xs text-white/60"
+                  >
+                    Choose Square foot to enter length and width in estimates
+                    and calculate square footage automatically.
+                  </p>
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">

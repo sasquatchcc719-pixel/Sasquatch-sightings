@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routerPush = vi.fn()
@@ -294,5 +301,160 @@ describe('estimate editor send integration', () => {
       ),
     )
     expect(requests.some((request) => request.method === 'PATCH')).toBe(true)
+  })
+})
+
+describe('estimate measurement units', () => {
+  it('adds a new square-foot catalog service with measurement controls', async () => {
+    const originalFetch = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === '/api/admin/ops/services') {
+        return Response.json({
+          services: [
+            {
+              id: 'wall-service',
+              name: 'Wall Tile cleaning',
+              category: 'Hard Surface',
+              pricing_unit: 'per_sqft',
+              base_price: 1.25,
+              default_duration_minutes: 30,
+            },
+          ],
+        })
+      }
+      return originalFetch(input, init)
+    })
+    render(<EstimateDetail estimateId="estimate-a" />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Wall Tile cleaning/i }),
+    )
+    expect(screen.getByLabelText('Pricing unit for line 2')).toHaveValue(
+      'per_sqft',
+    )
+    expect(screen.getByRole('button', { name: 'Add L×W' })).toBeVisible()
+  })
+
+  it('measures an existing fixed-price catalog line, saves and reloads its square footage', async () => {
+    saveSucceeds = true
+    const wallLine = {
+      id: 'wall-line',
+      service_catalog_item_id: 'wall-service',
+      name_snapshot: 'Wall Tile cleaning',
+      notes: 'mens walls',
+      quantity: 1,
+      unit_price: 1.25,
+      duration_minutes: 30,
+      buffer_minutes: 0,
+      line_total: 1.25,
+      pricing_unit_snapshot: 'fixed',
+      length_value: null,
+      width_value: null,
+      area_segments: null,
+    }
+    const originalFetch = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const response = await originalFetch(input, init)
+      if (String(input) !== '/api/admin/ops/estimates/estimate-a')
+        return response
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body))
+        Object.assign(wallLine, body.line_items[0])
+        return response
+      }
+      const data = await response.json()
+      data.estimate.ops_appointment_line_items = [wallLine]
+      return Response.json(data)
+    })
+
+    render(<EstimateDetail estimateId="estimate-a" />)
+    const unit = await screen.findByLabelText('Pricing unit for line 1')
+    expect(
+      screen.queryByRole('button', { name: 'Add L×W' }),
+    ).not.toBeInTheDocument()
+    fireEvent.change(unit, { target: { value: 'per_sqft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
+    let fields = screen.getAllByRole('spinbutton')
+    fireEvent.change(fields[0], { target: { value: '10' } })
+    fireEvent.change(fields[1], { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
+    fields = screen.getAllByRole('spinbutton')
+    fireEvent.change(fields[2], { target: { value: '5' } })
+    fireEvent.change(fields[3], { target: { value: '4' } })
+    expect(screen.getByText('10×8=80 + 5×4=20 → 100 sqft total')).toBeVisible()
+    expect(screen.getByText(/Line total:/)).toHaveTextContent('$125.00')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(wallLine).toMatchObject({
+        pricing_unit_snapshot: 'per_sqft',
+        quantity: 100,
+        area_segments: [
+          { length: 10, width: 8 },
+          { length: 5, width: 4 },
+        ],
+        length_value: 10,
+        width_value: 8,
+        notes: 'mens walls',
+        unit_price: 1.25,
+      }),
+    )
+    expect(
+      await screen.findByText('10×8=80 + 5×4=20 → 100 sqft total'),
+    ).toBeVisible()
+    expect(screen.getByLabelText('Pricing unit for line 1')).toHaveValue(
+      'per_sqft',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
+    expect(
+      screen.getAllByText('10×8=80 + 5×4=20 → 100 sqft total'),
+    ).toHaveLength(2)
+    fields = screen.getAllByRole('spinbutton')
+    fireEvent.change(fields[5], { target: { value: '20' } })
+    expect(screen.getByText('20×8=160 + 5×4=20 → 180 sqft total')).toBeVisible()
+    expect(screen.getByText('10×8=80 + 5×4=20 → 100 sqft total')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Pricing unit for line 2'), {
+      target: { value: 'fixed' },
+    })
+    expect(screen.getByLabelText('Pricing unit for line 1')).toHaveValue(
+      'per_sqft',
+    )
+    expect(screen.getAllByRole('spinbutton')[5]).toHaveValue(180)
+  })
+
+  it('gives new custom lines the same area and linear measurement controls without changing credits', async () => {
+    render(<EstimateDetail estimateId="estimate-a" />)
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /Custom line \(no catalog\)/i,
+      }),
+    )
+    fireEvent.change(screen.getByLabelText('Pricing unit for line 2'), {
+      target: { value: 'per_sqft' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
+    const fields = screen.getAllByRole('spinbutton')
+    fireEvent.change(fields[2], { target: { value: '12' } })
+    fireEvent.change(fields[3], { target: { value: '5' } })
+    expect(screen.getByText('12×5=60 → 60 sqft total')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Pricing unit for line 2'), {
+      target: { value: 'per_linear_foot' },
+    })
+    expect(screen.getByText('Run 1: 12 ft → 12 linear ft total')).toBeVisible()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add discount / trade credit' }),
+    )
+    expect(
+      screen.queryByLabelText('Pricing unit for line 3'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(screen.getByLabelText('Pricing unit for line 2')).getByRole(
+        'option',
+        {
+          name: 'Square feet (length × width)',
+        },
+      ),
+    ).toBeInTheDocument()
   })
 })

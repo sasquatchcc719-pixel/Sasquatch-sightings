@@ -761,7 +761,20 @@ export function EstimateDetail({
         if (line.id !== id) return line
         const next = { ...line, ...patch }
 
-        if ('area_segments' in patch) {
+        if (
+          'pricing_unit_snapshot' in patch &&
+          !supportsDimensions(next.pricing_unit_snapshot)
+        ) {
+          next.area_segments = []
+          next.length_value = null
+          next.width_value = null
+        }
+
+        if (
+          'area_segments' in patch ||
+          ('pricing_unit_snapshot' in patch &&
+            supportsDimensions(next.pricing_unit_snapshot))
+        ) {
           const q = derivedQuantityFromSegments(
             next.area_segments,
             next.pricing_unit_snapshot,
@@ -2062,12 +2075,53 @@ export function EstimateDetail({
                     </div>
                   </div>
 
+                  {!isCredit ? (
+                    <div>
+                      <Label
+                        className="text-xs"
+                        htmlFor={`pricing-unit-${line.id}`}
+                      >
+                        Pricing unit
+                      </Label>
+                      <select
+                        id={`pricing-unit-${line.id}`}
+                        aria-label={`Pricing unit for line ${idx + 1}`}
+                        className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                        value={
+                          isAreaUnit(unit)
+                            ? 'per_sqft'
+                            : isLinearUnit(unit)
+                              ? 'per_linear_foot'
+                              : unit || 'fixed'
+                        }
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            pricing_unit_snapshot: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="fixed">Quantity / fixed price</option>
+                        <option value="per_sqft">
+                          Square feet (length × width)
+                        </option>
+                        <option value="per_linear_foot">
+                          Linear feet (length)
+                        </option>
+                        {unit &&
+                        unit !== 'fixed' &&
+                        !supportsDimensions(unit) ? (
+                          <option value={unit}>{unit} (quantity)</option>
+                        ) : null}
+                      </select>
+                    </div>
+                  ) : null}
+
                   {showDimensions ? (
                     <div className="rounded-md border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs font-medium text-amber-900 dark:text-amber-100">
                           {isAreaUnit(unit)
-                            ? 'Floor areas (ft × ft → sqft)'
+                            ? 'Areas (ft × ft → sqft)'
                             : 'Runs (ft; add rows for each run)'}
                         </p>
                         <Button
