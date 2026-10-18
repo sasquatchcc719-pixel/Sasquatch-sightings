@@ -465,7 +465,21 @@ export async function planRecurringSchedule(
     }
     const automatic =
       !override && input.schedulingMode === 'flexible' && !initial.clear
-        ? available.shift()
+        ? available
+            .sort(
+              (a, b) =>
+                a.date.localeCompare(b.date) ||
+                Math.abs(
+                  timeToMinutes(a.start_time) -
+                    timeToMinutes(candidate.start_time),
+                ) -
+                  Math.abs(
+                    timeToMinutes(b.start_time) -
+                      timeToMinutes(candidate.start_time),
+                  ) ||
+                a.start_time.localeCompare(b.start_time),
+            )
+            .shift()
         : undefined
     const chosen = automatic || {
       date: selectedDate,

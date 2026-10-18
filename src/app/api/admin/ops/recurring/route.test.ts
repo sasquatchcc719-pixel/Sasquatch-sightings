@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   access: vi.fn(),
   admin: vi.fn(),
   plan: vi.fn(),
+  bestFit: vi.fn(),
   generate: vi.fn(),
   candidates: vi.fn(),
   legacy: vi.fn(),
@@ -19,6 +20,9 @@ vi.mock('@/lib/ops/recurring', () => ({
 }))
 vi.mock('@/lib/ops/recurring-scheduling', () => ({
   planRecurringSchedule: mocks.plan,
+}))
+vi.mock('@/lib/ops/recurring-best-fit', () => ({
+  planBestFitRecurringSchedule: mocks.bestFit,
 }))
 vi.mock('@/lib/ops/recurring-schedule-preview', () => ({
   previewRecurringSchedule: mocks.legacy,
@@ -122,6 +126,31 @@ describe('reviewed flexible recurring creation', () => {
         durationMinutes: 120,
         staffUserId: 'staff',
       }),
+    )
+    expect(writes).toEqual([])
+    expect(mocks.generate).not.toHaveBeenCalled()
+  })
+  it('compares technician calendars with the full four-hour duration without making any writes', async () => {
+    mocks.bestFit.mockResolvedValue({
+      staff: { id: 'david', display_name: 'David' },
+      occurrences: [{ ...occurrence, end_time: '17:00:00' }],
+      best_fit: { technicians_compared: 2 },
+    })
+    const response = await post({
+      preview_only: true,
+      find_best_fit: true,
+      rules,
+      schedule: {
+        ...template,
+        assigned_staff_user_id: null,
+        scheduled_duration_minutes: 240,
+      },
+    })
+    expect(response.status).toBe(200)
+    expect((await response.json()).staff.id).toBe('david')
+    expect(mocks.bestFit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ durationMinutes: 240, candidates }),
     )
     expect(writes).toEqual([])
     expect(mocks.generate).not.toHaveBeenCalled()

@@ -51,13 +51,18 @@ const source = {
 
 type Payload = {
   preview_only?: boolean
+  find_best_fit?: boolean
   schedule?: {
     scheduling_mode: string
+    assigned_staff_user_id?: string
+    scheduled_duration_minutes?: number
     visit_overrides: Record<string, { date: string; start_time: string }>
   }
   rules: unknown
   template?: {
     scheduling_mode: string
+    assigned_staff_user_id?: string
+    scheduled_duration_minutes?: number
     visit_overrides: Record<string, { date: string; start_time: string }>
   }
   reviewed_occurrences?: unknown[]
@@ -65,6 +70,7 @@ type Payload = {
 const requests: Payload[] = []
 let generationErrors: string[] = []
 let saveError = ''
+let sourcePrice = 100
 let deferPreview: (() => Promise<unknown>) | null = null
 const json = (data: unknown) => ({ ok: true, json: async () => data })
 
@@ -72,6 +78,7 @@ beforeEach(() => {
   requests.length = 0
   generationErrors = []
   saveError = ''
+  sourcePrice = 100
   deferPreview = null
   vi.stubGlobal('alert', vi.fn())
   vi.stubGlobal(
@@ -87,7 +94,14 @@ beforeEach(() => {
           ],
         })
       if (url === '/api/admin/ops/appointments/source-1')
-        return json({ appointment: source })
+        return json({
+          appointment: {
+            ...source,
+            ops_appointment_line_items: source.ops_appointment_line_items.map(
+              (line) => ({ ...line, unit_price: sourcePrice }),
+            ),
+          },
+        })
       if (url === '/api/admin/ops/recurring' && init?.method === 'POST') {
         const payload = JSON.parse(String(init.body)) as Payload
         requests.push(payload)
@@ -95,6 +109,13 @@ beforeEach(() => {
           if (deferPreview) return deferPreview()
           const override = payload.schedule?.visit_overrides['2026-10-19']
           return json({
+            staff: payload.find_best_fit
+              ? { id: 'tech-2', display_name: 'Second Technician' }
+              : {
+                  id: payload.schedule?.assigned_staff_user_id,
+                  display_name: 'Test Technician',
+                },
+            best_fit: { technicians_compared: 2 },
             occurrences: [
               {
                 original_date: '2026-10-19',
@@ -167,6 +188,81 @@ const preview = () =>
   screen.getByRole('button', { name: 'Find openings automatically' })
 
 describe('flexible recurring schedule review', () => {
+  it('sizes cleaning from the quote rather than the two-hour measuring appointment, and preserves a manual override', async () => {
+    sourcePrice = 1217.5
+    await openForm()
+    expect(
+      screen.getByRole('spinbutton', { name: 'Job duration in hours' }),
+    ).toHaveValue(4)
+    await userEvent.click(preview())
+    await screen.findByText('All 2 reviewed visits are clear')
+    expect(requests[0].schedule?.scheduled_duration_minutes).toBe(240)
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Job duration in hours' }),
+      { target: { value: '3.5' } },
+    )
+    fireEvent.change(screen.getByDisplayValue('1217.5'), {
+      target: { value: '1400' },
+    })
+    expect(
+      screen.getByRole('spinbutton', { name: 'Job duration in hours' }),
+    ).toHaveValue(3.5)
+    await userEvent.click(preview())
+    await screen.findByText('All 2 reviewed visits are clear')
+    expect(requests[1].schedule?.scheduled_duration_minutes).toBe(210)
+    await userEvent.click(save())
+    expect(requests[2].template?.scheduled_duration_minutes).toBe(210)
+  })
+
+  it('finds the best technician for the settings and saves the reviewed selection', async () => {
+    sourcePrice = 1217.5
+    await openForm()
+    await userEvent.click(screen.getByRole('button', { name: 'Find best fit' }))
+    await screen.findByText(
+      /Second Technician selected · 2 technicians compared · 4 hours per visit/,
+    )
+    expect(requests[0].find_best_fit).toBe(true)
+    expect(requests[0].schedule?.scheduled_duration_minutes).toBe(240)
+    expect(
+      screen.getByRole('combobox', { name: 'Assigned technician' }),
+    ).toHaveValue('tech-2')
+    expect(save()).toBeEnabled()
+    await userEvent.click(save())
+    expect(requests[1].template?.assigned_staff_user_id).toBe('tech-2')
+    expect(requests[1].template?.scheduled_duration_minutes).toBe(240)
+    expect(requests[1].reviewed_occurrences).toHaveLength(2)
+  })
+
+  it('discards best-fit results if the duration changed during the search', async () => {
+    await openForm()
+    let release!: (value: unknown) => void
+    deferPreview = () =>
+      new Promise((resolve) => {
+        release = resolve
+      })
+    await userEvent.click(screen.getByRole('button', { name: 'Find best fit' }))
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Job duration in hours' }),
+      { target: { value: '4' } },
+    )
+    release(
+      json({
+        staff: { id: 'tech-2', display_name: 'Second Technician' },
+        best_fit: { technicians_compared: 2 },
+        occurrences: [],
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Find best fit' }),
+      ).toBeEnabled(),
+    )
+    expect(
+      screen.getByRole('combobox', { name: 'Assigned technician' }),
+    ).toHaveValue('tech-1')
+    expect(save()).toBeDisabled()
+  })
+
   it('automatically enables opening search from fixed mode in the same request', async () => {
     await openForm()
     await userEvent.click(
@@ -294,10 +390,10 @@ describe('flexible recurring schedule review', () => {
     if (field === 'duration')
       fireEvent.change(
         screen.getByRole('spinbutton', {
-          name: 'Scheduled duration in minutes',
+          name: 'Job duration in hours',
         }),
         {
-          target: { value: '180' },
+          target: { value: '3' },
         },
       )
     if (field === 'line duration')

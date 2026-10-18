@@ -1,3 +1,4 @@
+import { planBestFitRecurringSchedule } from './recurring-best-fit'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -217,6 +218,106 @@ describe('flexible recurring scheduling', () => {
     ).occurrences
     expect(pinned).toMatchObject({ status: 'conflict', start_time: '11:00:00' })
     expect(pinned.reason).toContain('future start time')
+  })
+
+  it('uses the closest available arrival time when the preferred time is blocked', async () => {
+    const { busy, plan } = fixture()
+    busy(due, '13:00:00', '15:00:00')
+    expect(
+      (await plan([candidate(due, '14:00')])).occurrences[0],
+    ).toMatchObject({ date: due, start_time: '15:00:00', end_time: '17:00:00' })
+  })
+
+  it('finds a complete four-hour opening across calendar technicians, respects closed defaults and excludes hidden staff', async () => {
+    const { tables, client, state } = fixture()
+    tables.staff_users[0].default_open = false
+    tables.staff_users[0].show_on_calendar = true
+    tables.staff_users.push(
+      {
+        ...tables.staff_users[0],
+        id: 'staff-b',
+        user_id: 'auth-b',
+        display_name: 'David',
+        default_open: true,
+      },
+      {
+        ...tables.staff_users[0],
+        id: 'canvasser',
+        show_on_calendar: false,
+        default_open: true,
+      },
+    )
+    // David has a two-hour morning gap, which cannot fit this four-hour job.
+    tables.ops_appointments.push({
+      appointment_date: due,
+      start_time: '11:00:00',
+      end_time: '18:00:00',
+      assigned_staff_user_id: 'staff-b',
+      is_subcontracted: false,
+      status: 'booked',
+    })
+    const result = await planBestFitRecurringSchedule(
+      client as unknown as SupabaseClient,
+      {
+        candidates: [candidate()],
+        durationMinutes: 240,
+        preferredStaffUserId: 'staff-a',
+      },
+    )
+    expect(result.staff.id).toBe('staff-b')
+    expect(result.best_fit.technicians_compared).toBe(2)
+    expect(result.occurrences[0]).toMatchObject({
+      date: '2030-01-08',
+      start_time: '09:00:00',
+      end_time: '13:00:00',
+      status: 'clear',
+    })
+    expect(state.writes).toEqual([])
+  })
+
+  it('prefers the selected technician on equal fits and honors manually opened days', async () => {
+    const { tables, client } = fixture()
+    tables.staff_users[0].show_on_calendar = true
+    tables.staff_users[0].default_open = false
+    tables.staff_users.push({
+      ...tables.staff_users[0],
+      id: 'staff-b',
+      user_id: 'auth-b',
+      display_name: 'David',
+      default_open: true,
+    })
+    tables.staff_daily_availability.push({
+      date: due,
+      staff_user_id: 'staff-a',
+      is_open: true,
+    })
+    const result = await planBestFitRecurringSchedule(
+      client as unknown as SupabaseClient,
+      {
+        candidates: [candidate()],
+        durationMinutes: 240,
+        preferredStaffUserId: 'staff-a',
+      },
+    )
+    expect(result.staff.id).toBe('staff-a')
+    expect(result.occurrences[0]).toMatchObject({
+      date: due,
+      start_time: '09:00:00',
+      end_time: '13:00:00',
+    })
+  })
+
+  it('fails closed when any technician calendar cannot be read', async () => {
+    const { tables, client, state } = fixture()
+    tables.staff_users[0].show_on_calendar = true
+    state.failTable = 'ops_calendar_events'
+    await expect(
+      planBestFitRecurringSchedule(client as unknown as SupabaseClient, {
+        candidates: [candidate()],
+        durationMinutes: 240,
+      }),
+    ).rejects.toThrow('ops_calendar_events unavailable')
+    expect(state.writes).toEqual([])
   })
 
   it('chooses a same-day opening and exposes later dates and afternoon openings', async () => {

@@ -10,6 +10,7 @@ import {
 import { previewRecurringSchedule } from '@/lib/ops/recurring-schedule-preview'
 import { applyAppointmentBuffer } from '@/lib/ops/availability'
 import { planRecurringSchedule } from '@/lib/ops/recurring-scheduling'
+import { planBestFitRecurringSchedule } from '@/lib/ops/recurring-best-fit'
 import {
   parseRecurringOverrides,
   recurringReviewMatches,
@@ -93,7 +94,8 @@ export async function POST(request: NextRequest) {
 
     if (body.preview_only && Array.isArray(body.rules)) {
       const scheduleInput = body.schedule || {}
-      const flexible = scheduleInput.scheduling_mode === 'flexible'
+      const bestFit = body.find_best_fit === true
+      const flexible = bestFit || scheduleInput.scheduling_mode === 'flexible'
       let overrides
       try {
         overrides = parseRecurringOverrides(scheduleInput.visit_overrides)
@@ -119,7 +121,7 @@ export async function POST(request: NextRequest) {
         overrides = saved.visitOverrides
       }
       if (
-        scheduleInput.assigned_staff_user_id &&
+        (scheduleInput.assigned_staff_user_id || bestFit) &&
         scheduleInput.is_subcontracted !== true
       ) {
         const duration = applyAppointmentBuffer(
@@ -129,14 +131,22 @@ export async function POST(request: NextRequest) {
         const excludeTemplateId =
           typeof body.template_id === 'string' ? body.template_id : undefined
         if (flexible) {
-          const schedule = await planRecurringSchedule(supabase, {
+          const inputs = {
             candidates,
             durationMinutes: duration,
-            staffUserId: staffId,
-            schedulingMode: 'flexible',
             visitOverrides: overrides,
             excludeTemplateId,
-          })
+          }
+          const schedule = bestFit
+            ? await planBestFitRecurringSchedule(supabase, {
+                ...inputs,
+                preferredStaffUserId: staffId,
+              })
+            : await planRecurringSchedule(supabase, {
+                ...inputs,
+                staffUserId: staffId,
+                schedulingMode: 'flexible',
+              })
           return NextResponse.json({
             preview_dates: schedule.occurrences.map((visit) => visit.date),
             preview_date_details: schedule.occurrences.map((visit) => ({

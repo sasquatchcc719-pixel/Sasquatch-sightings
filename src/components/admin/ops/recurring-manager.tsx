@@ -27,6 +27,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { calculateAppointmentDurationFromTotal } from '@/lib/ops/availability'
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ type LineItemForm = {
 type SchedulingStaff = {
   id: string
   display_name: string
+  show_on_calendar?: boolean
 }
 
 type SourceAppointment = {
@@ -1848,8 +1850,8 @@ export function CreateTemplateForm({
   const [startTime, setStartTime] = useState(
     initialData?.start_time?.slice(0, 5) ?? '09:00',
   )
-  const [scheduledDuration, setScheduledDuration] = useState(
-    String(initialData?.scheduled_duration_minutes ?? 120),
+  const [manualDuration, setScheduledDuration] = useState<string | null>(
+    initialData ? String(initialData.scheduled_duration_minutes) : null,
   )
   const [discountAmount, setDiscountAmount] = useState(
     String(initialData?.discount_amount ?? 0),
@@ -1890,6 +1892,13 @@ export function CreateTemplateForm({
         ],
   )
 
+  const subtotal = lineItems.reduce(
+    (s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0),
+    0,
+  )
+  const scheduledDuration =
+    manualDuration ?? String(calculateAppointmentDurationFromTotal(subtotal))
+
   const [rules, setRules] = useState<RuleForm[]>(
     initialData?.ops_recurrence_rules?.length
       ? initialData.ops_recurrence_rules.map((r) => ({
@@ -1924,17 +1933,22 @@ export function CreateTemplateForm({
     initialData?.visit_overrides ?? {},
   )
   const [previewKey, setPreviewKey] = useState('')
+  const [bestFitSummary, setBestFitSummary] = useState<string | null>(null)
   const [createdPlanWithErrors, setCreatedPlanWithErrors] = useState(false)
   const [previewOccurrences, setPreviewOccurrences] = useState<
     PreviewOccurrence[]
   >([])
   const [loadingPreview, setLoadingPreview] = useState(false)
   const previewRequestId = useRef(0)
-  const scheduleKeyFor = (overrides: VisitOverrides, mode = schedulingMode) =>
+  const scheduleKeyFor = (
+    overrides: VisitOverrides,
+    mode = schedulingMode,
+    staffId = assignedStaffUserId,
+  ) =>
     JSON.stringify({
       startTime,
       scheduledDuration,
-      assignedStaffUserId,
+      assignedStaffUserId: staffId,
       isSubcontracted,
       schedulingMode: mode,
       rules,
@@ -1945,6 +1959,8 @@ export function CreateTemplateForm({
       })),
     })
   const scheduleKey = scheduleKeyFor(visitOverrides)
+  const latestScheduleKey = useRef(scheduleKey)
+  latestScheduleKey.current = scheduleKey
   const previewIsCurrent = previewKey === scheduleKey
   const initialScheduleKey = useState(scheduleKey)[0]
   const scheduleChanged = initialScheduleKey !== scheduleKey
@@ -1974,7 +1990,9 @@ export function CreateTemplateForm({
         return data
       })
       .then((data) => {
-        const nextStaff = (data.staff || []) as SchedulingStaff[]
+        const nextStaff = ((data.staff || []) as SchedulingStaff[]).filter(
+          (member) => member.show_on_calendar !== false,
+        )
         setStaff(nextStaff)
         setAssignedStaffUserId((current) => current || nextStaff[0]?.id || '')
       })
@@ -2030,12 +2048,23 @@ export function CreateTemplateForm({
         )
         setStartTime(appointment.start_time.slice(0, 5))
         setScheduledDuration(
-          String(
-            appointmentDurationMinutes(
-              appointment.start_time,
-              appointment.end_time,
-            ),
-          ),
+          appointment.kind === 'estimate'
+            ? null
+            : String(
+                Math.max(
+                  appointmentDurationMinutes(
+                    appointment.start_time,
+                    appointment.end_time,
+                  ),
+                  calculateAppointmentDurationFromTotal(
+                    appointment.ops_appointment_line_items.reduce(
+                      (sum, line) =>
+                        sum + Number(line.quantity) * Number(line.unit_price),
+                      0,
+                    ),
+                  ),
+                ),
+              ),
         )
         setInvoiceMode(customer.business_name ? 'batch_monthly' : 'per_visit')
         setAssignedStaffUserId(appointment.assigned_staff_user_id || '')
@@ -2170,9 +2199,22 @@ export function CreateTemplateForm({
   const loadPreview = async (
     overrides = visitOverrides,
     mode = schedulingMode,
+    bestFit = false,
   ) => {
+    if (
+      !Number.isFinite(Number(scheduledDuration)) ||
+      Number(scheduledDuration) < 15 ||
+      Number(scheduledDuration) > 240
+    ) {
+      setError(
+        'Enter a job duration between 0.25 and 4 hours before searching.',
+      )
+      return
+    }
     const requestedKey = scheduleKeyFor(overrides, mode)
     const requestId = ++previewRequestId.current
+    latestScheduleKey.current = requestedKey
+    setBestFitSummary(null)
     setPreviewKey('')
     setLoadingPreview(true)
     try {
@@ -2183,6 +2225,7 @@ export function CreateTemplateForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           preview_only: true,
+          find_best_fit: bestFit,
           template_id: initialData?.id,
           rules: rulesPayload,
           schedule: {
@@ -2198,8 +2241,16 @@ export function CreateTemplateForm({
       const data = await res.json()
       if (requestId !== previewRequestId.current) return
       if (!res.ok) throw new Error(data.error || 'Failed to preview schedule')
+      if (bestFit && latestScheduleKey.current !== requestedKey) return
+      const chosenStaffId = bestFit ? data.staff.id : assignedStaffUserId
+      if (bestFit) {
+        setAssignedStaffUserId(chosenStaffId)
+        setBestFitSummary(
+          `${data.staff.display_name} selected · ${data.best_fit.technicians_compared} technicians compared · ${Number(scheduledDuration) / 60} hours per visit. Fewest conflicts, then closest dates and arrival times. One technician for the whole plan.`,
+        )
+      }
       setPreviewOccurrences(data.occurrences || [])
-      setPreviewKey(requestedKey)
+      setPreviewKey(scheduleKeyFor(overrides, mode, chosenStaffId))
       setError(null)
     } catch (cause) {
       if (requestId !== previewRequestId.current) return
@@ -2241,10 +2292,6 @@ export function CreateTemplateForm({
     )
   }
 
-  const subtotal = lineItems.reduce(
-    (s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0),
-    0,
-  )
   const previewConflicts = currentOccurrences.filter(
     (occurrence) => occurrence.status === 'conflict',
   )
@@ -2599,40 +2646,6 @@ export function CreateTemplateForm({
             )}
           </div>
           <div>
-            <Label>Assigned Technician</Label>
-            <select
-              className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-              value={assignedStaffUserId}
-              aria-label="Assigned technician"
-              onChange={(event) => {
-                setAssignedStaffUserId(event.target.value)
-              }}
-              disabled={isSubcontracted}
-            >
-              <option value="">
-                {staff.length ? 'Choose a technician' : 'Loading technicians…'}
-              </option>
-              {staff.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.display_name}
-                </option>
-              ))}
-            </select>
-            <p className="text-muted-foreground mt-1 text-xs">
-              Used to check every generated visit against the live calendar.
-            </p>
-          </div>
-          <div>
-            <Label>Scheduled Duration (minutes)</Label>
-            <Input
-              type="number"
-              value={scheduledDuration}
-              aria-label="Scheduled duration in minutes"
-              onChange={(e) => setScheduledDuration(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div>
             <Label>Discount ($)</Label>
             <Input
               type="number"
@@ -2886,21 +2899,77 @@ export function CreateTemplateForm({
         </div>
 
         <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
-          <Label htmlFor="recurring-preferred-arrival">
-            Preferred arrival time · Mountain Time
-          </Label>
-          <Input
-            id="recurring-preferred-arrival"
-            type="time"
-            value={startTime}
-            onChange={(event) => setStartTime(event.target.value)}
-            onClick={(event) => event.currentTarget.showPicker?.()}
-            className="mt-2 min-h-11 sm:max-w-xs"
-          />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <Label>Assigned Technician</Label>
+              <select
+                className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-3 text-sm"
+                value={assignedStaffUserId}
+                aria-label="Assigned technician"
+                onChange={(event) => {
+                  setAssignedStaffUserId(event.target.value)
+                }}
+                disabled={isSubcontracted}
+              >
+                <option value="">
+                  {staff.length
+                    ? 'Choose a technician'
+                    : 'Loading technicians…'}
+                </option>
+                {staff.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.display_name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Find openings uses this technician. Find best fit compares all
+                calendar technicians.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="recurring-job-duration">
+                Job duration (hours)
+              </Label>
+              <Input
+                type="number"
+                id="recurring-job-duration"
+                min={0.25}
+                max={4}
+                step={0.25}
+                value={
+                  scheduledDuration === '' ? '' : Number(scheduledDuration) / 60
+                }
+                aria-label="Job duration in hours"
+                onChange={(e) =>
+                  setScheduledDuration(
+                    e.target.value === ''
+                      ? ''
+                      : String(Number(e.target.value) * 60),
+                  )
+                }
+                className="mt-1 min-h-11"
+              />
+            </div>
+            <div>
+              <Label htmlFor="recurring-preferred-arrival">
+                Preferred arrival time · Mountain Time
+              </Label>
+              <Input
+                id="recurring-preferred-arrival"
+                type="time"
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+                onClick={(event) => event.currentTarget.showPicker?.()}
+                className="mt-1 min-h-11"
+              />
+            </div>
+          </div>
           <p className="text-muted-foreground mt-2 text-sm">
-            Start with this time. If it is occupied, find an opening on the same
-            day or a nearby weekday. Then choose a different date or time for
-            any visit below.
+            The full {Number(scheduledDuration) / 60 || '—'}-hour job must fit
+            in one opening. Duration starts from the quote total; change it here
+            for the actual work. Search, then review the technician, dates and
+            arrival times before booking.
           </p>
         </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
@@ -3117,8 +3186,26 @@ export function CreateTemplateForm({
             All times are Mountain Time. The start is the scheduled arrival; the
             end is the estimated completion.
           </p>
+          {!isSubcontracted && (
+            <Button
+              className="mr-2 mb-2 min-h-11"
+              onClick={() => {
+                setSchedulingMode('flexible')
+                void loadPreview(visitOverrides, 'flexible', true)
+              }}
+              disabled={loadingPreview || loadingSource}
+            >
+              {loadingPreview ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Calendar className="mr-2 h-4 w-4" />
+              )}
+              Find best fit
+            </Button>
+          )}
           <Button
-            className="min-h-11"
+            variant="outline"
+            className="mb-2 min-h-11"
             onClick={() => {
               setSchedulingMode('flexible')
               void loadPreview(visitOverrides, 'flexible')
@@ -3134,6 +3221,14 @@ export function CreateTemplateForm({
               ? 'Checking the live calendar…'
               : 'Find openings automatically'}
           </Button>
+          {previewIsCurrent && bestFitSummary && (
+            <p
+              className="mt-2 text-sm text-cyan-600 dark:text-cyan-300"
+              role="status"
+            >
+              {bestFitSummary}
+            </p>
+          )}
           {schedulingMode === 'fixed' && (
             <Button
               variant="outline"

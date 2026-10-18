@@ -284,4 +284,6 @@ This boilerplate synthesizes:
 
 Read once. Edit sections 10 and 11 for your project. Prune the rest over time. This file gets better the more you use it.
 
-- Recurring plans must expose automatic opening search directly and provide per-visit date and arrival-time choices. Clear incompatible day-of-month and nth-weekday fields together so the preview and saved rule match what the form displays.
+- Recurring plans must expose automatic opening search directly and provide per-visit date and arrival-time choices. Best-fit search must compare active calendar technicians using their open/closed settings and the complete cleaning duration; never copy a measuring estimate’s time block as the cleaning duration. Clear incompatible day-of-month and nth-weekday fields together so the preview and saved rule match what the form displays.
+
+- David’s calendar is open by default; Charles’s is closed by default until explicitly opened for a date. Preserve date-specific settings when changing these defaults.
