@@ -7,6 +7,8 @@ export function ReportShell({
   when,
   lastSent,
   message,
+  messageTitle = 'Last Telegram',
+  messageNote = 'as sent to your phone',
   children,
   settings,
 }: {
@@ -16,6 +18,8 @@ export function ReportShell({
   when: string
   lastSent?: string | null
   message?: string | null
+  messageTitle?: string
+  messageNote?: string
   children: ReactNode
   settings: ReactNode
 }) {
@@ -61,10 +65,10 @@ export function ReportShell({
           <section className="overflow-hidden rounded-3xl border border-emerald-500/20 bg-[#07140f]">
             <div className="flex items-center justify-between border-b border-emerald-500/15 px-5 py-3">
               <p className="text-[11px] font-semibold tracking-[0.22em] text-emerald-300/80 uppercase">
-                Last Telegram
+                {messageTitle}
               </p>
               <p className="font-mono text-[10px] text-emerald-500/60">
-                as sent to your phone
+                {messageNote}
               </p>
             </div>
             <pre className="max-h-72 overflow-auto px-5 py-4 font-mono text-[12.5px] leading-6 whitespace-pre-wrap text-emerald-100/85">

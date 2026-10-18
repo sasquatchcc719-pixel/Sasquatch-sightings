@@ -185,14 +185,16 @@ export function RadarDailyDash() {
     <ReportShell
       kicker="Telegram channel"
       title="Radar Daily"
-      lede="One pin per town, searched from a fixed town-center point. This is not the grid. Add or pause towns here — the midnight message follows this list."
+      lede="Maps uses fixed town-center pins. Website ranks use separate desktop checks localized to each town. Add or pause towns here — the midnight report follows this list."
       when="Every night at midnight"
       lastSent={formatWhen(lastSent)}
       message={digest}
+      messageTitle="Latest report preview"
+      messageNote="latest scans · scheduled delivery at midnight"
       settings={
         <SettingsPanel
           title="Towns & terms"
-          hint="Each row is a town Google is asked from. The pin is the hardcoded town center Radar uses today."
+          hint="Each row is a town being tracked. The map pin sets the Maps search origin; website checks use the named town."
         >
           <div className="space-y-2">
             <Label className="text-white/60">Search term</Label>
