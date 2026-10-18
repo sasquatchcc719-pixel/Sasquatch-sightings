@@ -253,6 +253,7 @@ type RankRow = {
   rank_position: number | null
   created_at: string
   scan_run_id: string | null
+  maps_checked_results?: number | null
 }
 
 export type MapsHistoryRow = {
@@ -488,10 +489,20 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   const { data: runs, error: runError } = runIds.length
     ? await supabase
         .from('radar_scan_runs')
-        .select('id, organic_audit')
+        .select('id, organic_audit, radar_map_pack_snapshots(count)')
         .in('id', runIds)
     : { data: [], error: null }
   if (runError) throw new Error(runError.message)
+  const mapsDepthByRun = new Map(
+    (runs ?? []).map((run) => [
+      run.id,
+      run.radar_map_pack_snapshots?.[0]?.count ?? null,
+    ]),
+  )
+  for (const row of rankRows)
+    row.maps_checked_results = row.scan_run_id
+      ? (mapsDepthByRun.get(row.scan_run_id) ?? null)
+      : null
   const audits = new Map(
     (runs ?? []).map((run) => [
       run.id,
@@ -535,6 +546,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       'Google history temporarily unavailable; no ranking-loss inference'
     organicPanel.series.forEach((series) => {
       series.latestLabel = 'History unavailable'
+      series.coverageLabel = undefined
     })
   }
   const mapLines = mapsPanel.series.map((series) => {
@@ -550,7 +562,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
             ? ` · up ${prior.rank - rank}`
             : ` · down ${rank - prior.rank}`
         : ''
-    return `• ${series.town}: ${rank != null ? `#${rank}` : latest ? 'outside top 20' : 'scan unavailable'}${move}`
+    return `• ${series.town}: ${series.latestLabel}${move}`
   })
   const organicLines = organicPanel.series.map((series) => {
     const current = series.points.at(-1)
@@ -559,7 +571,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       current?.rank != null && prior?.rank != null
         ? ` · previous recorded ${prior.rank.toFixed(1)} (${prior.date.slice(5)})`
         : ''
-    return `• ${series.town}: ${series.latestLabel}${movement}`
+    return `• ${series.town}: ${series.latestLabel}${series.coverageLabel ? ` · ${series.coverageLabel}` : ''}${movement}`
   })
   const spotLines = keywords.map((kw) => {
     const town = kw.location.split(',')[0].trim()
@@ -612,7 +624,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     'ORGANIC TREND · Google-recorded average position\n' +
       organicLines.join('\n'),
     gridLine,
-    'Organic graph: weekly US desktop searches for carpet cleaning + each town; lower is better. Averages are not a fixed-location spot rank. No impressions means no reported data, not no ranking.',
+    'Organic graph: US desktop searches naming each town, not searcher locations. Counts show reported impressions and measured weeks; gaps mean no reported data, not no ranking.',
     'ORGANIC SPOT CHECK · "carpet cleaning [town] co"\n' + spotLines.join('\n'),
     'Daily first-page checks; weekly Sunday pagination when absent. Wrong-topic/city responses are rejected. Graphs attached: town Maps ranks + 90-day Google organic history.',
   ].join('\n\n')
@@ -623,7 +635,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     rankHistory: {
       date: day,
       panels: [mapsPanel, organicPanel],
-      note: 'Organic: Google Search Console, US desktop, weekly impression-weighted positions. Both www and non-www properties. Latest data is delayed about 4 days. Gaps mean no measurement; positions are not filled in.',
+      note: 'Organic: Google Search Console, US desktop, www + non-www. Town-named queries do not identify searcher location. Week dates are Mondays; edge weeks are partial. Latest data is delayed about 4 days. Gaps are not filled in. Maps misses require 20 checked results to confirm >20.',
     },
   }
   const lastRun = rankRows[0]?.scan_run_id ?? day

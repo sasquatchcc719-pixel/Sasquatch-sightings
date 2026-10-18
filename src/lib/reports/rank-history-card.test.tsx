@@ -1,6 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import {
+  buildGoogleOrganicPanel,
+  buildMapsRankPanel,
+} from '@/lib/radar-history'
+import {
+  RankPanel,
   buildRankHistoryGeometry,
   renderRankHistoryCardPng,
   type RankHistoryPanel,
@@ -14,6 +20,64 @@ const point = (
 ): RankHistoryPoint => ({ date, rank, status })
 
 describe('rank history geometry', () => {
+  it('draws the first partial weekly bucket at its real week start without connecting missing weeks', () => {
+    const geometry = buildRankHistoryGeometry(
+      [point('2026-07-20', 8), point('2026-10-12', 1)],
+      20,
+      '2026-10-18',
+      90,
+      7,
+      '2026-07-20',
+    )
+    expect(geometry.markers).toHaveLength(2)
+    expect(geometry.markers[0].x).toBe(52)
+    expect(geometry.path.match(/M /g)).toHaveLength(2)
+    expect(geometry.path).not.toContain('L ')
+  })
+
+  it('renders impression and measured-week coverage, and does not draw shallow Maps misses as outside', () => {
+    const keywords = [
+      { id: 'l', keyword: 'carpet cleaning', location: 'Larkspur, CO' },
+    ]
+    const panel = buildGoogleOrganicPanel(
+      keywords,
+      [
+        {
+          date: '2026-10-14',
+          query: 'carpet cleaning larkspur',
+          position: 1,
+          impressions: 1,
+          clicks: 0,
+        },
+      ],
+      new Date('2026-10-18T12:00:00Z'),
+    )
+    const organic = render(<RankPanel panel={panel} endDate="2026-10-18" />)
+    expect(
+      screen.getByText('1 impression · 1 measured week'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Avg 1.0 · week of 10-12')).toBeInTheDocument()
+    expect(screen.getByText(/town-named queries/)).toBeInTheDocument()
+    expect(organic.container.querySelectorAll('circle')).toHaveLength(1)
+    organic.unmount()
+    const maps = buildMapsRankPanel(
+      keywords,
+      [
+        {
+          keyword_id: 'l',
+          finder_rank: null,
+          maps_checked_results: 3,
+          created_at: '2026-10-18T12:00:00Z',
+        },
+      ],
+      new Date('2026-10-18T12:00:00Z'),
+    )
+    const mapView = render(<RankPanel panel={maps} endDate="2026-10-18" />)
+    expect(
+      screen.getByText(/Not returned in 3 checked Maps results/),
+    ).toBeInTheDocument()
+    expect(mapView.container.querySelectorAll('svg path')).toHaveLength(0)
+  })
   it('puts #1 above #20 and preserves a single isolated observation', () => {
     const result = buildRankHistoryGeometry(
       [point('2026-10-17', 20), point('2026-10-18', 1)],

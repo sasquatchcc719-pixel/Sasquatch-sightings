@@ -25,6 +25,8 @@ export type HistoryRank = {
   finder_rank?: number | null
   created_at: string
   scan_run_id?: string | null
+  /** Count of Maps results persisted for this exact scan run, never organic depth. */
+  maps_checked_results?: number | null
 }
 export function buildMapsRankPanel(
   keywords: HistoryKeyword[],
@@ -56,8 +58,12 @@ export function buildMapsRankPanel(
         date,
         rank: row.finder_rank ?? null,
         status:
-          row.finder_rank != null ? ('ranked' as const) : ('outside' as const),
-        depth: 20,
+          row.finder_rank != null
+            ? ('ranked' as const)
+            : (row.maps_checked_results ?? 0) >= 20
+              ? ('outside' as const)
+              : ('unknown' as const),
+        depth: row.maps_checked_results ?? undefined,
       }))
     const last = points.at(-1)
     return {
@@ -65,7 +71,7 @@ export function buildMapsRankPanel(
       color: TOWN_COLORS[index % TOWN_COLORS.length],
       points,
       latestLabel: last
-        ? `${last.rank == null ? 'Outside top 20' : `#${last.rank}`} · ${last.date.slice(5)}`
+        ? `${last.rank != null ? `#${last.rank}` : last.status === 'outside' ? 'Outside top 20' : last.depth ? `Not returned in ${last.depth} checked Maps results` : 'Maps depth unavailable'} · ${last.date.slice(5)}`
         : 'No scan',
     }
   })
@@ -91,6 +97,7 @@ export function weekStart(day: string): string {
 export function buildGoogleOrganicPanel(
   keywords: HistoryKeyword[],
   rows: GscDailyRow[],
+  now = new Date(),
 ): RankHistoryPanel {
   const series: RankHistorySeries[] = keywords.map((kw, index) => {
     const town = kw.location.split(',')[0].trim()
@@ -120,13 +127,18 @@ export function buildGoogleOrganicPanel(
         status: 'ranked' as const,
       }))
     const last = points.at(-1)
+    const impressions = [...weeks.values()].reduce(
+      (sum, week) => sum + week.impressions,
+      0,
+    )
     return {
       town,
       color: TOWN_COLORS[index % TOWN_COLORS.length],
       points,
       latestLabel: last
-        ? `Avg ${last.rank?.toFixed(1)} · ${weeks.get(last.date)!.impressions} views · ${last.date.slice(5)}`
+        ? `Avg ${last.rank?.toFixed(1)} · week of ${last.date.slice(5)}`
         : 'No reported impressions',
+      coverageLabel: `${impressions} impression${impressions === 1 ? '' : 's'} · ${weeks.size} measured week${weeks.size === 1 ? '' : 's'}`,
     }
   })
   const max = Math.max(
@@ -135,11 +147,15 @@ export function buildGoogleOrganicPanel(
   )
   return {
     title: 'GOOGLE ORGANIC AVERAGE POSITION',
-    subtitle: '90 days · weekly, US desktop · searches: carpet cleaning + town',
+    subtitle: '90 days · weekly, US desktop · town-named queries',
     maxRank: Math.ceil(max / 10) * 10,
     series,
     windowDays: 90,
     intervalDays: 7,
+    // Weekly points identify their Monday bucket, including the first partial week.
+    startDate: weekStart(
+      new Date(now.getTime() - 89 * 86_400_000).toISOString().slice(0, 10),
+    ),
   }
 }
 export function sameOrganicMethod(

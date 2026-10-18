@@ -12,6 +12,7 @@ export type RankHistorySeries = {
   color: string
   points: RankHistoryPoint[]
   latestLabel: string
+  coverageLabel?: string
 }
 
 export type RankHistoryPanel = {
@@ -20,6 +21,8 @@ export type RankHistoryPanel = {
   maxRank: number
   windowDays?: number
   intervalDays?: number
+  /** Explicit bucket boundary when a weekly chart includes a partial first week. */
+  startDate?: string
   series: RankHistorySeries[]
 }
 
@@ -53,10 +56,13 @@ export function buildRankHistoryGeometry(
   endDate: string,
   windowDays = 30,
   intervalDays = 1,
+  startDate?: string,
 ) {
   const end = dateValue(endDate)
-  const spanDays = Math.max(1, windowDays - 1)
-  const start = end - spanDays * DAY
+  const start = startDate
+    ? dateValue(startDate)
+    : end - Math.max(1, windowDays - 1) * DAY
+  const spanDays = Math.max(1, (end - start) / DAY)
   const xFor = (day: number) =>
     LEFT + ((day - start) / (spanDays * DAY)) * (CHART_WIDTH - LEFT - RIGHT)
   const yFor = (rank: number) =>
@@ -94,7 +100,7 @@ export function buildRankHistoryGeometry(
   return { path: path.join(' '), markers }
 }
 
-function RankPanel({
+export function RankPanel({
   panel,
   endDate,
 }: {
@@ -102,8 +108,10 @@ function RankPanel({
   endDate: string
 }) {
   const end = dateValue(endDate)
-  const spanDays = Math.max(1, (panel.windowDays ?? 30) - 1)
-  const start = end - spanDays * DAY
+  const start = panel.startDate
+    ? dateValue(panel.startDate)
+    : end - Math.max(1, (panel.windowDays ?? 30) - 1) * DAY
+  const spanDays = Math.max(1, (end - start) / DAY)
   const xFor = (offset: number) =>
     LEFT + (offset / spanDays) * (CHART_WIDTH - LEFT - RIGHT)
   const yFor = (rank: number) =>
@@ -207,6 +215,7 @@ function RankPanel({
               endDate,
               panel.windowDays,
               panel.intervalDays,
+              panel.startDate,
             )
             return (
               <g key={series.town}>
@@ -318,8 +327,20 @@ function RankPanel({
             <div style={{ display: 'flex', width: 192, color: '#eef4ff' }}>
               {series.town}
             </div>
-            <div style={{ display: 'flex', flex: 1, color: MUTED }}>
-              {series.latestLabel}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                color: MUTED,
+              }}
+            >
+              <div style={{ display: 'flex' }}>{series.latestLabel}</div>
+              {series.coverageLabel ? (
+                <div style={{ display: 'flex', marginTop: 2, fontSize: 16 }}>
+                  {series.coverageLabel}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}
@@ -348,7 +369,16 @@ export async function renderRankHistoryCardPng({
   const endDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
     ? date
     : (dates.at(-1) ?? new Date().toISOString().slice(0, 10))
-  const height = 310 + panels.length * 710 + Math.max(0, panels.length - 1) * 24
+  const coverageHeight = panels.reduce(
+    (sum, panel) =>
+      sum + panel.series.filter((series) => series.coverageLabel).length * 22,
+    0,
+  )
+  const height =
+    310 +
+    panels.length * 710 +
+    Math.max(0, panels.length - 1) * 24 +
+    coverageHeight
   const response = new ImageResponse(
     <div
       style={{
