@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   Copy,
+  ChevronDown,
   Loader2,
   Mail,
   MapPin,
@@ -355,6 +356,51 @@ function SectionTitle({
   )
 }
 
+function CollapsibleEstimateSection({
+  icon,
+  tone,
+  title,
+  subtitle,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  icon: React.ReactNode
+  tone: SectionTone
+  title: string
+  subtitle: React.ReactNode
+  collapsed: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  const contentId = useId()
+  return (
+    <Card className="p-4 md:p-6">
+      <button
+        type="button"
+        className="focus-visible:ring-ring flex w-full items-center justify-between gap-3 rounded-md text-left focus-visible:ring-2 focus-visible:outline-none"
+        aria-label={title}
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        onClick={onToggle}
+      >
+        <SectionTitle
+          icon={icon}
+          tone={tone}
+          title={title}
+          subtitle={subtitle}
+        />
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${collapsed ? '-rotate-90' : ''}`}
+        />
+      </button>
+      <div id={contentId} hidden={collapsed} className="mt-4 space-y-4">
+        {children}
+      </div>
+    </Card>
+  )
+}
+
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   draft: {
     label: 'Draft',
@@ -414,6 +460,52 @@ export function EstimateDetail({
   const [addrState, setAddrState] = useState('CO')
   const [addrZip, setAddrZip] = useState('')
   const [addrGateCode, setAddrGateCode] = useState('')
+
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [collapsedLines, setCollapsedLines] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [recentlyAddedLine, setRecentlyAddedLine] = useState<{
+    id: string
+    message: string
+  } | null>(null)
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current)
+      if (next.has(section)) next.delete(section)
+      else next.add(section)
+      return next
+    })
+  }
+
+  const toggleLine = (id: string) => {
+    setCollapsedLines((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (!recentlyAddedLine) return
+    const element = document.getElementById(
+      `estimate-line-${recentlyAddedLine.id}`,
+    )
+    const reduceMotion = window.matchMedia?.(
+      '(prefers-reduced-motion: reduce)',
+    )?.matches
+    element?.scrollIntoView?.({
+      behavior: reduceMotion ? 'auto' : 'smooth',
+      block: 'center',
+    })
+    element?.focus({ preventScroll: true })
+    const timer = window.setTimeout(() => setRecentlyAddedLine(null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [recentlyAddedLine])
 
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
   const [linePickerCategory, setLinePickerCategory] = useState<string>('')
@@ -865,6 +957,7 @@ export function EstimateDetail({
         _isNew: true,
       }
       setLineItems((prev) => [...prev, newRow])
+      setRecentlyAddedLine({ id: newRow.id, message: `Added ${item.name}` })
     },
     [],
   )
@@ -887,6 +980,7 @@ export function EstimateDetail({
       _isNew: true,
     }
     setLineItems((prev) => [...prev, newRow])
+    setRecentlyAddedLine({ id: newRow.id, message: 'Added custom line' })
   }, [])
 
   const discountCatalogItem = useMemo(
@@ -913,6 +1007,10 @@ export function EstimateDetail({
       _isNew: true,
     }
     setLineItems((prev) => [...prev, newRow])
+    setRecentlyAddedLine({
+      id: newRow.id,
+      message: 'Added discount / trade credit',
+    })
   }, [discountCatalogItem])
 
   const handleDeleteLine = useCallback((id: string) => {
@@ -928,11 +1026,10 @@ export function EstimateDetail({
    * not jump. Segments get fresh clientIds — reusing them would collide the two
    * rows' React keys and make the measurement fields edit each other.
    */
-  const handleDuplicateLine = useCallback((id: string) => {
-    setLineItems((prev) => {
-      const idx = prev.findIndex((line) => line.id === id)
-      if (idx === -1) return prev
-      const source = prev[idx]
+  const handleDuplicateLine = useCallback(
+    (id: string) => {
+      const source = lineItems.find((line) => line.id === id)
+      if (!source) return
       const copy: LineItem = {
         ...source,
         id: makeRowKey(),
@@ -942,9 +1039,19 @@ export function EstimateDetail({
         })),
         _isNew: true,
       }
-      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
-    })
-  }, [])
+      setLineItems((prev) => {
+        const idx = prev.findIndex((line) => line.id === id)
+        return idx < 0
+          ? prev
+          : [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+      })
+      setRecentlyAddedLine({
+        id: copy.id,
+        message: `Duplicated ${source.name_snapshot || 'line item'}`,
+      })
+    },
+    [lineItems],
+  )
 
   useEffect(() => {
     fetch('/api/public/lead-sources', { cache: 'no-store' })
@@ -1373,6 +1480,16 @@ export function EstimateDetail({
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
+      {recentlyAddedLine ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed right-4 bottom-4 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-950 px-4 py-3 text-sm font-medium text-emerald-50 shadow-lg"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
+          {recentlyAddedLine.message}
+        </div>
+      ) : null}
       {/* ── Header ──────────────────────────────────────────────────── */}
       <Card className="relative overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 p-6 text-white shadow-lg">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-emerald-500/25 blur-3xl" />
@@ -1540,13 +1657,14 @@ export function EstimateDetail({
       <StreetViewCard address={serviceAddress} />
 
       {/* ── Contact Information ───────────────────────────────────── */}
-      <Card className="space-y-4 p-6">
-        <SectionTitle
-          icon={<User className="h-4 w-4" />}
-          tone="emerald"
-          title="Contact information"
-          subtitle="Who we're measuring for and how to reach them"
-        />
+      <CollapsibleEstimateSection
+        icon={<User className="h-4 w-4" />}
+        tone="emerald"
+        title="Contact information"
+        subtitle="Who we're measuring for and how to reach them"
+        collapsed={collapsedSections.has('contact')}
+        onToggle={() => toggleSection('contact')}
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <Label className="text-xs">First name</Label>
@@ -1671,16 +1789,17 @@ export function EstimateDetail({
             ) : null}
           </div>
         ) : null}
-      </Card>
+      </CollapsibleEstimateSection>
 
       {/* ── Service Address ───────────────────────────────────────── */}
-      <Card className="space-y-4 p-6">
-        <SectionTitle
-          icon={<MapPin className="h-4 w-4" />}
-          tone="sky"
-          title="Service address"
-          subtitle="Where the measuring visit happens"
-        />
+      <CollapsibleEstimateSection
+        icon={<MapPin className="h-4 w-4" />}
+        tone="sky"
+        title="Service address"
+        subtitle="Where the measuring visit happens"
+        collapsed={collapsedSections.has('address')}
+        onToggle={() => toggleSection('address')}
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label className="text-xs">Street</Label>
@@ -1733,16 +1852,17 @@ export function EstimateDetail({
           </div>
         </div>
         {serviceAddress ? <DirectionsButtons address={serviceAddress} /> : null}
-      </Card>
+      </CollapsibleEstimateSection>
 
       {/* ── Schedule ────────────────────────────────────────────────── */}
-      <Card className="space-y-4 p-6">
-        <SectionTitle
-          icon={<CalendarClock className="h-4 w-4" />}
-          tone="amber"
-          title="Measuring visit"
-          subtitle="When we swing by with the tape measure"
-        />
+      <CollapsibleEstimateSection
+        icon={<CalendarClock className="h-4 w-4" />}
+        tone="amber"
+        title="Measuring visit"
+        subtitle="When we swing by with the tape measure"
+        collapsed={collapsedSections.has('visit')}
+        onToggle={() => toggleSection('visit')}
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="estimate-date" className="text-xs">
@@ -1828,7 +1948,7 @@ export function EstimateDetail({
             )}
           </div>
         ) : null}
-      </Card>
+      </CollapsibleEstimateSection>
 
       {/* ── Line items ──────────────────────────────────────────────── */}
       <Card className="p-4 md:p-6">
@@ -1846,6 +1966,23 @@ export function EstimateDetail({
             }
           />
           <div className="flex flex-wrap gap-2">
+            {lineItems.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setCollapsedLines(
+                    lineItems.every((line) => collapsedLines.has(line.id))
+                      ? new Set()
+                      : new Set(lineItems.map((line) => line.id)),
+                  )
+                }
+              >
+                {lineItems.every((line) => collapsedLines.has(line.id))
+                  ? 'Expand all lines'
+                  : 'Collapse all lines'}
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -1930,6 +2067,7 @@ export function EstimateDetail({
 
         <div className="mt-2 space-y-2">
           {lineItems.map((line, idx) => {
+            const isCollapsed = collapsedLines.has(line.id)
             const unit = line.pricing_unit_snapshot
             const isCredit =
               toNumber(line.unit_price, 0) < 0 ||
@@ -1966,10 +2104,12 @@ export function EstimateDetail({
             return (
               <div
                 key={line.id}
-                className="border-border/60 rounded-lg border p-3"
+                id={`estimate-line-${line.id}`}
+                tabIndex={-1}
+                className={`border-border/60 scroll-mt-6 rounded-lg border p-3 focus:outline-none ${recentlyAddedLine?.id === line.id ? 'ring-2 ring-emerald-400/70 motion-safe:animate-[estimate-line-arrive_400ms_ease-out]' : ''}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     {servicePhoto ? (
                       <a
                         href={servicePhoto.src}
@@ -1988,20 +2128,39 @@ export function EstimateDetail({
                         />
                       </a>
                     ) : null}
-                    <div>
-                      <p className="text-muted-foreground text-xs font-medium">
-                        Line {idx + 1}
-                        {isCredit
-                          ? ' · discount / credit'
-                          : line.service_catalog_item_id
-                            ? ' · catalog'
-                            : ' · custom'}
-                      </p>
-                      <p className="text-xs font-semibold tabular-nums">
-                        Line total:{' '}
-                        {formatCurrency(lineQty * toNumber(line.unit_price, 0))}
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} line ${idx + 1}`}
+                      aria-expanded={!isCollapsed}
+                      aria-controls={`estimate-line-content-${line.id} estimate-line-notes-content-${line.id}`}
+                      onClick={() => toggleLine(line.id)}
+                      className="focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md text-left focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <div className="min-w-0">
+                        <p
+                          className="truncate text-xs font-medium"
+                          title={line.name_snapshot}
+                        >
+                          Line {idx + 1} ·{' '}
+                          {line.name_snapshot || 'Custom service'}
+                        </p>
+                        <p className="text-xs font-semibold tabular-nums">
+                          Line total:{' '}
+                          {formatCurrency(
+                            lineQty * toNumber(line.unit_price, 0),
+                          )}
+                          {showDimensions ? (
+                            <span className="text-muted-foreground ml-2 font-normal">
+                              {lineQty.toFixed(2)}{' '}
+                              {isAreaUnit(unit) ? 'sqft' : 'linear ft'}
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${isCollapsed ? '-rotate-90' : ''}`}
+                      />
+                    </button>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button
@@ -2029,7 +2188,11 @@ export function EstimateDetail({
                   </div>
                 </div>
 
-                <div className="mt-2 space-y-2">
+                <div
+                  id={`estimate-line-content-${line.id}`}
+                  hidden={isCollapsed}
+                  className="mt-2 space-y-2"
+                >
                   {isCredit ? (
                     <div className="grid grid-cols-1 gap-3 rounded-md border border-emerald-300/60 bg-emerald-50/60 p-3 sm:grid-cols-2 dark:border-emerald-800/60 dark:bg-emerald-950/20">
                       <div>
@@ -2386,7 +2549,11 @@ export function EstimateDetail({
                   ) : null}
                 </div>
 
-                <div className="mt-2">
+                <div
+                  id={`estimate-line-notes-content-${line.id}`}
+                  hidden={isCollapsed}
+                  className="mt-2"
+                >
                   <Label className="text-xs" htmlFor={`line-notes-${line.id}`}>
                     Service notes (what, why, technique)
                   </Label>

@@ -497,3 +497,94 @@ describe('estimate measurement units', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('collapsible estimate editor', () => {
+  it('keeps edits and totals when a line is collapsed and expanded', async () => {
+    render(<EstimateDetail estimateId="estimate-a" />)
+    await screen.findByLabelText('Unit price for line 1')
+    fireEvent.change(screen.getByLabelText('Name on proposal for line 1'), {
+      target: { value: 'Office carpet' },
+    })
+    fireEvent.change(screen.getByLabelText('Unit price for line 1'), {
+      target: { value: '85' },
+    })
+    fireEvent.change(
+      screen.getByLabelText('Service notes (what, why, technique)'),
+      {
+        target: { value: 'Clean the traffic lanes' },
+      },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse line 1' }))
+    expect(
+      screen.getByRole('button', { name: 'Expand line 1' }),
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByLabelText('Unit price for line 1')).not.toBeVisible()
+    expect(
+      screen.getByLabelText('Service notes (what, why, technique)'),
+    ).not.toBeVisible()
+    expect(screen.getByText(/Line total:/)).toHaveTextContent('$85.00')
+    expect(screen.getByText('Line 1 · Office carpet')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand line 1' }))
+    expect(screen.getByLabelText('Unit price for line 1')).toHaveValue(85)
+    expect(
+      screen.getByLabelText('Service notes (what, why, technique)'),
+    ).toHaveValue('Clean the traffic lanes')
+  })
+
+  it('collapses the information sections without discarding entered values', async () => {
+    render(<EstimateDetail estimateId="estimate-a" />)
+    await screen.findByRole('button', {
+      name: 'Contact information',
+    })
+    fireEvent.change(screen.getByPlaceholderText('First name'), {
+      target: { value: 'Charles' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Contact information' }))
+    expect(screen.getByPlaceholderText('First name')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Contact information' }))
+    expect(screen.getByPlaceholderText('First name')).toHaveValue('Charles')
+    fireEvent.click(screen.getByRole('button', { name: 'Service address' }))
+    expect(screen.getByPlaceholderText('123 Main St')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Measuring visit' }))
+    expect(screen.getByLabelText('Date')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Measuring visit' }))
+    expect(screen.getByLabelText('Date')).toBeVisible()
+  })
+
+  it('opens, highlights, focuses and scrolls to a new line after collapsing all existing lines', async () => {
+    const previousScroll = HTMLElement.prototype.scrollIntoView
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    try {
+      render(<EstimateDetail estimateId="estimate-a" />)
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Collapse all lines' }),
+      )
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Custom line (no catalog)' }),
+      )
+      expect(
+        screen.getByRole('button', { name: 'Expand line 1' }),
+      ).toBeVisible()
+      expect(
+        screen.getByRole('button', { name: 'Collapse line 2' }),
+      ).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByLabelText('Name on proposal for line 2')).toBeVisible()
+      expect(screen.getByRole('status')).toHaveTextContent('Added custom line')
+      expect(document.activeElement?.id).toMatch(/^estimate-line-new-/)
+      expect(document.activeElement).toHaveClass('ring-2')
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: previousScroll,
+      })
+    }
+  })
+})
