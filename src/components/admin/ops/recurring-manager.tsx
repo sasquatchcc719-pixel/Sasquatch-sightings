@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Calendar,
   AlertTriangle,
@@ -102,7 +102,13 @@ type SourceAppointment = {
   }>
 }
 
+type VisitOverrides = Record<string, { date: string; start_time: string }>
+
 type PreviewOccurrence = {
+  original_date?: string
+  shifted?: boolean
+  reason?: string | null
+  alternatives?: Array<{ date: string; start_time: string; end_time: string }>
   date: string
   start_time: string
   end_time: string
@@ -112,12 +118,6 @@ type PreviewOccurrence = {
     start_time: string
     end_time: string
   }
-}
-
-type PreviewDateDetail = {
-  date: string
-  original_date: string
-  shifted: boolean
 }
 
 type RuleForm = {
@@ -139,6 +139,8 @@ type Template = {
   start_time: string
   assigned_staff_user_id?: string | null
   scheduled_duration_minutes: number
+  scheduling_mode?: 'fixed' | 'flexible'
+  visit_overrides?: VisitOverrides
   discount_amount: number
   internal_notes: string | null
   service_address_id: string | null
@@ -1757,7 +1759,7 @@ function appointmentDurationMinutes(
   return Math.max(15, Math.ceil(elapsed / 15) * 15)
 }
 
-function CreateTemplateForm({
+export function CreateTemplateForm({
   onBack,
   initialData,
   sourceAppointmentId,
@@ -1886,14 +1888,38 @@ function CreateTemplateForm({
         ],
   )
 
-  const [previewDates, setPreviewDates] = useState<string[]>([])
-  const [previewDateDetails, setPreviewDateDetails] = useState<
-    PreviewDateDetail[]
-  >([])
+  const [schedulingMode, setSchedulingMode] = useState<'fixed' | 'flexible'>(
+    initialData?.scheduling_mode ?? 'fixed',
+  )
+  const [visitOverrides, setVisitOverrides] = useState<VisitOverrides>(
+    initialData?.visit_overrides ?? {},
+  )
+  const [previewKey, setPreviewKey] = useState('')
+  const [createdPlanWithErrors, setCreatedPlanWithErrors] = useState(false)
   const [previewOccurrences, setPreviewOccurrences] = useState<
     PreviewOccurrence[]
   >([])
   const [loadingPreview, setLoadingPreview] = useState(false)
+  const previewRequestId = useRef(0)
+  const scheduleKeyFor = (overrides: VisitOverrides) =>
+    JSON.stringify({
+      startTime,
+      scheduledDuration,
+      assignedStaffUserId,
+      isSubcontracted,
+      schedulingMode,
+      rules,
+      visitOverrides: overrides,
+      durations: lineItems.map(({ duration_minutes, buffer_minutes }) => ({
+        duration_minutes,
+        buffer_minutes,
+      })),
+    })
+  const scheduleKey = scheduleKeyFor(visitOverrides)
+  const previewIsCurrent = previewKey === scheduleKey
+  const initialScheduleKey = useState(scheduleKey)[0]
+  const scheduleChanged = initialScheduleKey !== scheduleKey
+  const currentOccurrences = previewIsCurrent ? previewOccurrences : []
 
   useEffect(() => {
     fetch('/api/admin/ops/services')
@@ -2111,7 +2137,10 @@ function CreateTemplateForm({
     )
   }
 
-  const loadPreview = async () => {
+  const loadPreview = async (overrides = visitOverrides) => {
+    const requestedKey = scheduleKeyFor(overrides)
+    const requestId = ++previewRequestId.current
+    setPreviewKey('')
     setLoadingPreview(true)
     try {
       const rulesPayload = rules.map((r) => ({
@@ -2138,24 +2167,26 @@ function CreateTemplateForm({
             scheduled_duration_minutes: Number(scheduledDuration) || 120,
             assigned_staff_user_id: assignedStaffUserId || null,
             is_subcontracted: isSubcontracted,
+            scheduling_mode: schedulingMode,
+            visit_overrides: overrides,
           },
         }),
       })
       const data = await res.json()
+      if (requestId !== previewRequestId.current) return
       if (!res.ok) throw new Error(data.error || 'Failed to preview schedule')
-      setPreviewDates(data.preview_dates || [])
-      setPreviewDateDetails(data.preview_date_details || [])
       setPreviewOccurrences(data.occurrences || [])
+      setPreviewKey(requestedKey)
       setError(null)
     } catch (cause) {
-      setPreviewDates([])
-      setPreviewDateDetails([])
+      if (requestId !== previewRequestId.current) return
+      setPreviewKey('')
       setPreviewOccurrences([])
       setError(
         cause instanceof Error ? cause.message : 'Failed to preview schedule',
       )
     } finally {
-      setLoadingPreview(false)
+      if (requestId === previewRequestId.current) setLoadingPreview(false)
     }
   }
 
@@ -2173,7 +2204,7 @@ function CreateTemplateForm({
     (s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0),
     0,
   )
-  const previewConflicts = previewOccurrences.filter(
+  const previewConflicts = currentOccurrences.filter(
     (occurrence) => occurrence.status === 'conflict',
   )
 
@@ -2195,6 +2226,18 @@ function CreateTemplateForm({
       return
     }
 
+    if (
+      !isSubcontracted &&
+      (!isEditing || scheduleChanged) &&
+      (!previewIsCurrent ||
+        currentOccurrences.length === 0 ||
+        previewConflicts.length > 0)
+    ) {
+      setError(
+        'Preview the current schedule and resolve all conflicts before saving.',
+      )
+      return
+    }
     setSaving(true)
     setError(null)
 
@@ -2215,6 +2258,8 @@ function CreateTemplateForm({
       })),
       start_time: startTime,
       scheduled_duration_minutes: Number(scheduledDuration) || 120,
+      scheduling_mode: schedulingMode,
+      visit_overrides: visitOverrides,
       discount_amount: Number(discountAmount) || 0,
       internal_notes: internalNotes || null,
       invoice_mode: invoiceMode,
@@ -2250,11 +2295,15 @@ function CreateTemplateForm({
             template: templatePayload,
             rules: rulesPayload,
             update_future: updateFuture,
+            reviewed_occurrences: previewIsCurrent
+              ? currentOccurrences
+              : undefined,
           }),
         })
 
         if (!res.ok) {
           const data = await res.json()
+          setPreviewKey('')
           setError(data.error || 'Failed to save')
           return
         }
@@ -2272,11 +2321,13 @@ function CreateTemplateForm({
             },
             rules: rulesPayload,
             generate: true,
+            reviewed_occurrences: currentOccurrences,
           }),
         })
 
         if (!res.ok) {
           const data = await res.json()
+          setPreviewKey('')
           setError(data.error || 'Failed to create')
           return
         }
@@ -2286,15 +2337,15 @@ function CreateTemplateForm({
           const generationErrors = Array.isArray(data.generation.errors)
             ? data.generation.errors
             : []
+          if (generationErrors.length) {
+            setCreatedPlanWithErrors(true)
+            setError(
+              `Plan created, but ${generationErrors.length} visit${generationErrors.length === 1 ? ' needs' : 's need'} attention: ${generationErrors.join(' ')} Review the plan before generating any missing visits.`,
+            )
+            return
+          }
           alert(
-            [
-              `Recurring plan created. Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
-              generationErrors.length
-                ? `${generationErrors.length} visit${generationErrors.length === 1 ? '' : 's'} need attention: ${generationErrors.join(' ')}`
-                : '',
-            ]
-              .filter(Boolean)
-              .join('\n'),
+            `Recurring plan created. Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
           )
         }
 
@@ -2329,7 +2380,9 @@ function CreateTemplateForm({
 
       {error && (
         <Card className="border-destructive bg-destructive/10 p-4 shadow-sm">
-          <p className="text-destructive text-sm font-medium">{error}</p>
+          <p role="alert" className="text-destructive text-sm font-medium">
+            {error}
+          </p>
         </Card>
       )}
 
@@ -2527,9 +2580,9 @@ function CreateTemplateForm({
             <select
               className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
               value={assignedStaffUserId}
+              aria-label="Assigned technician"
               onChange={(event) => {
                 setAssignedStaffUserId(event.target.value)
-                setPreviewOccurrences([])
               }}
               disabled={isSubcontracted}
             >
@@ -2551,6 +2604,7 @@ function CreateTemplateForm({
             <Input
               type="number"
               value={scheduledDuration}
+              aria-label="Scheduled duration in minutes"
               onChange={(e) => setScheduledDuration(e.target.value)}
               className="mt-1"
             />
@@ -2723,6 +2777,7 @@ function CreateTemplateForm({
                   <Input
                     type="number"
                     value={item.duration_minutes}
+                    aria-label={`Line ${idx + 1} duration in minutes`}
                     onChange={(e) =>
                       handleLineItemChange(
                         idx,
@@ -2807,6 +2862,26 @@ function CreateTemplateForm({
           </Button>
         </div>
 
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+          <input
+            type="checkbox"
+            checked={schedulingMode === 'flexible'}
+            onChange={(event) =>
+              setSchedulingMode(event.target.checked ? 'flexible' : 'fixed')
+            }
+            className="mt-0.5 h-4 w-4"
+          />
+          <span>
+            <span className="text-sm font-semibold">
+              Flexible dates to fit the calendar
+            </span>
+            <span className="text-muted-foreground mt-1 block text-sm">
+              Find open weekday times around existing work. Review every visit
+              before booking. Moving one visit keeps the following visits on the
+              original recurring pattern.
+            </span>
+          </span>
+        </label>
         <div className="mt-4 space-y-4">
           {rules.map((rule, idx) => (
             <div key={idx} className="rounded-xl border p-4">
@@ -2989,93 +3064,152 @@ function CreateTemplateForm({
 
         <div className="mt-4">
           <p className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
-            Recurring cleaning is scheduled on weekdays only. Any rule date that
-            lands on Saturday or Sunday automatically moves to the following
-            Monday before conflicts are checked. If Monday is occupied, the
-            generated visit advances to the next open weekday.
+            Recurring cleaning uses weekdays. Weekend rule dates move to Monday.
+            {schedulingMode === 'flexible'
+              ? ' Searches the same day, then up to 14 calendar days ahead, before the next rule date. The assigned technician stays the same. Each adjustment applies to one visit only.'
+              : ' Calendar conflicts must be resolved before booking.'}{' '}
+            All times are Mountain Time. The start is the scheduled arrival; the
+            end is the estimated completion.
           </p>
           <Button
             variant="outline"
             size="sm"
-            onClick={loadPreview}
-            disabled={loadingPreview}
+            onClick={() => void loadPreview()}
+            disabled={loadingPreview || loadingSource}
           >
             {loadingPreview ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Calendar className="mr-2 h-4 w-4" />
             )}
-            Preview Dates & Conflicts
+            {schedulingMode === 'flexible'
+              ? 'Find openings & preview visits'
+              : 'Preview Dates & Conflicts'}
           </Button>
-
-          {previewDates.length > 0 && (
+          {!previewIsCurrent && previewOccurrences.length > 0 && (
+            <p className="text-muted-foreground mt-2 text-sm" role="status">
+              The schedule changed. Preview again before saving.
+            </p>
+          )}
+          {currentOccurrences.length > 0 && (
             <div className="mt-3 rounded-xl border p-3">
-              <p className="text-sm font-medium">
-                Next {previewDates.length} dates:
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                {previewConflicts.length ? (
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                ) : (
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                )}
+                {previewConflicts.length
+                  ? `${previewConflicts.length} calendar conflict${previewConflicts.length === 1 ? '' : 's'} found`
+                  : `All ${currentOccurrences.length} reviewed visits are clear`}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(previewDateDetails.length > 0
-                  ? previewDateDetails
-                  : previewDates.map((date) => ({
-                      date,
-                      original_date: date,
-                      shifted: false,
-                    }))
-                ).map((item, index) => {
-                  const formatPreviewDate = (date: string) =>
-                    new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
+              <p className="text-muted-foreground mt-1 text-xs">
+                {isSubcontracted
+                  ? 'Outside crew'
+                  : staff.find((member) => member.id === assignedStaffUserId)
+                      ?.display_name || 'Assigned technician'}{' '}
+                · Mountain Time · availability is checked again when you save.
+              </p>
+              <div className="mt-3 max-h-[32rem] space-y-3 overflow-y-auto">
+                {currentOccurrences.map((occurrence, index) => {
+                  const originalDate =
+                    occurrence.original_date || occurrence.date
+                  const dateLabel = (date: string) =>
+                    new Date(`${date}T12:00:00`).toLocaleDateString('en-US', {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric',
                     })
+                  const optionLabel = (option: {
+                    date: string
+                    start_time: string
+                    end_time: string
+                  }) =>
+                    `${dateLabel(option.date)} · ${option.start_time.slice(0, 5)}–${option.end_time.slice(0, 5)}`
                   return (
-                    <Badge
-                      key={`${item.original_date}-${index}`}
-                      variant="outline"
-                      className={
-                        item.shifted
-                          ? 'border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300'
-                          : undefined
-                      }
+                    <div
+                      key={`${originalDate}-${index}`}
+                      className={`rounded-lg border p-3 ${occurrence.status === 'conflict' ? 'border-amber-500/40 bg-amber-500/10' : ''}`}
                     >
-                      {item.shifted
-                        ? `${formatPreviewDate(item.original_date)} → ${formatPreviewDate(item.date)}`
-                        : formatPreviewDate(item.date)}
-                    </Badge>
+                      <p className="text-sm font-medium">
+                        {optionLabel(occurrence)}
+                      </p>
+                      {(originalDate !== occurrence.date ||
+                        occurrence.shifted) && (
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          Original rule date: {dateLabel(originalDate)}
+                        </p>
+                      )}
+                      {occurrence.reason && (
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          {occurrence.reason}
+                        </p>
+                      )}
+                      {occurrence.conflict && (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                          Overlaps {occurrence.conflict.label} ·{' '}
+                          {occurrence.conflict.start_time.slice(0, 5)}–
+                          {occurrence.conflict.end_time.slice(0, 5)}
+                        </p>
+                      )}
+                      {!!occurrence.alternatives?.length && (
+                        <label className="mt-2 block text-xs">
+                          Move this visit only
+                          <select
+                            className="border-input bg-background mt-1 h-10 w-full rounded-md border px-2 text-sm"
+                            aria-label={`Move visit originally due ${originalDate}`}
+                            value=""
+                            disabled={loadingPreview}
+                            onChange={(event) => {
+                              if (!event.target.value) return
+                              const choice = JSON.parse(event.target.value) as {
+                                date: string
+                                start_time: string
+                              }
+                              const next = {
+                                ...visitOverrides,
+                                [originalDate]: choice,
+                              }
+                              setVisitOverrides(next)
+                              void loadPreview(next)
+                            }}
+                          >
+                            <option value="">Choose another opening…</option>
+                            {occurrence.alternatives.map((option) => (
+                              <option
+                                key={`${option.date}-${option.start_time}`}
+                                value={JSON.stringify({
+                                  date: option.date,
+                                  start_time: option.start_time.slice(0, 5),
+                                })}
+                              >
+                                {optionLabel(option)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {visitOverrides[originalDate] && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2"
+                          disabled={loadingPreview}
+                          onClick={() => {
+                            const next = { ...visitOverrides }
+                            delete next[originalDate]
+                            setVisitOverrides(next)
+                            void loadPreview(next)
+                          }}
+                        >
+                          Use recurring rule again
+                        </Button>
+                      )}
+                    </div>
                   )
                 })}
               </div>
-              {previewOccurrences.length > 0 && (
-                <div
-                  className={`mt-3 rounded-lg border p-3 ${
-                    previewConflicts.length
-                      ? 'border-amber-500/40 bg-amber-500/10'
-                      : 'border-emerald-500/40 bg-emerald-500/10'
-                  }`}
-                >
-                  <p className="flex items-center gap-2 text-sm font-semibold">
-                    {previewConflicts.length ? (
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4 text-emerald-500" />
-                    )}
-                    {previewConflicts.length
-                      ? `${previewConflicts.length} calendar conflict${previewConflicts.length === 1 ? '' : 's'} found`
-                      : `All ${previewOccurrences.length} checked visits are clear`}
-                  </p>
-                  {previewConflicts.map((occurrence) => (
-                    <p key={occurrence.date} className="mt-2 text-xs">
-                      {occurrence.date} · planned{' '}
-                      {occurrence.start_time.slice(0, 5)}–
-                      {occurrence.end_time.slice(0, 5)} overlaps{' '}
-                      {occurrence.conflict?.label} ·{' '}
-                      {occurrence.conflict?.start_time.slice(0, 5)}–
-                      {occurrence.conflict?.end_time.slice(0, 5)}
-                    </p>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -3084,16 +3218,20 @@ function CreateTemplateForm({
       {/* Save */}
       <div className="flex justify-end gap-3">
         <Button variant="outline" onClick={onBack}>
-          Cancel
+          {createdPlanWithErrors ? 'Review recurring jobs' : 'Cancel'}
         </Button>
         <Button
           onClick={handleSave}
           disabled={
             saving ||
             loadingSource ||
-            (!isEditing &&
-              !isSubcontracted &&
-              (previewOccurrences.length === 0 || previewConflicts.length > 0))
+            loadingPreview ||
+            createdPlanWithErrors ||
+            (!isSubcontracted &&
+              (!isEditing || scheduleChanged) &&
+              (!previewIsCurrent ||
+                currentOccurrences.length === 0 ||
+                previewConflicts.length > 0))
           }
         >
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

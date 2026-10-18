@@ -1,3 +1,9 @@
+import {
+  planRecurringSchedule,
+  type RecurringCandidate,
+  type RecurringSchedulingMode,
+  type RecurringVisitOverrides,
+} from '@/lib/ops/recurring-scheduling'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   ACTIVE_APPOINTMENT_STATUSES,
@@ -135,8 +141,11 @@ export function buildRecurringScheduleOccurrences(params: {
 export async function previewRecurringSchedule(
   supabase: SupabaseClient,
   params: {
-    dates: string[]
-    startTime: string
+    dates?: string[]
+    startTime?: string
+    candidates?: RecurringCandidate[]
+    schedulingMode?: RecurringSchedulingMode
+    visitOverrides?: RecurringVisitOverrides | null
     durationMinutes: number
     staffUserId: string
     excludeTemplateId?: string
@@ -145,6 +154,24 @@ export async function previewRecurringSchedule(
   staff: { id: string; display_name: string }
   occurrences: RecurringScheduleOccurrence[]
 }> {
+  if (params.schedulingMode === 'flexible') {
+    return planRecurringSchedule(supabase, {
+      candidates:
+        params.candidates ||
+        (params.dates || []).map((date) => ({
+          original_date: date,
+          date,
+          start_time: params.startTime || '09:00',
+        })),
+      durationMinutes: params.durationMinutes,
+      staffUserId: params.staffUserId,
+      schedulingMode: 'flexible',
+      visitOverrides: params.visitOverrides,
+      excludeTemplateId: params.excludeTemplateId,
+    })
+  }
+  const dates =
+    params.dates || params.candidates?.map((candidate) => candidate.date) || []
   const { data: staff, error: staffError } = await supabase
     .from('staff_users')
     .select('id, user_id, display_name')
@@ -155,15 +182,15 @@ export async function previewRecurringSchedule(
   if (staffError) throw staffError
   if (!staff) throw new Error('Choose an active technician.')
 
-  if (params.dates.length === 0) {
+  if (dates.length === 0) {
     return {
       staff: { id: staff.id, display_name: staff.display_name },
       occurrences: [],
     }
   }
 
-  const startDate = params.dates[0]
-  const endDate = params.dates[params.dates.length - 1]
+  const startDate = dates[0]
+  const endDate = dates[dates.length - 1]
   const staffEventFilters = [
     `assigned_staff_user_id.eq.${staff.id}`,
     staff.user_id ? `assigned_staff_user_id.eq.${staff.user_id}` : '',
@@ -201,8 +228,9 @@ export async function previewRecurringSchedule(
   return {
     staff: { id: staff.id, display_name: staff.display_name },
     occurrences: buildRecurringScheduleOccurrences({
-      dates: params.dates,
-      startTime: params.startTime,
+      dates,
+      startTime:
+        params.startTime || params.candidates?.[0]?.start_time || '09:00',
       durationMinutes: params.durationMinutes,
       appointments: (appointmentsResult.data || []) as AppointmentRow[],
       events: (eventsResult.data || []) as CalendarEventRow[],

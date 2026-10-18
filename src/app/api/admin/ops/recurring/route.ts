@@ -4,12 +4,18 @@ import { createAdminClient } from '@/supabase/server'
 import {
   generateRecurringAppointments,
   generateAllRecurring,
-  previewDateDetails,
-  previewDates,
+  recurringScheduleCandidates,
   type RecurrenceRule,
 } from '@/lib/ops/recurring'
 import { previewRecurringSchedule } from '@/lib/ops/recurring-schedule-preview'
 import { applyAppointmentBuffer } from '@/lib/ops/availability'
+import { planRecurringSchedule } from '@/lib/ops/recurring-scheduling'
+import {
+  parseRecurringOverrides,
+  recurringReviewMatches,
+  freezeRecurringVisits,
+} from '@/lib/ops/recurring-review'
+import { loadRecurringVisitSchedule } from '@/lib/ops/recurring-edits'
 
 /**
  * GET /api/admin/ops/recurring
@@ -85,33 +91,94 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results })
     }
 
-    if (body.preview_only && body.rules) {
-      const dateDetails = previewDateDetails(body.rules as RecurrenceRule[], 10)
-      const dates = dateDetails.map((item) => item.date)
-      const scheduleInput = body.schedule
+    if (body.preview_only && Array.isArray(body.rules)) {
+      const scheduleInput = body.schedule || {}
+      const flexible = scheduleInput.scheduling_mode === 'flexible'
+      let overrides
+      try {
+        overrides = parseRecurringOverrides(scheduleInput.visit_overrides)
+      } catch (error) {
+        return NextResponse.json(
+          { error: (error as Error).message },
+          { status: 400 },
+        )
+      }
+      let candidates = recurringScheduleCandidates(
+        body.rules as RecurrenceRule[],
+        String(scheduleInput.start_time || '09:00'),
+        { horizonMonths: 12, count: 400 },
+      )
+      if (flexible && typeof body.template_id === 'string') {
+        const saved = await loadRecurringVisitSchedule(
+          supabase,
+          body.template_id,
+          candidates,
+          overrides,
+        )
+        candidates = saved.candidates
+        overrides = saved.visitOverrides
+      }
       if (
-        scheduleInput?.assigned_staff_user_id &&
+        scheduleInput.assigned_staff_user_id &&
         scheduleInput.is_subcontracted !== true
       ) {
-        const schedule = await previewRecurringSchedule(supabase, {
-          dates,
-          startTime: String(scheduleInput.start_time || '09:00'),
-          durationMinutes: applyAppointmentBuffer(
-            Number(scheduleInput.scheduled_duration_minutes) || 120,
+        const duration = applyAppointmentBuffer(
+          Number(scheduleInput.scheduled_duration_minutes) || 120,
+        )
+        const staffId = String(scheduleInput.assigned_staff_user_id)
+        const excludeTemplateId =
+          typeof body.template_id === 'string' ? body.template_id : undefined
+        if (flexible) {
+          const schedule = await planRecurringSchedule(supabase, {
+            candidates,
+            durationMinutes: duration,
+            staffUserId: staffId,
+            schedulingMode: 'flexible',
+            visitOverrides: overrides,
+            excludeTemplateId,
+          })
+          return NextResponse.json({
+            preview_dates: schedule.occurrences.map((visit) => visit.date),
+            preview_date_details: schedule.occurrences.map((visit) => ({
+              date: visit.date,
+              original_date: visit.original_date,
+              shifted: visit.shifted,
+            })),
+            ...schedule,
+          })
+        }
+        // Fixed plans can deliberately run after hours; retain that behavior
+        // while checking each rule's actual start time and the entire horizon.
+        const times = [
+          ...new Set(candidates.map((candidate) => candidate.start_time)),
+        ]
+        const schedules = await Promise.all(
+          times.map((startTime) =>
+            previewRecurringSchedule(supabase, {
+              dates: candidates
+                .filter((candidate) => candidate.start_time === startTime)
+                .map((candidate) => candidate.date),
+              startTime,
+              durationMinutes: duration,
+              staffUserId: staffId,
+              excludeTemplateId,
+            }),
           ),
-          staffUserId: String(scheduleInput.assigned_staff_user_id),
-          excludeTemplateId: typeof body.template_id === 'string' ? body.template_id : undefined,
-        })
+        )
         return NextResponse.json({
-          preview_dates: dates,
-          preview_date_details: dateDetails,
-          occurrences: schedule.occurrences,
-          staff: schedule.staff,
+          preview_dates: candidates.map((candidate) => candidate.date),
+          preview_date_details: candidates.map((candidate) => ({
+            ...candidate,
+            shifted: candidate.original_date !== candidate.date,
+          })),
+          occurrences: schedules
+            .flatMap((schedule) => schedule.occurrences)
+            .sort((a, b) => a.date.localeCompare(b.date)),
+          staff: schedules[0]?.staff,
         })
       }
       return NextResponse.json({
-        preview_dates: dates,
-        preview_date_details: dateDetails,
+        preview_dates: candidates.map((candidate) => candidate.date),
         occurrences: [],
       })
     }
@@ -139,28 +206,101 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (tpl.assigned_staff_user_id && tpl.is_subcontracted !== true) {
-      const allDates = previewDates(rules as RecurrenceRule[], 400)
-      const schedule = await previewRecurringSchedule(supabase, {
-        dates: allDates,
-        startTime: String(tpl.start_time || '09:00'),
-        durationMinutes: applyAppointmentBuffer(
-          Number(tpl.scheduled_duration_minutes) || 120,
-        ),
-        staffUserId: String(tpl.assigned_staff_user_id),
-      })
-      const conflicts = schedule.occurrences.filter(
-        (occurrence) => occurrence.status === 'conflict',
+    const flexible = tpl.scheduling_mode === 'flexible'
+    if (
+      tpl.scheduling_mode != null &&
+      !['fixed', 'flexible'].includes(tpl.scheduling_mode)
+    ) {
+      return NextResponse.json(
+        { error: 'Choose fixed or flexible scheduling.' },
+        { status: 400 },
       )
-      if (conflicts.length > 0) {
-        return NextResponse.json(
-          {
-            error: `${conflicts.length} planned visit${conflicts.length === 1 ? '' : 's'} overlap work already on ${schedule.staff.display_name}'s calendar. Preview the dates and choose a different time, date, or technician.`,
-            code: 'recurring_schedule_conflict',
-            occurrences: schedule.occurrences,
-          },
-          { status: 409 },
+    }
+    let visitOverrides
+    try {
+      visitOverrides = parseRecurringOverrides(tpl.visit_overrides)
+    } catch (error) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: 400 },
+      )
+    }
+    if (!tpl.assigned_staff_user_id && tpl.is_subcontracted !== true) {
+      return NextResponse.json(
+        { error: 'Choose the technician for these recurring visits.' },
+        { status: 400 },
+      )
+    }
+    if (tpl.assigned_staff_user_id && tpl.is_subcontracted !== true) {
+      const candidates = recurringScheduleCandidates(
+        rules as RecurrenceRule[],
+        String(tpl.start_time || '09:00'),
+        { horizonMonths: 12, count: 400 },
+      )
+      const duration = applyAppointmentBuffer(
+        Number(tpl.scheduled_duration_minutes) || 120,
+      )
+      if (flexible) {
+        const schedule = await planRecurringSchedule(supabase, {
+          candidates,
+          durationMinutes: duration,
+          staffUserId: String(tpl.assigned_staff_user_id),
+          schedulingMode: 'flexible',
+          visitOverrides,
+        })
+        if (
+          !recurringReviewMatches(
+            body.reviewed_occurrences,
+            schedule.occurrences,
+          )
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                'The calendar or visit choices changed. Find openings again and review the updated dates before creating the plan.',
+              code: 'recurring_schedule_changed',
+              occurrences: schedule.occurrences,
+            },
+            { status: 409 },
+          )
+        }
+        // Keep the exact dates the owner reviewed, including unchanged visits.
+        visitOverrides = freezeRecurringVisits(
+          schedule.occurrences,
+          visitOverrides,
         )
+      } else {
+        const times = [
+          ...new Set(candidates.map((candidate) => candidate.start_time)),
+        ]
+        const schedules = await Promise.all(
+          times.map((startTime) =>
+            previewRecurringSchedule(supabase, {
+              dates: candidates
+                .filter((candidate) => candidate.start_time === startTime)
+                .map((candidate) => candidate.date),
+              startTime,
+              durationMinutes: duration,
+              staffUserId: String(tpl.assigned_staff_user_id),
+            }),
+          ),
+        )
+        const occurrences = schedules.flatMap(
+          (schedule) => schedule.occurrences,
+        )
+        const conflicts = occurrences.filter(
+          (occurrence) => occurrence.status === 'conflict',
+        )
+        if (conflicts.length) {
+          return NextResponse.json(
+            {
+              error: `${conflicts.length} planned visits overlap existing work. Preview the dates and choose another time or flexible scheduling.`,
+              code: 'recurring_schedule_conflict',
+              occurrences,
+            },
+            { status: 409 },
+          )
+        }
       }
     }
 
@@ -179,6 +319,8 @@ export async function POST(request: NextRequest) {
         booking_channel: tpl.booking_channel || 'recurring',
         assigned_staff_user_id: tpl.assigned_staff_user_id || null,
         is_active: tpl.is_active !== false,
+        scheduling_mode: flexible ? 'flexible' : 'fixed',
+        visit_overrides: visitOverrides,
         is_subcontracted: tpl.is_subcontracted === true,
         subcontractor_name:
           tpl.is_subcontracted === true

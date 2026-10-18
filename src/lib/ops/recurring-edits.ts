@@ -1,3 +1,8 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type {
+  RecurringCandidate,
+  RecurringVisitOverrides,
+} from './recurring-scheduling'
 import type {
   RecurringTemplate,
   RecurrenceRule,
@@ -41,6 +46,15 @@ export function recurringRulesContent(rules: Partial<RecurrenceRule>[]) {
   )
 }
 
+const recurringOverridesContent = (
+  overrides?: RecurringVisitOverrides | null,
+) =>
+  JSON.stringify(
+    Object.entries(overrides || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => [date, value.date, value.start_time.slice(0, 5)]),
+  )
+
 export function recurringEditsNeedRegeneration(
   current: RecurringTemplate & { ops_recurrence_rules: RecurrenceRule[] },
   updates: Partial<RecurringTemplate>,
@@ -64,6 +78,21 @@ export function recurringEditsNeedRegeneration(
   )
     return true
   if (
+    (current.scheduling_mode === 'flexible' ||
+      updates.scheduling_mode === 'flexible') &&
+    ((updates.scheduling_mode !== undefined &&
+      updates.scheduling_mode !== (current.scheduling_mode || 'fixed')) ||
+      (updates.assigned_staff_user_id !== undefined &&
+        (updates.assigned_staff_user_id || null) !==
+          (current.assigned_staff_user_id || null)) ||
+      (updates.is_subcontracted !== undefined &&
+        updates.is_subcontracted !== current.is_subcontracted) ||
+      (updates.visit_overrides !== undefined &&
+        recurringOverridesContent(updates.visit_overrides) !==
+          recurringOverridesContent(current.visit_overrides)))
+  )
+    return true
+  if (
     updates.invoice_mode !== undefined &&
     updates.invoice_mode !== current.invoice_mode
   )
@@ -73,4 +102,75 @@ export function recurringEditsNeedRegeneration(
       updates[key] !== undefined &&
       Number(updates[key]) !== Number(current[key]),
   )
+}
+
+export type ExistingRecurringVisit = {
+  id: string
+  original_recurring_date: string | null
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+}
+
+/** Preserve individual calendar moves unless this preview explicitly changes them. */
+export async function loadRecurringVisitSchedule(
+  supabase: SupabaseClient,
+  templateId: string,
+  candidates: RecurringCandidate[],
+  requestedOverrides: RecurringVisitOverrides,
+  persistedOverrides?: RecurringVisitOverrides,
+) {
+  let saved = persistedOverrides
+  if (saved === undefined) {
+    const { data, error } = await supabase
+      .from('ops_recurring_templates')
+      .select('visit_overrides')
+      .eq('id', templateId)
+      .single()
+    if (error) throw error
+    saved = (data?.visit_overrides || {}) as RecurringVisitOverrides
+  }
+  const { data, error } = await supabase
+    .from('ops_appointments')
+    .select(
+      'id, original_recurring_date, appointment_date, start_time, end_time, status',
+    )
+    .eq('recurring_template_id', templateId)
+  if (error) throw error
+  const visits = (data || []) as ExistingRecurringVisit[]
+  const protectedOriginals = new Set(
+    visits
+      .filter((visit) =>
+        ['completed', 'cancelled', 'on_my_way', 'in_progress'].includes(
+          visit.status,
+        ),
+      )
+      .map((visit) => visit.original_recurring_date || visit.appointment_date),
+  )
+  const visitOverrides = { ...requestedOverrides }
+  for (const visit of visits) {
+    if (!['booked', 'confirmed'].includes(visit.status)) continue
+    const original = visit.original_recurring_date || visit.appointment_date
+    const requested = requestedOverrides[original]
+    const persisted = saved[original]
+    if (
+      !requested ||
+      (persisted &&
+        requested.date === persisted.date &&
+        requested.start_time.slice(0, 5) === persisted.start_time.slice(0, 5))
+    ) {
+      visitOverrides[original] = {
+        date: visit.appointment_date,
+        start_time: visit.start_time.slice(0, 5),
+      }
+    }
+  }
+  return {
+    candidates: candidates.filter(
+      (candidate) => !protectedOriginals.has(candidate.original_date),
+    ),
+    visitOverrides,
+    visits,
+  }
 }

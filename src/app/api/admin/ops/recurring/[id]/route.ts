@@ -5,6 +5,7 @@ import { createAdminClient } from '@/supabase/server'
 import {
   generateRecurringAppointments,
   generateBatchInvoice,
+  recurringScheduleCandidates,
   type RecurringTemplate,
   type RecurrenceRule,
   type TemplateLineItem,
@@ -13,7 +14,20 @@ import {
   recurringEditsNeedRegeneration,
   recurringItemContent,
   recurringRulesContent,
+  loadRecurringVisitSchedule,
+  type ExistingRecurringVisit,
 } from '@/lib/ops/recurring-edits'
+
+import { applyAppointmentBuffer } from '@/lib/ops/availability'
+import {
+  planRecurringSchedule,
+  type RecurringScheduleOccurrence,
+} from '@/lib/ops/recurring-scheduling'
+import {
+  parseRecurringOverrides,
+  recurringReviewMatches,
+  freezeRecurringVisits,
+} from '@/lib/ops/recurring-review'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -47,7 +61,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { data: appointments } = await supabase
       .from('ops_appointments')
       .select(
-        `id, appointment_date, start_time, end_time, status, payment_status,
+        `id, original_recurring_date, appointment_date, start_time, end_time, status, payment_status,
          quoted_total, on_my_way_at, completed_at, internal_notes,
          ops_appointment_line_items (
            id, sort_order, created_at, service_catalog_item_id, name_snapshot,
@@ -106,13 +120,132 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const previous = current as RecurringTemplate & {
       ops_recurrence_rules: RecurrenceRule[]
     }
+    const tplUpdates = { ...(body.template || {}) }
+    if (
+      tplUpdates.scheduling_mode !== undefined &&
+      !['fixed', 'flexible'].includes(tplUpdates.scheduling_mode)
+    ) {
+      return NextResponse.json(
+        { error: 'Choose fixed or flexible scheduling.' },
+        { status: 400 },
+      )
+    }
+    if (tplUpdates.visit_overrides !== undefined) {
+      try {
+        tplUpdates.visit_overrides = parseRecurringOverrides(
+          tplUpdates.visit_overrides,
+        )
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Invalid visit adjustments.',
+          },
+          { status: 400 },
+        )
+      }
+    }
+    const nextTemplate = { ...previous, ...tplUpdates } as RecurringTemplate
     const needsRegeneration = recurringEditsNeedRegeneration(
       previous,
-      body.template || {},
+      tplUpdates,
       body.rules,
     )
+    const flexibleEdit =
+      previous.scheduling_mode === 'flexible' ||
+      nextTemplate.scheduling_mode === 'flexible'
+    let flexibleSchedule: {
+      visits: ExistingRecurringVisit[]
+      occurrences: RecurringScheduleOccurrence[]
+    } | null = null
+    if (body.update_future && needsRegeneration && flexibleEdit) {
+      const unsafeChanges = recurringEditsNeedRegeneration(
+        previous,
+        {
+          ...(tplUpdates.line_items !== undefined
+            ? { line_items: tplUpdates.line_items }
+            : {}),
+          ...(tplUpdates.discount_amount !== undefined
+            ? { discount_amount: tplUpdates.discount_amount }
+            : {}),
+          ...(tplUpdates.invoice_mode !== undefined
+            ? { invoice_mode: tplUpdates.invoice_mode }
+            : {}),
+        },
+        body.rules,
+      )
+      if (unsafeChanges) {
+        return NextResponse.json(
+          {
+            error:
+              'Changing the recurrence pattern, prices, or billing mode cannot replace existing flexible visits. Save the plan only, then edit the affected visits individually.',
+            code: 'recurring_existing_visits_preserved',
+          },
+          { status: 409 },
+        )
+      }
+      if (
+        !nextTemplate.assigned_staff_user_id ||
+        nextTemplate.is_subcontracted
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Choose an active technician to review changes to existing flexible visits.',
+          },
+          { status: 400 },
+        )
+      }
+      const requested = parseRecurringOverrides(nextTemplate.visit_overrides)
+      const prepared = await loadRecurringVisitSchedule(
+        supabase,
+        id,
+        recurringScheduleCandidates(
+          previous.ops_recurrence_rules,
+          nextTemplate.start_time,
+          { horizonMonths: 12, count: 400 },
+        ),
+        requested,
+        previous.visit_overrides || {},
+      )
+      const schedule = await planRecurringSchedule(supabase, {
+        candidates: prepared.candidates,
+        staffUserId: nextTemplate.assigned_staff_user_id,
+        durationMinutes: applyAppointmentBuffer(
+          Number(nextTemplate.scheduled_duration_minutes) || 120,
+        ),
+        schedulingMode: nextTemplate.scheduling_mode || 'fixed',
+        visitOverrides: prepared.visitOverrides,
+        excludeTemplateId: id,
+      })
+      if (
+        !recurringReviewMatches(body.reviewed_occurrences, schedule.occurrences)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'The calendar or selected visits changed. Preview the schedule again before saving.',
+            code: 'recurring_schedule_review_required',
+            occurrences: schedule.occurrences,
+          },
+          { status: 409 },
+        )
+      }
+      tplUpdates.visit_overrides = freezeRecurringVisits(
+        schedule.occurrences,
+        prepared.visitOverrides,
+      )
+      body.template = tplUpdates
+      flexibleSchedule = {
+        visits: prepared.visits,
+        occurrences: schedule.occurrences,
+      }
+    }
 
     if (body.template) {
+      body.template = tplUpdates
       const updates: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       }
@@ -129,6 +262,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         'is_active',
         'is_subcontracted',
         'subcontractor_name',
+        'scheduling_mode',
+        'visit_overrides',
       ] as const
 
       for (const key of allowed) {
@@ -148,8 +283,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       // books, or the toggle appears to do nothing until the next regeneration.
       // Completed visits are left alone — their history stays as it happened.
       if (
-        body.template.is_subcontracted !== undefined ||
-        body.template.assigned_staff_user_id !== undefined
+        !flexibleEdit &&
+        (body.template.is_subcontracted !== undefined ||
+          body.template.assigned_staff_user_id !== undefined)
       ) {
         const isSub = body.template.is_subcontracted === true
         const appointmentUpdates: Record<string, unknown> = {
@@ -217,7 +353,44 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     if (body.update_future) {
       const tpl = body.template
-      if (needsRegeneration) {
+      if (flexibleSchedule) {
+        const today = new Date().toLocaleDateString('en-CA', {
+          timeZone: 'America/Denver',
+        })
+        const byOriginal = new Map(
+          flexibleSchedule.occurrences.map((visit) => [
+            visit.original_date,
+            visit,
+          ]),
+        )
+        for (const visit of flexibleSchedule.visits) {
+          if (
+            !['booked', 'confirmed'].includes(visit.status) ||
+            visit.appointment_date < today
+          )
+            continue
+          const selected = byOriginal.get(
+            visit.original_recurring_date || visit.appointment_date,
+          )
+          if (!selected) continue
+          const { error } = await supabase
+            .from('ops_appointments')
+            .update({
+              appointment_date: selected.date,
+              start_time: selected.start_time,
+              end_time: selected.end_time,
+              assigned_staff_user_id: nextTemplate.assigned_staff_user_id,
+              is_subcontracted: nextTemplate.is_subcontracted === true,
+              subcontractor_name: nextTemplate.is_subcontracted
+                ? nextTemplate.subcontractor_name
+                : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', visit.id)
+            .in('status', ['booked', 'confirmed'])
+          if (error) throw error
+        }
+      } else if (needsRegeneration) {
         const today = new Date().toISOString().slice(0, 10)
 
         const { data: futureAppts } = await supabase
@@ -241,11 +414,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
           }
           await generateRecurringAppointments(supabase, id)
         }
-      } else {
+      }
+      if (!needsRegeneration || flexibleSchedule) {
         // A note edit must keep appointment/invoice IDs and must not fire the
         // AFTER INSERT booking notification trigger.
         const today = new Date().toISOString().slice(0, 10)
-        if (tpl?.internal_notes !== undefined) {
+        if (
+          tpl?.internal_notes !== undefined &&
+          (tpl.internal_notes || null) !== (previous.internal_notes || null)
+        ) {
           const { error } = await supabase
             .from('ops_appointments')
             .update({

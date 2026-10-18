@@ -1,3 +1,10 @@
+import { mountainDateKey } from '@/lib/ops/calendar-dates'
+import {
+  planRecurringSchedule,
+  type RecurringCandidate,
+  type RecurringScheduleOccurrence,
+  type RecurringVisitOverrides,
+} from '@/lib/ops/recurring-scheduling'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { firstTouchForCustomer } from '@/lib/ops/attribution'
@@ -47,6 +54,8 @@ export type RecurringTemplate = {
   is_subcontracted: boolean
   subcontractor_name: string | null
   assigned_staff_user_id: string | null
+  scheduling_mode?: 'fixed' | 'flexible'
+  visit_overrides?: RecurringVisitOverrides | null
 }
 
 export type RecurrenceRule = {
@@ -69,6 +78,49 @@ function getWeekOfMonth(date: Date): number {
   return Math.ceil(day / 7)
 }
 
+function validRuleDate(value: string): boolean {
+  const date = new Date(`${value}T12:00:00Z`)
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(date.getTime()) &&
+    date.toISOString().slice(0, 10) === value
+  )
+}
+
+function validateRecurrenceRule(rule: RecurrenceRule) {
+  const integerWithin = (value: number | null, min: number, max: number) =>
+    Number.isInteger(value) && Number(value) >= min && Number(value) <= max
+  if (
+    !validRuleDate(rule.effective_from) ||
+    (rule.effective_until != null && !validRuleDate(rule.effective_until))
+  )
+    throw new Error('Recurrence rules need valid effective dates.')
+  if (rule.effective_until && rule.effective_until < rule.effective_from)
+    throw new Error('A recurrence rule cannot end before it starts.')
+  if (
+    (rule.frequency === 'weekly' || rule.frequency === 'biweekly') &&
+    !integerWithin(rule.day_of_week, 0, 6)
+  )
+    throw new Error('Weekly recurrence rules need a weekday from 0 to 6.')
+  if (
+    rule.frequency === 'monthly' &&
+    !(rule.day_of_month != null
+      ? integerWithin(rule.day_of_month, 1, 31)
+      : integerWithin(rule.day_of_week, 0, 6) &&
+        integerWithin(rule.week_of_month, 1, 5))
+  )
+    throw new Error(
+      'Monthly recurrence rules need a valid day or weekday occurrence.',
+    )
+  if (
+    rule.frequency === 'custom' &&
+    (!Number.isInteger(rule.interval_days) || Number(rule.interval_days) <= 0)
+  )
+    throw new Error('Custom recurrence intervals must be positive whole days.')
+  if (!['weekly', 'biweekly', 'monthly', 'custom'].includes(rule.frequency))
+    throw new Error('Choose a supported recurrence frequency.')
+}
+
 /**
  * Expand a single recurrence rule into concrete dates within [rangeStart, rangeEnd].
  */
@@ -77,6 +129,7 @@ export function expandRule(
   rangeStart: Date,
   rangeEnd: Date,
 ): Date[] {
+  validateRecurrenceRule(rule)
   const dates: Date[] = []
   const effectiveFrom = new Date(rule.effective_from + 'T00:00:00')
   const effectiveUntil = rule.effective_until
@@ -281,6 +334,54 @@ function shouldSkipRecurringSlot(args: {
   return false
 }
 
+/** Expand one year of nominal visits, retaining per-rule times and the next due-date boundary. */
+export function recurringScheduleCandidates(
+  rules: RecurrenceRule[],
+  startTime: string,
+  options: {
+    fromDate?: Date | string
+    horizonMonths?: number
+    count?: number
+  } = {},
+): RecurringCandidate[] {
+  const startKey =
+    typeof options.fromDate === 'string'
+      ? options.fromDate
+      : mountainDateKey(options.fromDate || new Date())
+  if (!validRuleDate(startKey)) throw new Error('Choose a valid planning date.')
+  if (
+    options.horizonMonths !== undefined &&
+    (!Number.isInteger(options.horizonMonths) || options.horizonMonths < 0)
+  )
+    throw new Error('The planning horizon must be whole months.')
+  const start = new Date(`${startKey}T00:00:00`)
+  const end = new Date(start)
+  end.setMonth(end.getMonth() + (options.horizonMonths ?? 12))
+  const lookAhead = new Date(end)
+  lookAhead.setDate(lookAhead.getDate() + 14)
+  const candidates = new Map<string, RecurringCandidate>()
+  for (const rule of rules) {
+    for (const date of expandRule(rule, start, lookAhead)) {
+      const original = formatDate(date)
+      candidates.set(original, {
+        original_date: original,
+        date: moveRecurringDateToWeekday(original),
+        start_time: `${(rule.override_start_time || startTime).slice(0, 5)}:00`,
+      })
+    }
+  }
+  const all = [...candidates.values()].sort((a, b) =>
+    a.original_date.localeCompare(b.original_date),
+  )
+  return all
+    .map((candidate, index) => ({
+      ...candidate,
+      next_original_date: all[index + 1]?.original_date,
+    }))
+    .filter((candidate) => candidate.original_date <= formatDate(end))
+    .slice(0, options.count ?? Infinity)
+}
+
 // ─── Preview ────────────────────────────────────────────────────────────
 
 /**
@@ -304,7 +405,7 @@ export function previewDateDetails(
   count: number = 10,
   fromDate?: Date,
 ): RecurringPreviewDate[] {
-  const start = fromDate || new Date()
+  const start = fromDate || new Date(`${mountainDateKey(new Date())}T00:00:00`)
   const end = new Date(start)
   end.setFullYear(end.getFullYear() + 1)
 
@@ -399,29 +500,26 @@ export async function generateRecurringAppointments(
     return result
   }
 
-  const now = new Date()
-  const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const rangeStart = new Date(`${mountainDateKey(new Date())}T00:00:00`)
   const rangeEnd = new Date(rangeStart)
   rangeEnd.setMonth(rangeEnd.getMonth() + horizonMonths)
 
-  const allDates: { date: string; startTime: string }[] = []
+  const candidates = recurringScheduleCandidates(
+    rules as RecurrenceRule[],
+    template.start_time,
+    { fromDate: formatDate(rangeStart), horizonMonths },
+  )
   const dateToRule = new Map<string, RecurrenceRule>()
   for (const rule of rules as RecurrenceRule[]) {
-    const dates = expandRule(rule, rangeStart, rangeEnd)
-    for (const d of dates) {
-      const ds = formatDate(d)
-      if (!dateToRule.has(ds)) {
-        dateToRule.set(ds, rule)
-      }
-      const startTime = rule.override_start_time || template.start_time
-      const normalizedTime =
-        startTime.length >= 5 ? startTime.slice(0, 5) : startTime
-      allDates.push({ date: ds, startTime: normalizedTime })
+    for (const date of expandRule(rule, rangeStart, rangeEnd)) {
+      const key = formatDate(date)
+      if (!dateToRule.has(key)) dateToRule.set(key, rule)
     }
   }
-
-  const uniqueDates = [...new Map(allDates.map((d) => [d.date, d])).values()]
-  uniqueDates.sort((a, b) => a.date.localeCompare(b.date))
+  const uniqueDates = candidates.map((candidate) => ({
+    date: candidate.original_date,
+    startTime: candidate.start_time.slice(0, 5),
+  }))
 
   if (uniqueDates.length === 0) {
     return result
@@ -440,9 +538,9 @@ export async function generateRecurringAppointments(
   ]
 
   const [
-    { data: templateInRange },
-    { data: templateByOriginal },
-    { data: customerExisting },
+    { data: templateInRange, error: rangeError },
+    { data: templateByOriginal, error: originalsError },
+    { data: customerExisting, error: customerExistingError },
   ] = await Promise.all([
     supabase
       .from('ops_appointments')
@@ -467,6 +565,12 @@ export async function generateRecurringAppointments(
       .in('appointment_date', scheduledCandidateDates),
   ])
 
+  if (rangeError || originalsError || customerExistingError) {
+    result.errors.push(
+      'Could not verify existing recurring visits. No new visits were generated.',
+    )
+    return result
+  }
   const allTemplateRows = [
     ...(templateInRange || []),
     ...(templateByOriginal || []),
@@ -551,6 +655,48 @@ export async function generateRecurringAppointments(
     ? await firstTouchForCustomer(supabase, template.customer_id)
     : null
 
+  const flexible =
+    template.scheduling_mode === 'flexible' && !template.is_subcontracted
+  const resolvedVisits = new Map<string, RecurringScheduleOccurrence>()
+  if (flexible) {
+    if (!template.assigned_staff_user_id) {
+      result.errors.push(
+        'Choose a technician before generating flexible recurring visits.',
+      )
+      return result
+    }
+    const pending = candidates.filter(
+      (candidate) =>
+        !shouldSkipRecurringSlot({
+          candidateDate: candidate.original_date,
+          scheduledDate: candidate.date,
+          rule: dateToRule.get(candidate.original_date)!,
+          templateDates: templateDateSet,
+          monthIsSingleInstance:
+            (countDatesPerMonth.get(monthKeyFromYmd(candidate.original_date)) ||
+              0) === 1,
+          extraBlockedDates,
+          originalRecurringDates: originalRecurringDateSet,
+        }),
+    )
+    try {
+      const plan = await planRecurringSchedule(supabase, {
+        candidates: pending,
+        staffUserId: template.assigned_staff_user_id,
+        durationMinutes: bufferedMinutes,
+        schedulingMode: 'flexible',
+        visitOverrides: template.visit_overrides,
+      })
+      for (const occurrence of plan.occurrences)
+        resolvedVisits.set(occurrence.original_date, occurrence)
+    } catch (error) {
+      result.errors.push(
+        `Could not verify the live calendar: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return result
+    }
+  }
+
   for (const { date, startTime } of uniqueDates) {
     const rule = dateToRule.get(date)
     if (!rule) {
@@ -576,14 +722,43 @@ export async function generateRecurringAppointments(
     }
 
     try {
-      const normalizedStart = `${startTime}:00`.slice(0, 8)
-      const endTime = addMinutesToTimeWithinDay(startTime, bufferedMinutes)
+      let normalizedStart = `${startTime}:00`.slice(0, 8)
+      let endTime = addMinutesToTimeWithinDay(startTime, bufferedMinutes)
 
       // Recurring generation used to write straight onto the calendar with
       // no conflict check, which is how overlapping evening jobs got booked.
       // Subcontracted visits occupy no truck, so they neither take nor yield
       // a slot — checking them would block our own crew for someone else's job.
-      if (!template.is_subcontracted) {
+      if (flexible) {
+        const resolved = resolvedVisits.get(date)
+        if (!resolved || resolved.status !== 'clear') {
+          result.errors.push(
+            `${date}: ${resolved?.reason || 'No available window was found before the next visit.'}`,
+          )
+          continue
+        }
+        // The reviewed/resolved choice is pinned during this fresh check; never move it silently.
+        const fresh = await planRecurringSchedule(supabase, {
+          candidates: [
+            candidates.find((candidate) => candidate.original_date === date)!,
+          ],
+          staffUserId: template.assigned_staff_user_id!,
+          durationMinutes: bufferedMinutes,
+          schedulingMode: 'flexible',
+          visitOverrides: {
+            [date]: { date: resolved.date, start_time: resolved.start_time },
+          },
+        })
+        if (fresh.occurrences[0]?.status !== 'clear') {
+          result.errors.push(
+            `${date}: the selected visit is no longer available. Preview the plan again.`,
+          )
+          continue
+        }
+        scheduledDate = resolved.date
+        normalizedStart = resolved.start_time
+        endTime = resolved.end_time
+      } else if (!template.is_subcontracted) {
         const movedOffWeekend = scheduledDate !== date
         let conflict: Awaited<ReturnType<typeof findAppointmentConflict>> = null
         let attempts = 0
