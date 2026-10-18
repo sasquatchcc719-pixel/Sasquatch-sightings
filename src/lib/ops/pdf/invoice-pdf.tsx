@@ -1,13 +1,23 @@
 import React from 'react'
-import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
+import {
+  Document,
+  Image,
+  Page,
+  StyleSheet,
+  Text,
+  View,
+} from '@react-pdf/renderer'
 import {
   INVOICE_CHECK_PAYEE,
   INVOICE_MAILING_STREET,
   INVOICE_MAILING_CITY_STATE_ZIP,
 } from '@/lib/ops/invoice-remittance'
 
-export type InvoiceLineItem = {
+import type { InvoiceServiceLinks } from '@/lib/ops/service-photos'
+
+export type InvoiceLineItem = InvoiceServiceLinks & {
   description: string
+  photo_data_url?: string
   quantity: number
   unit_price: number
   line_total: number
@@ -125,6 +135,7 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 7,
     paddingHorizontal: 8,
     borderWidth: 1,
@@ -135,6 +146,13 @@ const styles = StyleSheet.create({
     backgroundColor: BG_ROW,
   },
   colDesc: { flex: 3 },
+  descriptionCell: {
+    flex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  servicePhoto: { width: 24, height: 24, borderRadius: 3 },
   colQty: { flex: 1, textAlign: 'right' },
   colUnit: { flex: 1, textAlign: 'right' },
   colTotal: { flex: 1, textAlign: 'right' },
@@ -381,11 +399,20 @@ export function InvoicePDF({ data }: { data: InvoicePDFData }) {
           {data.lineItems.map((item, idx) => (
             <View
               key={idx}
+              wrap={false}
               style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}
             >
-              <Text style={[styles.tdText, styles.colDesc]}>
-                {item.description}
-              </Text>
+              <View style={styles.descriptionCell}>
+                {item.photo_data_url && (
+                  <PDFImage
+                    src={item.photo_data_url}
+                    style={styles.servicePhoto}
+                  />
+                )}
+                <Text style={[styles.tdText, { flex: 1 }]}>
+                  {item.description}
+                </Text>
+              </View>
               <Text style={[styles.tdText, styles.colQty]}>
                 {item.quantity}
               </Text>

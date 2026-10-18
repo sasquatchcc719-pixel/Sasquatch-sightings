@@ -1,3 +1,7 @@
+import {
+  invoiceCatalogService,
+  type InvoiceServiceLinks,
+} from '@/lib/ops/service-photos'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
@@ -98,7 +102,8 @@ const INVOICE_SELECT = `
     line_total,
     excluded_at,
     excluded_reason,
-    excluded_original_total
+    excluded_original_total,
+    service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))
   )
 `
 
@@ -226,7 +231,15 @@ export async function GET(
     }
 
     return NextResponse.json({
-      invoice: data,
+      invoice: {
+        ...data,
+        ops_invoice_line_items: (data.ops_invoice_line_items || []).map(
+          (item: InvoiceServiceLinks & { description: string }) => ({
+            ...item,
+            photo_service: invoiceCatalogService(item),
+          }),
+        ),
+      },
       customerMessages: customerMessagesResult.value,
       paymentTexts: paymentTextsResult.value,
     })
@@ -929,15 +942,12 @@ export async function PATCH(
           // Fetch refreshed line items for the receipt PDF
           const { data: receiptLines } = await supabase
             .from('ops_invoice_line_items')
-            .select('description, quantity, unit_price, line_total')
+            .select(
+              'description, quantity, unit_price, line_total, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))',
+            )
             .eq('invoice_id', id)
 
-          const lineItems = (receiptLines || []) as Array<{
-            description: string
-            quantity: number
-            unit_price: number
-            line_total: number
-          }>
+          const lineItems = receiptLines || []
 
           const pdfBuffer = await generateInvoicePDF({
             invoiceId: id,

@@ -1,34 +1,5 @@
 import Image from 'next/image'
-
-const SERVICE_PHOTOS = [
-  {
-    matches: /low[\s-]+moisture|encapsulation|\blvm\b|\bvlm\b|bonnet/i,
-    src: '/images/services/low-moisture-carpet-cleaning.jpg',
-    alt: 'Low-moisture carpet cleaning',
-    contain: true,
-  },
-  {
-    matches: /commercial[\s-]+carpet/i,
-    src: '/images/services/commercial-carpet-cleaning.webp',
-    alt: 'Commercial carpet cleaning',
-  },
-  {
-    matches: /wall.*tile|tile.*wall/i,
-    src: '/images/services/wall-tile-cleaning.png',
-    alt: 'Wall tile cleaning',
-  },
-  {
-    matches: /tile.*grout|grout.*tile/i,
-    src: '/images/services/floor-tile-cleaning.webp',
-    alt: 'Floor tile and grout cleaning',
-  },
-  {
-    matches:
-      /upholstery|sofa|couch|love[\s-]*seat|recliner|dining[\s-]+chair|ottoman|sectional/i,
-    src: '/images/services/upholstery-cleaning.jpg',
-    alt: 'Upholstery cleaning',
-  },
-]
+import { getServicePhoto } from '@/lib/ops/service-photos'
 
 export function ServicePhoto({
   name,
@@ -39,9 +10,7 @@ export function ServicePhoto({
   slug?: string | null
   category?: string | null
 }) {
-  if (/leather|mattress/i.test(name)) return null
-  const description = `${name} ${slug || ''} ${category || ''}`
-  const photo = SERVICE_PHOTOS.find((entry) => entry.matches.test(description))
+  const photo = getServicePhoto({ name, slug, category })
   if (!photo) return null
 
   return (

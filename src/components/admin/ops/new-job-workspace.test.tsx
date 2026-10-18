@@ -50,6 +50,15 @@ beforeEach(() => {
               default_duration_minutes: 30,
               buffer_minutes: 0,
             },
+            {
+              id: 'stairs',
+              name: 'Stair Carpet Cleaning',
+              category: 'Stairs',
+              base_price: 5,
+              pricing_unit: 'per_step',
+              default_duration_minutes: 5,
+              buffer_minutes: 0,
+            },
           ],
         }
       } else if (url.startsWith('/api/admin/ops/schedule?')) {
@@ -174,6 +183,41 @@ async function openCouponCodes() {
 }
 
 describe('Book Job residential estimate mode', () => {
+  it('filters services through category cards and preserves quantities when switching back', async () => {
+    render(<NewJobWorkspace />)
+    const carpetQuantity = await screen.findByRole('spinbutton', {
+      name: 'Room Carpet Cleaning quantity',
+    })
+    fireEvent.change(carpetQuantity, { target: { value: '2' } })
+
+    const stairs = screen.getByRole('button', { name: 'Stairs, 1 service' })
+    fireEvent.click(stairs)
+    expect(stairs).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      screen.getByRole('spinbutton', {
+        name: 'Stair Carpet Cleaning quantity',
+      }),
+    ).toHaveValue(0)
+    expect(
+      screen.queryByRole('spinbutton', {
+        name: 'Room Carpet Cleaning quantity',
+      }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Residential, 1 service' }),
+    )
+    expect(
+      screen.getByRole('spinbutton', { name: 'Room Carpet Cleaning quantity' }),
+    ).toHaveValue(2)
+    expect(
+      screen.queryByRole('spinbutton', {
+        name: 'Stair Carpet Cleaning quantity',
+      }),
+    ).not.toBeInTheDocument()
+    expect(postRequests()).toEqual([])
+  })
+
   it('shows every available coupon as a one-tap calculation button', async () => {
     render(<NewJobWorkspace />)
 

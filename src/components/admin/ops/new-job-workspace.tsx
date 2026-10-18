@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ServicePhoto } from '@/components/ops/service-photo'
+import { ServiceCategoryPicker } from '@/components/ops/service-category-picker'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1643,21 +1644,12 @@ export function NewJobWorkspace() {
             </div>
 
             <div className="mt-4 space-y-4">
-              <div>
-                <Label htmlFor="service-category-picker">Category</Label>
-                <select
-                  id="service-category-picker"
-                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
-                  value={selectedCategory}
-                  onChange={(event) => setSelectedCategory(event.target.value)}
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <ServiceCategoryPicker
+                categories={categories}
+                services={services}
+                value={selectedCategory}
+                onChange={setSelectedCategory}
+              />
 
               <div
                 key={`job-items-${populateKey}`}

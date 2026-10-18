@@ -98,7 +98,7 @@ async function loadInvoice(supabase: SupabaseClient, appointmentId: string) {
     .select(
       `id, invoice_number, status, payment_status, subtotal, total,
       discount_amount, percentage_discount_amount,
-      ops_invoice_line_items(description, quantity, unit_price, line_total, excluded_at)`,
+      ops_invoice_line_items(description, quantity, unit_price, line_total, excluded_at, service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category)))`,
     )
     .eq('appointment_id', appointmentId)
     .maybeSingle()

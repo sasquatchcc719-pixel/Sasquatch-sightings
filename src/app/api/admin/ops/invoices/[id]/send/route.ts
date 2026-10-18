@@ -1,3 +1,8 @@
+import {
+  getServicePhoto,
+  invoicePhotoService,
+  type InvoiceServiceLinks,
+} from '@/lib/ops/service-photos'
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
@@ -103,12 +108,14 @@ function buildEmailHtml(
   customerName: string,
   address: string,
   serviceDate: string,
-  lineItems: Array<{
-    description: string
-    quantity: number
-    unit_price: number
-    line_total: number
-  }>,
+  lineItems: Array<
+    {
+      description: string
+      quantity: number
+      unit_price: number
+      line_total: number
+    } & InvoiceServiceLinks
+  >,
   subtotal: number,
   discountAmount: number,
   discountLabel: string,
@@ -118,15 +125,19 @@ function buildEmailHtml(
   mode: 'invoice' | 'receipt' = 'invoice',
 ): string {
   const itemRows = lineItems
-    .map(
-      (item) => `
+    .map((item) => {
+      const photo = getServicePhoto(invoicePhotoService(item))
+      const image = photo
+        ? `<img src="https://sightings.sasquatchcarpet.com${photo.src}" alt="${photo.alt}" width="40" height="40" style="width:40px;height:40px;object-fit:${photo.contain ? 'contain' : 'cover'};border-radius:4px;vertical-align:middle;margin-right:8px;" />`
+        : ''
+      return `
         <tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${item.description}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${image}${item.description}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.quantity}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">$${Number(item.unit_price).toFixed(2)}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">$${Number(item.line_total).toFixed(2)}</td>
-        </tr>`,
-    )
+        </tr>`
+    })
     .join('')
 
   const isReceipt = mode === 'receipt'
@@ -276,7 +287,8 @@ export async function POST(
           quantity,
           unit_price,
           line_total,
-          excluded_at
+          excluded_at,
+          service_catalog_items(name, slug, category), ops_appointment_line_items(service_catalog_items(name, slug, category))
         )
       `,
       )
@@ -327,13 +339,15 @@ export async function POST(
     // Excluded work (fiber we could not safely clean, customer declines) stays
     // on the internal record but never reaches the customer's invoice.
     const lineItems = (
-      (invoice.ops_invoice_line_items || []) as Array<{
-        description: string
-        quantity: number
-        unit_price: number
-        line_total: number
-        excluded_at?: string | null
-      }>
+      (invoice.ops_invoice_line_items || []) as Array<
+        {
+          description: string
+          quantity: number
+          unit_price: number
+          line_total: number
+          excluded_at?: string | null
+        } & InvoiceServiceLinks
+      >
     ).filter((line) => !line.excluded_at)
 
     const venmoUrl = buildVenmoPaymentLink({

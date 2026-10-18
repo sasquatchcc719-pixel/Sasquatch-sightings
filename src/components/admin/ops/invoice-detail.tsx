@@ -1,6 +1,10 @@
 'use client'
 
+import { ServiceCategoryPicker } from '@/components/ops/service-category-picker'
+import type { ServicePhotoIdentity } from '@/lib/ops/service-photos'
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
@@ -29,6 +33,7 @@ import { FiberCheckPanel } from '@/components/ops/fiber-check-panel'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { CustomerContact } from '@/components/ops/customer-contact'
+import { ServicePhoto } from '@/components/ops/service-photo'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -381,6 +386,7 @@ export function InvoiceDetail({
     Array<{
       id: string
       name: string
+      slug?: string | null
       category: string
       base_price: number | null
     }>
@@ -409,6 +415,7 @@ export function InvoiceDetail({
       id: string
       appointment_line_item_id: string | null
       service_catalog_item_id: string | null
+      photo_service?: ServicePhotoIdentity
       description: string
       quantity: number
       unit_price: string
@@ -417,6 +424,24 @@ export function InvoiceDetail({
       excluded_original_total?: number | null
     }>
   >([])
+  const lineItemServices = useMemo(
+    () =>
+      new Map(
+        lineItems.map((item) => [
+          item.id,
+          serviceCatalog.find(
+            (service) => service.id === item.service_catalog_item_id,
+          ) ??
+            item.photo_service ??
+            serviceCatalog.find(
+              (service) =>
+                service.name.trim().toLowerCase() ===
+                item.description.trim().toLowerCase(),
+            ),
+        ]),
+      ),
+    [lineItems, serviceCatalog],
+  )
   type OnMyWaySmsInfo = { body: string; actuallySent: boolean }
   const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
     null,
@@ -671,6 +696,7 @@ export function InvoiceDetail({
               id: string
               appointment_line_item_id: string | null
               service_catalog_item_id: string | null
+              photo_service?: ServicePhotoIdentity
               description: string
               quantity: number
               unit_price: number
@@ -681,6 +707,7 @@ export function InvoiceDetail({
               id: item.id,
               appointment_line_item_id: item.appointment_line_item_id,
               service_catalog_item_id: item.service_catalog_item_id,
+              photo_service: item.photo_service,
               description: item.description,
               quantity: Number(item.quantity),
               unit_price: String(item.unit_price),
@@ -2445,98 +2472,106 @@ export function InvoiceDetail({
         </div>
 
         {/* ── Service Picker Modal ─────────────────────────── */}
-        {showServicePicker ? (
-          <div className="fixed inset-0 z-[220] flex items-end justify-center bg-black/50 sm:items-center">
-            <div className="bg-card w-full max-w-sm rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h4 className="text-base font-semibold">
-                  {pickerCategory ? pickerCategory : 'Select a category'}
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowServicePicker(false)
-                    setPickerCategory(null)
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+        {showServicePicker
+          ? createPortal(
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Add service"
+                className="fixed inset-0 z-[220] flex items-end justify-center bg-black/50 sm:items-center"
+              >
+                <div className="bg-card max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h4 className="text-base font-semibold">
+                      {pickerCategory ? pickerCategory : 'Select a category'}
+                    </h4>
+                    <button
+                      type="button"
+                      aria-label="Close service picker"
+                      onClick={() => {
+                        setShowServicePicker(false)
+                        setPickerCategory(null)
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
 
-              {pickerCategory === null ? (
-                /* Step 1 — Category list */
-                <div className="space-y-2">
-                  {Array.from(new Set(serviceCatalog.map((s) => s.category)))
-                    .sort()
-                    .map((cat) => (
+                  {pickerCategory === null ? (
+                    /* Step 1 — Category list */
+                    <ServiceCategoryPicker
+                      categories={Array.from(
+                        new Set(
+                          serviceCatalog.map((service) => service.category),
+                        ),
+                      ).sort()}
+                      services={serviceCatalog}
+                      value=""
+                      onChange={setPickerCategory}
+                    />
+                  ) : (
+                    /* Step 2 — Services in selected category */
+                    <div className="space-y-2">
                       <button
-                        key={cat}
                         type="button"
-                        className="border-border/60 hover:bg-accent w-full rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors"
-                        onClick={() => setPickerCategory(cat)}
+                        className="text-muted-foreground mb-1 flex items-center gap-1 text-xs hover:underline"
+                        onClick={() => setPickerCategory(null)}
                       >
-                        {cat}
-                        <span className="text-muted-foreground ml-2 text-xs font-normal">
-                          (
-                          {
-                            serviceCatalog.filter((s) => s.category === cat)
-                              .length
-                          }
-                          )
-                        </span>
+                        ← Back
                       </button>
-                    ))}
+                      {serviceCatalog
+                        .filter((s) => s.category === pickerCategory)
+                        .map((service) => (
+                          <div
+                            key={service.id}
+                            className="border-border/60 flex w-full items-center gap-3 rounded-xl border px-3 py-2"
+                          >
+                            <ServicePhoto
+                              name={service.name}
+                              slug={service.slug}
+                              category={service.category}
+                            />
+                            <button
+                              type="button"
+                              className="hover:bg-accent flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-1 py-1 text-left text-sm transition-colors"
+                              onClick={() => {
+                                setLineItems((current) => [
+                                  ...current,
+                                  {
+                                    id: `new-${Date.now()}`,
+                                    appointment_line_item_id: null,
+                                    service_catalog_item_id: service.id,
+                                    description: service.name,
+                                    quantity: 1,
+                                    unit_price:
+                                      service.base_price != null
+                                        ? String(service.base_price)
+                                        : '0',
+                                  },
+                                ])
+                                setShowServicePicker(false)
+                                setPickerCategory(null)
+                              }}
+                            >
+                              <span className="font-medium">
+                                {service.name}
+                              </span>
+                              {service.base_price != null ? (
+                                <span className="text-muted-foreground shrink-0 text-xs">
+                                  ${service.base_price}
+                                </span>
+                              ) : null}
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                /* Step 2 — Services in selected category */
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    className="text-muted-foreground mb-1 flex items-center gap-1 text-xs hover:underline"
-                    onClick={() => setPickerCategory(null)}
-                  >
-                    ← Back
-                  </button>
-                  {serviceCatalog
-                    .filter((s) => s.category === pickerCategory)
-                    .map((service) => (
-                      <button
-                        key={service.id}
-                        type="button"
-                        className="border-border/60 hover:bg-accent flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors"
-                        onClick={() => {
-                          setLineItems((current) => [
-                            ...current,
-                            {
-                              id: `new-${Date.now()}`,
-                              appointment_line_item_id: null,
-                              service_catalog_item_id: service.id,
-                              description: service.name,
-                              quantity: 1,
-                              unit_price:
-                                service.base_price != null
-                                  ? String(service.base_price)
-                                  : '0',
-                            },
-                          ])
-                          setShowServicePicker(false)
-                          setPickerCategory(null)
-                        }}
-                      >
-                        <span className="font-medium">{service.name}</span>
-                        {service.base_price != null ? (
-                          <span className="text-muted-foreground text-xs">
-                            ${service.base_price}
-                          </span>
-                        ) : null}
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
+              </div>,
+              document.body,
+            )
+          : null}
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
             <div
@@ -2567,27 +2602,37 @@ export function InvoiceDetail({
               ) : null}
               <div className="flex flex-col gap-2">
                 <div className="flex items-start gap-2">
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <Label
                       htmlFor={`line-description-${index}`}
                       className="text-xs"
                     >
                       Description
                     </Label>
-                    <Input
-                      id={`line-description-${index}`}
-                      value={item.description}
-                      className={`h-10 text-base ${lineItemInputTone(index)}`}
-                      onChange={(event) =>
-                        setLineItems((current) =>
-                          current.map((line, lineIndex) =>
-                            lineIndex === index
-                              ? { ...line, description: event.target.value }
-                              : line,
-                          ),
-                        )
-                      }
-                    />
+                    <div className="flex items-center gap-2">
+                      <ServicePhoto
+                        name={
+                          lineItemServices.get(item.id)?.name ||
+                          item.description
+                        }
+                        slug={lineItemServices.get(item.id)?.slug}
+                        category={lineItemServices.get(item.id)?.category}
+                      />
+                      <Input
+                        id={`line-description-${index}`}
+                        value={item.description}
+                        className={`h-10 min-w-0 flex-1 text-base ${lineItemInputTone(index)}`}
+                        onChange={(event) =>
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? { ...line, description: event.target.value }
+                                : line,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"

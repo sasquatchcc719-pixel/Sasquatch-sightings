@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ServicePhoto } from '@/components/ops/service-photo'
+import { ServiceCategoryPicker } from '@/components/ops/service-category-picker'
 import {
   ArrowRight,
   CalendarClock,
@@ -2011,21 +2012,13 @@ export function EstimateDetail({
         </div>
 
         <div className="border-border/60 mt-4 rounded-lg border bg-slate-50/80 p-3 dark:bg-slate-900/40">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,200px),1fr]">
-            <div>
-              <Label className="text-xs">Category</Label>
-              <select
-                className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                value={linePickerCategory || catalogCategories[0] || ''}
-                onChange={(e) => setLinePickerCategory(e.target.value)}
-              >
-                {catalogCategories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="space-y-3">
+            <ServiceCategoryPicker
+              categories={catalogCategories}
+              services={catalog}
+              value={linePickerCategory || catalogCategories[0] || ''}
+              onChange={setLinePickerCategory}
+            />
             <div>
               <Label className="text-xs">Add from catalog (tap to add)</Label>
               <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">

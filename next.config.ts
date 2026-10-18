@@ -27,6 +27,12 @@ const nextConfig: NextConfig = {
     ]
   },
   cacheComponents: true,
+  outputFileTracingIncludes: {
+    '/api/admin/ops/invoices/**': ['./public/images/services/**/*'],
+    '/api/admin/ops/appointments{,/**}': ['./public/images/services/**/*'],
+    '/api/tech/appointments/**': ['./public/images/services/**/*'],
+    '/api/cron/invoice-emails': ['./public/images/services/**/*'],
+  },
   images: {
     remotePatterns: [
       {

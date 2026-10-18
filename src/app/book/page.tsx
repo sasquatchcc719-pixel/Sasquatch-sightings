@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import Image from 'next/image'
+import { Check, Sparkles } from 'lucide-react'
 import {
   CANONICAL_LEAD_SOURCE_OPTIONS,
   PublicLeadSourceOption,
@@ -9,6 +10,7 @@ import {
 } from '@/lib/lead-sources'
 import { calculateAppointmentDurationFromTotal } from '@/lib/ops/availability'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
+import { getServicePhoto } from '@/lib/ops/service-photos'
 
 // ─────────────────────────────────────────────
 //  Types
@@ -16,6 +18,7 @@ import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 interface ServiceItem {
   id: string
   name: string
+  slug?: string | null
   base_price: number
   category: string
   description: string | null
@@ -417,20 +420,55 @@ function CategorySection({
   onRemove: (s: ServiceItem) => void
 }) {
   const [open, setOpen] = useState(true)
+  const panelId = useId()
+  const photo =
+    getServicePhoto({ name: category, category }) ??
+    items.map((item) => getServicePhoto(item)).find(Boolean)
 
   function getQty(id: string) {
     return cart.find((c) => c.service.id === id)?.quantity ?? 0
   }
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-gray-200">
+    <div
+      className={`mb-3 overflow-hidden rounded-xl border-2 transition-colors ${open ? 'border-green-500 ring-1 ring-green-500/20' : 'border-gray-200'}`}
+    >
       <button
-        className="flex w-full items-center justify-between bg-gray-50 px-4 py-3 text-left transition-colors hover:bg-gray-100"
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={`flex w-full items-center gap-3 px-3 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:outline-none focus-visible:ring-inset ${open ? 'bg-green-50 hover:bg-green-100' : 'bg-gray-50 hover:bg-gray-100'}`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="text-sm font-semibold text-gray-800">{category}</span>
+        {photo ? (
+          <Image
+            src={photo.src}
+            alt=""
+            width={56}
+            height={56}
+            className={`h-12 w-12 shrink-0 rounded-lg sm:h-14 sm:w-14 ${photo.contain ? 'bg-white object-contain' : 'object-cover'}`}
+          />
+        ) : (
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-100 to-emerald-50 text-green-700 sm:h-14 sm:w-14">
+            <Sparkles className="h-6 w-6" aria-hidden="true" />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold break-words text-gray-800">
+            {category}
+          </span>
+          <span className="mt-1 block text-xs text-gray-500">
+            {items.length} service{items.length === 1 ? '' : 's'}
+          </span>
+        </span>
+        {open ? (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-600 text-white">
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        ) : null}
         <svg
-          className={`h-4 w-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -445,7 +483,7 @@ function CategorySection({
       </button>
 
       {open && (
-        <div className="divide-y divide-gray-100">
+        <div id={panelId} className="divide-y divide-gray-100">
           {items.map((item) => {
             const qty = getQty(item.id)
             return (
