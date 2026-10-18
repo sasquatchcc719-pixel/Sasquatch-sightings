@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { Check, Sparkles } from 'lucide-react'
-import { getServicePhoto } from '@/lib/ops/service-photos'
+import { getServiceCategoryPhoto } from '@/lib/ops/service-photos'
 
 type CategoryService = {
   name: string
@@ -33,11 +33,7 @@ export function ServiceCategoryPicker({
               service.slug !== 'discount' &&
               ((service.category || '').trim() || 'Other') === category,
           )
-          const photo =
-            getServicePhoto({ name: category, category }) ??
-            categoryServices
-              .map((service) => getServicePhoto(service))
-              .find(Boolean)
+          const photo = getServiceCategoryPhoto(category, categoryServices)
           const selected = value === category
           const count = categoryServices.length
 

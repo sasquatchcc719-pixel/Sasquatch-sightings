@@ -1666,22 +1666,29 @@ export function NewJobWorkspace() {
                     return (
                       <div
                         key={service.id}
-                        className="border-border/60 bg-background/70 flex items-center justify-between rounded-2xl border px-3 py-2"
+                        className="border-border/60 bg-background/70 flex flex-wrap items-center gap-3 rounded-2xl border px-3 py-2"
                       >
-                        <div>
-                          <div className="font-medium">{service.name}</div>
-                          <div className="text-muted-foreground text-xs">
-                            {service.base_price !== null
-                              ? `$${Number(service.base_price).toFixed(2)} each`
-                              : 'Set price manually'}
-                          </div>
-                          {quantity > 0 ? (
-                            <div className="text-xs font-semibold">
-                              Running line total: ${lineSubtotal.toFixed(2)}
+                        <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-3">
+                          <ServicePhoto
+                            name={service.name}
+                            slug={service.slug}
+                            category={service.category}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">{service.name}</div>
+                            <div className="text-muted-foreground text-xs">
+                              {service.base_price !== null
+                                ? `$${Number(service.base_price).toFixed(2)} each`
+                                : 'Set price manually'}
                             </div>
-                          ) : null}
+                            {quantity > 0 ? (
+                              <div className="text-xs font-semibold">
+                                Running line total: ${lineSubtotal.toFixed(2)}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="ml-auto flex shrink-0 items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"

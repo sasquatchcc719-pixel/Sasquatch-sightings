@@ -53,6 +53,11 @@ describe('invoice service photos', () => {
         'Auto scrubbing Floors',
         'Tile & grout cleaning',
         'Wall Tile Cleaning',
+        'Small Area / Walk-in Closet (up to 100 sq ft)',
+        'Regular Size Room (100 to 200 Sqft)',
+        'Sasquatch Size Room (200 to 400 Sqft)',
+        'Monster Size Room (400 to 600 Sqft)',
+        'Jumbo Humongous Room (600 to 800 Sqft)',
       ].map((name) => ({
         description: 'Renamed service area',
         service_catalog_items: { name },
@@ -61,10 +66,10 @@ describe('invoice service photos', () => {
         line_total: 10,
       })),
       discountAmount: 0,
-      subtotal: 90,
-      total: 90,
+      subtotal: 140,
+      total: 140,
     })
     expect(pdf?.subarray(0, 4).toString()).toBe('%PDF')
-    expect(pdf?.toString('latin1').match(/\/Subtype \/Image/g)).toHaveLength(9)
+    expect(pdf?.toString('latin1').match(/\/Subtype \/Image/g)).toHaveLength(14)
   })
 })

@@ -9,8 +9,9 @@ import {
   getPublicLeadSourceOptions,
 } from '@/lib/lead-sources'
 import { calculateAppointmentDurationFromTotal } from '@/lib/ops/availability'
+import { ServicePhoto } from '@/components/ops/service-photo'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
-import { getServicePhoto } from '@/lib/ops/service-photos'
+import { getServiceCategoryPhoto } from '@/lib/ops/service-photos'
 
 // ─────────────────────────────────────────────
 //  Types
@@ -421,9 +422,7 @@ function CategorySection({
 }) {
   const [open, setOpen] = useState(true)
   const panelId = useId()
-  const photo =
-    getServicePhoto({ name: category, category }) ??
-    items.map((item) => getServicePhoto(item)).find(Boolean)
+  const photo = getServiceCategoryPhoto(category, items)
 
   function getQty(id: string) {
     return cart.find((c) => c.service.id === id)?.quantity ?? 0
@@ -489,25 +488,32 @@ function CategorySection({
             return (
               <div
                 key={item.id}
-                className="flex items-center justify-between px-4 py-3"
+                className="flex flex-wrap items-center gap-3 px-4 py-3"
               >
-                <div className="min-w-0 flex-1 pr-4">
-                  <p className="text-sm leading-tight font-medium text-gray-800">
-                    {item.name}
-                  </p>
-                  {item.description && (
-                    <p className="mt-0.5 line-clamp-2 text-xs leading-tight text-gray-500">
-                      {item.description}
+                <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-3">
+                  <ServicePhoto
+                    name={item.name}
+                    slug={item.slug}
+                    category={item.category}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-tight font-medium text-gray-800">
+                      {item.name}
                     </p>
-                  )}
-                  <p className="mt-1 text-sm font-semibold text-green-700">
-                    {formatPrice(item.base_price)}
-                    {item.pricing_unit && (
-                      <span className="ml-1 text-xs font-normal text-gray-500">
-                        /{item.pricing_unit}
-                      </span>
+                    {item.description && (
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-tight text-gray-500">
+                        {item.description}
+                      </p>
                     )}
-                  </p>
+                    <p className="mt-1 text-sm font-semibold text-green-700">
+                      {formatPrice(item.base_price)}
+                      {item.pricing_unit && (
+                        <span className="ml-1 text-xs font-normal text-gray-500">
+                          /{item.pricing_unit}
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
                 {qty === 0 ? (

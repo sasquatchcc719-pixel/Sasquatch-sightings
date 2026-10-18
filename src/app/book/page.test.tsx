@@ -6,6 +6,7 @@ const services = [
   {
     id: 'room',
     name: 'Room Carpet Cleaning',
+    slug: 'regular-size-room-100-to-200-sqft',
     category: 'Carpet Cleaning',
     base_price: 60,
     description: null,
@@ -52,7 +53,10 @@ describe('public booking category cards', () => {
       'src',
       expect.stringContaining('upholstery-cleaning'),
     )
-    expect(within(carpet).queryByRole('presentation')).not.toBeInTheDocument()
+    expect(within(carpet).getByRole('presentation')).toHaveAttribute(
+      'src',
+      expect.stringContaining('residential-regular-bedroom'),
+    )
     expect(carpet).toHaveAttribute('aria-expanded', 'true')
     expect(upholstery).toHaveAttribute('aria-expanded', 'true')
   })

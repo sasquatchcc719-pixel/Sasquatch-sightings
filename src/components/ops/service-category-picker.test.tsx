@@ -8,7 +8,11 @@ const services = [
   { name: 'Specialty service', category: 'Other' },
   { name: 'Custom service', category: 'Other' },
   { name: 'Discount', slug: 'discount', category: 'Other' },
-  { name: 'Room Carpet Cleaning', category: 'Carpet Cleaning' },
+  {
+    name: 'Room Carpet Cleaning',
+    slug: 'regular-size-room-100-to-200-sqft',
+    category: 'Carpet Cleaning',
+  },
 ]
 
 describe('ServiceCategoryPicker', () => {
@@ -67,5 +71,9 @@ describe('ServiceCategoryPicker', () => {
       name: 'Carpet Cleaning, 1 service',
     })
     expect(residential.innerHTML).not.toContain('commercial-carpet-cleaning')
+    expect(within(residential).getByRole('presentation')).toHaveAttribute(
+      'src',
+      expect.stringContaining('residential-regular-bedroom'),
+    )
   })
 })
