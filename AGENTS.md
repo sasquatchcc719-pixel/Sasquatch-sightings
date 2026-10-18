@@ -194,6 +194,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ## 11. Project Learnings
 
+- Line-item reordering must visibly move the whole card under the mouse or finger, with a touch-sized corner grip; preserve form values and normal scrolling outside the grip.
+
 - Show the wall-tile cleaner facing upward, with the operator’s forearm entering from the left and the hoses trailing down.
 
 - Ranking reports must graph each town’s actual position over dates, show organic and Maps separately, and validate returned query/topic/location; a count of visible towns is not a rank graph. Never join different search methods into one history.
