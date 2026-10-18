@@ -131,6 +131,35 @@ type RuleForm = {
   override_start_time: string
 }
 
+function serializeRule(rule: RuleForm) {
+  const weekday = rule.frequency !== 'custom' && rule.day_of_week !== ''
+  return {
+    frequency: rule.frequency,
+    day_of_week: weekday ? Number(rule.day_of_week) : null,
+    week_of_month:
+      rule.frequency === 'monthly' && weekday && rule.week_of_month
+        ? Number(rule.week_of_month)
+        : null,
+    day_of_month:
+      rule.frequency === 'monthly' && !weekday && rule.day_of_month
+        ? Number(rule.day_of_month)
+        : null,
+    interval_days:
+      rule.frequency === 'custom' && rule.interval_days
+        ? Number(rule.interval_days)
+        : null,
+    effective_from:
+      rule.effective_from || new Date().toISOString().slice(0, 10),
+    effective_until: rule.effective_until || null,
+    override_start_time: rule.override_start_time || null,
+  }
+}
+
+function arrivalLabel(time: string) {
+  const [hour, minute] = time.split(':').map(Number)
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`
+}
+
 type Template = {
   id: string
   label: string
@@ -1889,7 +1918,7 @@ export function CreateTemplateForm({
   )
 
   const [schedulingMode, setSchedulingMode] = useState<'fixed' | 'flexible'>(
-    initialData?.scheduling_mode ?? 'fixed',
+    initialData?.scheduling_mode ?? (initialData ? 'fixed' : 'flexible'),
   )
   const [visitOverrides, setVisitOverrides] = useState<VisitOverrides>(
     initialData?.visit_overrides ?? {},
@@ -1901,13 +1930,13 @@ export function CreateTemplateForm({
   >([])
   const [loadingPreview, setLoadingPreview] = useState(false)
   const previewRequestId = useRef(0)
-  const scheduleKeyFor = (overrides: VisitOverrides) =>
+  const scheduleKeyFor = (overrides: VisitOverrides, mode = schedulingMode) =>
     JSON.stringify({
       startTime,
       scheduledDuration,
       assignedStaffUserId,
       isSubcontracted,
-      schedulingMode,
+      schedulingMode: mode,
       rules,
       visitOverrides: overrides,
       durations: lineItems.map(({ duration_minutes, buffer_minutes }) => ({
@@ -1919,7 +1948,8 @@ export function CreateTemplateForm({
   const previewIsCurrent = previewKey === scheduleKey
   const initialScheduleKey = useState(scheduleKey)[0]
   const scheduleChanged = initialScheduleKey !== scheduleKey
-  const currentOccurrences = previewIsCurrent ? previewOccurrences : []
+  const currentOccurrences =
+    previewIsCurrent || loadingPreview ? previewOccurrences : []
 
   useEffect(() => {
     fetch('/api/admin/ops/services')
@@ -2137,23 +2167,16 @@ export function CreateTemplateForm({
     )
   }
 
-  const loadPreview = async (overrides = visitOverrides) => {
-    const requestedKey = scheduleKeyFor(overrides)
+  const loadPreview = async (
+    overrides = visitOverrides,
+    mode = schedulingMode,
+  ) => {
+    const requestedKey = scheduleKeyFor(overrides, mode)
     const requestId = ++previewRequestId.current
     setPreviewKey('')
     setLoadingPreview(true)
     try {
-      const rulesPayload = rules.map((r) => ({
-        frequency: r.frequency,
-        day_of_week: r.day_of_week ? Number(r.day_of_week) : null,
-        week_of_month: r.week_of_month ? Number(r.week_of_month) : null,
-        day_of_month: r.day_of_month ? Number(r.day_of_month) : null,
-        interval_days: r.interval_days ? Number(r.interval_days) : null,
-        effective_from:
-          r.effective_from || new Date().toISOString().slice(0, 10),
-        effective_until: r.effective_until || null,
-        override_start_time: r.override_start_time || null,
-      }))
+      const rulesPayload = rules.map(serializeRule)
 
       const res = await fetch('/api/admin/ops/recurring', {
         method: 'POST',
@@ -2167,7 +2190,7 @@ export function CreateTemplateForm({
             scheduled_duration_minutes: Number(scheduledDuration) || 120,
             assigned_staff_user_id: assignedStaffUserId || null,
             is_subcontracted: isSubcontracted,
-            scheduling_mode: schedulingMode,
+            scheduling_mode: mode,
             visit_overrides: overrides,
           },
         }),
@@ -2196,7 +2219,25 @@ export function CreateTemplateForm({
     value: string,
   ) => {
     setRules((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
+      prev.map((r, i) => {
+        if (i !== idx) return r
+        const next = { ...r, [field]: value }
+        if (field === 'day_of_week') {
+          next.day_of_month = ''
+          next.week_of_month = value !== '' ? r.week_of_month || '1' : ''
+        }
+        if (field === 'day_of_month') {
+          next.day_of_week = ''
+          next.week_of_month = ''
+        }
+        if (field === 'frequency') {
+          next.day_of_week = ''
+          next.day_of_month = ''
+          next.week_of_month = ''
+          next.interval_days = ''
+        }
+        return next
+      }),
     )
   }
 
@@ -2270,16 +2311,7 @@ export function CreateTemplateForm({
         : null,
     }
 
-    const rulesPayload = rules.map((r) => ({
-      frequency: r.frequency,
-      day_of_week: r.day_of_week ? Number(r.day_of_week) : null,
-      week_of_month: r.week_of_month ? Number(r.week_of_month) : null,
-      day_of_month: r.day_of_month ? Number(r.day_of_month) : null,
-      interval_days: r.interval_days ? Number(r.interval_days) : null,
-      effective_from: r.effective_from || new Date().toISOString().slice(0, 10),
-      effective_until: r.effective_until || null,
-      override_start_time: r.override_start_time || null,
-    }))
+    const rulesPayload = rules.map(serializeRule)
 
     try {
       if (isEditing && initialData) {
@@ -2565,15 +2597,6 @@ export function CreateTemplateForm({
                 />
               </div>
             )}
-          </div>
-          <div>
-            <Label>Default Start Time</Label>
-            <Input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              className="mt-1"
-            />
           </div>
           <div>
             <Label>Assigned Technician</Label>
@@ -2862,6 +2885,24 @@ export function CreateTemplateForm({
           </Button>
         </div>
 
+        <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+          <Label htmlFor="recurring-preferred-arrival">
+            Preferred arrival time · Mountain Time
+          </Label>
+          <Input
+            id="recurring-preferred-arrival"
+            type="time"
+            value={startTime}
+            onChange={(event) => setStartTime(event.target.value)}
+            onClick={(event) => event.currentTarget.showPicker?.()}
+            className="mt-2 min-h-11 sm:max-w-xs"
+          />
+          <p className="text-muted-foreground mt-2 text-sm">
+            Start with this time. If it is occupied, find an opening on the same
+            day or a nearby weekday. Then choose a different date or time for
+            any visit below.
+          </p>
+        </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
           <input
             type="checkbox"
@@ -2891,6 +2932,7 @@ export function CreateTemplateForm({
                   <select
                     className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                     value={rule.frequency}
+                    aria-label={`Rule ${idx + 1} frequency`}
                     onChange={(e) =>
                       handleRuleChange(idx, 'frequency', e.target.value)
                     }
@@ -2910,6 +2952,7 @@ export function CreateTemplateForm({
                     <select
                       className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                       value={rule.day_of_week}
+                      aria-label={`Rule ${idx + 1} day of week`}
                       onChange={(e) =>
                         handleRuleChange(idx, 'day_of_week', e.target.value)
                       }
@@ -2931,6 +2974,7 @@ export function CreateTemplateForm({
                       <select
                         className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                         value={rule.day_of_week}
+                        aria-label={`Rule ${idx + 1} day of week`}
                         onChange={(e) =>
                           handleRuleChange(idx, 'day_of_week', e.target.value)
                         }
@@ -2949,6 +2993,7 @@ export function CreateTemplateForm({
                         <select
                           className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                           value={rule.week_of_month}
+                          aria-label={`Rule ${idx + 1} week of month`}
                           onChange={(e) =>
                             handleRuleChange(
                               idx,
@@ -3031,6 +3076,7 @@ export function CreateTemplateForm({
                   <Input
                     type="time"
                     value={rule.override_start_time}
+                    onClick={(event) => event.currentTarget.showPicker?.()}
                     onChange={(e) =>
                       handleRuleChange(
                         idx,
@@ -3072,9 +3118,11 @@ export function CreateTemplateForm({
             end is the estimated completion.
           </p>
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void loadPreview()}
+            className="min-h-11"
+            onClick={() => {
+              setSchedulingMode('flexible')
+              void loadPreview(visitOverrides, 'flexible')
+            }}
             disabled={loadingPreview || loadingSource}
           >
             {loadingPreview ? (
@@ -3082,15 +3130,27 @@ export function CreateTemplateForm({
             ) : (
               <Calendar className="mr-2 h-4 w-4" />
             )}
-            {schedulingMode === 'flexible'
-              ? 'Find openings & preview visits'
-              : 'Preview Dates & Conflicts'}
+            {loadingPreview
+              ? 'Checking the live calendar…'
+              : 'Find openings automatically'}
           </Button>
-          {!previewIsCurrent && previewOccurrences.length > 0 && (
-            <p className="text-muted-foreground mt-2 text-sm" role="status">
-              The schedule changed. Preview again before saving.
-            </p>
+          {schedulingMode === 'fixed' && (
+            <Button
+              variant="outline"
+              className="ml-2 min-h-11"
+              disabled={loadingPreview || loadingSource}
+              onClick={() => void loadPreview()}
+            >
+              Check preferred times only
+            </Button>
           )}
+          {!loadingPreview &&
+            !previewIsCurrent &&
+            previewOccurrences.length > 0 && (
+              <p className="text-muted-foreground mt-2 text-sm" role="status">
+                The schedule changed. Preview again before saving.
+              </p>
+            )}
           {currentOccurrences.length > 0 && (
             <div className="mt-3 rounded-xl border p-3">
               <p className="flex items-center gap-2 text-sm font-semibold">
@@ -3099,9 +3159,11 @@ export function CreateTemplateForm({
                 ) : (
                   <CheckCircle className="h-4 w-4 text-emerald-500" />
                 )}
-                {previewConflicts.length
-                  ? `${previewConflicts.length} calendar conflict${previewConflicts.length === 1 ? '' : 's'} found`
-                  : `All ${currentOccurrences.length} reviewed visits are clear`}
+                {loadingPreview
+                  ? 'Checking openings…'
+                  : previewConflicts.length
+                    ? `${previewConflicts.length} calendar conflict${previewConflicts.length === 1 ? '' : 's'} found`
+                    : `All ${currentOccurrences.length} reviewed visits are clear`}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
                 {isSubcontracted
@@ -3126,7 +3188,7 @@ export function CreateTemplateForm({
                     start_time: string
                     end_time: string
                   }) =>
-                    `${dateLabel(option.date)} · ${option.start_time.slice(0, 5)}–${option.end_time.slice(0, 5)}`
+                    `${dateLabel(option.date)} · ${arrivalLabel(option.start_time)}–${arrivalLabel(option.end_time)}`
                   return (
                     <div
                       key={`${originalDate}-${index}`}
@@ -3153,42 +3215,129 @@ export function CreateTemplateForm({
                           {occurrence.conflict.end_time.slice(0, 5)}
                         </p>
                       )}
-                      {!!occurrence.alternatives?.length && (
-                        <label className="mt-2 block text-xs">
-                          Move this visit only
-                          <select
-                            className="border-input bg-background mt-1 h-10 w-full rounded-md border px-2 text-sm"
-                            aria-label={`Move visit originally due ${originalDate}`}
-                            value=""
-                            disabled={loadingPreview}
-                            onChange={(event) => {
-                              if (!event.target.value) return
-                              const choice = JSON.parse(event.target.value) as {
-                                date: string
-                                start_time: string
-                              }
-                              const next = {
-                                ...visitOverrides,
-                                [originalDate]: choice,
-                              }
-                              setVisitOverrides(next)
-                              void loadPreview(next)
-                            }}
-                          >
-                            <option value="">Choose another opening…</option>
-                            {occurrence.alternatives.map((option) => (
-                              <option
-                                key={`${option.date}-${option.start_time}`}
-                                value={JSON.stringify({
-                                  date: option.date,
-                                  start_time: option.start_time.slice(0, 5),
-                                })}
-                              >
-                                {optionLabel(option)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                      {schedulingMode === 'flexible' ? (
+                        (() => {
+                          const openings = [
+                            ...(occurrence.status === 'clear'
+                              ? [occurrence]
+                              : []),
+                            ...(occurrence.alternatives || []),
+                          ]
+                          const dates = [
+                            ...new Set(openings.map((option) => option.date)),
+                          ].sort()
+                          const choose = (choice: {
+                            date: string
+                            start_time: string
+                          }) => {
+                            const next = {
+                              ...visitOverrides,
+                              [originalDate]: {
+                                date: choice.date,
+                                start_time: choice.start_time.slice(0, 5),
+                              },
+                            }
+                            setVisitOverrides(next)
+                            void loadPreview(next)
+                          }
+                          return openings.length ? (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <label className="text-xs">
+                                Visit date
+                                <select
+                                  className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-2 text-sm"
+                                  aria-label={`Date for visit originally due ${originalDate}`}
+                                  value={occurrence.date}
+                                  disabled={loadingPreview}
+                                  onChange={(event) => {
+                                    const choice =
+                                      openings.find(
+                                        (option) =>
+                                          option.date === event.target.value &&
+                                          option.start_time.slice(0, 5) ===
+                                            occurrence.start_time.slice(0, 5),
+                                      ) ||
+                                      openings.find(
+                                        (option) =>
+                                          option.date === event.target.value,
+                                      )
+                                    if (choice) choose(choice)
+                                  }}
+                                >
+                                  {!dates.includes(occurrence.date) && (
+                                    <option value={occurrence.date}>
+                                      Choose an available date…
+                                    </option>
+                                  )}
+                                  {dates.map((date) => (
+                                    <option key={date} value={date}>
+                                      {dateLabel(date)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="text-xs">
+                                Arrival time · Mountain Time
+                                <select
+                                  className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-2 text-sm"
+                                  aria-label={`Arrival time for visit originally due ${originalDate}`}
+                                  value={
+                                    occurrence.status === 'clear'
+                                      ? occurrence.start_time.slice(0, 5)
+                                      : ''
+                                  }
+                                  disabled={loadingPreview}
+                                  onChange={(event) =>
+                                    choose({
+                                      date: occurrence.date,
+                                      start_time: event.target.value,
+                                    })
+                                  }
+                                >
+                                  {occurrence.status === 'conflict' && (
+                                    <option value="">Choose an opening…</option>
+                                  )}
+                                  {openings
+                                    .filter(
+                                      (option) =>
+                                        option.date === occurrence.date,
+                                    )
+                                    .sort((a, b) =>
+                                      a.start_time.localeCompare(b.start_time),
+                                    )
+                                    .map((option) => (
+                                      <option
+                                        key={option.start_time}
+                                        value={option.start_time.slice(0, 5)}
+                                      >
+                                        {arrivalLabel(option.start_time)} –{' '}
+                                        {arrivalLabel(option.end_time)}{' '}
+                                        completion
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-amber-600">
+                              No opening fits this visit. Change the rule,
+                              duration or assigned technician, then search
+                              again.
+                            </p>
+                          )
+                        })()
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="mt-2 min-h-11"
+                          disabled={loadingPreview}
+                          onClick={() => {
+                            setSchedulingMode('flexible')
+                            void loadPreview(visitOverrides, 'flexible')
+                          }}
+                        >
+                          Choose available dates & times
+                        </Button>
                       )}
                       {visitOverrides[originalDate] && (
                         <Button

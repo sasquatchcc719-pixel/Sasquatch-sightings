@@ -428,7 +428,7 @@ export async function planRecurringSchedule(
       candidate.date < candidate.original_date
         ? candidate.original_date
         : candidate.date
-    while (withinBounds(searchDate) && available.length < 7) {
+    while (withinBounds(searchDate)) {
       const bundle = day(searchDate)
       if (bundle.open && bundle.templates.length) {
         const slots = getAvailableSlots({
@@ -459,7 +459,6 @@ export async function planRecurringSchedule(
           )
             continue
           available.push({ date: searchDate, ...slot })
-          if (available.length >= 7) break
         }
       }
       searchDate = addDays(searchDate, 1)
@@ -486,7 +485,7 @@ export async function planRecurringSchedule(
         : override && !clear
           ? `The selected visit is unavailable. ${initial.reason}`
           : initial.reason,
-      alternatives: available.slice(0, 6),
+      alternatives: available,
       conflict: clear ? null : initial.conflict,
     }
     result.occurrences.push(occurrence)

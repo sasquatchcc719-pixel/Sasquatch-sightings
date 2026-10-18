@@ -219,7 +219,7 @@ describe('flexible recurring scheduling', () => {
     expect(pinned.reason).toContain('future start time')
   })
 
-  it('chooses a same-day opening and returns at most six alternatives', async () => {
+  it('chooses a same-day opening and exposes later dates and afternoon openings', async () => {
     const { busy, plan } = fixture()
     busy()
     const {
@@ -233,7 +233,15 @@ describe('flexible recurring scheduling', () => {
       status: 'clear',
       shifted: true,
     })
-    expect(visit.alternatives.length).toBeLessThanOrEqual(6)
+    expect(visit.alternatives.length).toBeGreaterThan(6)
+    expect(visit.alternatives).toContainEqual({
+      date: '2030-01-18',
+      start_time: '15:00:00',
+      end_time: '17:00:00',
+    })
+    expect(visit.alternatives.every((slot) => slot.date <= '2030-01-21')).toBe(
+      true,
+    )
   })
 
   it('treats pending-approval work as occupied in both preferred times and alternatives', async () => {
@@ -498,6 +506,30 @@ describe('recurring candidate and generator correspondence', () => {
         { fromDate: due },
       ),
     ).toThrow()
+  })
+
+  it('expands fourth Mondays without retaining the former day-of-month pattern', () => {
+    const candidates = recurringScheduleCandidates(
+      [
+        {
+          ...rule,
+          frequency: 'monthly',
+          effective_until: null,
+          day_of_week: 1,
+          week_of_month: 4,
+          day_of_month: null,
+          effective_from: '2026-10-19',
+        },
+      ],
+      '13:00',
+      { horizonMonths: 4, count: 4, fromDate: '2026-10-19' },
+    )
+    expect(candidates.map((visit) => visit.original_date)).toEqual([
+      '2026-10-26',
+      '2026-11-23',
+      '2026-12-28',
+      '2027-01-25',
+    ])
   })
 
   it('uses per-rule times and retains the next due boundary when previews are sliced', () => {

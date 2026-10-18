@@ -107,11 +107,20 @@ beforeEach(() => {
                 conflict: null,
                 alternatives: [
                   {
+                    date: '2026-10-20',
+                    start_time: '13:00',
+                    end_time: '15:00',
+                  },
+                  {
                     date: '2026-10-21',
                     start_time: '13:00',
                     end_time: '15:00',
                   },
-                ],
+                ].filter(
+                  (option) =>
+                    option.date !== (override?.date || '2026-10-20') ||
+                    option.start_time !== (override?.start_time || '09:00'),
+                ),
               },
               {
                 original_date: '2026-11-19',
@@ -155,18 +164,77 @@ async function openForm() {
 const save = () =>
   screen.getByRole('button', { name: 'Create Recurring Plan & Jobs' })
 const preview = () =>
-  screen.getByRole('button', { name: 'Find openings & preview visits' })
+  screen.getByRole('button', { name: 'Find openings automatically' })
 
 describe('flexible recurring schedule review', () => {
-  it('opts in, previews all visits and sends the exact reviewed dates when creating', async () => {
+  it('automatically enables opening search from fixed mode in the same request', async () => {
+    await openForm()
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
+    )
+    await userEvent.click(preview())
+    await screen.findByText('All 2 reviewed visits are clear')
+    expect(requests[0].schedule?.scheduling_mode).toBe('flexible')
+    expect(
+      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
+    ).toBeChecked()
+  })
+
+  it('lets the user pick another arrival time for one visit and persists it on save', async () => {
+    await openForm()
+    await userEvent.click(preview())
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', {
+        name: 'Arrival time for visit originally due 2026-10-19',
+      }),
+      '13:00',
+    )
+    await screen.findByText('Tue, Oct 20, 2026 · 1:00 PM–3:00 PM', {
+      selector: 'p',
+    })
+    expect(requests[1].schedule?.visit_overrides).toEqual({
+      '2026-10-19': { date: '2026-10-20', start_time: '13:00' },
+    })
+    await userEvent.click(save())
+    expect(requests[2].template?.visit_overrides).toEqual(
+      requests[1].schedule?.visit_overrides,
+    )
+    expect(requests[2].reviewed_occurrences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ date: '2026-10-20', start_time: '13:00' }),
+      ]),
+    )
+  })
+
+  it('clears the hidden day of month when switching to fourth Monday in preview and save', async () => {
+    await openForm()
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Rule 1 day of week' }),
+      '1',
+    )
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Rule 1 week of month' }),
+      '4',
+    )
+    await userEvent.click(preview())
+    await screen.findByText('All 2 reviewed visits are clear')
+    expect(requests[0].rules).toEqual([
+      expect.objectContaining({
+        day_of_month: null,
+        day_of_week: 1,
+        week_of_month: 4,
+      }),
+    ])
+    await userEvent.click(save())
+    expect(requests[1].rules).toEqual(requests[0].rules)
+  })
+
+  it('defaults to automatic openings, previews all visits and sends the exact reviewed dates when creating', async () => {
     const onBack = await openForm()
     expect(save()).toBeDisabled()
     expect(
       screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    ).not.toBeChecked()
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
+    ).toBeChecked()
     await userEvent.click(preview())
     await screen.findByText('All 2 reviewed visits are clear')
     expect(requests[0].schedule).toMatchObject({
@@ -187,18 +255,12 @@ describe('flexible recurring schedule review', () => {
 
   it('moves one occurrence, keeps the monthly rule and next visit unchanged, and can restore the rule', async () => {
     await openForm()
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
     await userEvent.click(preview())
     const choice = await screen.findByRole('combobox', {
-      name: 'Move visit originally due 2026-10-19',
+      name: 'Date for visit originally due 2026-10-19',
     })
-    await userEvent.selectOptions(
-      choice,
-      JSON.stringify({ date: '2026-10-21', start_time: '13:00' }),
-    )
-    await screen.findByText('Wed, Oct 21, 2026 · 13:00–15:00', {
+    await userEvent.selectOptions(choice, '2026-10-21')
+    await screen.findByText('Wed, Oct 21, 2026 · 1:00 PM–3:00 PM', {
       selector: 'p',
     })
     expect(requests[1].schedule?.visit_overrides).toEqual({
@@ -206,12 +268,14 @@ describe('flexible recurring schedule review', () => {
     })
     expect(requests[1].rules).toEqual(requests[0].rules)
     expect(
-      screen.getByText('Thu, Nov 19, 2026 · 09:00–11:00'),
+      screen.getByText('Thu, Nov 19, 2026 · 9:00 AM–11:00 AM'),
     ).toBeInTheDocument()
     await userEvent.click(
       screen.getByRole('button', { name: 'Use recurring rule again' }),
     )
-    await screen.findByText('Tue, Oct 20, 2026 · 09:00–11:00')
+    await screen.findByText('Tue, Oct 20, 2026 · 9:00 AM–11:00 AM', {
+      selector: 'p',
+    })
     expect(requests[2].schedule?.visit_overrides).toEqual({})
   })
 
@@ -224,9 +288,6 @@ describe('flexible recurring schedule review', () => {
     'mode',
   ])('invalidates the preview when %s changes', async (field) => {
     await openForm()
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
     await userEvent.click(preview())
     await screen.findByText('All 2 reviewed visits are clear')
     expect(save()).toBeEnabled()
@@ -275,9 +336,6 @@ describe('flexible recurring schedule review', () => {
       new Promise((resolve) => {
         release = resolve
       })
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
     await userEvent.click(preview())
     fireEvent.change(screen.getByDisplayValue('09:00'), {
       target: { value: '10:00' },
@@ -306,9 +364,6 @@ describe('flexible recurring schedule review', () => {
   it('requires a new preview when saving finds that the calendar changed', async () => {
     const onBack = await openForm()
     saveError = 'The calendar changed. Preview again.'
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
     await userEvent.click(preview())
     await screen.findByText('All 2 reviewed visits are clear')
     await userEvent.click(save())
@@ -320,9 +375,6 @@ describe('flexible recurring schedule review', () => {
   it('keeps partial-generation errors visible and prevents a duplicate create', async () => {
     const onBack = await openForm()
     generationErrors = ['October opening changed.']
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: /Flexible dates to fit/ }),
-    )
     await userEvent.click(preview())
     await screen.findByText('All 2 reviewed visits are clear')
     await userEvent.click(save())
