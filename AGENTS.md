@@ -194,6 +194,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ## 11. Project Learnings
 
+- Show the wall-tile cleaner facing upward, with the operator’s forearm entering from the left and the hoses trailing down.
+
 - Ranking reports must graph each town’s actual position over dates, show organic and Maps separately, and validate returned query/topic/location; a count of visible towns is not a rank graph. Never join different search methods into one history.
 
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**

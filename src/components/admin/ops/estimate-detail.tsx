@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   ArrowRight,
   CalendarClock,
@@ -1927,7 +1928,7 @@ export function EstimateDetail({
           </p>
         ) : null}
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-2 space-y-2">
           {lineItems.map((line, idx) => {
             const unit = line.pricing_unit_snapshot
             const isCredit =
@@ -1946,43 +1947,89 @@ export function EstimateDetail({
                 ? describeSegmentsSummary(segNumeric, unit)
                 : null
 
+            const serviceName =
+              catalog.find((item) => item.id === line.service_catalog_item_id)
+                ?.name || line.name_snapshot
+            const servicePhoto =
+              !isCredit && /wall.*tile|tile.*wall/i.test(serviceName)
+                ? {
+                    src: '/images/services/wall-tile-cleaning.png',
+                    alt: 'Wall tile cleaning',
+                  }
+                : !isCredit && /tile.*grout|grout.*tile/i.test(serviceName)
+                  ? {
+                      src: '/images/services/floor-tile-cleaning.webp',
+                      alt: 'Floor tile and grout cleaning',
+                    }
+                  : null
+
             return (
               <div
                 key={line.id}
-                className="border-border/60 rounded-lg border p-3 md:p-4"
+                className="border-border/60 rounded-lg border p-3"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-muted-foreground text-xs font-medium">
-                    Line {idx + 1}
-                    {isCredit
-                      ? ' · discount / credit'
-                      : line.service_catalog_item_id
-                        ? ' · catalog'
-                        : ' · custom'}
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {servicePhoto ? (
+                      <a
+                        href={servicePhoto.src}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`View ${servicePhoto.alt.toLowerCase()} photo`}
+                        title="View larger photo"
+                        className="focus-visible:ring-ring shrink-0 rounded-md focus-visible:ring-2"
+                      >
+                        <Image
+                          src={servicePhoto.src}
+                          alt={servicePhoto.alt}
+                          width={40}
+                          height={40}
+                          className="h-10 w-10 shrink-0 rounded-md border object-cover"
+                        />
+                      </a>
+                    ) : null}
+                    <div>
+                      <p className="text-muted-foreground text-xs font-medium">
+                        Line {idx + 1}
+                        {isCredit
+                          ? ' · discount / credit'
+                          : line.service_catalog_item_id
+                            ? ' · catalog'
+                            : ' · custom'}
+                      </p>
+                      <p className="text-xs font-semibold tabular-nums">
+                        Line total:{' '}
+                        {formatCurrency(lineQty * toNumber(line.unit_price, 0))}
+                      </p>
+                    </div>
+                  </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 gap-1"
+                      className="h-8 gap-1 px-2"
+                      aria-label="Duplicate"
+                      title="Duplicate line"
                       onClick={() => handleDuplicateLine(line.id)}
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      Duplicate
+                      <span className="hidden sm:inline">Duplicate</span>
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 gap-1 text-rose-600 hover:text-rose-700"
+                      className="h-8 gap-1 px-2 text-rose-600 hover:text-rose-700"
+                      aria-label="Remove"
+                      title="Remove line"
                       onClick={() => handleDeleteLine(line.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Remove
+                      <span className="hidden sm:inline">Remove</span>
                     </Button>
                   </div>
                 </div>
 
-                <div className="mt-3 space-y-3">
+                <div className="mt-2 space-y-2">
                   {isCredit ? (
                     <div className="grid grid-cols-1 gap-3 rounded-md border border-emerald-300/60 bg-emerald-50/60 p-3 sm:grid-cols-2 dark:border-emerald-800/60 dark:bg-emerald-950/20">
                       <div>
@@ -2037,11 +2084,18 @@ export function EstimateDetail({
                     </div>
                   ) : null}
                   <div
-                    className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${isCredit ? 'hidden' : ''}`}
+                    className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${isCredit ? 'hidden' : ''}`}
                   >
                     <div>
-                      <Label className="text-xs">Service</Label>
+                      <Label
+                        className="text-xs"
+                        htmlFor={`line-service-${line.id}`}
+                      >
+                        Service
+                      </Label>
                       <select
+                        id={`line-service-${line.id}`}
+                        aria-label={`Service for line ${idx + 1}`}
                         className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
                         value={line.service_catalog_item_id || ''}
                         onChange={(e) =>
@@ -2061,8 +2115,15 @@ export function EstimateDetail({
                       </select>
                     </div>
                     <div>
-                      <Label className="text-xs">Name on proposal</Label>
+                      <Label
+                        className="text-xs"
+                        htmlFor={`line-name-${line.id}`}
+                      >
+                        Name on proposal
+                      </Label>
                       <Input
+                        id={`line-name-${line.id}`}
+                        aria-label={`Name on proposal for line ${idx + 1}`}
                         className="mt-1"
                         value={line.name_snapshot}
                         onChange={(e) =>
@@ -2076,48 +2137,99 @@ export function EstimateDetail({
                   </div>
 
                   {!isCredit ? (
-                    <div>
-                      <Label
-                        className="text-xs"
-                        htmlFor={`pricing-unit-${line.id}`}
-                      >
-                        Pricing unit
-                      </Label>
-                      <select
-                        id={`pricing-unit-${line.id}`}
-                        aria-label={`Pricing unit for line ${idx + 1}`}
-                        className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                        value={
-                          isAreaUnit(unit)
-                            ? 'per_sqft'
-                            : isLinearUnit(unit)
-                              ? 'per_linear_foot'
-                              : unit || 'fixed'
-                        }
-                        onChange={(e) =>
-                          updateLine(line.id, {
-                            pricing_unit_snapshot: e.target.value,
-                          })
-                        }
-                      >
-                        <option value="fixed">Quantity / fixed price</option>
-                        <option value="per_sqft">
-                          Square feet (length × width)
-                        </option>
-                        <option value="per_linear_foot">
-                          Linear feet (length)
-                        </option>
-                        {unit &&
-                        unit !== 'fixed' &&
-                        !supportsDimensions(unit) ? (
-                          <option value={unit}>{unit} (quantity)</option>
-                        ) : null}
-                      </select>
+                    <div
+                      className={`grid gap-2 ${showDimensions ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}
+                    >
+                      <div>
+                        <Label
+                          className="text-xs"
+                          htmlFor={`pricing-unit-${line.id}`}
+                        >
+                          Pricing unit
+                        </Label>
+                        <select
+                          id={`pricing-unit-${line.id}`}
+                          aria-label={`Pricing unit for line ${idx + 1}`}
+                          className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                          value={
+                            isAreaUnit(unit)
+                              ? 'per_sqft'
+                              : isLinearUnit(unit)
+                                ? 'per_linear_foot'
+                                : unit || 'fixed'
+                          }
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              pricing_unit_snapshot: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="fixed">Quantity / fixed price</option>
+                          <option value="per_sqft">
+                            Square feet (length × width)
+                          </option>
+                          <option value="per_linear_foot">
+                            Linear feet (length)
+                          </option>
+                          {unit &&
+                          unit !== 'fixed' &&
+                          !supportsDimensions(unit) ? (
+                            <option value={unit}>{unit} (quantity)</option>
+                          ) : null}
+                        </select>
+                      </div>
+                      {!showDimensions ? (
+                        <div>
+                          <Label
+                            className="text-xs"
+                            htmlFor={`line-quantity-${line.id}`}
+                          >
+                            Quantity
+                          </Label>
+                          <Input
+                            id={`line-quantity-${line.id}`}
+                            aria-label={`Quantity for line ${idx + 1}`}
+                            className="mt-1"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            value={line.quantity}
+                            onChange={(e) =>
+                              updateLine(line.id, {
+                                quantity: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      ) : null}
+                      <div>
+                        <Label
+                          className="text-xs"
+                          htmlFor={`line-price-${line.id}`}
+                        >
+                          Unit price
+                        </Label>
+                        <Input
+                          id={`line-price-${line.id}`}
+                          aria-label={`Unit price for line ${idx + 1}`}
+                          className="mt-1"
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          value={line.unit_price}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              unit_price: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
                     </div>
                   ) : null}
 
                   {showDimensions ? (
-                    <div className="rounded-md border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <div className="rounded-md border border-amber-200/80 bg-amber-50/50 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs font-medium text-amber-900 dark:text-amber-100">
                           {isAreaUnit(unit)
@@ -2148,27 +2260,31 @@ export function EstimateDetail({
                       </div>
                       {line.area_segments.length === 0 ? (
                         <p className="text-muted-foreground mt-2 text-xs">
-                          Tap <strong>+ Add L×W</strong> to enter length and
-                          width for the first area. Use the same button to add
-                          more rectangles; square footage adds up for this
-                          service.
+                          Tap <strong>+ Add L×W</strong> for each area;
+                          measurements add up automatically.
                         </p>
                       ) : (
-                        <ul className="mt-3 space-y-2">
+                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                           {line.area_segments.map((seg, sidx) => (
                             <li
                               key={seg.clientId}
-                              className="flex flex-wrap items-end gap-2 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-950"
+                              className="flex min-w-0 items-end gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-950"
                             >
-                              <span className="text-muted-foreground w-8 pb-2 text-xs">
+                              <span className="text-muted-foreground w-5 shrink-0 pb-2 text-xs">
                                 #{sidx + 1}
                               </span>
-                              <div className="grid flex-1 grid-cols-2 gap-2 sm:max-w-xs">
+                              <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
                                 <div>
-                                  <Label className="text-[10px]">
+                                  <Label
+                                    className="text-[10px]"
+                                    htmlFor={`length-${seg.clientId}`}
+                                  >
                                     Length (ft)
                                   </Label>
                                   <Input
+                                    id={`length-${seg.clientId}`}
+                                    aria-label={`Length for area ${sidx + 1} on line ${idx + 1}`}
+                                    className="h-8 min-w-0 px-2"
                                     type="number"
                                     inputMode="decimal"
                                     step="0.5"
@@ -2191,12 +2307,18 @@ export function EstimateDetail({
                                   />
                                 </div>
                                 <div>
-                                  <Label className="text-[10px]">
+                                  <Label
+                                    className="text-[10px]"
+                                    htmlFor={`width-${seg.clientId}`}
+                                  >
                                     {isLinearUnit(unit)
                                       ? 'Width (optional)'
                                       : 'Width (ft)'}
                                   </Label>
                                   <Input
+                                    id={`width-${seg.clientId}`}
+                                    aria-label={`Width for area ${sidx + 1} on line ${idx + 1}`}
+                                    className="h-8 min-w-0 px-2"
                                     type="number"
                                     inputMode="decimal"
                                     step="0.5"
@@ -2223,7 +2345,7 @@ export function EstimateDetail({
                                 type="button"
                                 size="icon"
                                 variant="ghost"
-                                className="h-9 w-9 shrink-0 text-rose-600"
+                                className="h-8 w-8 shrink-0 text-rose-600"
                                 title="Remove this area"
                                 onClick={() =>
                                   updateLine(line.id, {
@@ -2239,82 +2361,45 @@ export function EstimateDetail({
                           ))}
                         </ul>
                       )}
-                      {segmentsSummary ? (
-                        <p className="text-muted-foreground mt-2 text-xs font-medium">
-                          {segmentsSummary}
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
+                        {segmentsSummary ? (
+                          <p className="text-muted-foreground text-xs font-medium">
+                            {segmentsSummary}
+                          </p>
+                        ) : null}
+                        <p className="text-muted-foreground text-xs">
+                          Billable{' '}
+                          {isAreaUnit(unit)
+                            ? 'sqft'
+                            : isLinearUnit(unit)
+                              ? 'linear ft'
+                              : 'qty'}
+                          :{' '}
+                          <span className="text-foreground font-semibold tabular-nums">
+                            {lineQty.toFixed(2)}
+                          </span>{' '}
+                          × ${toNumber(line.unit_price, 0).toFixed(2)} = $
+                          {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
                         </p>
-                      ) : null}
-                      <p className="text-muted-foreground mt-1 text-xs">
-                        Billable{' '}
-                        {isAreaUnit(unit)
-                          ? 'sqft'
-                          : isLinearUnit(unit)
-                            ? 'linear ft'
-                            : 'qty'}
-                        :{' '}
-                        <span className="text-foreground font-semibold tabular-nums">
-                          {lineQty.toFixed(2)}
-                        </span>{' '}
-                        × ${toNumber(line.unit_price, 0).toFixed(2)} = $
-                        {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
-                      </p>
-                    </div>
-                  ) : !isCredit ? (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div>
-                        <Label className="text-xs">Quantity</Label>
-                        <Input
-                          className="mt-1"
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          value={line.quantity}
-                          onChange={(e) =>
-                            updateLine(line.id, {
-                              quantity: e.target.value,
-                            })
-                          }
-                        />
                       </div>
                     </div>
                   ) : null}
-
-                  <div className={isCredit ? 'hidden' : undefined}>
-                    <Label className="text-xs">Unit price</Label>
-                    <Input
-                      className="mt-1"
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      value={line.unit_price}
-                      onChange={(e) =>
-                        updateLine(line.id, {
-                          unit_price: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
                 </div>
 
-                <div className="mt-3">
-                  <Label className="text-xs">
+                <div className="mt-2">
+                  <Label className="text-xs" htmlFor={`line-notes-${line.id}`}>
                     Service notes (what, why, technique)
                   </Label>
                   <Textarea
+                    id={`line-notes-${line.id}`}
                     value={line.notes ?? ''}
                     onChange={(e) =>
                       updateLine(line.id, { notes: e.target.value })
                     }
-                    rows={3}
-                    placeholder="Explain in detail what you're doing and why. Example: Running CRB pre-scrub to lift matted fibers in the traffic lane, then hot water extraction with enzyme pre-spray for the pet area by the front door."
-                    className="min-h-[80px]"
+                    rows={1}
+                    placeholder="What, why, technique…"
+                    className="min-h-9 resize-y focus:min-h-20"
                   />
-                </div>
-
-                <div className="text-muted-foreground mt-2 flex justify-end text-xs tabular-nums">
-                  Line total:{' '}
-                  {formatCurrency(lineQty * toNumber(line.unit_price, 0))}
                 </div>
               </div>
             )

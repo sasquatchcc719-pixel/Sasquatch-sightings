@@ -319,6 +319,14 @@ describe('estimate measurement units', () => {
               base_price: 1.25,
               default_duration_minutes: 30,
             },
+            {
+              id: 'floor-service',
+              name: 'Tile & grout cleaning',
+              category: 'Hard Surface',
+              pricing_unit: 'per_sqft',
+              base_price: 0.75,
+              default_duration_minutes: 30,
+            },
           ],
         })
       }
@@ -332,6 +340,27 @@ describe('estimate measurement units', () => {
       'per_sqft',
     )
     expect(screen.getByRole('button', { name: 'Add L×W' })).toBeVisible()
+    expect(
+      screen.getByRole('img', { name: 'Wall tile cleaning' }),
+    ).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Name on proposal for line 2'), {
+      target: { value: 'Mens restroom walls' },
+    })
+    expect(
+      screen.getByRole('img', { name: 'Wall tile cleaning' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'View wall tile cleaning photo' }),
+    ).toHaveAttribute('href', '/images/services/wall-tile-cleaning.png')
+    fireEvent.change(screen.getByLabelText('Service for line 2'), {
+      target: { value: 'floor-service' },
+    })
+    expect(
+      screen.getByRole('img', { name: 'Floor tile and grout cleaning' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('img', { name: 'Wall tile cleaning' }),
+    ).not.toBeInTheDocument()
   })
 
   it('measures an existing fixed-price catalog line, saves and reloads its square footage', async () => {
@@ -373,13 +402,19 @@ describe('estimate measurement units', () => {
     ).not.toBeInTheDocument()
     fireEvent.change(unit, { target: { value: 'per_sqft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
-    let fields = screen.getAllByRole('spinbutton')
-    fireEvent.change(fields[0], { target: { value: '10' } })
-    fireEvent.change(fields[1], { target: { value: '8' } })
+    fireEvent.change(screen.getByLabelText('Length for area 1 on line 1'), {
+      target: { value: '10' },
+    })
+    fireEvent.change(screen.getByLabelText('Width for area 1 on line 1'), {
+      target: { value: '8' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
-    fields = screen.getAllByRole('spinbutton')
-    fireEvent.change(fields[2], { target: { value: '5' } })
-    fireEvent.change(fields[3], { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('Length for area 2 on line 1'), {
+      target: { value: '5' },
+    })
+    fireEvent.change(screen.getByLabelText('Width for area 2 on line 1'), {
+      target: { value: '4' },
+    })
     expect(screen.getByText('10×8=80 + 5×4=20 → 100 sqft total')).toBeVisible()
     expect(screen.getByText(/Line total:/)).toHaveTextContent('$125.00')
 
@@ -409,8 +444,9 @@ describe('estimate measurement units', () => {
     expect(
       screen.getAllByText('10×8=80 + 5×4=20 → 100 sqft total'),
     ).toHaveLength(2)
-    fields = screen.getAllByRole('spinbutton')
-    fireEvent.change(fields[5], { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Length for area 1 on line 2'), {
+      target: { value: '20' },
+    })
     expect(screen.getByText('20×8=160 + 5×4=20 → 180 sqft total')).toBeVisible()
     expect(screen.getByText('10×8=80 + 5×4=20 → 100 sqft total')).toBeVisible()
 
@@ -420,7 +456,7 @@ describe('estimate measurement units', () => {
     expect(screen.getByLabelText('Pricing unit for line 1')).toHaveValue(
       'per_sqft',
     )
-    expect(screen.getAllByRole('spinbutton')[5]).toHaveValue(180)
+    expect(screen.getByLabelText('Quantity for line 2')).toHaveValue(180)
   })
 
   it('gives new custom lines the same area and linear measurement controls without changing credits', async () => {
@@ -434,9 +470,12 @@ describe('estimate measurement units', () => {
       target: { value: 'per_sqft' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Add L×W' }))
-    const fields = screen.getAllByRole('spinbutton')
-    fireEvent.change(fields[2], { target: { value: '12' } })
-    fireEvent.change(fields[3], { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Length for area 1 on line 2'), {
+      target: { value: '12' },
+    })
+    fireEvent.change(screen.getByLabelText('Width for area 1 on line 2'), {
+      target: { value: '5' },
+    })
     expect(screen.getByText('12×5=60 → 60 sqft total')).toBeVisible()
     fireEvent.change(screen.getByLabelText('Pricing unit for line 2'), {
       target: { value: 'per_linear_foot' },

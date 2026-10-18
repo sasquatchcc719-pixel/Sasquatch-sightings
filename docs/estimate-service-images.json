@@ -1,0 +1,13 @@
+{
+  "tool": "Built-in imagegen",
+  "floor": {
+    "source": "User-provided tile.webp",
+    "asset": "public/images/services/floor-tile-cleaning.webp",
+    "edit": "Original photo preserved."
+  },
+  "wall": {
+    "source": "User-provided wall.png",
+    "asset": "public/images/services/wall-tile-cleaning.png",
+    "final_prompt": "Edit target: attached wall tile cleaning illustration. User correction: flip it the OTHER way, so the cleaning head faces UPWARDS. Rotate the entire photograph exactly 180 degrees from this image. The operator's forearm must enter from the LEFT, the purple and gray hoses must trail DOWN to the bottom edge, and the broad purple cleaning head must point upward along the vertical tiled wall. Keep the exact same tool, hand, beige tiles, grout, colors and photographic details. No additions, no new labels, no redesign. This is a faithful orientation change only."
+  }
+}
