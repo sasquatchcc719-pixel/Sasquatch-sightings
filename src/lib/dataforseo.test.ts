@@ -85,8 +85,16 @@ describe('fetchOrganicRanks', () => {
       { domain_id: 'competitor', rank_position: null },
     ])
     expect(result.snapshot).toEqual([
-      { domain: 'sasquatchcarpet.com', position: 16 },
-      { domain: 'last-result.test', position: 48 },
+      {
+        domain: 'sasquatchcarpet.com',
+        position: 16,
+        url: 'https://www.sasquatchcarpet.com/',
+      },
+      {
+        domain: 'last-result.test',
+        position: 48,
+        url: 'https://last-result.test/',
+      },
     ])
 
     const [, request] = fetchMock.mock.calls[0]

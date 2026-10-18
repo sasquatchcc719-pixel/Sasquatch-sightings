@@ -18,6 +18,7 @@ type Town = {
   townKey: string
   mapsRank: number | null
   organicRank: number | null
+  organicLabel: string
   prevMapsRank: number | null
   scannedAt: string | null
   pin: { lat: number; lng: number } | null
@@ -372,6 +373,9 @@ export function RadarDailyDash() {
                       Organic
                     </p>
                     <RankMark rank={town.organicRank} />
+                    <p className="mt-1 max-w-48 text-[10px] text-white/50">
+                      {town.organicLabel}
+                    </p>
                   </div>
                 </div>
               </div>

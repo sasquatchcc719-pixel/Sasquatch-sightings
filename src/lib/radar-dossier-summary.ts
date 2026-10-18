@@ -2,6 +2,11 @@
  * Build a short Radar SERP summary for a domain (for dossier deep-dive context).
  */
 
+import {
+  organicObservation,
+  describeOrganicObservation,
+  type OrganicAudit,
+} from '@/lib/radar-organic-evidence'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export async function getRadarSummaryForDomain(
@@ -29,6 +34,21 @@ export async function getRadarSummaryForDomain(
     .order('created_at', { ascending: false })
     .limit(10)
 
+  const runIds = [
+    ...new Set(
+      (rankings ?? []).flatMap((r) => (r.scan_run_id ? [r.scan_run_id] : [])),
+    ),
+  ]
+  const { data: runs } = runIds.length
+    ? await supabase
+        .from('radar_scan_runs')
+        .select('id, organic_audit')
+        .in('id', runIds)
+    : { data: [] }
+  const audits = new Map(
+    (runs ?? []).map((r) => [r.id, r.organic_audit as OrganicAudit | null]),
+  )
+
   const lines: string[] = []
 
   if (rankings?.length) {
@@ -42,23 +62,20 @@ export async function getRadarSummaryForDomain(
         (r as { map_rank?: number | null }).map_rank != null
           ? `, map #${(r as { map_rank: number }).map_rank}`
           : ''
-      const rank = (
-        r as {
-          rank_position: number | null
-          scan_run_id?: string | null
-        }
-      ).rank_position
-      const legacyMiss =
-        (r as { scan_run_id?: string | null }).scan_run_id == null &&
-        rank === 50
+      const observation = organicObservation(
+        r.scan_run_id ? audits.get(r.scan_run_id) : null,
+        domainId,
+      )
       lines.push(
-        `  ${kwLabel}: organic ${rank == null || legacyMiss ? 'not found' : `#${rank}`}${mapStr}`,
+        `  ${kwLabel}: organic ${describeOrganicObservation(observation)}${mapStr}`,
       )
     }
   }
 
   if (snapshots?.length) {
-    lines.push('Seen in local pack:')
+    lines.push(
+      'Organic snapshot observations (provider samples, not verified local-pack ranks):',
+    )
     for (const s of snapshots) {
       const kw = (s as { radar_keywords?: { keyword?: string } | null })
         .radar_keywords

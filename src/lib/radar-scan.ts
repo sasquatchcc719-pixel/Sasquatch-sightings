@@ -6,7 +6,13 @@
  */
 
 import { createAdminClient } from '@/supabase/server'
-import { fetchMapsLocalFinder, fetchOrganicRanks } from '@/lib/dataforseo'
+import { fetchMapsLocalFinder } from '@/lib/dataforseo'
+import { fetchAuditedOrganicRanks } from '@/lib/radar-organic'
+import {
+  organicObservation,
+  describeOrganicObservation,
+  type OrganicAudit,
+} from '@/lib/radar-organic-evidence'
 import type { ReportCardInput, ReportCardTone } from '@/lib/reports/report-card'
 
 const PRIMARY_RADAR_DOMAIN = 'sasquatchcarpet.com'
@@ -70,7 +76,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
         // These are independent provider calls. Running all towns concurrently
         // keeps one slow request from consuming the five-minute cron budget.
         const [organic, { mapPack, ranksByDomainId }] = await Promise.all([
-          fetchOrganicRanks(kw.keyword, kw.location, domains),
+          fetchAuditedOrganicRanks(kw.keyword, kw.location, domains),
           fetchMapsLocalFinder(kw.keyword, kw.location, domains),
         ])
         organicProviderCost += organic.cost
@@ -80,7 +86,8 @@ export async function runRadarScan(): Promise<RadarScanResult> {
           .from('radar_scan_runs')
           .insert({
             keyword_id: kw.id,
-            provider: 'dataforseo',
+            provider: 'dataforseo+serpapi',
+            organic_audit: organic.audit,
             device: organic.device,
             latitude: organic.lat,
             longitude: organic.lng,
@@ -249,6 +256,7 @@ export type MapsHistoryRow = {
 }
 
 type ScanRunRow = {
+  organic_audit?: OrganicAudit | null
   id: string
   provider: string
   requested_depth: number
@@ -547,7 +555,9 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   const { data: scanRuns } = runIds.length
     ? await supabase
         .from('radar_scan_runs')
-        .select('id, provider, requested_depth, returned_depth, created_at')
+        .select(
+          'id, provider, requested_depth, returned_depth, created_at, organic_audit',
+        )
         .in('id', runIds)
     : { data: [] }
   const scanRunById = new Map(
@@ -578,13 +588,15 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
 
   const fmtMap = (p: number | null) =>
     p == null ? `not in top ${MAPS_DEPTH}` : `#${p}`
-  const fmtOrganic = (p: number | null, depth: number) =>
-    p == null ? `not found in ${depth} checked` : `#${p}`
 
   const mapGroups = new Map<string, string[]>()
   const organicGroups = new Map<string, string[]>()
   const mapCurrent: Array<{ town: string; rank: number | null }> = []
-  const organicCurrent: Array<{ town: string; rank: number | null }> = []
+  const organicCurrent: Array<{
+    town: string
+    rank: number | null
+    checked: boolean
+  }> = []
 
   for (const kw of keywords) {
     const keywordRows = rankRows.filter((row) => row.keyword_id === kw.id)
@@ -592,20 +604,12 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
     const town = kw.location.split(',')[0].trim()
 
     for (const metric of ['map', 'organic'] as const) {
-      // Once a trustworthy DataForSEO organic run exists, never compare it to
-      // the legacy first-page SerpApi rows. That would manufacture a provider-
-      // switch "movement" on day one.
       const rowsForMetric =
-        metric === 'organic' &&
-        keywordRows.some(
-          (row) =>
-            row.scan_run_id != null &&
-            scanRunById.get(row.scan_run_id)?.provider === 'dataforseo',
-        )
+        metric === 'organic'
           ? keywordRows.filter(
               (row) =>
-                row.scan_run_id != null &&
-                scanRunById.get(row.scan_run_id)?.provider === 'dataforseo',
+                row.scan_run_id &&
+                scanRunById.get(row.scan_run_id)?.organic_audit,
             )
           : keywordRows
       const samples = samplesFor(rowsForMetric, metric)
@@ -620,22 +624,24 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       const newestRun = samples[0]?.scanRunId
         ? scanRunById.get(samples[0].scanRunId!)
         : null
-      const returnedDepth = newestRun?.returned_depth ?? 50
+      const observation = organicObservation(
+        newestRun?.organic_audit,
+        primaryDomain.id,
+      )
       const icon =
         current === 1
           ? '🥇'
           : current == null
-            ? '⚠️'
+            ? metric === 'map'
+              ? '⚠️'
+              : '•'
             : current <= 3
               ? '🟢'
               : '•'
       const value =
         metric === 'map'
           ? fmtMap(current)
-          : `${fmtOrganic(current, returnedDepth)} · seen ${organicSummary.found}/${organicSummary.total}` +
-            (organicSummary.typicalWhenFound == null
-              ? ''
-              : ` · typical #${organicSummary.typicalWhenFound} when found`)
+          : describeOrganicObservation(observation)
       const baseline =
         samples.length < (metric === 'map' ? 3 : 7) ? ' · new baseline' : ''
       const line = `${icon} ${town}: ${value}${arrow}${baseline}`
@@ -645,7 +651,12 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
       groups.set(kw.keyword, list)
 
       if (metric === 'map') mapCurrent.push({ town, rank: current })
-      else organicCurrent.push({ town, rank: current })
+      else
+        organicCurrent.push({
+          town,
+          rank: observation.status === 'checked' ? observation.rank : null,
+          checked: newestRun?.organic_audit?.verification != null,
+        })
     }
   }
   if (mapGroups.size === 0 && organicGroups.size === 0) return null
@@ -668,7 +679,7 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
   }
   if (organicGroups.size > 0) {
     parts.push(
-      `— Website organic rank · latest desktop spot check + 7-scan context (top 50) —\n${block(organicGroups)}`,
+      `— Website organic rank · independent first-page desktop check —\n${block(organicGroups)}`,
     )
   }
   if (mapGroups.size > 0 && organicGroups.size > 0) {
@@ -745,9 +756,11 @@ export async function buildRadarDailyReport(): Promise<RadarDailyReport | null> 
         tone: 'neutral',
       },
       {
-        label: 'Organic towns visible',
-        value: `${organicVisible}/${organicCurrent.length}`,
-        note: 'Real multi-page crawl',
+        label: 'Organic ranks found',
+        value: organicCurrent.some((row) => row.checked)
+          ? `${organicVisible}/${organicCurrent.filter((row) => row.checked).length}`
+          : '—',
+        note: `${organicCurrent.filter((row) => !row.checked).length} checks unavailable · first page only`,
         tone: 'neutral',
       },
       {

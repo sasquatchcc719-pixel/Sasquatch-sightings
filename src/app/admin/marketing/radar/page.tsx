@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/supabase/client'
+import {
+  organicObservation,
+  describeOrganicObservation,
+  type OrganicAudit,
+} from '@/lib/radar-organic-evidence'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -100,6 +105,9 @@ export default function RadarPage() {
   const [keywords, setKeywords] = useState<Keyword[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [rankings, setRankings] = useState<Ranking[]>([])
+  const [scanAudits, setScanAudits] = useState<
+    Record<string, OrganicAudit | null>
+  >({})
   const [snapshots, setSnapshots] = useState<SerpSnapshotRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -178,33 +186,48 @@ export default function RadarPage() {
   const loadData = useCallback(async () => {
     const supabase = createClient()
     const sixtyDaysAgo = new Date(Date.now() - SIXTY_DAYS_MS)
-    const [kwRes, domRes, rankRes, snapRes, profilesRes] = await Promise.all([
-      supabase
-        .from('radar_keywords')
-        .select('id, keyword, location')
-        .eq('active', true),
-      supabase
-        .from('radar_domains')
-        .select('id, domain, display_name, is_my_domain'),
-      supabase
-        .from('radar_rankings')
-        .select(
-          'id, keyword_id, domain_id, rank_position, map_rank, scan_run_id, created_at',
-        )
-        .gte('created_at', sixtyDaysAgo.toISOString())
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('radar_serp_snapshots')
-        .select(
-          'keyword_id, position, domain, rating, reviews, address, created_at',
-        )
-        .gte('created_at', sixtyDaysAgo.toISOString())
-        .order('created_at', { ascending: false })
-        .order('position', { ascending: true }),
-      supabase
-        .from('radar_domain_profiles')
-        .select('domain_id, threat_level, business_model'),
-    ])
+    const [kwRes, domRes, rankRes, snapRes, profilesRes, runsRes] =
+      await Promise.all([
+        supabase
+          .from('radar_keywords')
+          .select('id, keyword, location')
+          .eq('active', true),
+        supabase
+          .from('radar_domains')
+          .select('id, domain, display_name, is_my_domain'),
+        supabase
+          .from('radar_rankings')
+          .select(
+            'id, keyword_id, domain_id, rank_position, map_rank, scan_run_id, created_at',
+          )
+          .gte('created_at', sixtyDaysAgo.toISOString())
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('radar_serp_snapshots')
+          .select(
+            'keyword_id, position, domain, rating, reviews, address, created_at',
+          )
+          .gte('created_at', sixtyDaysAgo.toISOString())
+          .order('created_at', { ascending: false })
+          .order('position', { ascending: true }),
+        supabase
+          .from('radar_domain_profiles')
+          .select('domain_id, threat_level, business_model'),
+        supabase
+          .from('radar_scan_runs')
+          .select('id, organic_audit')
+          .gte('created_at', sixtyDaysAgo.toISOString()),
+      ])
+    if (runsRes.error) setError(runsRes.error.message)
+    else
+      setScanAudits(
+        Object.fromEntries(
+          (runsRes.data ?? []).map((run) => [
+            run.id,
+            run.organic_audit as OrganicAudit | null,
+          ]),
+        ),
+      )
     if (kwRes.error) setError(kwRes.error.message)
     else setKeywords(kwRes.data ?? [])
     if (domRes.error) setError(domRes.error.message)
@@ -531,6 +554,15 @@ export default function RadarPage() {
     }
   }
 
+  const observationFor = (r: Ranking) =>
+    organicObservation(
+      r.scan_run_id ? scanAudits[r.scan_run_id] : null,
+      r.domain_id,
+    )
+  const latestObservation = new Map<
+    string,
+    ReturnType<typeof organicObservation>
+  >()
   const latestMap = new Map<string, number | null>()
   const latestMapPack = new Map<string, number>()
   const previousMap = new Map<string, number | null>()
@@ -540,25 +572,18 @@ export default function RadarPage() {
       r.scan_run_id == null && r.rank_position === 50 ? null : r.rank_position
     if (!latestMap.has(key)) {
       latestMap.set(key, organicRank)
+      latestObservation.set(key, observationFor(r))
       if (r.map_rank != null) latestMapPack.set(key, r.map_rank)
     } else if (!previousMap.has(key)) {
-      previousMap.set(key, organicRank)
+      previousMap.set(
+        key,
+        observationFor(r).status === 'checked' ? organicRank : null,
+      )
     }
   }
 
-  // Rank history for our own domains. Two views, toggled in the UI:
-  //
-  //  - "map"     — our spot in Google's Maps local finder (top ~20). This is
-  //                what drives local calls, so it's the default. Out-of-top-20
-  //                shows as a sentinel just below #20 so a drop is visible
-  //                rather than a confusing gap.
-  //  - "organic" — the blue-link position. Usually useless for head terms like
-  //                "carpet cleaning" (directories and national chains own them,
-  //                so we sit at the 50 floor), but it's the only signal left
-  //                while the GBP is gone, and smaller towns do break through.
-  //
-  // Legacy rows used 50 as a fake miss. New provider-backed rows use NULL, so
-  // a real #50 is preserved; placedAt handles both generations.
+  // Organic charts contain independently observed placements only. Unknown
+  // readings are gaps; a shallow miss cannot establish an out-of-top-50 rank.
   const OUT_OF_PACK = 21
   const ORGANIC_OUT = 51
   const myDomainIds = new Set(
@@ -575,9 +600,8 @@ export default function RadarPage() {
   const placedAt = (r: Ranking, metric: ChartMetric) =>
     metric === 'map'
       ? (r.map_rank ?? null)
-      : r.rank_position != null &&
-          !(r.scan_run_id == null && r.rank_position === 50)
-        ? r.rank_position
+      : observationFor(r).status === 'checked'
+        ? observationFor(r).rank
         : null
 
   const buildRankChart = (metric: ChartMetric) => {
@@ -589,7 +613,9 @@ export default function RadarPage() {
     // history remains available.
     const rowsForMetric =
       metric === 'organic'
-        ? myChartRows.filter((row) => row.scan_run_id != null)
+        ? myChartRows.filter(
+            (row) => row.scan_run_id && scanAudits[row.scan_run_id],
+          )
         : myChartRows
     // Only chart towns we've placed in at least once in the window — towns we
     // never rank in would just be a flat "Out" line cluttering the chart.
@@ -608,18 +634,19 @@ export default function RadarPage() {
         color: SERIES_COLORS[i % SERIES_COLORS.length],
       }
     })
-    const byDate = new Map<string, Record<string, number | string>>()
+    const byDate = new Map<string, Record<string, number | string | null>>()
     for (const r of rowsForMetric) {
       const s = series.find((ss) => ss.id === r.keyword_id)
       if (!s) continue
       const date = r.created_at.slice(0, 10)
       if (!byDate.has(date)) byDate.set(date, { date })
       const row = byDate.get(date)!
-      const value = placedAt(r, metric) ?? outValue
+      const value = placedAt(r, metric) ?? (metric === 'map' ? outValue : null)
       const prev = row[s.label]
       // Best (lowest) placement that day — we own more than one domain, and a
       // day can hold more than one scan.
-      if (typeof prev !== 'number' || value < prev) row[s.label] = value
+      if (typeof prev !== 'number' || (value != null && value < prev))
+        row[s.label] = value
     }
     const data = Array.from(byDate.values()).sort((a, b) =>
       (a.date as string) < (b.date as string) ? -1 : 1,
@@ -1395,18 +1422,18 @@ export default function RadarPage() {
                   </>
                 ) : (
                   <>
-                    Your spot in Google’s regular blue-link results per town —
-                    #1 at the top, “Not found” = absent from the returned
-                    full-depth crawl. Legacy organic scans are excluded because
-                    they only returned a short first page despite claiming a
-                    depth of 50. Reliable organic history begins Sep 23, 2026.
+                    Independently observed first-page website positions per
+                    town. Missing or unverified scans leave gaps; they do not
+                    mean rank 51. Deeper provider observations remain in the
+                    table with their status. Earlier unverified measurements are
+                    excluded from this graph.
                   </>
                 )}{' '}
                 One line per town you’ve appeared in. Pick a range above, or
                 drag the slider under the chart to zoom and scroll.
                 {chartMetric === 'map'
                   ? ' Comparable Maps history begins Jun 6, 2026.'
-                  : ' The reliable organic series fills in daily from the repair date.'}
+                  : ' Independent history begins with the October 17 repair.'}
               </p>
               {activeChart.data.length > 0 && activeChart.series.length > 0 ? (
                 <div className="h-[300px] w-full">
@@ -1455,8 +1482,8 @@ export default function RadarPage() {
                           name={s.label}
                           stroke={s.color}
                           strokeWidth={2}
-                          dot={false}
-                          connectNulls
+                          dot={chartMetric === 'organic' ? { r: 3 } : false}
+                          connectNulls={chartMetric === 'map'}
                         />
                       ))}
                       {activeChart.data.length > 2 && (
@@ -1473,10 +1500,9 @@ export default function RadarPage() {
                 </div>
               ) : (
                 <div className="flex h-[300px] w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.02] px-6 text-center text-sm text-white/50">
-                  No {chartMetric === 'map' ? 'map-pack' : 'organic'} placements
-                  in this range — you haven’t cracked the top{' '}
-                  {chartMetric === 'map' ? '20' : '50'} in any tracked town. Try
-                  a wider range, or switch views above.
+                  {chartMetric === 'map'
+                    ? 'No Maps placements in this range. Try a wider range.'
+                    : 'No independently checked organic placements in this window. Missing measurements do not establish a ranking loss.'}
                 </div>
               )}
             </Card>
@@ -1738,9 +1764,12 @@ export default function RadarPage() {
                             const key = `${kw.id}:${d.id}`
                             const organic = latestMap.get(key)
                             const mapRank = latestMapPack.get(key)
+                            const observation = latestObservation.get(key)
                             const previous = previousMap.get(key)
                             const movement =
-                              organic != null && previous != null
+                              observation?.status === 'checked' &&
+                              organic != null &&
+                              previous != null
                                 ? previous - organic
                                 : null
                             return [
@@ -1765,8 +1794,19 @@ export default function RadarPage() {
                                 className="p-2 sm:p-3"
                               >
                                 {organic != null ? (
-                                  <span className="flex items-center gap-1">
+                                  <span
+                                    title={describeOrganicObservation(
+                                      observation ??
+                                        organicObservation(null, d.id),
+                                    )}
+                                    className="flex flex-wrap items-center gap-1"
+                                  >
                                     #{organic}
+                                    <small className="text-white/50">
+                                      {observation?.status === 'checked'
+                                        ? 'checked'
+                                        : 'unverified'}
+                                    </small>
                                     {movement !== null &&
                                       movement !== 0 &&
                                       (movement > 0 ? (
@@ -1788,7 +1828,12 @@ export default function RadarPage() {
                                     )}
                                   </span>
                                 ) : (
-                                  <span className="text-white/50">–</span>
+                                  <span className="text-xs text-white/50">
+                                    {describeOrganicObservation(
+                                      observation ??
+                                        organicObservation(null, d.id),
+                                    )}
+                                  </span>
                                 )}
                               </td>,
                             ]

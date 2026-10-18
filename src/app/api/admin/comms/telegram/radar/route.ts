@@ -5,6 +5,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { requireAnyRole } from '@/lib/auth'
+import {
+  organicObservation,
+  describeOrganicObservation,
+  type OrganicAudit,
+} from '@/lib/radar-organic-evidence'
 import { buildRadarDigest } from '@/lib/radar-scan'
 import { DATAFORSEO_MAPS_ZOOM } from '@/lib/dataforseo'
 import { TOWN_CENTROIDS, townKeyFromLocation } from '@/lib/serpApi'
@@ -50,6 +55,20 @@ export async function GET() {
           .order('created_at', { ascending: false })
       : { data: [] }
 
+    const runIds = [
+      ...new Set(
+        (ranks ?? []).flatMap((r) => (r.scan_run_id ? [r.scan_run_id] : [])),
+      ),
+    ]
+    const { data: runs } = runIds.length
+      ? await supabase
+          .from('radar_scan_runs')
+          .select('id, organic_audit')
+          .in('id', runIds)
+      : { data: [] }
+    const audits = new Map(
+      (runs ?? []).map((r) => [r.id, r.organic_audit as OrganicAudit | null]),
+    )
     const towns = active.map((kw) => {
       const rows = (ranks ?? []).filter((r) => r.keyword_id === kw.id)
       const stamps = [...new Set(rows.map((r) => r.created_at))]
@@ -60,16 +79,20 @@ export async function GET() {
       const maps = current
         .map((r) => r.map_rank)
         .filter((p): p is number => p != null)
-      const organic = current
-        .map((r) =>
-          r.scan_run_id == null && r.rank_position === 50
-            ? null
-            : r.rank_position,
-        )
-        .filter((p): p is number => p != null)
       const prevMaps = previous
         .map((r) => r.map_rank)
         .filter((p): p is number => p != null)
+      const primary = current.find((r) =>
+        (domains ?? []).some(
+          (d) =>
+            d.id === r.domain_id &&
+            d.domain.replace(/^www\./, '') === 'sasquatchcarpet.com',
+        ),
+      )
+      const observation = organicObservation(
+        primary?.scan_run_id ? audits.get(primary.scan_run_id) : null,
+        primary?.domain_id ?? '',
+      )
       const key = townKeyFromLocation(kw.location)
       const pin = TOWN_CENTROIDS[key] ?? null
       return {
@@ -79,7 +102,8 @@ export async function GET() {
         town: kw.location.split(',')[0].trim(),
         townKey: key,
         mapsRank: maps.length ? Math.min(...maps) : null,
-        organicRank: organic.length ? Math.min(...organic) : null,
+        organicRank: observation.rank,
+        organicLabel: describeOrganicObservation(observation),
         prevMapsRank: prevMaps.length ? Math.min(...prevMaps) : null,
         scannedAt: stamps[0] ?? null,
         pin,

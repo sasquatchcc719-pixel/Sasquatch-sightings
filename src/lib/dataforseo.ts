@@ -265,7 +265,12 @@ export async function fetchOrganicRanks(
     const normalized = normalizeDomain(item.url ?? item.domain ?? '')
     if (!position || !normalized) continue
 
-    snapshot.push({ domain: normalized, position })
+    snapshot.push({
+      domain: normalized,
+      position,
+      url: item.url,
+      title: item.title,
+    })
     const domainId = domainMap.get(normalized)
     if (domainId && !found.has(domainId)) {
       found.add(domainId)

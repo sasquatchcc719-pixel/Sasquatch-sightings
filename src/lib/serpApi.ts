@@ -451,6 +451,8 @@ export async function fetchMapsAtPoint(
 }
 
 export type SerpDomainWithPosition = {
+  url?: string
+  title?: string | null
   domain: string
   position: number
   rating?: number

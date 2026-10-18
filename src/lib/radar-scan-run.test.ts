@@ -15,6 +15,10 @@ vi.mock('@/lib/dataforseo', () => ({
   fetchMapsLocalFinder: mocks.fetchMapsLocalFinder,
 }))
 
+vi.mock('@/lib/radar-organic', () => ({
+  fetchAuditedOrganicRanks: mocks.fetchOrganicRanks,
+}))
+
 import { runRadarScan } from './radar-scan'
 
 const keywords = [
