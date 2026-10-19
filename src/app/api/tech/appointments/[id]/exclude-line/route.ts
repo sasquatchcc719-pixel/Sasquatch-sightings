@@ -10,6 +10,7 @@
  * every dollar removed leaves a photo, a verdict, a name and a timestamp.
  */
 
+import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { getTechAppointmentForAccess } from '@/lib/tech/appointments'
@@ -50,6 +51,8 @@ export async function POST(
     if (!line) {
       return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
     }
+
+    await captureAddOnBonusBaseline(supabase, appointmentId)
 
     if (restore) {
       const original = line.excludedOriginalTotal ?? 0

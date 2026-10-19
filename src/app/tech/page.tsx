@@ -14,7 +14,10 @@ import { getAssignedTechAppointments } from '@/lib/tech/appointments'
 import { TechDaySchedule } from '@/components/tech/tech-day-schedule'
 import { getMountainDateKey, shiftDateKey } from '@/lib/tech/day-schedule'
 import { getSemiMonthlyPayPeriod } from '@/lib/ops/timesheet-pay'
-import { loadAddOnBonuses } from '@/lib/ops/add-on-bonuses'
+import {
+  loadAddOnBonuses,
+  usesInvoiceGrowthBonus,
+} from '@/lib/ops/add-on-bonuses'
 import { TruckWeatherCard } from '@/components/truck-weather-card'
 
 type TechHomePageProps = {
@@ -54,11 +57,13 @@ export default async function TechHomePage({
   const { data: bonusStaff } = access.staff?.id
     ? await supabase
         .from('staff_users')
-        .select('add_on_bonus_rate')
+        .select('add_on_bonus_rate, invoice_growth_bonus_starts_on')
         .eq('id', access.staff.id)
         .maybeSingle()
     : { data: null }
   const bonusRate = Number(bonusStaff?.add_on_bonus_rate || 0)
+  const growthStartsOn = bonusStaff?.invoice_growth_bonus_starts_on
+  const growthActive = usesInvoiceGrowthBonus(today, growthStartsOn)
   const payPeriod = getSemiMonthlyPayPeriod(today)
   const [appointments, bonusSummary] = await Promise.all([
     getAssignedTechAppointments(supabase, staffUserId, dateKey),
@@ -117,9 +122,19 @@ export default async function TechHomePage({
                   {formatMoney(bonusSummary.earnedBonus)} earned
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  {payPeriod.label} · {Math.round(bonusRate * 100)}% of new
-                  service categories sold onsite
+                  {payPeriod.label} · {Math.round(bonusRate * 100)}% of{' '}
+                  {growthActive
+                    ? 'paid invoice revenue above the original amount'
+                    : 'new service categories sold onsite'}
                 </p>
+                {growthStartsOn && !growthActive ? (
+                  <p className="mt-2 text-xs text-cyan-200">
+                    Starting {formatDate(growthStartsOn)}: earn{' '}
+                    {Math.round(bonusRate * 100)}% of paid invoice revenue above
+                    the original amount, including extra rooms and treatments.
+                    Tips, tax and fees stay separate.
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-3 text-emerald-100">
                 <DollarSign className="h-6 w-6" />

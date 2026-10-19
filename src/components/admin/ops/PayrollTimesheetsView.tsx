@@ -1212,8 +1212,10 @@ export function PayrollTimesheetsView() {
                   Onsite add-on bonuses
                 </h3>
                 <p className="mt-1 text-xs text-slate-400">
-                  10% of a new service category sold onsite. Estimate
-                  corrections inside the original category do not qualify.
+                  From the technician’s effective date, paid invoice revenue
+                  above the original amount earns a bonus, including extra rooms
+                  and treatments. Earlier jobs use the new-service-category
+                  rule. Tips, tax and fees stay separate.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 text-right sm:grid-cols-3">

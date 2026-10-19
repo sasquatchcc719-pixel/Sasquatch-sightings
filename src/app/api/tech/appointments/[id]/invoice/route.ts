@@ -1,3 +1,4 @@
+import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
@@ -117,6 +118,8 @@ export async function PATCH(
         { status: 404 },
       )
     }
+
+    await captureAddOnBonusBaseline(supabase, id)
 
     // Update in place rather than delete-and-recreate. Recreating dropped
     // service_catalog_item_id (which is how rug/upholstery items are detected

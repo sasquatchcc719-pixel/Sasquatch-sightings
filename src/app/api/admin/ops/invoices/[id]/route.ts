@@ -407,6 +407,10 @@ export async function PATCH(
       }
     }
 
+    const bonusBaseline =
+      access.role === 'tech' && current.appointment_id
+        ? await captureAddOnBonusBaseline(supabase, current.appointment_id)
+        : []
     const existingInvoiceLines = current.ops_invoice_line_items || []
     const existingDbIds = existingInvoiceLines.map((l: { id: string }) => l.id)
     const lineItemsInBody = Object.prototype.hasOwnProperty.call(
@@ -430,10 +434,6 @@ export async function PATCH(
       }
     } else {
       const lineItems = lineItemsPayload
-      const bonusBaseline =
-        access.role === 'tech' && current.appointment_id
-          ? await captureAddOnBonusBaseline(supabase, current.appointment_id)
-          : []
       let technicianBonusRate = 0
       if (access.role === 'tech' && access.staff?.id) {
         const { data: technician, error: technicianError } = await supabase

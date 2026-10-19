@@ -23,7 +23,7 @@ export type AddOnBonusRow = {
   staffUserId: string
   staffName: string
   customerName: string
-  category: AddOnBonusCategory
+  category: AddOnBonusCategory | 'invoice_growth'
   categoryLabel: string
   eligibleRevenue: number
   bonusRate: number
@@ -100,7 +100,15 @@ export async function captureAddOnBonusBaseline(
 ): Promise<AddOnBonusCategory[]> {
   const { data: appointment, error: appointmentError } = await supabase
     .from('ops_appointments')
-    .select('add_on_bonus_baseline_categories, commission_baseline_captured_at')
+    .select(
+      `
+      add_on_bonus_baseline_categories, commission_baseline_captured_at,
+      appointment_date, assigned_staff_user_id,
+      assigned_staff:staff_users!ops_appointments_assigned_staff_user_id_fkey (
+        add_on_bonus_rate, invoice_growth_bonus_starts_on
+      )
+    `,
+    )
     .eq('id', appointmentId)
     .single()
 
@@ -137,6 +145,28 @@ export async function captureAddOnBonusBaseline(
     if (category) categories.add(category)
   }
 
+  const technician = unwrap(appointment.assigned_staff)
+  const growthPolicy =
+    usesInvoiceGrowthBonus(
+      appointment.appointment_date,
+      technician?.invoice_growth_bonus_starts_on,
+    ) && Number(technician?.add_on_bonus_rate || 0) > 0
+  let growthBaseline: number | null = null
+  if (growthPolicy) {
+    const { data: invoice, error: invoiceError } = await supabase
+      .from('ops_invoices')
+      .select(INVOICE_BONUS_SELECT)
+      .eq('appointment_id', appointmentId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (invoiceError) throw invoiceError
+    // Monthly/project visits may have no individual invoice. Let work start,
+    // and defer the snapshot until an invoice exists rather than inventing $0.
+    if (!invoice) return [...categories]
+    growthBaseline = invoiceBonusRevenue(invoice)
+  }
+
   const capturedAt = new Date().toISOString()
   const baselineCategories = [...categories]
   const { data: captured, error: captureError } = await supabase
@@ -145,6 +175,16 @@ export async function captureAddOnBonusBaseline(
       add_on_bonus_baseline_categories: baselineCategories,
       commission_baseline_total: Math.round(baselineTotal * 100) / 100,
       commission_baseline_captured_at: capturedAt,
+      ...(growthPolicy
+        ? {
+            invoice_growth_baseline_total: growthBaseline,
+            invoice_growth_bonus_staff_user_id:
+              appointment.assigned_staff_user_id,
+            invoice_growth_bonus_rate: Number(
+              technician?.add_on_bonus_rate || 0,
+            ),
+          }
+        : {}),
     })
     .eq('id', appointmentId)
     .is('commission_baseline_captured_at', null)
@@ -181,6 +221,78 @@ export function discountedEligibleRevenue(
   return Math.round(lineRevenue * factor * 100) / 100
 }
 
+export function usesInvoiceGrowthBonus(
+  appointmentDate: string,
+  startsOn: string | null | undefined,
+): boolean {
+  return Boolean(startsOn && appointmentDate >= startsOn)
+}
+
+const INVOICE_BONUS_SELECT = `
+  id, appointment_id, payment_status, subtotal, discount_amount,
+  percentage_discount_amount, minimum_charge_adjustment, created_at,
+  ops_invoice_line_items (
+    description, line_total, excluded_at,
+    service_catalog_items (name, slug)
+  )
+`
+
+type BonusInvoice = {
+  subtotal: number | string | null
+  discount_amount: number | string | null
+  percentage_discount_amount: number | string | null
+  minimum_charge_adjustment?: number | string | null
+  ops_invoice_line_items?:
+    | {
+        description: string
+        line_total: number | string | null
+        excluded_at: string | null
+        service_catalog_items:
+          | { name: string; slug: string | null }
+          | { name: string; slug: string | null }[]
+          | null
+      }[]
+    | null
+}
+
+/** Compare net invoice revenue on both sides, keeping tips, fees and tax out. */
+export function invoiceBonusRevenue(invoice: BonusInvoice): number {
+  const subtotal = Number(invoice.subtotal || 0)
+  const nonServiceRevenue = (invoice.ops_invoice_line_items || []).reduce(
+    (sum, line) => {
+      if (line.excluded_at) return sum
+      const catalog = unwrap(line.service_catalog_items)
+      const name = normalize(catalog?.name || line.description)
+      const slug = normalize(catalog?.slug)
+      return ['gratuity', 'card-fee', 'mileage-travel'].includes(slug) ||
+        /^(gratuity|tip|card fee|mileage\/ ?travel)$/.test(name)
+        ? sum + Number(line.line_total || 0)
+        : sum
+    },
+    0,
+  )
+  return (
+    Math.round(
+      (Math.max(
+        0,
+        subtotal -
+          nonServiceRevenue -
+          Number(invoice.discount_amount || 0) -
+          Number(invoice.percentage_discount_amount || 0),
+      ) +
+        Math.max(0, Number(invoice.minimum_charge_adjustment || 0))) *
+        100,
+    ) / 100
+  )
+}
+
+export function invoiceGrowthRevenue(
+  baseline: number,
+  current: number,
+): number {
+  return Math.round(Math.max(0, current - baseline) * 100) / 100
+}
+
 function bonusIdBatches(ids: string[]): string[][] {
   const batches: string[][] = []
   for (let index = 0; index < ids.length; index += 50) {
@@ -199,6 +311,9 @@ export async function loadAddOnBonuses(
       `
         id,
         appointment_date,
+        invoice_growth_baseline_total,
+        invoice_growth_bonus_staff_user_id,
+        invoice_growth_bonus_rate,
         ops_customers!ops_appointments_customer_id_fkey (
           full_name,
           business_name
@@ -243,15 +358,32 @@ export async function loadAddOnBonuses(
     if (result.error) throw result.error
   }
   const lines = lineResults.flatMap((result) => result.data || [])
-  if (!lines.length) {
+  const growthAppointments = appointments.filter(
+    (appointment) =>
+      appointment.invoice_growth_baseline_total != null &&
+      appointment.invoice_growth_bonus_staff_user_id &&
+      Number(appointment.invoice_growth_bonus_rate || 0) > 0 &&
+      (!options.staffUserId ||
+        appointment.invoice_growth_bonus_staff_user_id === options.staffUserId),
+  )
+  if (!lines.length && !growthAppointments.length) {
     return { rows: [], earnedBonus: 0, pendingBonus: 0, eligibleRevenue: 0 }
   }
 
   const staffIds = [
-    ...new Set(lines.map((line) => line.add_on_bonus_staff_user_id as string)),
+    ...new Set([
+      ...lines.map((line) => line.add_on_bonus_staff_user_id as string),
+      ...growthAppointments.map(
+        (appointment) =>
+          appointment.invoice_growth_bonus_staff_user_id as string,
+      ),
+    ]),
   ]
   const bonusAppointmentIds = [
-    ...new Set(lines.map((line) => line.appointment_id)),
+    ...new Set([
+      ...lines.map((line) => line.appointment_id),
+      ...growthAppointments.map((appointment) => appointment.id),
+    ]),
   ]
   const [staffResult, invoiceResults] = await Promise.all([
     supabase.from('staff_users').select('id, display_name').in('id', staffIds),
@@ -259,9 +391,7 @@ export async function loadAddOnBonuses(
       bonusIdBatches(bonusAppointmentIds).map((ids) =>
         supabase
           .from('ops_invoices')
-          .select(
-            'id, appointment_id, payment_status, subtotal, discount_amount, percentage_discount_amount, created_at',
-          )
+          .select(INVOICE_BONUS_SELECT)
           .in('appointment_id', ids)
           .order('created_at', { ascending: false }),
       ),
@@ -299,6 +429,12 @@ export async function loadAddOnBonuses(
   >()
 
   for (const line of lines) {
+    // A dollar-growth job replaces its category bonuses, never stacks with them.
+    if (
+      appointmentById.get(line.appointment_id)?.invoice_growth_baseline_total !=
+      null
+    )
+      continue
     const category = line.add_on_bonus_category as AddOnBonusCategory | null
     const staffUserId = line.add_on_bonus_staff_user_id as string | null
     if (!category || !staffUserId) continue
@@ -344,6 +480,36 @@ export async function loadAddOnBonuses(
       bonusRate: group.rate,
       bonusAmount,
       status: invoice?.payment_status === 'paid' ? 'earned' : 'pending',
+    })
+  }
+
+  for (const appointment of growthAppointments) {
+    const invoice = invoiceByAppointment.get(appointment.id)
+    if (!invoice) throw new Error('Invoice missing for bonus calculation')
+    const eligibleRevenue = invoiceGrowthRevenue(
+      Number(appointment.invoice_growth_baseline_total),
+      invoiceBonusRevenue(invoice),
+    )
+    if (eligibleRevenue <= 0) continue
+    const staffUserId = appointment.invoice_growth_bonus_staff_user_id as string
+    const rate = Number(appointment.invoice_growth_bonus_rate)
+    const customer = unwrap(appointment.ops_customers)
+    rows.push({
+      key: `${appointment.id}:${staffUserId}:invoice_growth`,
+      appointmentId: appointment.id,
+      appointmentDate: appointment.appointment_date,
+      staffUserId,
+      staffName: staffById.get(staffUserId) || 'Unknown technician',
+      customerName:
+        customer?.business_name?.trim() ||
+        customer?.full_name?.trim() ||
+        'Customer',
+      category: 'invoice_growth',
+      categoryLabel: 'Above original invoice',
+      eligibleRevenue,
+      bonusRate: rate,
+      bonusAmount: Math.round(eligibleRevenue * rate * 100) / 100,
+      status: invoice.payment_status === 'paid' ? 'earned' : 'pending',
     })
   }
 
