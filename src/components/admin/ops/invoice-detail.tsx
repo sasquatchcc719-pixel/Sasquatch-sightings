@@ -2585,7 +2585,7 @@ export function InvoiceDetail({
             <div
               key={item.id}
               {...reorderLines.cardProps(item.id)}
-              className={`relative rounded-xl p-3 pr-12 shadow-sm ${
+              className={`relative rounded-xl p-3 shadow-sm ${
                 item.excluded_at
                   ? 'border-2 border-red-500/60 bg-red-50 opacity-90'
                   : 'bg-white'
@@ -2610,44 +2610,22 @@ export function InvoiceDetail({
                   ) : null}
                 </div>
               ) : null}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <Label
-                      htmlFor={`line-description-${index}`}
-                      className="text-xs"
-                    >
-                      Description
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <ServicePhoto
-                        size="invoice"
-                        name={
-                          lineItemServices.get(item.id)?.name ||
-                          item.description
-                        }
-                        slug={lineItemServices.get(item.id)?.slug}
-                        category={lineItemServices.get(item.id)?.category}
-                      />
-                      <Input
-                        id={`line-description-${index}`}
-                        value={item.description}
-                        className={`h-10 min-w-0 flex-1 text-base ${lineItemInputTone(index)}`}
-                        onChange={(event) =>
-                          setLineItems((current) =>
-                            current.map((line, lineIndex) =>
-                              lineIndex === index
-                                ? { ...line, description: event.target.value }
-                                : line,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex min-h-11 items-start justify-between gap-3 pr-10">
+                  <div>
+                    <ServicePhoto
+                      size="invoice"
+                      name={
+                        lineItemServices.get(item.id)?.name || item.description
+                      }
+                      slug={lineItemServices.get(item.id)?.slug}
+                      category={lineItemServices.get(item.id)?.category}
+                    />
                   </div>
                   <button
                     type="button"
-                    className="text-muted-foreground hover:text-destructive mt-5 p-1"
+                    aria-label={`Remove line ${index + 1}: ${item.description || 'Custom service'}`}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
                     onClick={() =>
                       setLineItems((current) =>
                         current.filter((_, lineIndex) => lineIndex !== index),
@@ -2657,15 +2635,50 @@ export function InvoiceDetail({
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
+                <div className="min-w-0">
+                  <Label
+                    htmlFor={`line-description-${index}`}
+                    className="text-xs font-medium text-slate-600"
+                  >
+                    Service name
+                  </Label>
+                  <div className="grid">
+                    {/* Mirror wrapping so the editable field fits its whole name,
+                        including on phones that do not auto-size textareas. */}
+                    <div
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1 min-h-10 border px-3 py-2 text-base leading-6 break-words whitespace-pre-wrap"
+                    >
+                      {item.description}{' '}
+                    </div>
+                    <Textarea
+                      id={`line-description-${index}`}
+                      rows={1}
+                      value={item.description}
+                      className={`col-start-1 row-start-1 h-full min-h-10 resize-none overflow-hidden text-base leading-6 break-words ${lineItemInputTone(index)}`}
+                      onChange={(event) =>
+                        setLineItems((current) =>
+                          current.map((line, lineIndex) =>
+                            lineIndex === index
+                              ? { ...line, description: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label className="text-xs">Qty</Label>
+                    <Label className="text-xs font-medium text-slate-600">
+                      Qty
+                    </Label>
                     <div className="flex items-center gap-1">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-8 w-8 p-0"
+                        className="h-10 w-8 shrink-0 border-slate-200 bg-slate-50 p-0 text-slate-700 hover:bg-slate-100"
                         onClick={() =>
                           setLineItems((current) =>
                             current.map((line, lineIndex) =>
@@ -2687,7 +2700,7 @@ export function InvoiceDetail({
                         step="1"
                         inputMode="numeric"
                         value={String(item.quantity)}
-                        className={`h-10 text-center text-base tabular-nums ${lineItemInputTone(index)}`}
+                        className={`h-10 min-w-0 flex-1 text-center text-base tabular-nums ${lineItemInputTone(index)}`}
                         onChange={(event) => {
                           const nextQuantity = Number(event.target.value || 0)
                           if (
@@ -2708,7 +2721,7 @@ export function InvoiceDetail({
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-8 w-8 p-0"
+                        className="h-10 w-8 shrink-0 border-slate-200 bg-slate-50 p-0 text-slate-700 hover:bg-slate-100"
                         onClick={() =>
                           setLineItems((current) =>
                             current.map((line, lineIndex) =>
@@ -2724,7 +2737,9 @@ export function InvoiceDetail({
                     </div>
                   </div>
                   <div>
-                    <Label className="text-xs">Unit Price</Label>
+                    <Label className="text-xs font-medium text-slate-600">
+                      Unit Price
+                    </Label>
                     <Input
                       type="text"
                       inputMode="decimal"
