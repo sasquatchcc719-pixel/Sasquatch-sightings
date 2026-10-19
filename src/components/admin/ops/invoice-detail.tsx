@@ -2700,7 +2700,7 @@ export function InvoiceDetail({
                         step="1"
                         inputMode="numeric"
                         value={String(item.quantity)}
-                        className={`h-10 min-w-0 flex-1 text-center text-base tabular-nums ${lineItemInputTone(index)}`}
+                        className={`h-10 min-w-0 flex-1 [appearance:textfield] px-1 text-center text-base tabular-nums [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${lineItemInputTone(index)}`}
                         onChange={(event) => {
                           const nextQuantity = Number(event.target.value || 0)
                           if (
