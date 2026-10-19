@@ -6,8 +6,16 @@ import {
   DAVID_CANVASS_USER_ID,
 } from '@/lib/gps/canvassAutoStop'
 
-const mocks = vi.hoisted(() => ({ access: vi.fn(), admin: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  access: vi.fn(),
+  admin: vi.fn(),
+  queue: vi.fn(),
+}))
 vi.mock('@/lib/auth', () => ({ requireAnyRole: mocks.access }))
+vi.mock('@/lib/gps/canvassNotifications', () => ({
+  queueDavidCanvassNotification: mocks.queue,
+  CANVASS_STALE_STOP_NOTE: 'Closed stale walk',
+}))
 vi.mock('@/supabase/server', () => ({ createAdminClient: mocks.admin }))
 import { POST } from './route'
 import { GET } from '../route'
@@ -148,6 +156,7 @@ describe('David-only walking cutoff', () => {
       status: 200,
       data: { ok: true, inserted: 2, autoStopped: true },
     })
+    expect(mocks.queue).toHaveBeenCalledWith(db, 'walk', DAVID_CANVASS_USER_ID)
     expect(db.saved).toHaveLength(2)
     expect(db.sessions[0]).toMatchObject({
       status: 'completed',

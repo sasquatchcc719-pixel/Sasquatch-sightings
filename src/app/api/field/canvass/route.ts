@@ -12,6 +12,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { DAVID_CANVASS_USER_ID } from '@/lib/gps/canvassAutoStop'
+import {
+  CANVASS_STALE_STOP_NOTE,
+  queueDavidCanvassNotification,
+} from '@/lib/gps/canvassNotifications'
 import { canvassTotals } from '@/lib/gps/canvassSession'
 
 /**
@@ -90,6 +94,7 @@ export async function POST(request: NextRequest) {
         lastPoint?.recorded_at ?? existing.started_at,
       )
       if (Date.now() - lastActivity < RESUME_WINDOW_MS) {
+        queueDavidCanvassNotification(supabase, existing.id, access.id)
         return NextResponse.json({
           session: existing,
           resumed: true,
@@ -98,10 +103,18 @@ export async function POST(request: NextRequest) {
         })
       }
       // Genuinely stale (phone died mid-walk, forgotten stop) — close it out.
-      await supabase
+      const { error: closeError } = await supabase
         .from('canvass_sessions')
-        .update({ status: 'completed', ended_at: new Date().toISOString() })
+        .update({
+          status: 'completed',
+          ended_at: new Date().toISOString(),
+          notes: CANVASS_STALE_STOP_NOTE,
+        })
         .eq('id', existing.id)
+        .eq('status', 'active')
+      if (closeError)
+        return NextResponse.json({ error: closeError.message }, { status: 500 })
+      queueDavidCanvassNotification(supabase, existing.id, access.id)
     }
 
     const { data: session, error } = await supabase
@@ -115,6 +128,7 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       )
     }
+    queueDavidCanvassNotification(supabase, session.id, access.id)
     return NextResponse.json({
       session,
       walkingAutoStop: access.id === DAVID_CANVASS_USER_ID,
@@ -165,6 +179,7 @@ export async function POST(request: NextRequest) {
         { error: 'Walk already stopped' },
         { status: 409 },
       )
+    queueDavidCanvassNotification(supabase, updated.id, access.id)
     return NextResponse.json({ session: updated })
   }
 

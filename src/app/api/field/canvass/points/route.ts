@@ -11,6 +11,7 @@ import {
   DAVID_CANVASS_USER_ID,
   exceedsWalkingLimits,
 } from '@/lib/gps/canvassAutoStop'
+import { queueDavidCanvassNotification } from '@/lib/gps/canvassNotifications'
 import { canvassTotals, readCanvassPoints } from '@/lib/gps/canvassSession'
 
 /** How long after Stop a session still accepts a trailing/offline flush. */
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid session' }, { status: 403 })
   }
   if (session.notes === CANVASS_AUTO_STOP_NOTE) {
+    queueDavidCanvassNotification(supabase, sessionId, access.id)
     return NextResponse.json({ ok: true, inserted: 0, autoStopped: true })
   }
   if (session.status !== 'active') {
@@ -193,6 +195,8 @@ export async function POST(request: NextRequest) {
       )
     }
   }
+
+  if (stopAt) queueDavidCanvassNotification(supabase, sessionId, access.id)
 
   return NextResponse.json({
     ok: true,

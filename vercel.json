@@ -119,6 +119,10 @@
     {
       "path": "/api/cron/mcp-event-delivery",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/canvass-notifications",
+      "schedule": "*/5 * * * *"
     }
   ],
   "redirects": []
