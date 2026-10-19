@@ -194,6 +194,14 @@ export default function CanvassPage() {
             {tracker.error}
           </p>
         ) : null}
+        {tracker.autoStopMessage ? (
+          <p
+            role="status"
+            className="rounded-lg bg-amber-950/60 px-3 py-2 text-sm text-amber-300"
+          >
+            {tracker.autoStopMessage}
+          </p>
+        ) : null}
         {lastResult ? (
           <p className="rounded-lg bg-green-950/60 px-3 py-2 text-sm text-green-400">
             {lastResult}

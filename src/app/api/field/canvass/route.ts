@@ -11,7 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { haversineDistance } from '@/lib/gps/haversine'
+import { DAVID_CANVASS_USER_ID } from '@/lib/gps/canvassAutoStop'
+import { canvassTotals } from '@/lib/gps/canvassSession'
 
 /**
  * An active session still receiving points within this window is treated as
@@ -32,7 +33,20 @@ export async function GET() {
       .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    return NextResponse.json({ session: session ?? null })
+    const { data: lastPoint } = session
+      ? await supabase
+          .from('canvass_points')
+          .select('lat, lng, accuracy_m, recorded_at')
+          .eq('session_id', session.id)
+          .order('recorded_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null }
+    return NextResponse.json({
+      session: session ?? null,
+      lastPoint,
+      walkingAutoStop: access.id === DAVID_CANVASS_USER_ID,
+    })
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -67,7 +81,7 @@ export async function POST(request: NextRequest) {
     if (existing) {
       const { data: lastPoint } = await supabase
         .from('canvass_points')
-        .select('recorded_at')
+        .select('lat, lng, accuracy_m, recorded_at')
         .eq('session_id', existing.id)
         .order('recorded_at', { ascending: false })
         .limit(1)
@@ -76,7 +90,12 @@ export async function POST(request: NextRequest) {
         lastPoint?.recorded_at ?? existing.started_at,
       )
       if (Date.now() - lastActivity < RESUME_WINDOW_MS) {
-        return NextResponse.json({ session: existing, resumed: true })
+        return NextResponse.json({
+          session: existing,
+          resumed: true,
+          lastPoint,
+          walkingAutoStop: access.id === DAVID_CANVASS_USER_ID,
+        })
       }
       // Genuinely stale (phone died mid-walk, forgotten stop) — close it out.
       await supabase
@@ -96,7 +115,10 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       )
     }
-    return NextResponse.json({ session })
+    return NextResponse.json({
+      session,
+      walkingAutoStop: access.id === DAVID_CANVASS_USER_ID,
+    })
   }
 
   if (body.action === 'stop') {
@@ -112,20 +134,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No active session' }, { status: 404 })
     }
 
-    const { data: points } = await supabase
-      .from('canvass_points')
-      .select('lat, lng')
-      .eq('session_id', session.id)
-      .order('recorded_at', { ascending: true })
-
-    let distance = 0
-    const pts = points ?? []
-    for (let i = 1; i < pts.length; i++) {
-      distance += haversineDistance(
-        pts[i - 1].lat,
-        pts[i - 1].lng,
-        pts[i].lat,
-        pts[i].lng,
+    let totals
+    try {
+      totals = await canvassTotals(supabase, session.id)
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: error instanceof Error ? error.message : 'Failed to save walk',
+        },
+        { status: 500 },
       )
     }
 
@@ -134,15 +151,20 @@ export async function POST(request: NextRequest) {
       .update({
         status: 'completed',
         ended_at: new Date().toISOString(),
-        point_count: pts.length,
-        distance_m: Math.round(distance),
+        ...totals,
       })
       .eq('id', session.id)
+      .eq('status', 'active')
       .select('id, started_at, ended_at, point_count, distance_m')
-      .single()
+      .maybeSingle()
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+    if (!updated)
+      return NextResponse.json(
+        { error: 'Walk already stopped' },
+        { status: 409 },
+      )
     return NextResponse.json({ session: updated })
   }
 

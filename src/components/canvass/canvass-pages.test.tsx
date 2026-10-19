@@ -8,6 +8,7 @@ const tracker = vi.hoisted(() => ({
   distanceM: 0,
   accuracy: null,
   error: null,
+  autoStopMessage: null as string | null,
   start: vi.fn(),
   stop: vi.fn(),
 }))
@@ -71,6 +72,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   tracker.isTracking = false
   tracker.sessionId = null
+  tracker.autoStopMessage = null
   tracker.start.mockReset().mockResolvedValue(undefined)
 })
 
@@ -120,6 +122,24 @@ describe('canvassing defaults', () => {
 })
 
 describe('automatic pocket mode', () => {
+  it('leaves pocket mode and explains an automatic stop', () => {
+    tracker.isTracking = true
+    tracker.sessionId = 'walk'
+    const { rerender } = render(<CanvassPage />)
+    expect(screen.getByRole('heading', { name: 'Pocket mode' })).toBeTruthy()
+    tracker.isTracking = false
+    tracker.sessionId = null
+    tracker.autoStopMessage =
+      'Automatically stopped: movement exceeded walking limits.'
+    rerender(<CanvassPage />)
+    expect(screen.queryByRole('heading', { name: 'Pocket mode' })).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain(
+      'Automatically stopped',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Start Canvassing' }),
+    ).toBeTruthy()
+  })
   it('opens after Start creates a walk, reveals controls without stopping, and can be reopened', async () => {
     vi.useFakeTimers()
     tracker.start.mockImplementation(async () => {
