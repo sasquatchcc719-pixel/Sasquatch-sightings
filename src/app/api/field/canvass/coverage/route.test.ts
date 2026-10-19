@@ -213,4 +213,63 @@ describe('complete shared canvassing coverage', () => {
     expect((await coverage()).response.status).toBe(401)
     expect(mocks.admin).not.toHaveBeenCalled()
   })
+
+  it('loads one selected track and separates GPS jumps from mapped coverage', async () => {
+    const saved = [
+      ...points('walk'),
+      ...points('walk').map((p) => ({ ...p, lat: p.lat + 0.1 })),
+    ]
+    mocks.admin.mockReturnValue(
+      database(
+        [session('walk'), session('other')],
+        [...saved, ...points('other')],
+      ),
+    )
+    const { data } = await coverage('?sessionId=walk')
+    expect(data.sessions).toHaveLength(1)
+    expect(data.sessions[0]).toMatchObject({
+      id: 'walk',
+      gap_count: 1,
+      distance_m: 10,
+    })
+    const stats = data.sessions[0]
+    expect(stats.gps_distance_m).toBeGreaterThan(11000)
+    expect(stats.coverage_distance_m).toBeLessThan(5)
+    expect(stats.coverage_distance_m + stats.gap_distance_m).toBe(
+      stats.gps_distance_m,
+    )
+    expect(
+      data.recorded_geojson.features.find(
+        (f: any) => f.properties.kind === 'samples',
+      ).geometry.coordinates,
+    ).toHaveLength(4)
+    expect(
+      data.recorded_geojson.features.find(
+        (f: any) => f.properties.kind === 'connections',
+      ).geometry.coordinates,
+    ).toHaveLength(4)
+    expect(data.geojson.features[0].geometry.coordinates).toHaveLength(2)
+  })
+
+  it('only includes the raw diagnostic trace when a track is selected', async () => {
+    mocks.admin.mockReturnValue(database([session('walk')], points('walk')))
+    expect((await coverage()).data.recorded_geojson).toBeUndefined()
+  })
+
+  it('can inspect a single GPS sample without inventing a line', async () => {
+    mocks.admin.mockReturnValue(database([session('walk')], points('walk', 1)))
+    const { data } = await coverage('?sessionId=walk')
+    expect(data.sessions[0]).toMatchObject({
+      has_route: false,
+      gps_distance_m: 0,
+      gap_count: 0,
+    })
+    expect(data.recorded_geojson.features).toHaveLength(1)
+    expect(data.recorded_geojson.features[0].geometry.type).toBe('MultiPoint')
+  })
+
+  it('reports a missing selected walk explicitly', async () => {
+    mocks.admin.mockReturnValue(database([], []))
+    expect((await coverage('?sessionId=missing')).response.status).toBe(404)
+  })
 })

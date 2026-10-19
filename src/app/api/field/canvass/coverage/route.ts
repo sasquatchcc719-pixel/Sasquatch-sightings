@@ -61,8 +61,11 @@ const MIN_SPLIT_DISTANCE_M = 150
 
 type TrackPoint = { lng: number; lat: number; t: number }
 
-function buildSegments(points: TrackPoint[]): [number, number][][] {
+function buildTrack(points: TrackPoint[]) {
   const segments: [number, number][][] = []
+  let gpsDistance = 0
+  let coverageDistance = 0
+  let gapCount = 0
   let current: [number, number][] = []
   for (let i = 0; i < points.length; i++) {
     const p = points[i]
@@ -73,18 +76,21 @@ function buildSegments(points: TrackPoint[]): [number, number][][] {
     const prev = points[i - 1]
     const meters = haversineDistance(prev.lat, prev.lng, p.lat, p.lng)
     const seconds = Math.max((p.t - prev.t) / 1000, 1)
+    gpsDistance += meters
     const tooFarToInfer = meters > MAX_BRIDGE_M
     const drove =
       meters > MIN_SPLIT_DISTANCE_M && meters / seconds > MAX_WALK_SPEED_MPS
     if (tooFarToInfer || drove) {
+      gapCount++
       if (current.length > 1) segments.push(current)
       current = [[p.lng, p.lat]]
       continue
     }
+    coverageDistance += meters
     current.push([p.lng, p.lat])
   }
   if (current.length > 1) segments.push(current)
-  return segments
+  return { segments, gpsDistance, coverageDistance, gapCount }
 }
 
 export async function GET(request: NextRequest) {
@@ -96,6 +102,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = createAdminClient()
   const days = Number(request.nextUrl.searchParams.get('days') ?? '0')
+  const sessionId = request.nextUrl.searchParams.get('sessionId')
   const now = new Date()
   const sessions: CoverageSession[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
@@ -108,6 +115,7 @@ export async function GET(request: NextRequest) {
       .order('started_at', { ascending: false })
       .order('id')
       .range(offset, offset + PAGE_SIZE - 1)
+    if (sessionId) query = query.eq('id', sessionId)
     if (days > 0) {
       query = query.gte(
         'started_at',
@@ -122,6 +130,8 @@ export async function GET(request: NextRequest) {
     if (!data || data.length < PAGE_SIZE) break
   }
   if (!sessions?.length) {
+    if (sessionId)
+      return NextResponse.json({ error: 'Walk not found' }, { status: 404 })
     return NextResponse.json({
       geojson: { type: 'FeatureCollection', features: [] },
       sessions: [],
@@ -168,27 +178,23 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const tracks = new Map<string, ReturnType<typeof buildTrack>>()
   const rows = sessions.map((s) => {
     const points = pointsBySession.get(s.id) ?? []
-    let distance = s.distance_m
-    if (s.status === 'active') {
-      distance = 0
-      for (let i = 1; i < points.length; i++) {
-        distance += haversineDistance(
-          points[i - 1].lat,
-          points[i - 1].lng,
-          points[i].lat,
-          points[i].lng,
-        )
-      }
-      distance = Math.round(distance)
-    }
+    const track = buildTrack(points)
+    tracks.set(s.id, track)
+    const gpsDistance = Math.round(track.gpsDistance)
+    const coverageDistance = Math.round(track.coverageDistance)
     return {
       ...s,
       user_name: nameByUser.get(s.user_id) ?? 'Unknown',
       color: coverageColor(s.ended_at ?? s.started_at, now),
       point_count: points.length,
-      distance_m: distance,
+      distance_m: s.status === 'active' ? gpsDistance : s.distance_m,
+      gps_distance_m: gpsDistance,
+      coverage_distance_m: coverageDistance,
+      gap_distance_m: gpsDistance - coverageDistance,
+      gap_count: track.gapCount,
     }
   })
 
@@ -197,7 +203,7 @@ export async function GET(request: NextRequest) {
     .slice()
     .reverse()
     .map((s) => {
-      const segments = buildSegments(pointsBySession.get(s.id) ?? [])
+      const segments = tracks.get(s.id)!.segments
       if (segments.length === 0) return null
       const dateLabel = new Date(s.started_at).toLocaleDateString('en-US', {
         timeZone: 'America/Denver',
@@ -224,6 +230,9 @@ export async function GET(request: NextRequest) {
     })
     .filter(Boolean)
   const mappedIds = new Set(features.map((f) => f?.properties.sessionId))
+  const recorded = sessionId
+    ? (pointsBySession.get(sessionId) ?? []).map((p) => [p.lng, p.lat])
+    : []
 
   return NextResponse.json({
     geojson: { type: 'FeatureCollection', features },
@@ -231,6 +240,33 @@ export async function GET(request: NextRequest) {
       ...s,
       has_route: mappedIds.has(s.id),
     })),
+    // Diagnostic only: these straight connections include drives and GPS
+    // gaps. They must never be added to the coverage source or shading.
+    recorded_geojson: sessionId
+      ? {
+          type: 'FeatureCollection',
+          features: [
+            ...(recorded.length > 1
+              ? [
+                  {
+                    type: 'Feature',
+                    properties: { kind: 'connections' },
+                    geometry: { type: 'LineString', coordinates: recorded },
+                  },
+                ]
+              : []),
+            ...(recorded.length
+              ? [
+                  {
+                    type: 'Feature',
+                    properties: { kind: 'samples' },
+                    geometry: { type: 'MultiPoint', coordinates: recorded },
+                  },
+                ]
+              : []),
+          ],
+        }
+      : undefined,
   })
 }
 

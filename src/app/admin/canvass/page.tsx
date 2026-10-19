@@ -6,7 +6,7 @@
  * (left tracking on during a drive, phone in a pocket at home, etc.).
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Footprints, Trash2 } from 'lucide-react'
@@ -31,12 +31,21 @@ export default function AdminCanvassPage() {
   const [sessions, setSessions] = useState<CanvassSessionRow[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const mapSectionRef = useRef<HTMLDivElement>(null)
+  const inspect = (id: string) => {
+    setFocusId(id)
+    mapSectionRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
 
   const totals = useMemo(() => {
     const byUser = new Map<string, { miles: number; walks: number }>()
     for (const s of sessions) {
       const t = byUser.get(s.user_name) ?? { miles: 0, walks: 0 }
-      t.miles += (s.distance_m ?? 0) / 1609.344
+      t.miles += (s.gps_distance_m ?? s.distance_m ?? 0) / 1609.344
       t.walks += 1
       byUser.set(s.user_name, t)
     }
@@ -73,7 +82,10 @@ export default function AdminCanvassPage() {
               key={f.days}
               type="button"
               aria-pressed={days === f.days}
-              onClick={() => setDays(f.days)}
+              onClick={() => {
+                setDays(f.days)
+                setFocusId(null)
+              }}
               className={`rounded-full px-3 py-1 text-xs ${
                 days === f.days
                   ? 'bg-primary text-primary-foreground'
@@ -86,12 +98,16 @@ export default function AdminCanvassPage() {
         </div>
       </div>
 
-      <CanvassCoverageMap
-        days={days}
-        refreshKey={refreshKey}
-        onSessions={setSessions}
-        className="relative h-[55vh] w-full overflow-hidden rounded-xl"
-      />
+      <div ref={mapSectionRef} className="scroll-mt-4">
+        <CanvassCoverageMap
+          days={days}
+          refreshKey={refreshKey}
+          onSessions={setSessions}
+          focusSessionId={focusId}
+          onClearFocus={() => setFocusId(null)}
+          className="relative h-[55vh] w-full overflow-hidden rounded-xl"
+        />
+      </div>
       <p className="text-muted-foreground text-xs">
         Coverage refreshes every 30 seconds, including walks in progress. GPS
         points are location samples, not a count of doors or hangers.
@@ -104,7 +120,7 @@ export default function AdminCanvassPage() {
               <span className="font-medium">{name}</span>{' '}
               <span className="text-muted-foreground">
                 — {t.walks} walk{t.walks === 1 ? '' : 's'}, {t.miles.toFixed(1)}{' '}
-                mi
+                GPS mi
               </span>
             </Card>
           ))}
@@ -113,34 +129,49 @@ export default function AdminCanvassPage() {
 
       <div className="space-y-2">
         {sessions.map((s) => (
-          <Card key={s.id} className="flex items-center gap-3 p-3 text-sm">
-            <span
-              className="h-3 w-3 shrink-0 rounded-full"
-              style={{ backgroundColor: s.color }}
-            />
-            <span className="font-medium">{s.user_name}</span>
-            {s.status === 'active' ? (
-              <span className="text-green-500">In progress</span>
-            ) : null}
-            <span className="text-muted-foreground">
-              {new Date(s.started_at).toLocaleString('en-US', {
-                timeZone: 'America/Denver',
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-            </span>
-            <span className="text-muted-foreground ml-auto">
-              {fmtMiles(s.distance_m)} · {s.point_count} pts
-              {!s.has_route ? ' · No walkable GPS route' : ''}
-            </span>
+          <Card
+            key={s.id}
+            className={`flex flex-row items-center gap-3 p-3 text-sm ${focusId === s.id ? 'border-amber-500/60' : ''}`}
+          >
+            <button
+              type="button"
+              onClick={() => inspect(s.id)}
+              aria-pressed={focusId === s.id}
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left"
+            >
+              <span
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className="font-medium">{s.user_name}</span>
+              {s.status === 'active' ? (
+                <span className="text-green-500">In progress</span>
+              ) : null}
+              <span className="text-muted-foreground">
+                {new Date(s.started_at).toLocaleString('en-US', {
+                  timeZone: 'America/Denver',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </span>
+              <span className="text-muted-foreground ml-auto">
+                {fmtMiles(s.gps_distance_m ?? s.distance_m)} GPS ·{' '}
+                {s.point_count} pts
+                {!s.has_route ? ' · No walkable GPS route' : ''}
+              </span>
+              <span className="text-muted-foreground w-full text-xs">
+                View track on map →
+              </span>
+            </button>
             <Button
               size="sm"
               variant="ghost"
               className="text-red-500"
               disabled={busyId === s.id}
+              aria-label="Delete canvassing session"
               onClick={() => deleteSession(s.id)}
             >
               <Trash2 className="h-4 w-4" />

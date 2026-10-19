@@ -6,7 +6,7 @@
  * what's already been hit before picking a street.
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Footprints, Loader2, MapPin } from 'lucide-react'
 import { useCanvassTracker } from '@/hooks/useCanvassTracker'
@@ -69,6 +69,7 @@ export default function CanvassPage() {
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [sessions, setSessions] = useState<CanvassSessionRow[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
+  const mapSectionRef = useRef<HTMLDivElement>(null)
   const [controlsSessionId, setControlsSessionId] = useState<string | null>(
     null,
   )
@@ -209,7 +210,10 @@ export default function CanvassPage() {
                 key={f.days}
                 type="button"
                 aria-pressed={days === f.days}
-                onClick={() => setDays(f.days)}
+                onClick={() => {
+                  setDays(f.days)
+                  setFocusId(null)
+                }}
                 className={`rounded-full px-2.5 py-1 text-xs ${
                   days === f.days
                     ? 'bg-white text-black'
@@ -221,13 +225,16 @@ export default function CanvassPage() {
             ))}
           </div>
         </div>
-        <CanvassCoverageMap
-          days={days}
-          refreshKey={refreshKey}
-          onSessions={handleSessions}
-          focusSessionId={focusId}
-          className="relative h-[55vh] w-full overflow-hidden rounded-xl"
-        />
+        <div ref={mapSectionRef} className="scroll-mt-4">
+          <CanvassCoverageMap
+            days={days}
+            refreshKey={refreshKey}
+            onSessions={handleSessions}
+            focusSessionId={focusId}
+            onClearFocus={() => setFocusId(null)}
+            className="relative h-[55vh] w-full overflow-hidden rounded-xl"
+          />
+        </div>
         <p className="text-xs text-slate-500">
           Pick streets outside the shading to avoid repeating covered areas.
           Colors show coverage age, regardless of who walked it. Saved GPS
@@ -260,7 +267,14 @@ export default function CanvassPage() {
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => setFocusId(active ? null : s.id)}
+                  onClick={() => {
+                    setFocusId(s.id)
+                    mapSectionRef.current?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    })
+                  }}
+                  aria-pressed={active}
                   className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                     active
                       ? 'border-white/40 bg-white/10'
@@ -285,9 +299,13 @@ export default function CanvassPage() {
                       {s.status === 'active' ? ' · In progress' : ''}
                       {!s.has_route ? ' · No walkable GPS route' : ''}
                     </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      View track on map →
+                    </p>
                   </div>
                   <span className="shrink-0 text-sm font-semibold text-slate-200">
-                    {fmtMiles(Number(s.distance_m ?? 0))}
+                    {fmtMiles(Number(s.gps_distance_m ?? s.distance_m ?? 0))}{' '}
+                    GPS
                   </span>
                 </button>
               )
