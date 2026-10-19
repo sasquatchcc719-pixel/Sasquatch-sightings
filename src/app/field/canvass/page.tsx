@@ -10,6 +10,7 @@ import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Footprints, Loader2, MapPin } from 'lucide-react'
 import { useCanvassTracker } from '@/hooks/useCanvassTracker'
+import { CanvassPocketMode } from '@/components/canvass/CanvassPocketMode'
 import {
   CanvassCoverageMap,
   type CanvassSessionRow,
@@ -68,6 +69,9 @@ export default function CanvassPage() {
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [sessions, setSessions] = useState<CanvassSessionRow[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
+  const [controlsSessionId, setControlsSessionId] = useState<string | null>(
+    null,
+  )
 
   // Identity-stable so the map effect doesn't refetch on every render.
   const handleSessions = useCallback((rows: CanvassSessionRow[]) => {
@@ -87,11 +91,28 @@ export default function CanvassPage() {
           setRefreshKey((k) => k + 1)
         }
       } else {
+        setControlsSessionId(null)
         await tracker.start()
       }
     } finally {
       setBusy(false)
     }
+  }
+
+  if (
+    tracker.isTracking &&
+    tracker.sessionId &&
+    controlsSessionId !== tracker.sessionId
+  ) {
+    return (
+      <CanvassPocketMode
+        duration={fmtDuration(tracker.elapsedMs)}
+        distance={fmtMiles(tracker.distanceM)}
+        accuracy={tracker.accuracy}
+        error={tracker.error}
+        onExit={() => setControlsSessionId(tracker.sessionId)}
+      />
+    )
   }
 
   return (
@@ -124,6 +145,23 @@ export default function CanvassPage() {
             'Start Canvassing'
           )}
         </button>
+
+        {!tracker.isTracking ? (
+          <p className="text-center text-xs text-slate-400">
+            Start opens pocket mode automatically. Keep this page open and your
+            phone unlocked.
+          </p>
+        ) : null}
+
+        {tracker.isTracking ? (
+          <button
+            type="button"
+            onClick={() => setControlsSessionId(null)}
+            className="w-full rounded-xl border border-white/15 bg-black px-4 py-3 text-sm text-slate-300"
+          >
+            Return to pocket mode
+          </button>
+        ) : null}
 
         {tracker.isTracking ? (
           <div className="grid grid-cols-3 gap-2 text-center">
