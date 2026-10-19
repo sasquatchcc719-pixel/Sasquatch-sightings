@@ -315,7 +315,7 @@ export function getAppointmentPlacement(
   return {
     top,
     height,
-    startLabel: minutesToTimeLabel(startMinutes),
+    startLabel: minutesToTimeLabel(parseMinutes(appointment.start_time)),
     endLabel: minutesToTimeLabel(endMinutes),
   }
 }

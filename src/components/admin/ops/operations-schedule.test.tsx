@@ -64,6 +64,8 @@ function mockSchedule(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  params.set('date', '2026-09-12')
+  params.delete('view')
   vi.stubGlobal(
     'matchMedia',
     vi.fn().mockReturnValue({
@@ -103,6 +105,108 @@ describe('early schedule hours', () => {
     expect(
       screen.getAllByRole('button', { name: /at 07:00$/ }).length,
     ).toBeGreaterThan(0)
+  })
+
+  it.each([false, true])(
+    'automatically reveals an 8 AM job with its real time (mobile: %s)',
+    async (mobile) => {
+      vi.mocked(window.matchMedia).mockReturnValue({
+        matches: mobile,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      } as unknown as MediaQueryList)
+      params.set('view', 'day')
+      mockSchedule(1, [{ ...saturdayJob, start_time: '08:00:00' }])
+      const { container } = render(<OperationsSchedule />)
+
+      await screen.findByRole('link', { name: /Saturday Customer/ })
+      expect(screen.getByText('08:00 - 11:00')).toBeVisible()
+      expect(
+        screen.getByRole('switch', { name: 'Show schedule from 7 AM' }),
+      ).toHaveAttribute('aria-checked', 'true')
+      expect(screen.getByRole('button', { name: /at 07:00$/ })).toBeVisible()
+      fireEvent.click(
+        screen.getByRole('switch', { name: 'Show schedule from 7 AM' }),
+      )
+      expect(screen.getByRole('button', { name: /at 07:00$/ })).toBeVisible()
+      expect(
+        container.querySelector('[data-appointment-id="saturday-job"]'),
+      ).toHaveStyle({ top: '90px' })
+    },
+  )
+
+  it('returns to 9 AM on a normal day and restores early hours when navigating back', async () => {
+    params.set('view', 'day')
+    mockSchedule(1, [{ ...saturdayJob, start_time: '08:00:00' }])
+    render(<OperationsSchedule />)
+    await screen.findByText('08:00 - 11:00')
+
+    fireEvent.click(
+      screen.getByText('13', { selector: 'span' }).closest('button')!,
+    )
+    expect(
+      screen.queryByRole('button', { name: /at 07:00$/ }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: 'Show schedule from 7 AM' }),
+    ).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(
+      screen.getByText('12', { selector: 'span' }).closest('button')!,
+    )
+    await screen.findByText('08:00 - 11:00')
+    expect(
+      screen.getByRole('button', { name: /at 07:00$/ }),
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    { status: 'cancelled' },
+    { is_subcontracted: true },
+    { parked_at: '2026-09-11T12:00:00Z' },
+    { appointment_date: '2026-09-11' },
+  ])(
+    'keeps 9 AM when an early job is outside the active schedule: %j',
+    async (override) => {
+      params.set('view', 'day')
+      const fetchMock = mockSchedule(1, [
+        { ...saturdayJob, start_time: '08:00:00', ...override },
+      ])
+      render(<OperationsSchedule />)
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      await screen.findByRole('button', {
+        name: 'Create on 2026-09-12 at 09:00',
+      })
+      expect(
+        screen.getByRole('switch', { name: 'Show schedule from 7 AM' }),
+      ).toHaveAttribute('aria-checked', 'false')
+    },
+  )
+
+  it('expands the week for an early job on another technician’s calendar', async () => {
+    mockSchedule(2, [
+      {
+        ...saturdayJob,
+        appointment_date: '2026-09-10',
+        start_time: '08:00:00',
+        assigned_staff_user_id: 'staff-1',
+      },
+    ])
+    render(<OperationsSchedule />)
+    expect(await screen.findByText('08:00 - 11:00')).toBeVisible()
+    expect(
+      screen.getAllByRole('button', { name: /at 07:00$/ }).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('reveals jobs even earlier than 7 AM without changing their displayed time', async () => {
+    params.set('view', 'day')
+    mockSchedule(1, [{ ...saturdayJob, start_time: '06:30:00' }])
+    render(<OperationsSchedule />)
+    expect(await screen.findByText('06:30 - 11:00')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: /at 06:00$/ }),
+    ).toBeInTheDocument()
   })
 })
 

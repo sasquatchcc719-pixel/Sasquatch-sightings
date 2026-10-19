@@ -99,15 +99,6 @@ export function OperationsSchedule() {
     return requested === 'day' || requested === 'month' ? requested : 'week'
   })
   const [showEarlyHours, setShowEarlyHours] = useState(false)
-  const gridStartHour = showEarlyHours ? EARLY_START_HOUR : STANDARD_START_HOUR
-  const hours = useMemo(
-    () =>
-      Array.from(
-        { length: END_HOUR - gridStartHour },
-        (_, index) => gridStartHour + index,
-      ),
-    [gridStartHour],
-  )
   const focusedAppointmentId = searchParams.get('appointment')
   const [anchorDate, setAnchorDate] = useState(() => {
     const dateParam = searchParams.get('date')
@@ -664,6 +655,30 @@ export function OperationsSchedule() {
     }
     return grouped
   }, [appointmentsByDate])
+
+  // Derive this from the viewed dates, so early work is visible after every
+  // load, refresh, and day change without making normal days start earlier.
+  const earliestJobHour = useMemo(() => {
+    const startMinutes = displayedDays.flatMap((day) =>
+      (gridAppointmentsByDate.get(formatDateKey(day)) || [])
+        .filter((appointment) => appointment.status !== 'cancelled')
+        .map((appointment) => parseMinutes(appointment.start_time)),
+    )
+    return Math.floor(Math.min(STANDARD_START_HOUR * 60, ...startMinutes) / 60)
+  }, [displayedDays, gridAppointmentsByDate])
+  const hasEarlyJobs = earliestJobHour < STANDARD_START_HOUR
+  const earlyHoursVisible = showEarlyHours || hasEarlyJobs
+  const gridStartHour = earlyHoursVisible
+    ? Math.min(EARLY_START_HOUR, earliestJobHour)
+    : STANDARD_START_HOUR
+  const hours = useMemo(
+    () =>
+      Array.from(
+        { length: END_HOUR - gridStartHour },
+        (_, index) => gridStartHour + index,
+      ),
+    [gridStartHour],
+  )
 
   /**
    * Subcontracted visits worth surfacing above the grid: the ones inside the
@@ -2018,27 +2033,6 @@ export function OperationsSchedule() {
             ))}
           </div>
 
-          {view !== 'month' ? (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showEarlyHours}
-              aria-label="Show schedule from 7 AM"
-              onClick={() => setShowEarlyHours((current) => !current)}
-              className="border-border ml-1 flex h-9 items-center gap-2 rounded-xl border bg-white/70 px-3 text-sm font-medium text-slate-700 transition hover:bg-white"
-            >
-              <span>7 AM start</span>
-              <span
-                aria-hidden
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${showEarlyHours ? 'bg-emerald-500' : 'bg-slate-300'}`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showEarlyHours ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
-                />
-              </span>
-            </button>
-          ) : null}
-
           <div className="flex-1" />
 
           <Button
@@ -2355,6 +2349,39 @@ export function OperationsSchedule() {
             </span>
           </div>
         </Card>
+      ) : null}
+
+      {view !== 'month' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={earlyHoursVisible}
+            aria-label="Show schedule from 7 AM"
+            aria-describedby={hasEarlyJobs ? 'early-jobs-notice' : undefined}
+            disabled={hasEarlyJobs}
+            onClick={() => setShowEarlyHours((current) => !current)}
+            className="border-border flex min-h-11 items-center gap-2 rounded-xl border bg-white/70 px-3 text-sm font-medium text-slate-700 transition hover:bg-white"
+          >
+            <span>7 AM start</span>
+            <span
+              aria-hidden
+              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${earlyHoursVisible ? 'bg-emerald-500' : 'bg-slate-300'}`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${earlyHoursVisible ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+              />
+            </span>
+          </button>
+          {hasEarlyJobs ? (
+            <span
+              id="early-jobs-notice"
+              className="text-muted-foreground text-xs"
+            >
+              Early jobs shown automatically
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       {view === 'week' && staffList.length > 1 ? (

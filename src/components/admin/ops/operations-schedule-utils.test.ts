@@ -77,6 +77,14 @@ describe('operations schedule pure helpers', () => {
     expect(early.startLabel).toBe('07:30')
   })
 
+  it('preserves the actual arrival label even when the grid clips earlier time', () => {
+    const early = getAppointmentPlacement(
+      appointment('early', '08:00:00', '10:00:00'),
+    )
+    expect(early.startLabel).toBe('08:00')
+    expect(early.top).toBe(0)
+  })
+
   it('round-trips business-hour rows with the schedule slot interval', () => {
     const rows = templatesToBusinessRows([
       {
