@@ -36,6 +36,7 @@ function database(userId = DAVID_CANVASS_USER_ID) {
     sessions,
     saved,
     failUpdate: false,
+    failRead: false,
     from(table: string) {
       let filters: ((r: any) => boolean)[] = []
       let sort: { key: string; asc: boolean }[] = []
@@ -45,6 +46,8 @@ function database(userId = DAVID_CANVASS_USER_ID) {
         insert: any[] | null = null
       const execute = () => {
         const all = table === 'canvass_sessions' ? sessions : saved
+        if (db.failRead && table === 'canvass_sessions')
+          return { data: null, error: { message: 'Database unavailable' } }
         if (values && db.failUpdate)
           return { data: null, error: { message: 'Save failed' } }
         if (insert) {
@@ -252,6 +255,14 @@ describe('David-only walking cutoff', () => {
     const data = await (await GET()).json()
     expect(data.walkingAutoStop).toBe(true)
     expect(data.lastPoint.recorded_at).toBe(point(0, 0).recordedAt)
+  })
+  it('keeps database outages retryable rather than declaring the session invalid', async () => {
+    const db = database()
+    db.failRead = true
+    mocks.admin.mockReturnValue(db)
+    expect((await upload([point(0, 0)])).status).toBe(500)
+    expect(db.saved).toHaveLength(0)
+    expect(db.sessions[0].status).toBe('active')
   })
   it('rejects unauthenticated or another staff member’s session', async () => {
     mocks.access.mockRejectedValueOnce(new Error('Unauthorized'))

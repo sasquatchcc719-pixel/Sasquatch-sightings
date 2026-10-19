@@ -45,12 +45,15 @@ export async function POST(request: NextRequest) {
   // takes stragglers for a short grace period: the client's final flush (and
   // any batch that was stashed offline) would otherwise be rejected and the
   // tail of the walk lost.
-  const { data: session } = await supabase
+  const { data: session, error: sessionError } = await supabase
     .from('canvass_sessions')
     .select('id, status, ended_at, notes')
     .eq('id', sessionId)
     .eq('user_id', access.id)
     .maybeSingle()
+  if (sessionError) {
+    return NextResponse.json({ error: sessionError.message }, { status: 500 })
+  }
   if (!session) {
     return NextResponse.json({ error: 'Invalid session' }, { status: 403 })
   }
