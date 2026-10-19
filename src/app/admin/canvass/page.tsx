@@ -16,10 +16,10 @@ import {
 } from '@/components/canvass/CanvassCoverageMap'
 
 const FILTERS = [
+  { label: 'All time', days: 0 },
   { label: 'Last 7 days', days: 7 },
   { label: 'Last 30 days', days: 30 },
   { label: 'Last 90 days', days: 90 },
-  { label: 'All time', days: 0 },
 ]
 
 function fmtMiles(m: number | null): string {
@@ -27,7 +27,7 @@ function fmtMiles(m: number | null): string {
 }
 
 export default function AdminCanvassPage() {
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(0)
   const [sessions, setSessions] = useState<CanvassSessionRow[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -72,6 +72,7 @@ export default function AdminCanvassPage() {
             <button
               key={f.days}
               type="button"
+              aria-pressed={days === f.days}
               onClick={() => setDays(f.days)}
               className={`rounded-full px-3 py-1 text-xs ${
                 days === f.days
@@ -91,6 +92,10 @@ export default function AdminCanvassPage() {
         onSessions={setSessions}
         className="relative h-[55vh] w-full overflow-hidden rounded-xl"
       />
+      <p className="text-muted-foreground text-xs">
+        Coverage refreshes every 30 seconds, including walks in progress. GPS
+        points are location samples, not a count of doors or hangers.
+      </p>
 
       {totals.length > 0 ? (
         <div className="flex flex-wrap gap-2">
@@ -114,6 +119,9 @@ export default function AdminCanvassPage() {
               style={{ backgroundColor: s.color }}
             />
             <span className="font-medium">{s.user_name}</span>
+            {s.status === 'active' ? (
+              <span className="text-green-500">In progress</span>
+            ) : null}
             <span className="text-muted-foreground">
               {new Date(s.started_at).toLocaleString('en-US', {
                 timeZone: 'America/Denver',
@@ -126,6 +134,7 @@ export default function AdminCanvassPage() {
             </span>
             <span className="text-muted-foreground ml-auto">
               {fmtMiles(s.distance_m)} · {s.point_count} pts
+              {!s.has_route ? ' · No walkable GPS route' : ''}
             </span>
             <Button
               size="sm"
@@ -140,8 +149,8 @@ export default function AdminCanvassPage() {
         ))}
         {sessions.length === 0 ? (
           <Card className="text-muted-foreground p-6 text-center text-sm">
-            No canvassing sessions in this window yet. Walks appear here as soon
-            as someone hits Start Canvassing in the field view.
+            No canvassing sessions in this window yet. Routes appear as GPS
+            points are saved from the field view.
           </Card>
         ) : null}
       </div>

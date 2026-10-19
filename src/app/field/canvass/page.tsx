@@ -16,10 +16,10 @@ import {
 } from '@/components/canvass/CanvassCoverageMap'
 
 const FILTERS = [
+  { label: 'All time', days: 0 },
   { label: '7 days', days: 7 },
   { label: '30 days', days: 30 },
   { label: '90 days', days: 90 },
-  { label: 'All time', days: 0 },
 ]
 
 function fmtDuration(ms: number): string {
@@ -63,7 +63,7 @@ function fmtSpan(startIso: string, endIso: string | null): string {
 export default function CanvassPage() {
   const tracker = useCanvassTracker()
   const [busy, setBusy] = useState(false)
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(0)
   const [refreshKey, setRefreshKey] = useState(0)
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [sessions, setSessions] = useState<CanvassSessionRow[]>([])
@@ -170,6 +170,7 @@ export default function CanvassPage() {
               <button
                 key={f.days}
                 type="button"
+                aria-pressed={days === f.days}
                 onClick={() => setDays(f.days)}
                 className={`rounded-full px-2.5 py-1 text-xs ${
                   days === f.days
@@ -190,9 +191,10 @@ export default function CanvassPage() {
           className="relative h-[55vh] w-full overflow-hidden rounded-xl"
         />
         <p className="text-xs text-slate-500">
-          Shaded areas were already canvassed (label shows date + who walked
-          it). Pick streets outside the shading — old faded neighborhoods are
-          due for fresh door hangers.
+          Pick streets outside the shading to avoid repeating covered areas.
+          Colors show coverage age, regardless of who walked it. Saved GPS
+          updates every 30 seconds, including walks in progress. Points are
+          location samples, not a count of doors or hangers.
         </p>
 
         <div className="flex items-center justify-between pt-1">
@@ -242,6 +244,8 @@ export default function CanvassPage() {
                     <p className="text-xs text-slate-400">
                       {s.user_name} · {fmtSpan(s.started_at, s.ended_at)} ·{' '}
                       {s.point_count} pts
+                      {s.status === 'active' ? ' · In progress' : ''}
+                      {!s.has_route ? ' · No walkable GPS route' : ''}
                     </p>
                   </div>
                   <span className="shrink-0 text-sm font-semibold text-slate-200">
