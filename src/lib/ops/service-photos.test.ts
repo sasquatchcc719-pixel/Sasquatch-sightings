@@ -67,8 +67,13 @@ describe('residential room-size photos', () => {
     expect(
       getServicePhoto({ name: 'Step Carpet Cleaning (Per Step Charge)' })?.src,
     ).toContain('stair-carpet')
+    expect(
+      getServicePhoto({
+        name: 'Urine Eliminator Treatment',
+        category: 'Carpet Cleaning',
+      })?.src,
+    ).toBe('/images/services/carpet-deodorizer.jpeg')
     for (const name of [
-      'Urine Eliminator Treatment',
       'Pre-Vacuuming',
       'Oversized Room Carpet Cleaning (800+ sqft)',
     ]) {

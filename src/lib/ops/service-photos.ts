@@ -27,6 +27,11 @@ const WATER_TREATMENT_PHOTO = {
 }
 
 const SERVICE_PHOTOS: Array<ServicePhotoData & { matches: RegExp }> = [
+  {
+    matches: /\burine[\s-]+eliminator\b/i,
+    ...DEODORIZER_PHOTO,
+    alt: 'Urine eliminator treatment sprayer',
+  },
   { matches: /deodori[sz]/i, ...DEODORIZER_PHOTO },
   {
     matches: /low[\s-]+moisture|encapsulation|\blvm\b|\bvlm\b|bonnet/i,
