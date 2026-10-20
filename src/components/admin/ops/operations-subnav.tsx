@@ -142,7 +142,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/admin/operations/dispatch',
     label: 'Live Dispatch',
-    description: 'Real-time map of clocked-in technicians',
+    description: 'Selected-day jobs, vehicle locations, and driving archive',
     icon: MapPin,
   },
   {

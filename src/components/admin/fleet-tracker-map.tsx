@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
+import type { DispatchJob } from '@/lib/ops/daily-dispatch'
+
+const NO_JOBS: DispatchJob[] = []
 import {
   FleetTracker,
   TrackerHistoryPoint,
@@ -18,6 +21,9 @@ export default function FleetTrackerMap({
   points,
   focusRequest,
   onSelect,
+  jobs = NO_JOBS,
+  selectedJobId = '',
+  onSelectJob,
 }: {
   now: number
   historyKey: string
@@ -26,10 +32,17 @@ export default function FleetTrackerMap({
   points: TrackerHistoryPoint[]
   focusRequest: number
   onSelect: (id: string) => void
+  jobs?: DispatchJob[]
+  selectedJobId?: string
+  onSelectJob?: (id: string) => void
 }) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const markers = useRef(new Map<string, mapboxgl.Marker>())
+  const jobMarkers = useRef(new Map<string, mapboxgl.Marker>())
+  const framedJobs = useRef('')
+  const onJobRef = useRef(onSelectJob)
+  onJobRef.current = onSelectJob
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
   const centered = useRef(false)
@@ -60,6 +73,7 @@ export default function FleetTrackerMap({
       return
     }
     const activeMarkers = markers.current
+    const activeJobs = jobMarkers.current
     mapRef.current = map
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.on('load', () => {
@@ -88,6 +102,8 @@ export default function FleetTrackerMap({
     return () => {
       for (const marker of activeMarkers.values()) marker.remove()
       activeMarkers.clear()
+      for (const marker of activeJobs.values()) marker.remove()
+      activeJobs.clear()
       map.remove()
       mapRef.current = null
     }
@@ -138,7 +154,12 @@ export default function FleetTrackerMap({
       }
       animations.push(requestAnimationFrame(animate))
     }
-    if (!centered.current && positioned.length) {
+    if (
+      !centered.current &&
+      positioned.length &&
+      !jobs.some((job) => job.location) &&
+      !points.length
+    ) {
       map.jumpTo({
         center: [positioned[0].longitude!, positioned[0].latitude!],
         zoom: 15,
@@ -146,7 +167,7 @@ export default function FleetTrackerMap({
       centered.current = true
     }
     return () => animations.forEach(cancelAnimationFrame)
-  }, [trackers, loaded])
+  }, [trackers, loaded, jobs, points.length])
 
   useEffect(() => {
     for (const tracker of trackers) {
@@ -175,6 +196,59 @@ export default function FleetTrackerMap({
   }, [focusRequest, selectedId])
 
   useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    for (const marker of jobMarkers.current.values()) marker.remove()
+    jobMarkers.current.clear()
+    const bounds = new mapboxgl.LngLatBounds()
+    jobs.forEach((job, index) => {
+      if (!job.location) return
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.textContent = String(index + 1)
+      element.style.cssText =
+        'width:36px;height:36px;border:2px solid white;border-radius:10px;background:#0284c7;color:white;font:700 14px system-ui;box-shadow:0 3px 16px #0008;cursor:pointer'
+      if (job.status === 'completed') element.style.background = '#059669'
+      if (job.id === selectedJobId) element.style.outline = '3px solid #67e8f9'
+      element.title = `${index + 1}. ${job.name} · ${job.start.slice(0, 5)} · ${job.staffName}`
+      element.setAttribute('aria-label', element.title)
+      element.addEventListener('click', () => onJobRef.current?.(job.id))
+      jobMarkers.current.set(
+        job.id,
+        new mapboxgl.Marker({ element })
+          .setLngLat([job.location.lng, job.location.lat])
+          .addTo(map),
+      )
+      bounds.extend([job.location.lng, job.location.lat])
+    })
+    const frameKey =
+      historyKey +
+      jobs
+        .map((job) => `${job.id}:${job.location?.lat}:${job.location?.lng}`)
+        .join('|')
+    if (
+      !points.length &&
+      !bounds.isEmpty() &&
+      framedJobs.current !== frameKey
+    ) {
+      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 600 })
+      framedJobs.current = frameKey
+    }
+  }, [jobs, loaded, selectedJobId, historyKey, points.length])
+
+  useEffect(() => {
+    const job = jobs.find((item) => item.id === selectedJobId)
+    if (job?.location && loaded)
+      mapRef.current?.flyTo({
+        center: [job.location.lng, job.location.lat],
+        zoom: 15,
+        duration: 500,
+      })
+    // New live positions must not pull focus away from the selected job.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId, loaded])
+
+  useEffect(() => {
     const source = mapRef.current?.getSource('vehicle-history') as
       | mapboxgl.GeoJSONSource
       | undefined
@@ -186,6 +260,7 @@ export default function FleetTrackerMap({
         geometry: { type: 'LineString', coordinates },
       })),
     })
+    if (!points.length) framedHistory.current = ''
     if (loaded && points.length && framedHistory.current !== historyKey) {
       const bounds = new mapboxgl.LngLatBounds()
       for (const point of points)

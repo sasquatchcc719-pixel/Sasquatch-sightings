@@ -1,28 +1,32 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Battery, Radio, Satellite, Truck, Navigation } from 'lucide-react'
+import { MapPin, Navigation, Truck } from 'lucide-react'
 import {
   FleetTracker,
   TrackerHistoryPoint,
   trackerStatus,
 } from '@/lib/fleet-tracking'
 import {
-  mountainDateKey,
-  mountainLocalDateTimeToIso,
-} from '@/lib/ops/timesheet-pay'
+  dispatchDayBounds,
+  driveIntervals,
+  isDispatchDay,
+  type DailyDispatch,
+} from '@/lib/ops/daily-dispatch'
+import { mountainDateKey } from '@/lib/ops/timesheet-pay'
 
 const TrackerMap = dynamic(() => import('./fleet-tracker-map'), {
   ssr: false,
   loading: () => (
     <div className="flex h-[55vh] items-center justify-center text-slate-400">
-      Loading vehicle map…
+      Loading map…
     </div>
   ),
 })
+const NO_POINTS: TrackerHistoryPoint[] = []
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: 'no-store' })
@@ -30,262 +34,370 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(
       response.status === 401
         ? 'Sign in with an owner, admin, or dispatcher account.'
-        : 'Unable to refresh tracking. Retrying…',
+        : 'Unable to refresh this view. Try again shortly.',
     )
   return response.json()
 }
-
-function timeLabel(value: string | null) {
-  return value
-    ? new Date(value).toLocaleString('en-US', {
-        timeZone: 'America/Denver',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    : 'Not received yet'
+function clock(value: string) {
+  return new Date(value).toLocaleTimeString('en-US', {
+    timeZone: 'America/Denver',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+function jobTime(value: string) {
+  return new Date(`2000-01-01T${value}`).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export default function FleetTrackerDashboard({
   embedded = false,
+  day: calendarDay,
+  staffFilter = null,
 }: {
   embedded?: boolean
+  day?: string
+  staffFilter?: string | null
 }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
+  const [chosenDay, setChosenDay] = useState(() => mountainDateKey(new Date()))
+  const day = calendarDay ?? chosenDay
+  const today = mountainDateKey(new Date(now))
+  const isToday = day === today,
+    future = day > today
+  const bounds = dispatchDayBounds(day)
   const [selectedId, setSelectedId] = useState('')
-  const [day, setDay] = useState(() => mountainDateKey(new Date()))
+  const [selectedJobId, setSelectedJobId] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
+  const [selectedDrive, setSelectedDrive] = useState<number | null>(null)
   const [focusRequest, setFocusRequest] = useState(0)
+  const schedule = useQuery({
+    queryKey: ['dispatch-day', day],
+    queryFn: () =>
+      fetchJson<DailyDispatch>(
+        `/api/admin/fleet/daily-map?${new URLSearchParams({ date: day })}`,
+      ),
+    enabled: !!bounds,
+    refetchInterval: 60000,
+  })
+  const jobs = useMemo(
+    () =>
+      (schedule.data?.jobs ?? []).filter(
+        (job) =>
+          !staffFilter ||
+          job.staffId === staffFilter ||
+          (!job.staffId && staffFilter === schedule.data?.defaultStaffId),
+      ),
+    [schedule.data, staffFilter],
+  )
   const live = useQuery({
     queryKey: ['fleet-trackers'],
     queryFn: () =>
       fetchJson<{ trackers: FleetTracker[] }>('/api/admin/fleet/trackers'),
-    refetchInterval: 2000,
+    enabled: !future,
+    refetchInterval: isToday ? 2000 : false,
   })
   const trackers = live.data?.trackers ?? []
   const selected =
     trackers.find((tracker) => tracker.id === selectedId) ?? trackers[0]
-  const nextDay = new Date(`${day}T12:00:00Z`)
-  nextDay.setUTCDate(nextDay.getUTCDate() + 1)
-  const start = mountainLocalDateTimeToIso(day, '00:00')
-  const end = mountainLocalDateTimeToIso(
-    nextDay.toISOString().slice(0, 10),
-    '00:00',
-  )
+  const withinArchive =
+    day >= mountainDateKey(new Date(now - 29 * 86400000)) && !future
   const history = useQuery({
     queryKey: ['fleet-tracker-history', selected?.id, day],
     queryFn: () =>
       fetchJson<{ points: TrackerHistoryPoint[] }>(
-        `/api/admin/fleet/trackers/${selected!.id}/history?${new URLSearchParams({ start: start!, end: end! })}`,
+        `/api/admin/fleet/trackers/${selected!.id}/history?${new URLSearchParams(bounds!)}`,
       ),
-    enabled: !!selected && !!start && !!end,
-    refetchInterval: day === mountainDateKey(new Date()) ? 15_000 : false,
+    enabled: showHistory && !!selected && !!bounds && withinArchive,
+    refetchInterval: showHistory && isToday ? 15000 : false,
   })
-  const connected = trackers.filter(
-    (tracker) =>
-      tracker.last_seen_at &&
-      tracker.enabled &&
-      now - Date.parse(tracker.last_seen_at) <= 45_000,
-  ).length
-  const earliestDay = mountainDateKey(new Date(now - 29 * 86400_000))
+  const archivePoints = history.data?.points ?? NO_POINTS
+  const drives = useMemo(() => driveIntervals(archivePoints), [archivePoints])
+  const mapPoints =
+    showHistory && !future && withinArchive
+      ? selectedDrive === null
+        ? archivePoints
+        : (drives[selectedDrive]?.points ?? NO_POINTS)
+      : NO_POINTS
+  const dateLabel = isDispatchDay(day)
+    ? new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', {
+        timeZone: 'UTC',
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : day
+  const mapped = jobs.filter((job) => job.location).length
+  const selectedJob = jobs.find((job) => job.id === selectedJobId)
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
-      {!embedded && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="mb-1 text-xs font-semibold tracking-[0.2em] text-emerald-300 uppercase">
-              Sasquatch operations
-            </p>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <Truck className="h-6 w-6 text-emerald-400" /> Live Dispatch
-            </h1>
-            <p className="mt-2 text-sm text-slate-400">
-              Vehicle locations and 30 days of movement history.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <div className="mx-auto max-w-7xl space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          {!embedded && (
+            <h2 className="text-xl font-semibold text-white">Live Dispatch</h2>
+          )}
+          <p className="font-medium text-slate-100">{dateLabel}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {isToday
+              ? 'Today’s jobs and vehicle locations'
+              : future
+                ? 'Scheduled jobs · planning view'
+                : 'Scheduled jobs · past day'}{' '}
+            · Mountain Time
+          </p>
+        </div>
+        {!embedded && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label="Dispatch date"
+              type="date"
+              value={day}
+              onChange={(event) => {
+                if (isDispatchDay(event.target.value)) {
+                  setChosenDay(event.target.value)
+                  setShowHistory(false)
+                  setSelectedDrive(null)
+                  setSelectedJobId('')
+                }
+              }}
+              className="min-h-11 rounded-lg border border-white/20 bg-slate-900 px-3 text-white [color-scheme:dark]"
+            />
             <Link
-              href="/admin/operations"
-              className="rounded-xl border border-white/15 px-4 py-3 text-sm hover:bg-white/10"
+              href={`/admin/operations?date=${day}&view=day`}
+              className="rounded-lg border border-white/15 px-3 py-3 text-sm"
             >
               Calendar
             </Link>
-            <Link
-              href="/admin/fleet"
-              className="rounded-xl border border-white/15 px-4 py-3 text-sm hover:bg-white/10"
-            >
-              Fleet &amp; maintenance
-            </Link>
           </div>
-        </div>
-      )}
-      <div className="flex flex-wrap gap-3 text-sm">
-        <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-emerald-200">
-          <Radio className="mr-2 inline h-4 w-4" />
-          {connected} connected
-        </span>
-        <span className="rounded-full border border-white/10 px-4 py-2 text-slate-300">
-          {trackers.length} registered
-        </span>
-        <span className="self-center text-xs text-slate-400">
-          Refreshes every 2 seconds while this page is open
-        </span>
+        )}
       </div>
-      {live.error && (
+      <div className="flex flex-wrap gap-2 text-sm">
+        <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-sky-200">
+          {jobs.length} {jobs.length === 1 ? 'job' : 'jobs'} · {mapped} mapped
+        </span>
+        {isToday && (
+          <span className="self-center text-xs text-slate-400">
+            Vehicle positions refresh every 2 seconds
+          </span>
+        )}
+        {staffFilter && (
+          <span className="self-center text-xs text-slate-400">
+            Calendar technician filter applied
+          </span>
+        )}
+      </div>
+      {schedule.error && (
         <p
           role="alert"
-          className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200"
+          className="rounded-xl bg-red-950/50 p-3 text-sm text-red-200"
         >
-          {live.error.message} Existing positions may be out of date.
+          {schedule.error.message}
         </p>
       )}
-      <div
-        className={
-          embedded ? 'space-y-4' : 'grid gap-4 lg:grid-cols-[300px_1fr]'
-        }
-      >
-        <div
-          className={embedded ? 'flex gap-3 overflow-x-auto pb-1' : 'space-y-3'}
+      {isToday && live.error && (
+        <p
+          role="alert"
+          className="rounded-xl bg-red-950/50 p-3 text-sm text-red-200"
         >
-          {live.isPending && (
-            <p className="p-4 text-slate-400">Loading trackers…</p>
-          )}
-          {!live.isPending && !trackers.length && (
-            <p className="rounded-2xl border border-white/10 p-5 text-slate-300">
-              No trackers registered yet.
-            </p>
-          )}
-          {trackers.map((tracker) => {
-            const status = trackerStatus(tracker, now)
-            const online = ![
-              'Offline',
-              'Disabled',
-              'Waiting for first connection',
-            ].includes(status)
-            return (
-              <button
-                key={tracker.id}
-                onClick={() => {
-                  setSelectedId(tracker.id)
-                  setFocusRequest((value) => value + 1)
-                }}
-                aria-pressed={selected?.id === tracker.id}
-                className={`${embedded ? 'min-w-48 shrink-0 p-3' : 'w-full p-4'} rounded-2xl border text-left transition-colors ${selected?.id === tracker.id ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-white/10 bg-slate-950/40 hover:bg-white/5'}`}
-              >
-                <span className="flex items-center justify-between gap-2 font-semibold text-white">
-                  <span className="break-words">{tracker.name}</span>
-                  <span
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${online ? 'bg-emerald-400' : 'bg-slate-500'}`}
-                  />
-                </span>
-                <span className="mt-2 block text-sm text-slate-300">
-                  {status}
-                </span>
-                {!embedded && (
-                  <>
-                    <span className="mt-4 flex flex-wrap gap-3 text-xs text-slate-400">
-                      <span>
-                        <Battery className="mr-1 inline h-4 w-4" />
-                        {tracker.battery_v === null
-                          ? 'Battery unavailable'
-                          : `${tracker.battery_v.toFixed(2)} V`}
-                      </span>
-                      <span>
-                        <Satellite className="mr-1 inline h-4 w-4" />
-                        {tracker.satellites === null
-                          ? 'No satellite count'
-                          : `${tracker.satellites} satellites`}
-                      </span>
-                    </span>
-                    <span className="mt-3 block text-xs leading-5 text-slate-400">
-                      Last contact: {timeLabel(tracker.last_seen_at)}
-                    </span>
-                  </>
-                )}
-              </button>
-            )
-          })}
+          Vehicle positions could not refresh; displayed locations may be old.
+        </p>
+      )}
+      {isToday && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {trackers.map((tracker) => (
+            <button
+              key={tracker.id}
+              onClick={() => {
+                setSelectedId(tracker.id)
+                setFocusRequest((value) => value + 1)
+              }}
+              aria-pressed={tracker.id === selected?.id}
+              className="min-h-11 shrink-0 rounded-xl border border-white/15 bg-slate-950/50 px-3 py-2 text-left text-sm text-white"
+            >
+              <Truck className="mr-2 inline h-4 w-4 text-emerald-400" />
+              {tracker.name}
+              <span className="ml-3 text-xs text-slate-400">
+                {trackerStatus(tracker, now)}
+              </span>
+            </button>
+          ))}
         </div>
-        <div className="min-w-0 space-y-3">
-          <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-950">
-            <TrackerMap
-              now={now}
-              historyKey={`${selected?.id ?? ''}:${day}`}
-              trackers={trackers}
-              selectedId={selected?.id ?? ''}
-              points={history.data?.points ?? []}
-              focusRequest={focusRequest}
-              onSelect={setSelectedId}
-            />
-            {selected && selected.latitude === null && (
-              <div className="pointer-events-none absolute right-3 bottom-3 left-3 rounded-xl border border-white/10 bg-slate-950/90 p-4 text-sm text-slate-200">
-                <Satellite className="mr-2 inline h-4 w-4 text-amber-300" />
-                Waiting for the first GPS fix. Take the antenna outdoors with an
-                internet connection.
-              </div>
+      )}
+      <div className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950">
+        <TrackerMap
+          key={day}
+          now={now}
+          historyKey={`${day}:${showHistory}:${selected?.id}:${selectedDrive}`}
+          trackers={isToday ? trackers : []}
+          selectedId={selected?.id ?? ''}
+          points={mapPoints}
+          focusRequest={focusRequest}
+          onSelect={setSelectedId}
+          jobs={jobs}
+          selectedJobId={selectedJobId}
+          onSelectJob={setSelectedJobId}
+        />
+      </div>
+      <p className="text-xs text-slate-400">
+        Numbered pins are scheduled jobs.{' '}
+        {isToday
+          ? 'Round markers are vehicles; offline markers show their last reported location.'
+          : 'Current vehicle locations are hidden on this date.'}{' '}
+        Driving tracks appear only when you open the archive.
+      </p>
+      <section aria-label="Jobs for selected day" className="space-y-2">
+        {schedule.isPending && (
+          <p className="p-3 text-sm text-slate-400">Loading this day’s jobs…</p>
+        )}
+        {!schedule.isPending && !schedule.error && !jobs.length && (
+          <p className="rounded-xl border border-white/10 p-4 text-sm text-slate-300">
+            No scheduled jobs for this day.
+          </p>
+        )}
+        {jobs.map((job, index) => (
+          <div
+            key={job.id}
+            className={`rounded-xl border p-3 ${selectedJob?.id === job.id ? 'border-cyan-300/60 bg-sky-950/40' : 'border-white/10 bg-slate-950/40'}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <Link
+                href={job.href}
+                className="min-h-11 min-w-0 flex-1 text-sm text-white"
+              >
+                <span className="mr-2 font-semibold text-sky-300">
+                  {index + 1}
+                </span>
+                <span className="font-medium">{job.name}</span>
+                <span className="mt-1 block text-xs text-slate-300">
+                  {jobTime(job.start)} – {jobTime(job.end)} · {job.staffName}
+                </span>
+              </Link>
+              {job.location && (
+                <button
+                  aria-label={`Locate ${job.name}`}
+                  onClick={() => setSelectedJobId(job.id)}
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-white/15 text-sky-300"
+                >
+                  <MapPin className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <p className="text-xs leading-5 text-slate-400">
+              {job.address || 'No service address saved'}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {job.status.replaceAll('_', ' ')}
+              {!job.location && (
+                <span className="ml-2 text-amber-300">
+                  Location needs verification · no pin placed
+                </span>
+              )}
+            </p>
+          </div>
+        ))}
+      </section>
+      <details
+        open={showHistory}
+        onToggle={(event) => {
+          setShowHistory(event.currentTarget.open)
+          if (!event.currentTarget.open) setSelectedDrive(null)
+        }}
+        className="rounded-xl border border-white/15 bg-slate-950/40 p-4"
+      >
+        <summary className="min-h-11 cursor-pointer text-sm font-semibold text-slate-200">
+          Driving history · {day}
+        </summary>
+        {showHistory && (
+          <div className="mt-2 space-y-3">
+            <p className="text-xs leading-5 text-slate-400">
+              GPS history is retained for 30 days. Motion intervals show
+              observed driving times, not verified job arrivals. Signal gaps
+              remain disconnected.
+            </p>
+            {future ? (
+              <p className="text-sm text-slate-300">
+                Driving history is available after travel is recorded.
+              </p>
+            ) : !withinArchive ? (
+              <p className="text-sm text-slate-300">
+                This day is outside the 30-day GPS archive.
+              </p>
+            ) : (
+              <>
+                <label className="block text-sm text-slate-300">
+                  Vehicle
+                  <select
+                    aria-label="History vehicle"
+                    value={selected?.id ?? ''}
+                    onChange={(event) => {
+                      setSelectedId(event.target.value)
+                      setSelectedDrive(null)
+                    }}
+                    className="mt-1 block min-h-11 w-full rounded-lg border border-white/20 bg-slate-900 px-3 text-white"
+                  >
+                    {trackers.map((tracker) => (
+                      <option key={tracker.id} value={tracker.id}>
+                        {tracker.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {history.error ? (
+                  <p role="alert" className="text-sm text-amber-200">
+                    History could not load. Try again shortly.
+                  </p>
+                ) : history.isPending && selected ? (
+                  <p className="text-sm text-slate-400">
+                    Loading recorded travel…
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    {archivePoints.length
+                      ? `${archivePoints.length.toLocaleString()} recorded GPS samples · ${drives.length} motion interval${drives.length === 1 ? '' : 's'}`
+                      : 'No recorded travel for this vehicle on this day.'}
+                  </p>
+                )}
+                {drives.length > 0 && (
+                  <button
+                    onClick={() => setSelectedDrive(null)}
+                    className="min-h-11 rounded-lg border border-white/15 px-3 text-sm text-white"
+                  >
+                    Show full day’s recorded travel
+                  </button>
+                )}
+                {drives.map((drive, index) => (
+                  <button
+                    key={drive.start}
+                    aria-pressed={selectedDrive === index}
+                    onClick={() => setSelectedDrive(index)}
+                    className="flex min-h-11 w-full items-center justify-between rounded-lg border border-white/15 px-3 py-2 text-sm text-white"
+                  >
+                    <span>
+                      <Navigation className="mr-2 inline h-4 w-4 text-emerald-400" />
+                      {clock(drive.start)} – {clock(drive.end)}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {Math.round(
+                        (Date.parse(drive.end) - Date.parse(drive.start)) /
+                          60000,
+                      )}{' '}
+                      min observed
+                    </span>
+                  </button>
+                ))}
+              </>
             )}
           </div>
-          {selected && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-4">
-              <div className="text-sm">
-                <p className="font-medium text-slate-200">{selected.name}</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Last GPS fix: {timeLabel(selected.gps_at)}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-lg font-semibold tabular-nums">
-                  {trackerStatus(selected, now) === 'Moving' ||
-                  trackerStatus(selected, now) === 'Parked'
-                    ? `${Math.round((selected.speed_mps ?? 0) * 2.23694)} mph`
-                    : '— mph'}
-                </span>
-                <button
-                  onClick={() => setFocusRequest((value) => value + 1)}
-                  disabled={selected.latitude === null}
-                  className="flex min-h-11 items-center gap-2 rounded-lg border border-white/15 px-3 text-sm disabled:opacity-40"
-                >
-                  <Navigation className="h-4 w-4" />
-                  Locate
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 p-4">
-            <label className="text-sm text-slate-200">
-              Movement history (Mountain Time)
-              <input
-                aria-label="History date"
-                type="date"
-                value={day}
-                min={earliestDay}
-                max={mountainDateKey(new Date())}
-                onChange={(event) => {
-                  if (event.target.value) setDay(event.target.value)
-                }}
-                className="mt-2 block min-h-11 rounded-lg border border-white/20 bg-slate-900 px-3 text-white [color-scheme:dark]"
-              />
-            </label>
-            <p className="max-w-xs text-xs leading-5 text-slate-400">
-              {history.error
-                ? 'History could not refresh. Try again shortly.'
-                : history.isFetching
-                  ? 'Refreshing history…'
-                  : history.data?.points.length
-                    ? `${history.data.points.length.toLocaleString()} GPS samples shown`
-                    : 'No recorded locations for this day.'}
-              <br />
-              Gaps over 90 seconds are left disconnected.
-            </p>
-          </div>
-        </div>
-      </div>
+        )}
+      </details>
     </div>
   )
 }

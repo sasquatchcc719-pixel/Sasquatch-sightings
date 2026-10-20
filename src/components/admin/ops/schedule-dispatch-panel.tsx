@@ -11,7 +11,13 @@ const VehicleMap = dynamic(() => import('../fleet-tracker-dashboard'), {
   loading: () => <p className="p-6 text-slate-300">Loading vehicle map…</p>,
 })
 
-export function ScheduleDispatchPanel() {
+export function ScheduleDispatchPanel({
+  day,
+  staffFilter = null,
+}: {
+  day: string
+  staffFilter?: string | null
+}) {
   const [open, setOpen] = useState(false)
   const [visible, setVisible] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -25,6 +31,8 @@ export function ScheduleDispatchPanel() {
     let closeTimer: ReturnType<typeof setTimeout> | undefined
     if (open) {
       panel.showModal()
+      const content = panel.querySelector<HTMLElement>('[data-dispatch-scroll]')
+      if (content) content.scrollTop = 0
       firstFrame = requestAnimationFrame(() => {
         secondFrame = requestAnimationFrame(() => setVisible(true))
       })
@@ -115,8 +123,18 @@ export function ScheduleDispatchPanel() {
               </Button>
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-white sm:p-5">
-            {mounted ? <VehicleMap embedded /> : null}
+          <div
+            data-dispatch-scroll
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-white sm:p-5"
+          >
+            {mounted ? (
+              <VehicleMap
+                key={`${day}:${staffFilter}`}
+                embedded
+                day={day}
+                staffFilter={staffFilter}
+              />
+            ) : null}
           </div>
         </div>
       </dialog>

@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe('calendar dispatch panel', () => {
   it('loads maps only when opened and removes them after closing', async () => {
-    render(<ScheduleDispatchPanel />)
+    render(<ScheduleDispatchPanel day="2026-10-19" />)
     expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()
     const trigger = screen.getByRole('button', { name: 'Map' })
     fireEvent.click(trigger)
@@ -41,15 +41,21 @@ describe('calendar dispatch panel', () => {
     ).toBeVisible()
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Loaded map')).toBeVisible()
+    const content = screen
+      .getByRole('dialog')
+      .querySelector<HTMLElement>('[data-dispatch-scroll]')!
+    content.scrollTop = 400
     fireEvent.click(screen.getByRole('button', { name: 'Close dispatch map' }))
     await waitFor(() =>
       expect(screen.queryByText('Loaded map')).not.toBeInTheDocument(),
     )
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(trigger)
+    expect(content.scrollTop).toBe(0)
   })
 
   it('opens one dispatch map and handles native Escape without navigating away', async () => {
-    render(<ScheduleDispatchPanel />)
+    render(<ScheduleDispatchPanel day="2026-10-19" />)
     fireEvent.click(screen.getByRole('button', { name: 'Map' }))
     const panel = await screen.findByRole('dialog')
     expect(

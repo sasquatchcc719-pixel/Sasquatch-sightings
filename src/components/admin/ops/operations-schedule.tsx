@@ -2035,7 +2035,10 @@ export function OperationsSchedule() {
             ))}
           </div>
 
-          <ScheduleDispatchPanel />
+          <ScheduleDispatchPanel
+            day={selectedDateKey}
+            staffFilter={staffFilter}
+          />
 
           <div className="flex-1" />
 
