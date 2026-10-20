@@ -6,18 +6,10 @@ import { NfcBookingWidget } from '@/components/nfc/NfcBookingWidget'
 import { loadPublicTomorrowFillOffer } from '@/lib/ops/tomorrow-fill'
 
 export const metadata: Metadata = {
-  title: 'Tomorrow Fill Offer | Sasquatch Carpet Cleaning',
+  title: 'Your $35 Offer | Sasquatch Carpet Cleaning',
   description:
     'A private returning-customer offer from Sasquatch Carpet Cleaning.',
   robots: { index: false, follow: false },
-}
-
-function displayDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
 }
 
 function OfferUnavailable() {
@@ -41,8 +33,8 @@ function OfferUnavailable() {
             This opening has been claimed
           </h1>
           <p className="mx-auto mt-4 max-w-md leading-7 text-white/65">
-            The limited Tomorrow Fill offer is no longer available, but we would
-            still love to get your home back on the schedule.
+            This limited returning-customer offer is no longer available, but we
+            would still love to get your home back on the schedule.
           </p>
           <Link
             href="/book"
@@ -106,17 +98,15 @@ export default async function TomorrowFillPage({
           <div className="grid gap-8 lg:grid-cols-[1.25fr_.75fr] lg:items-center">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-bold tracking-wider text-amber-200 uppercase">
-                <Sparkles className="h-3.5 w-3.5" /> A route opened near you
+                <Sparkles className="h-3.5 w-3.5" /> Openings on our schedule
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-black tracking-[-0.035em] sm:text-5xl">
-                We can clean your home{' '}
-                <span className="text-emerald-300">
-                  {displayDate(offer.targetDate)}
-                </span>
+                Find a time for your next{' '}
+                <span className="text-emerald-300">service</span>
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
-                Because our crew is already in your ZIP code, we saved this
-                private opening for a small group of returning customers.
+                Choose carpet, upholstery, tile, rugs, or another available
+                service, then pick a date that works for you.
               </p>
             </div>
             <div className="rounded-2xl border border-amber-300/25 bg-black/20 p-5 text-center">
@@ -125,9 +115,6 @@ export default async function TomorrowFillPage({
               </p>
               <p className="mt-2 text-5xl font-black text-white">
                 ${offer.offerAmount} off
-              </p>
-              <p className="mt-2 text-sm text-white/60">
-                cleanings of ${offer.minimumSubtotal}+
               </p>
               <p className="mt-4 rounded-lg bg-white/8 px-3 py-2 font-mono text-sm font-bold tracking-widest text-emerald-300">
                 {offer.offerCode}
@@ -138,13 +125,13 @@ export default async function TomorrowFillPage({
             {[
               [
                 CalendarCheck2,
-                'Tomorrow reserved',
-                'Choose any opening that fits your job',
+                'Choose your date',
+                'See upcoming openings that fit your job',
               ],
               [
                 MapPin,
-                'Already nearby',
-                `Serving ${offer.customer.zip_code} that day`,
+                'Services for your home',
+                'Choose the work you need taken care of',
               ],
               [
                 ShieldCheck,
@@ -178,15 +165,13 @@ export default async function TomorrowFillPage({
           leadSourceKey="repeat_customer"
           leadSourceDetail={`Tomorrow Fill SMS · ${offer.offerCode}`}
           campaignToken={token}
-          preferredDate={offer.targetDate}
           initialCustomer={offer.customer}
         />
 
         <footer className="mx-auto mt-8 max-w-2xl text-center text-xs leading-6 text-white/35">
-          Limited to the first two qualifying bookings or until route capacity
-          is filled. Jobs requiring a longer appointment keep the discount and
-          may be offered the next available date. Reply STOP to opt out of
-          promotional texts.
+          Limited to the first two qualifying bookings or until available
+          capacity is filled. Choose an available date and time that fits your
+          service. Reply STOP to opt out of promotional texts.
         </footer>
       </div>
     </main>

@@ -39,12 +39,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    let minimumSubtotal: number | undefined
     if (code === 'TF35') {
       const offer = await validateTomorrowFillPromoToken(tomorrowFillToken)
       if (!offer || offer.offerCode !== code) {
         return NextResponse.json(
           { error: 'This private offer is no longer available.' },
           { status: 409, headers: CORS },
+        )
+      }
+      minimumSubtotal = offer.minimumSubtotal
+      if (subtotal < minimumSubtotal) {
+        return NextResponse.json(
+          {
+            code,
+            subtotal,
+            discount_amount: 0,
+            total: subtotal,
+            applied: false,
+            reason: 'minimum_subtotal',
+            minimum_subtotal: minimumSubtotal,
+          },
+          { headers: CORS },
         )
       }
     }
@@ -130,6 +146,7 @@ export async function GET(request: NextRequest) {
         discount_amount,
         total,
         applied: true,
+        minimum_subtotal: minimumSubtotal,
       },
       { headers: CORS },
     )

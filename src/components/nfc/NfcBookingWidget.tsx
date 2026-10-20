@@ -795,6 +795,7 @@ export function NfcBookingWidget({
   const [reviewPromo, setReviewPromo] = useState<{
     discountAmount: number
     total: number
+    minimumSubtotal?: number
   } | null>(null)
 
   // Portal target for the mobile subtotal bar. The widget card uses
@@ -967,6 +968,7 @@ export function NfcBookingWidget({
           setReviewPromo({
             discountAmount: Number(j.discount_amount) || 0,
             total: Number(j.total) || subtotal,
+            minimumSubtotal: j.minimum_subtotal,
           })
         } else {
           setReviewPromo({ discountAmount: 0, total: subtotal })
@@ -1686,6 +1688,16 @@ export function NfcBookingWidget({
                   Your card code is included — discount shown in Services above.
                 </p>
               </div>
+            ) : null}
+
+            {reviewPromo?.minimumSubtotal ? (
+              <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-300/80">
+                Your private offer requires {formatPrice(reviewPromo.minimumSubtotal)}
+                {' '}or more in services before the discount.
+                {subtotal < reviewPromo.minimumSubtotal
+                  ? ' Add more services to qualify.'
+                  : ''}
+              </p>
             ) : null}
 
             {/* Payment notice */}

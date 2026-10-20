@@ -159,11 +159,11 @@ export async function loadTomorrowFillSettings(
     max_discounted_bookings: Number(data?.max_discounted_bookings ?? 2),
     offer_code: String(data?.offer_code || 'TF35'),
     offer_amount: Number(data?.offer_amount ?? 35),
-    minimum_subtotal: Number(data?.minimum_subtotal ?? 250),
+    minimum_subtotal: Number(data?.minimum_subtotal ?? 300),
     offer_valid_days: Number(data?.offer_valid_days ?? 14),
     message_template: String(
       data?.message_template ||
-        'Hi {{first_name}}, Sasquatch Carpet Cleaning has an opening in your area tomorrow. Save ${{offer_amount}} on a cleaning of ${{minimum_subtotal}} or more. See available times: {{booking_url}} Reply STOP to opt out.',
+        'Hi {{first_name}}, Sasquatch Carpet Cleaning has openings on our schedule! Need carpets, upholstery, tile, rugs, or another service taken care of? Get ${{offer_amount}} off your next booking. See available services and dates: {{booking_url}} Reply STOP to opt out.',
     ),
   }
 }
