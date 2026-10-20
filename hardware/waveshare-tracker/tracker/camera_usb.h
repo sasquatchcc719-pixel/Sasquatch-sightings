@@ -36,10 +36,11 @@ inline void stop() {
   if (ready) esp_camera_deinit();
   ready = false;
 }
-inline void snapshot() {
+inline void snapshot(bool fresh = true) {
+  const bool starting = !ready;
   if (!start()) return;
-  // Discard a queued old frame and one exposure frame before the requested image.
-  for (int i = 0; i < 2; ++i) {
+  // Fresh stills discard old frames; continuous preview consumes each next frame.
+  for (int i = 0; i < ((starting || fresh) ? 2 : 0); ++i) {
     camera_fb_t *old = esp_camera_fb_get();
     if (!old) { error("capture_timeout"); return; }
     esp_camera_fb_return(old);

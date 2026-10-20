@@ -16,7 +16,7 @@ Run these commands from the Sightings repository. Upload only to the **CH343 ESP
 
 ## USB setup
 
-USB serial is 115200 baud with newline-delimited JSON. Credentials are supplied over USB after flashing, saved as one NVS blob, and never printed. They are not compiled into the firmware. NVS/flash is **not encrypted** in this prototype: physical access to the board can expose credentials. Keep any flash backups private.
+USB serial is 921600 baud in firmware 0.2.1 (115200 in earlier releases), with newline-delimited JSON. The modem UART remains at 115200. Credentials are supplied over USB after flashing, saved as one NVS blob, and never printed. They are not compiled into the firmware. NVS/flash is **not encrypted** in this prototype: physical access to the board can expose credentials. Keep any flash backups private.
 
 On the first installation, inspect `storageReady`. If false because the new FAT partition is unformatted, issue the following **once**, after preserving the factory backup:
 
@@ -71,13 +71,15 @@ HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1
 
 No modem cellular connection, temperature probes, OTA updates, ignition detection, or production battery low-voltage policy is implemented yet.
 
-## USB camera prototype (firmware 0.2.0)
+## USB camera prototype (firmware 0.2.1)
 
-The included OV5640 is tested through USB at 640 × 480 JPEG. It is initialized only on an explicit `cameraSnapshot` command; boot and normal GPS tracking do not activate it. There is no network camera endpoint, recording, cloud image upload, or cellular video feature in this prototype. Capturing and transmitting a frame briefly pauses the main GPS/upload loop, so use the preview for bench testing.
+The included OV5640 is tested through USB at 640 × 480 JPEG. Firmware 0.2.1 increases USB UART to 921600 baud and supports continuous preview without discarding two frames on every request. Still captures retain the fresh-frame discard; initial camera startup always warms up the sensor. The browser requests the next preview frame immediately and shows a rolling measured FPS rate. It is initialized only on an explicit `cameraSnapshot` command; boot and normal GPS tracking do not activate it. There is no network camera endpoint, recording, cloud image upload, or cellular video feature in this prototype. Capturing and transmitting a frame briefly pauses the main GPS/upload loop, so use the preview for bench testing.
 
 Disconnect USB and turn off the battery switch before fitting the camera ribbon. Release the black flip latch on the microSD-facing edge of the white 24-pin connector; do not pry the fixed white housing. Confirm ribbon contact orientation against the actual socket, seat straight, close the latch gently, set CAM ON, then reconnect power.
 
 The V2 camera uses XCLK39, D0–D7=GPIO7–14, VSYNC42, HREF41, PCLK46. SCCB shares GPIO15/16 with the MAX17048. The firmware borrows the already initialized Wire bus0 (`pin_sccb_sda=-1`, `sccb_i2c_port=0`) rather than creating a second bus on those pins. `cameraStop` deinitializes the camera while retaining the shared Wire bus.
+
+Measured on this prototype over CH343 USB: 30 consecutive 640 × 480 preview frames at 5.08 FPS with no CRC failures (about 11 KiB JPEGs). The previous 115200-baud capture path measured 0.67 FPS before its extra one-second browser delay. Scene complexity and concurrent GPS/network work affect the rate; the UI shows actual delivered FPS.
 
 Run the macOS Python helper with no other serial monitor open:
 
@@ -86,9 +88,9 @@ python3 hardware/waveshare-tracker/tools/camera-preview.py --snapshot /tmp/waves
 python3 hardware/waveshare-tracker/tools/camera-preview.py
 ```
 
-The first saves one JPEG with private file permissions and prints only dimensions/sensor metadata. The second prints a random-path localhost URL; open it and use Take picture or Start preview. Only 127.0.0.1 is served; images stay in browser memory unless explicitly saved. Stopping the helper sends `cameraStop`. Use `--port` if the Mac gives the CH343 bridge another device name. Do not select a modem USB port.
+The first saves one JPEG with private file permissions and prints only dimensions/sensor metadata. The second prints a random-path localhost URL; open it and use Take picture or Start preview. Only 127.0.0.1 is served; images stay in browser memory unless explicitly saved. Stopping the helper sends `cameraStop`. Use `--baud 115200` for firmware 0.2.0 or older. The helper uses macOS IOSSIOSPEED for its default 921600 baud. Use `--port` if the Mac gives the CH343 bridge another device name. Do not select a modem USB port.
 
-The USB protocol is a JSON `camera_frame` header containing `bytes`, `width`, `height`, `sensorPid`, and `crc32`, followed by exactly that many raw JPEG bytes and a newline. Length is limited to 128 KiB; the host checks CRC32 and JPEG start bytes before displaying. Error responses are `camera_error`; camera state is included in normal status as `cameraReady`. The Wi-Fi configuration, token, FAT partition, and offline GPS queue are retained by the normal Arduino upload procedure. Do not flash the merged full-flash image when upgrading.
+USB requests use `{"command":"cameraSnapshot","preview":true}` for continuous capture; omit preview or set false for a fresh still. The USB response is a JSON `camera_frame` header containing `bytes`, `width`, `height`, `sensorPid`, and `crc32`, followed by exactly that many raw JPEG bytes and a newline. Length is limited to 128 KiB; the host checks CRC32 and JPEG start bytes before displaying. Error responses are `camera_error`; camera state is included in normal status as `cameraReady`. The Wi-Fi configuration, token, FAT partition, and offline GPS queue are retained by the normal Arduino upload procedure. Do not flash the merged full-flash image when upgrading.
 
 ## Native verification
 

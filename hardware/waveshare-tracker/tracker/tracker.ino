@@ -19,7 +19,7 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.2.0";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.2.1";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
 struct Record {
@@ -254,7 +254,7 @@ void processSerial() {
     auto error = deserializeJson(doc, serialInput); serialInput = "";
     if (error) { Serial.println("{\"event\":\"error\",\"error\":\"invalid_json\"}"); continue; }
     String action = doc["command"] | "";
-    if (action == "cameraSnapshot") { CameraUsb::snapshot(); continue; }
+    if (action == "cameraSnapshot") { CameraUsb::snapshot(!(doc["preview"] | false)); continue; }
     if (action == "cameraStop") { CameraUsb::stop(); printStatus("camera_stopped"); continue; }
     if (action == "status") { printStatus(); continue; }
     if (action == "scanNetwork") { scanConfiguredNetwork(); continue; }
@@ -353,7 +353,7 @@ void postTelemetry() {
 }
 void setup() {
   Serial.setRxBufferSize(2048);
-  Serial.begin(115200);
+  Serial.begin(921600);
   makeBootId();
   pinMode(MODEM_POWER, OUTPUT); digitalWrite(MODEM_POWER, HIGH);
   modem.setRxBufferSize(2048); modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
