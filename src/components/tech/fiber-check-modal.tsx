@@ -31,7 +31,15 @@ async function downscale(file: File): Promise<string> {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas unavailable')
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.9)
+  let dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+  // Four detailed photos must still fit in the request body together.
+  while (dataUrl.length > 1_000_000) {
+    canvas.width = Math.max(1, Math.round(canvas.width * 0.85))
+    canvas.height = Math.max(1, Math.round(canvas.height * 0.85))
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+  }
+  return dataUrl
 }
 
 type BurnBucket = 'melts' | 'burning_hair' | 'burns_like_paper'
