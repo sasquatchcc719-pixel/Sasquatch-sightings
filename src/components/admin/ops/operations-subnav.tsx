@@ -17,6 +17,7 @@ import {
   Clock,
   DollarSign,
   MapPin,
+  Truck,
   Timer,
   Footprints,
   Fuel,
@@ -131,6 +132,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Settings',
     description: 'Queue, cron, and lifecycle messaging status',
     icon: Settings,
+  },
+  {
+    href: '/admin/fleet',
+    label: 'Fleet',
+    description: 'Live vehicle tracking and equipment maintenance',
+    icon: Truck,
   },
   {
     href: '/admin/operations/dispatch',

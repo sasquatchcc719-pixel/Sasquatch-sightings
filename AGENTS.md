@@ -291,3 +291,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Monthly recurring visits must stay in their original calendar month and use weekdays only. Search earlier weekdays when month-end is blocked, reject cross-month or weekend overrides, and report no opening instead of creating two visits in the following month.
 
 - Use the supplied sprayer photo for Urine Eliminator Treatment as well as Carpet Deodorizer.
+
+- Verify navigation in both mobile and desktop menus before giving directions; keep Fleet reachable from the mobile Operations section and the Operations page menu.

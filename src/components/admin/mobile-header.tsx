@@ -99,6 +99,12 @@ const navSections: NavSection[] = [
         description: 'Completed jobs',
       },
       {
+        name: 'Fleet',
+        href: '/admin/fleet',
+        icon: Truck,
+        description: 'Vehicle tracking & maintenance',
+      },
+      {
         name: 'Stats',
         href: '/admin/stats',
         icon: BarChart3,
