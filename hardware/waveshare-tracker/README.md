@@ -55,7 +55,7 @@ This briefly pauses reconnection and scans 2.4 GHz for the configured network. I
 - Battery MAX17048 fuel gauge: I2C **SDA15/SCL16**, address `0x36`; voltage register `0x02`, 78.125 µV/LSB.
 - WS2812 status LED: GPIO38. Purple: needs configuration; blue: no Wi-Fi; yellow: waiting GPS; green: fresh GPS; red: storage unavailable or repeated upload failures.
 - GNSS antenna goes to the connector labeled GNSS. Its bias comes from the board's 3.3 V rail; there is no extra ESP32 antenna power GPIO to set.
-- Leave camera disabled. HUB is required for USB programming; it may be switched off for lower battery consumption after unplugging the Mac.
+- Keep CAM OFF when the camera is unused; enable CAM only with the ribbon seated and its latch closed. HUB is required for USB programming; it may be switched off for lower battery consumption after unplugging the Mac.
 
 Primary references: [V2 examples](https://files.waveshare.com/wiki/ESP32-S3-A-SIM7670X-4G-HAT/Demo/ESP32-S3-A-SIM7670X-4G-V2.zip), [V2 schematic](https://files.waveshare.com/wiki/ESP32-S3-A-SIM7670X-4G-HAT/ESP32-S3-A-SIM7670X-4G-V2.pdf), [Waveshare Arduino documentation](https://docs.waveshare.com/ESP32-S3-SIM7670G-4G/Arduino), [V2 settings in FAQ](https://docs.waveshare.com/ESP32-S3-SIM7670G-4G/FAQ).
 
@@ -70,6 +70,25 @@ Uploads put the newest queued point first, followed by the oldest backlog, up to
 HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1 CA; redirects are disabled. This trusts the current Let's Encrypt certificate chain for Sightings, not a pinned leaf certificate. A custom endpoint must use a chain trusted by that root, or the CA source must be deliberately updated. SNTP supplies time before TLS; GPS UTC is the fallback when SNTP is unavailable. No TLS verification bypass is used.
 
 No modem cellular connection, temperature probes, OTA updates, ignition detection, or production battery low-voltage policy is implemented yet.
+
+## USB camera prototype (firmware 0.2.0)
+
+The included OV5640 is tested through USB at 640 × 480 JPEG. It is initialized only on an explicit `cameraSnapshot` command; boot and normal GPS tracking do not activate it. There is no network camera endpoint, recording, cloud image upload, or cellular video feature in this prototype. Capturing and transmitting a frame briefly pauses the main GPS/upload loop, so use the preview for bench testing.
+
+Disconnect USB and turn off the battery switch before fitting the camera ribbon. Release the black flip latch on the microSD-facing edge of the white 24-pin connector; do not pry the fixed white housing. Confirm ribbon contact orientation against the actual socket, seat straight, close the latch gently, set CAM ON, then reconnect power.
+
+The V2 camera uses XCLK39, D0–D7=GPIO7–14, VSYNC42, HREF41, PCLK46. SCCB shares GPIO15/16 with the MAX17048. The firmware borrows the already initialized Wire bus0 (`pin_sccb_sda=-1`, `sccb_i2c_port=0`) rather than creating a second bus on those pins. `cameraStop` deinitializes the camera while retaining the shared Wire bus.
+
+Run the macOS Python helper with no other serial monitor open:
+
+```sh
+python3 hardware/waveshare-tracker/tools/camera-preview.py --snapshot /tmp/waveshare-camera.jpg
+python3 hardware/waveshare-tracker/tools/camera-preview.py
+```
+
+The first saves one JPEG with private file permissions and prints only dimensions/sensor metadata. The second prints a random-path localhost URL; open it and use Take picture or Start preview. Only 127.0.0.1 is served; images stay in browser memory unless explicitly saved. Stopping the helper sends `cameraStop`. Use `--port` if the Mac gives the CH343 bridge another device name. Do not select a modem USB port.
+
+The USB protocol is a JSON `camera_frame` header containing `bytes`, `width`, `height`, `sensorPid`, and `crc32`, followed by exactly that many raw JPEG bytes and a newline. Length is limited to 128 KiB; the host checks CRC32 and JPEG start bytes before displaying. Error responses are `camera_error`; camera state is included in normal status as `cameraReady`. The Wi-Fi configuration, token, FAT partition, and offline GPS queue are retained by the normal Arduino upload procedure. Do not flash the merged full-flash image when upgrading.
 
 ## Native verification
 

@@ -12,13 +12,14 @@
 #include <sys/time.h>
 #include <time.h>
 #include "gps_parser.h"
+#include "camera_usb.h"
 #include "tls_root.h"
 
 // Waveshare V2 schematic; these differ from older board revisions.
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.1.1";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.2.0";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
 struct Record {
@@ -177,6 +178,7 @@ void printStatus(const char *event = "status") {
   doc["configured"] = configured; doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
   doc["wifiStatus"] = int(WiFi.status());
   doc["lastWifiDisconnectReason"] = lastWifiDisconnectReason.load();
+  doc["cameraReady"] = CameraUsb::ready;
   doc["modemReady"] = modemReady; doc["gpsFix"] = freshFix();
   doc["clockReady"] = time(nullptr) >= 1704067200;
   doc["storageReady"] = storageReady; doc["queued"] = queued;
@@ -252,6 +254,8 @@ void processSerial() {
     auto error = deserializeJson(doc, serialInput); serialInput = "";
     if (error) { Serial.println("{\"event\":\"error\",\"error\":\"invalid_json\"}"); continue; }
     String action = doc["command"] | "";
+    if (action == "cameraSnapshot") { CameraUsb::snapshot(); continue; }
+    if (action == "cameraStop") { CameraUsb::stop(); printStatus("camera_stopped"); continue; }
     if (action == "status") { printStatus(); continue; }
     if (action == "scanNetwork") { scanConfiguredNetwork(); continue; }
     if (action == "initializeStorage") {
