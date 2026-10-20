@@ -7,6 +7,8 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
+#include <atomic>
 #include <sys/time.h>
 #include <time.h>
 #include "gps_parser.h"
@@ -16,7 +18,7 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.1.0";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.1.1";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
 struct Record {
@@ -45,6 +47,7 @@ int64_t lastRecordedEpoch = 0;
 uint32_t lastFixMs = 0, lastPollMs = 0, lastHeartbeatMs = 0, nextPostMs = 0;
 uint32_t lastConnectMs = 0, lastStatusMs = 0;
 uint8_t failures = 0, modemReadFailures = 0;
+std::atomic<int> lastWifiDisconnectReason{0};
 int lastHttpCode = 0;
 float batteryV = NAN;
 
@@ -172,6 +175,8 @@ void printStatus(const char *event = "status") {
   JsonDocument doc;
   doc["event"] = event; doc["firmware"] = FIRMWARE; doc["bootId"] = bootId;
   doc["configured"] = configured; doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
+  doc["wifiStatus"] = int(WiFi.status());
+  doc["lastWifiDisconnectReason"] = lastWifiDisconnectReason.load();
   doc["modemReady"] = modemReady; doc["gpsFix"] = freshFix();
   doc["clockReady"] = time(nullptr) >= 1704067200;
   doc["storageReady"] = storageReady; doc["queued"] = queued;
@@ -184,6 +189,41 @@ void connectWifi() {
   WiFi.disconnect();
   WiFi.begin(ssid.c_str(), password.c_str());
   lastConnectMs = millis();
+}
+void scanConfiguredNetwork() {
+  JsonDocument result;
+  result["event"] = "network_scan";
+  result["configuredNetworkFound"] = false;
+  if (!configured) {
+    result["error"] = "not_configured";
+    serializeJson(result, Serial); Serial.println(); return;
+  }
+  // Pause connection attempts during this explicit USB diagnostic; keep NVS intact.
+  const bool reconnect = WiFi.getAutoReconnect();
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false, false, 1000);
+  WiFi.setScanTimeout(8000);
+  const int count = WiFi.scanNetworks(false, true, false, 200, 0, ssid.c_str());
+  int strongest = -1;
+  if (count < 0) {
+    result["scanError"] = count;
+    esp_wifi_scan_stop();
+  } else {
+    for (int i = 0; i < count; ++i) {
+      if (WiFi.SSID(i) == ssid && (strongest < 0 || WiFi.RSSI(i) > WiFi.RSSI(strongest))) strongest = i;
+    }
+    if (strongest >= 0) {
+      result["configuredNetworkFound"] = true;
+      result["channel"] = WiFi.channel(strongest);
+      result["rssi"] = WiFi.RSSI(strongest);
+      result["authMode"] = int(WiFi.encryptionType(strongest));
+    }
+  }
+  WiFi.scanDelete();
+  WiFi.setAutoReconnect(reconnect);
+  connectWifi();
+  // Never emit network names, BSSIDs, credentials, or device tokens.
+  serializeJson(result, Serial); Serial.println();
 }
 bool validToken(const String &value) {
   if (value.length() != 64) return false;
@@ -213,6 +253,7 @@ void processSerial() {
     if (error) { Serial.println("{\"event\":\"error\",\"error\":\"invalid_json\"}"); continue; }
     String action = doc["command"] | "";
     if (action == "status") { printStatus(); continue; }
+    if (action == "scanNetwork") { scanConfiguredNetwork(); continue; }
     if (action == "initializeStorage") {
       if (storageReady) { Serial.println("{\"event\":\"error\",\"error\":\"storage_already_initialized\"}"); continue; }
       if (queueFile) queueFile.close();
@@ -321,6 +362,13 @@ void setup() {
     configured = !ssid.isEmpty() && validToken(token) && validEndpoint(endpoint);
   }
   initQueue();
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED &&
+        info.wifi_sta_disconnected.reason != WIFI_REASON_ASSOC_LEAVE) {
+      // Callback runs on another task. Ignore our deliberate disconnect/reconnects.
+      lastWifiDisconnectReason.store(info.wifi_sta_disconnected.reason);
+    }
+  });
   WiFi.mode(WIFI_STA); WiFi.persistent(false); WiFi.setAutoReconnect(true);
   configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.google.com");
   connectWifi(); batteryV = readBattery(); printStatus("boot");

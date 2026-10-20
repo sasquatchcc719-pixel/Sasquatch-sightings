@@ -38,7 +38,15 @@ Use a 2.4 GHz hotspot. On iPhone, enable Maximize Compatibility if needed. Reiss
 {"command":"status"}
 ```
 
-Status includes Wi-Fi connection, GNSS validity, queue count, battery voltage, storage readiness, last HTTP status, and boot ID. It does not return the SSID, password, device token, or saved locations. A `telemetry` response with `lastHttpCode:200` means the server accepted the request; it does not establish a GPS fix unless `gpsFix:true` is also shown.
+Status includes Wi-Fi connection, numeric `wifiStatus`, the last non-deliberate `lastWifiDisconnectReason` (0 means none observed this boot), GNSS validity, queue count, battery voltage, storage readiness, last HTTP status, and boot ID. It does not return the SSID, password, device token, or saved locations. A `telemetry` response with `lastHttpCode:200` means the server accepted the request; it does not establish a GPS fix unless `gpsFix:true` is also shown.
+
+Firmware **0.1.1** adds an explicit USB Wi-Fi diagnostic:
+
+```json
+{"command":"scanNetwork"}
+```
+
+This briefly pauses reconnection and scans 2.4 GHz for the configured network. It prints only `configuredNetworkFound` and, if found, the strongest matching channel, RSSI, and numeric auth mode; failures return a numeric `scanError`. It never prints SSIDs, BSSIDs, passwords, or tokens. The configured credentials and offline queue are retained, and automatic connection is restored afterward. A scan can briefly pause GPS sampling. Numeric Wi-Fi status 3 means connected; the exact disconnect reason comes from the ESP-IDF Wi-Fi reason enum, rather than guessing from connection failure alone.
 
 ## Hardware
 
