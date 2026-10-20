@@ -75,6 +75,8 @@ export default function FleetTrackerMap({
     const activeMarkers = markers.current
     const activeJobs = jobMarkers.current
     mapRef.current = map
+    const resizeObserver = new ResizeObserver(() => map.resize())
+    resizeObserver.observe(container.current)
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.on('load', () => {
       map.addSource('vehicle-history', {
@@ -100,6 +102,7 @@ export default function FleetTrackerMap({
       if (map.isStyleLoaded()) setError('')
     })
     return () => {
+      resizeObserver.disconnect()
       for (const marker of activeMarkers.values()) marker.remove()
       activeMarkers.clear()
       for (const marker of activeJobs.values()) marker.remove()
