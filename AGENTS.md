@@ -293,3 +293,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Use the supplied sprayer photo for Urine Eliminator Treatment as well as Carpet Deodorizer.
 
 - Verify navigation in both mobile and desktop menus before giving directions; keep Fleet reachable from the mobile Operations section and the Operations page menu.
+
+- Keep one vehicle-based Live Dispatch map shared by the calendar and dispatch page; do not split Vehicles and Technicians into competing modes or tie vehicle movement to payroll.

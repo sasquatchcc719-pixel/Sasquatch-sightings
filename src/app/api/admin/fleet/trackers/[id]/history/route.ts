@@ -8,7 +8,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

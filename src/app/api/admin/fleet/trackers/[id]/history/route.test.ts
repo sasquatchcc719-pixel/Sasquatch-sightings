@@ -17,7 +17,7 @@ beforeEach(() => {
   mocks.guard.mockResolvedValue({})
   mocks.rpc.mockResolvedValue({ data: [], error: null })
 })
-it('requires owner/admin access to movement history', async () => {
+it('requires dispatch access to movement history', async () => {
   mocks.guard.mockRejectedValue(new Error('Unauthorized'))
   expect(
     (
@@ -47,6 +47,7 @@ it('accepts the 25-hour Mountain Time day at the end of daylight saving time', a
     { params: Promise.resolve({ id }) },
   )
   expect(response.status).toBe(200)
+  expect(mocks.guard).toHaveBeenCalledWith(['admin', 'owner', 'dispatcher'])
   expect(mocks.rpc).toHaveBeenCalledWith('fleet_tracker_history', {
     p_tracker_id: id,
     p_start: '2026-11-01T06:00:00.000Z',

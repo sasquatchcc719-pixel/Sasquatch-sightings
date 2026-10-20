@@ -48,22 +48,17 @@ describe('calendar dispatch panel', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('switches sources and handles native Escape without navigating away', async () => {
+  it('opens one dispatch map and handles native Escape without navigating away', async () => {
     render(<ScheduleDispatchPanel />)
     fireEvent.click(screen.getByRole('button', { name: 'Map' }))
     const panel = await screen.findByRole('dialog')
-    expect(screen.getByRole('button', { name: 'Vehicles' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Technicians' }))
-    expect(screen.getByRole('button', { name: 'Technicians' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
     expect(
-      screen.getByText(/Clocked-in technicians using phone GPS/),
-    ).toBeVisible()
+      screen.queryByRole('button', { name: 'Vehicles' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Technicians' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByText('Loaded map')).toHaveLength(1)
     fireEvent(panel, new Event('cancel', { bubbles: false, cancelable: true }))
     await waitFor(() => expect(panel).not.toHaveAttribute('open'))
     expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()

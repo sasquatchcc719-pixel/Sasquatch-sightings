@@ -1,16 +1,9 @@
-import { DispatchMap } from '@/components/admin/ops/DispatchMap'
+import { redirect } from 'next/navigation'
+import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
+import FleetTrackerDashboard from '@/components/admin/fleet-tracker-dashboard'
 
-export default function DispatchPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-white">Live Dispatch</h2>
-        <p className="text-sm text-slate-400">
-          Real-time location of clocked-in technicians. Updates every 20
-          seconds.
-        </p>
-      </div>
-      <DispatchMap />
-    </div>
-  )
+export default async function DispatchPage() {
+  const { role } = await getUserWithRole()
+  if (!hasRoleAccess(role, ['owner', 'admin', 'dispatcher'])) redirect('/admin')
+  return <FleetTrackerDashboard />
 }

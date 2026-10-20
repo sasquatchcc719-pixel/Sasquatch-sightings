@@ -29,7 +29,7 @@ async function fetchJson<T>(url: string): Promise<T> {
   if (!response.ok)
     throw new Error(
       response.status === 401
-        ? 'Sign in with an owner or admin account.'
+        ? 'Sign in with an owner, admin, or dispatcher account.'
         : 'Unable to refresh tracking. Retrying…',
     )
   return response.json()
@@ -100,21 +100,29 @@ export default function FleetTrackerDashboard({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="mb-1 text-xs font-semibold tracking-[0.2em] text-emerald-300 uppercase">
-              Sasquatch fleet
+              Sasquatch operations
             </p>
             <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <Truck className="h-6 w-6 text-emerald-400" /> Vehicle Tracking
+              <Truck className="h-6 w-6 text-emerald-400" /> Live Dispatch
             </h1>
             <p className="mt-2 text-sm text-slate-400">
-              Live locations and 30 days of movement history.
+              Vehicle locations and 30 days of movement history.
             </p>
           </div>
-          <Link
-            href="/admin/fleet"
-            className="rounded-xl border border-white/15 px-4 py-3 text-sm hover:bg-white/10"
-          >
-            Fleet &amp; maintenance
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/operations"
+              className="rounded-xl border border-white/15 px-4 py-3 text-sm hover:bg-white/10"
+            >
+              Calendar
+            </Link>
+            <Link
+              href="/admin/fleet"
+              className="rounded-xl border border-white/15 px-4 py-3 text-sm hover:bg-white/10"
+            >
+              Fleet &amp; maintenance
+            </Link>
+          </div>
         </div>
       )}
       <div className="flex flex-wrap gap-3 text-sm">

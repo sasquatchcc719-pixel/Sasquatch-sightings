@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Map, Truck, Users, X } from 'lucide-react'
+import { Map, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import styles from './schedule-dispatch-panel.module.css'
 
@@ -10,21 +10,11 @@ const VehicleMap = dynamic(() => import('../fleet-tracker-dashboard'), {
   ssr: false,
   loading: () => <p className="p-6 text-slate-300">Loading vehicle map…</p>,
 })
-const TechnicianMap = dynamic(
-  () => import('./DispatchMap').then((module) => module.DispatchMap),
-  {
-    ssr: false,
-    loading: () => (
-      <p className="p-6 text-slate-300">Loading technician map…</p>
-    ),
-  },
-)
 
 export function ScheduleDispatchPanel() {
   const [open, setOpen] = useState(false)
   const [visible, setVisible] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [source, setSource] = useState<'vehicles' | 'technicians'>('vehicles')
   const dialog = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -124,45 +114,9 @@ export function ScheduleDispatchPanel() {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <div
-              role="group"
-              aria-label="Map source"
-              className="mt-4 flex gap-2"
-            >
-              <Button
-                type="button"
-                variant={source === 'vehicles' ? 'default' : 'outline'}
-                aria-pressed={source === 'vehicles'}
-                onClick={() => setSource('vehicles')}
-                className="min-h-11 gap-2"
-              >
-                <Truck className="h-4 w-4" /> Vehicles
-              </Button>
-              <Button
-                type="button"
-                variant={source === 'technicians' ? 'default' : 'outline'}
-                aria-pressed={source === 'technicians'}
-                onClick={() => setSource('technicians')}
-                className="min-h-11 gap-2"
-              >
-                <Users className="h-4 w-4" /> Technicians
-              </Button>
-            </div>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-white sm:p-5">
-            {mounted ? (
-              source === 'vehicles' ? (
-                <VehicleMap embedded />
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm text-slate-400">
-                    Clocked-in technicians using phone GPS. Refreshes every 20
-                    seconds.
-                  </p>
-                  <TechnicianMap />
-                </div>
-              )
-            ) : null}
+            {mounted ? <VehicleMap embedded /> : null}
           </div>
         </div>
       </dialog>

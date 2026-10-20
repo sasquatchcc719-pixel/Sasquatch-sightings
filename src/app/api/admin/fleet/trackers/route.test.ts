@@ -17,14 +17,14 @@ beforeEach(() => {
   mocks.select.mockReturnValue({ order: mocks.order })
   mocks.order.mockResolvedValue({ data: [], error: null })
 })
-it('requires owner/admin access to vehicle locations', async () => {
+it('requires dispatch access to vehicle locations', async () => {
   mocks.guard.mockRejectedValue(new Error('Unauthorized'))
   expect((await GET()).status).toBe(401)
   expect(mocks.from).not.toHaveBeenCalled()
 })
 it('never exposes token hashes through the dashboard API', async () => {
   expect((await GET()).status).toBe(200)
-  expect(mocks.guard).toHaveBeenCalledWith(['admin', 'owner'])
+  expect(mocks.guard).toHaveBeenCalledWith(['admin', 'owner', 'dispatcher'])
   expect(mocks.select.mock.calls[0][0]).not.toContain('token_hash')
   expect(mocks.select.mock.calls[0][0]).not.toBe('*')
 })
