@@ -82,9 +82,6 @@ export function summarizePayrollGratuities(
       )
     )
       continue
-    // Cash tips are handed directly to the technician, not paid again in payroll.
-    if (normalized(invoice.payment_method) === 'cash') continue
-
     const seenLines = new Set<string>()
     let cents = 0
     for (const line of invoice.ops_invoice_line_items || []) {

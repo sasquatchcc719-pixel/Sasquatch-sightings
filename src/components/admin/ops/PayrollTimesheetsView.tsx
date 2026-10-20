@@ -1293,9 +1293,9 @@ export function PayrollTimesheetsView() {
             <div className="max-w-xl">
               <h3 className="font-semibold text-white">David’s gratuity</h3>
               <p className="mt-1 text-xs text-slate-400">
-                100% of gratuity recorded on David’s paid non-cash invoices is
-                automatically included in gross pay, by job date. Cash tips stay
-                with David. Unpaid tips are listed below until collected.
+                100% of gratuity recorded on David’s paid invoices is
+                automatically included in gross pay, by job date, regardless of
+                payment method. Unpaid tips are listed below until collected.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-right">

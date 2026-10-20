@@ -11,7 +11,7 @@ function invoice(id = 'invoice-1') {
     invoice_number: 18885,
     status: 'paid',
     payment_status: 'paid',
-    payment_method: 'square',
+    payment_method: 'square' as string | null,
     ops_appointments: {
       appointment_date: '2026-10-14',
       assigned_staff_user_id: DAVID_PAYROLL_STAFF_ID,
@@ -60,11 +60,17 @@ describe('payroll gratuities', () => {
     }
   })
 
-  it('excludes other technicians, direct cash, void/draft invoices and cancelled work', () => {
+  it('includes every recorded paid tip regardless of payment method', () => {
+    for (const method of ['cash', 'check', 'square', 'venmo', null]) {
+      const row = invoice()
+      row.payment_method = method
+      expect(summarizePayrollGratuities([row]).payableGratuity).toBe(50)
+    }
+  })
+
+  it('excludes other technicians, void/draft invoices and cancelled work', () => {
     const owner = invoice('owner')
     owner.ops_appointments.assigned_staff_user_id = 'owner'
-    const cash = invoice('cash')
-    cash.payment_method = 'cash'
     const voided = invoice('void')
     voided.status = 'void'
     const draft = invoice('draft')
@@ -74,14 +80,8 @@ describe('payroll gratuities', () => {
     const estimate = invoice('estimate')
     estimate.ops_appointments.kind = 'estimate'
     expect(
-      summarizePayrollGratuities([
-        owner,
-        cash,
-        voided,
-        draft,
-        cancelled,
-        estimate,
-      ]).rows,
+      summarizePayrollGratuities([owner, voided, draft, cancelled, estimate])
+        .rows,
     ).toEqual([])
   })
 
