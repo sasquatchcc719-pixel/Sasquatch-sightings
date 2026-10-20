@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import type { PayrollGratuitySummary } from '@/lib/ops/payroll-gratuities'
 import {
   getSemiMonthlyPayPeriod,
   mountainDateKey,
@@ -285,6 +286,18 @@ async function fetchAddOnBonuses(
   return res.json()
 }
 
+async function fetchGratuities(
+  startDate: string,
+  endDate: string,
+  staffUserId: string,
+): Promise<PayrollGratuitySummary> {
+  const params = new URLSearchParams({ startDate, endDate })
+  if (staffUserId) params.set('staffUserId', staffUserId)
+  const res = await fetch(`/api/admin/ops/payroll/gratuities?${params}`)
+  if (!res.ok) throw new Error('Failed to load gratuities')
+  return res.json()
+}
+
 async function fetchPremiums(
   startDate: string,
   endDate: string,
@@ -504,6 +517,28 @@ export function PayrollTimesheetsView() {
   })
 
   const staff = staffQuery.data || []
+  const gratuitiesQuery = useQuery({
+    queryKey: [
+      'payroll-gratuities',
+      viewMode,
+      date,
+      payPeriod.startDate,
+      payPeriod.endDate,
+      staffFilter,
+    ],
+    queryFn: () =>
+      fetchGratuities(
+        viewMode === 'day' ? date : payPeriod.startDate,
+        viewMode === 'day' ? date : payPeriod.endDate,
+        staffFilter,
+      ),
+    refetchInterval: 60_000,
+  })
+  const gratuities = useMemo(
+    () => gratuitiesQuery.data?.rows ?? [],
+    [gratuitiesQuery.data?.rows],
+  )
+  const totalGratuity = gratuitiesQuery.data?.payableGratuity || 0
   const entries = useMemo(
     () => entriesQuery.data?.entries ?? [],
     [entriesQuery.data?.entries],
@@ -549,6 +584,7 @@ export function PayrollTimesheetsView() {
         grossPay: number
         premiumPay: number
         addOnBonusPay: number
+        gratuityPay: number
       }
     >()
     for (const entry of entries) {
@@ -558,6 +594,7 @@ export function PayrollTimesheetsView() {
         grossPay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
+        gratuityPay: 0,
       }
       existing.minutes += entry.payableMinutes
       existing.grossPay += entry.grossPay
@@ -571,6 +608,7 @@ export function PayrollTimesheetsView() {
         grossPay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
+        gratuityPay: 0,
       }
       existing.premiumPay += Number(premium.appliedPay || 0)
       totals.set(premium.staffUserId, existing)
@@ -583,12 +621,26 @@ export function PayrollTimesheetsView() {
         grossPay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
+        gratuityPay: 0,
       }
       existing.addOnBonusPay += bonus.bonusAmount
       totals.set(bonus.staffUserId, existing)
     }
+    for (const gratuity of gratuities) {
+      if (gratuity.status !== 'payable') continue
+      const existing = totals.get(gratuity.staffUserId) || {
+        name: gratuity.staffName,
+        minutes: 0,
+        grossPay: 0,
+        premiumPay: 0,
+        addOnBonusPay: 0,
+        gratuityPay: 0,
+      }
+      existing.gratuityPay += gratuity.amount
+      totals.set(gratuity.staffUserId, existing)
+    }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [addOnBonuses, entries, premiums])
+  }, [addOnBonuses, entries, premiums, gratuities])
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -1139,7 +1191,8 @@ export function PayrollTimesheetsView() {
                   {fmtMoney(
                     totalGrossPay +
                       totalAppliedPremiumPay +
-                      totalEarnedAddOnBonus,
+                      totalEarnedAddOnBonus +
+                      totalGratuity,
                   )}
                 </p>
                 {totalAppliedPremiumPay > 0 && (
@@ -1150,6 +1203,18 @@ export function PayrollTimesheetsView() {
                 {totalEarnedAddOnBonus > 0 && (
                   <p className="mt-0.5 text-xs text-cyan-200/80">
                     incl. {fmtMoney(totalEarnedAddOnBonus)} add-on bonus
+                  </p>
+                )}
+                {totalGratuity > 0 && (
+                  <p className="mt-0.5 text-xs text-violet-200/80">
+                    incl. {fmtMoney(totalGratuity)} gratuity
+                  </p>
+                )}
+                {(gratuitiesQuery.isPending || gratuitiesQuery.isError) && (
+                  <p className="mt-1 text-xs text-amber-200">
+                    {gratuitiesQuery.isError
+                      ? 'Total incomplete — gratuity unavailable'
+                      : 'Loading gratuity…'}
                   </p>
                 )}
               </div>
@@ -1165,7 +1230,15 @@ export function PayrollTimesheetsView() {
                     <span className="font-mono">
                       {fmtMin(total.minutes)} ·{' '}
                       {fmtMoney(
-                        total.grossPay + total.premiumPay + total.addOnBonusPay,
+                        total.grossPay +
+                          total.premiumPay +
+                          total.addOnBonusPay +
+                          total.gratuityPay,
+                      )}
+                      {total.gratuityPay > 0 && (
+                        <span className="block text-xs text-violet-200/80">
+                          incl. {fmtMoney(total.gratuityPay)} gratuity
+                        </span>
                       )}
                       {total.premiumPay + total.addOnBonusPay > 0 && (
                         <span className="text-emerald-300/80">
@@ -1201,6 +1274,95 @@ export function PayrollTimesheetsView() {
           Add-on bonus totals could not be loaded. Refresh payroll after the
           issue is fixed before running payroll.
         </div>
+      )}
+
+      {gratuitiesQuery.isError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+        >
+          Gratuity could not be loaded. Payroll totals are incomplete; refresh
+          before running payroll.
+        </div>
+      ) : (
+        <section
+          aria-label="David’s gratuity"
+          className="overflow-hidden rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/10 via-slate-900/60 to-cyan-500/10"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-4 py-4">
+            <div className="max-w-xl">
+              <h3 className="font-semibold text-white">David’s gratuity</h3>
+              <p className="mt-1 text-xs text-slate-400">
+                100% of gratuity recorded on David’s paid non-cash invoices is
+                automatically included in gross pay, by job date. Cash tips stay
+                with David. Unpaid tips are listed below until collected.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-right">
+              <div className="rounded-xl border border-violet-400/15 bg-violet-400/10 px-3 py-2">
+                <p className="text-[11px] text-violet-200/70 uppercase">
+                  Included in payroll
+                </p>
+                <p className="font-mono text-lg font-bold text-violet-200">
+                  {fmtMoney(totalGratuity)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-amber-400/15 bg-amber-400/10 px-3 py-2">
+                <p className="text-[11px] text-amber-200/70 uppercase">
+                  Awaiting payment
+                </p>
+                <p className="font-mono text-lg font-bold text-amber-200">
+                  {fmtMoney(gratuitiesQuery.data?.pendingGratuity || 0)}
+                </p>
+              </div>
+            </div>
+          </div>
+          {gratuitiesQuery.isPending ? (
+            <p className="px-4 py-5 text-sm text-slate-400">
+              Loading gratuity…
+            </p>
+          ) : gratuities.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-slate-400">
+              No gratuity recorded for David in this date range and staff
+              selection.
+            </p>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {gratuities.map((gratuity) => (
+                <div
+                  key={gratuity.invoiceId}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div>
+                    <a
+                      href={`/admin/operations/invoices/${gratuity.invoiceId}`}
+                      className="text-sm font-medium text-white underline-offset-2 hover:underline"
+                    >
+                      #{gratuity.invoiceNumber || 'Invoice'} ·{' '}
+                      {gratuity.customerName}
+                    </a>
+                    <p className="text-xs text-slate-400">
+                      {fmtDate(gratuity.appointmentDate)} · David Gonzalez ·{' '}
+                      {gratuity.paymentMethod || 'Payment method not recorded'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono font-semibold text-violet-200">
+                      {fmtMoney(gratuity.amount)}
+                    </p>
+                    <span
+                      className={`text-xs ${gratuity.status === 'payable' ? 'text-emerald-200' : 'text-amber-200'}`}
+                    >
+                      {gratuity.status === 'payable'
+                        ? 'Included in gross pay'
+                        : 'Pending customer payment'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {!addOnBonusesQuery.isError && (
