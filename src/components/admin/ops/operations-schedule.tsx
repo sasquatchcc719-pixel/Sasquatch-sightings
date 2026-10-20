@@ -91,6 +91,8 @@ import {
   DatePickerDialog,
   EditEventDialog,
 } from './operations-schedule-editors'
+import { ScheduleDispatchPanel } from './schedule-dispatch-panel'
+
 export function OperationsSchedule() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -2032,6 +2034,8 @@ export function OperationsSchedule() {
               </Button>
             ))}
           </div>
+
+          <ScheduleDispatchPanel />
 
           <div className="flex-1" />
 
