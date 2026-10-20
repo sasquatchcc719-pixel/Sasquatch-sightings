@@ -3,6 +3,12 @@ import { requireAnyRole } from '@/lib/auth'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { createAdminClient } from '@/supabase/server'
+import {
+  getQBConnectionStatus,
+  QB_RECONNECT_MESSAGE,
+  QuickBooksTokenError,
+} from '@/lib/quickbooks-auth'
+import { isPermanentFailure } from '@/lib/ops/quickbooks-sync-retry'
 
 /**
  * POST /api/admin/quickbooks/retry
@@ -55,6 +61,20 @@ export async function POST(request: NextRequest) {
         })
       }
 
+      const connection = await getQBConnectionStatus()
+      if (connection.reconnect_required) {
+        return NextResponse.json(
+          { error: QB_RECONNECT_MESSAGE, reconnect_required: true },
+          { status: 409 },
+        )
+      }
+      if (!connection.connected || !connection.sync_enabled) {
+        return NextResponse.json(
+          { error: 'Connect QuickBooks and enable auto-sync before retrying.' },
+          { status: 409 },
+        )
+      }
+
       const queued = await ensureInvoiceQuickBooksSyncJob(supabase, invoiceId)
 
       if (!queued.queued) {
@@ -65,13 +85,78 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      await syncAppointmentToQuickBooks(invoice.appointment_id)
+      try {
+        await syncAppointmentToQuickBooks(invoice.appointment_id)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'QuickBooks sync failed'
+        if (isPermanentFailure(message)) {
+          return NextResponse.json(
+            {
+              error: message,
+              reconnect_required:
+                error instanceof QuickBooksTokenError &&
+                error.code === 'invalid_grant',
+            },
+            { status: 409 },
+          )
+        }
+        return NextResponse.json(
+          {
+            invoice_id: invoiceId,
+            queued: true,
+            status: 'pending',
+            message:
+              'QuickBooks is temporarily unavailable. This invoice remains queued and will retry automatically.',
+          },
+          { status: 202 },
+        )
+      }
+
+      const { data: confirmed, error: confirmError } = await supabase
+        .from('ops_invoices')
+        .select('quickbooks_invoice_id, sync_status, status, payment_method')
+        .eq('id', invoiceId)
+        .maybeSingle()
+      if (confirmError) throw confirmError
+      if (
+        !confirmed?.quickbooks_invoice_id ||
+        confirmed.sync_status !== 'synced'
+      ) {
+        const skipped =
+          confirmed?.payment_method === 'cash' || confirmed?.status === 'draft'
+        return NextResponse.json(
+          {
+            invoice_id: invoiceId,
+            queued: !skipped,
+            status: skipped ? 'held' : 'pending',
+            message: skipped
+              ? 'Invoice was not sent because it is now cash-paid or draft.'
+              : 'QuickBooks sync is not confirmed yet. The invoice remains queued for automatic retry.',
+          },
+          { status: 202 },
+        )
+      }
 
       return NextResponse.json({
         invoice_id: invoiceId,
         queued: true,
-        status: queued.status,
+        status: 'synced',
       })
+    }
+
+    const connection = await getQBConnectionStatus()
+    if (connection.reconnect_required) {
+      return NextResponse.json(
+        { error: QB_RECONNECT_MESSAGE, reconnect_required: true },
+        { status: 409 },
+      )
+    }
+    if (!connection.connected || !connection.sync_enabled) {
+      return NextResponse.json(
+        { error: 'Connect QuickBooks and enable auto-sync before retrying.' },
+        { status: 409 },
+      )
     }
 
     // Promote failed jobs back to pending. Reset the retry ladder too —
@@ -107,6 +192,11 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[admin/quickbooks/retry] Error:', error)
-    return NextResponse.json({ error: 'Failed to retry jobs' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Failed to retry jobs',
+      },
+      { status: 500 },
+    )
   }
 }

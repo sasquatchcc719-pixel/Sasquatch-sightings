@@ -42,6 +42,7 @@ export function retryTimestamp(
 export function isPermanentFailure(message: string): boolean {
   const m = message.toLowerCase()
   return (
+    m.includes('quickbooks authorization is no longer valid') ||
     m.includes('docnumber collision') ||
     m.includes('duplicate document number') ||
     m.includes('duplicate name exists') ||

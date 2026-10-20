@@ -298,3 +298,4 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 
 - Keep vehicle travel/visit logs in separate admin-only storage and APIs; exclude them from technician/shared invoice payloads, customer documents, job-status changes, and payroll. Require an explicit truck/operator/base assignment and start recording at configuration time.
 - Before running the full test suite, inspect legacy `*.test.*` files for real database/API setup; suffix-based integration exclusions are incomplete. Run broad checks from an isolated checkout without production credentials and exclude those legacy integration files.
+- In QuickBooks settings, “Redeploy” retries an invoice sync; inspect the saved sync error before investigating Vercel deployments.

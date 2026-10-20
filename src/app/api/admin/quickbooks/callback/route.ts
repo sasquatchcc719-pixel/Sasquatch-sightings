@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
 import { exchangeCodeForTokens, saveQBTokens } from '@/lib/quickbooks-auth'
+import { createAdminClient } from '@/supabase/server'
+import { resumeQuickBooksAuthorizationJobs } from '@/lib/ops/quickbooks-sync-jobs'
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +42,10 @@ export async function GET(request: NextRequest) {
       accessTokenExpiresIn: tokens.expires_in,
       refreshTokenExpiresIn: tokens.x_refresh_token_expires_in,
     })
+
+    // Reconnection fixes authorization, not invoice data. Resume only jobs
+    // blocked by that authorization failure; leave real invoice errors alone.
+    await resumeQuickBooksAuthorizationJobs(createAdminClient(), true)
 
     return NextResponse.redirect(
       new URL('/admin/operations?qb_connected=1', request.url),

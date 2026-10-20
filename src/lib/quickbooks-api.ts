@@ -1,4 +1,5 @@
 import { sortLineItems } from '@/lib/ops/line-item-order'
+import { isPermanentFailure, retryTimestamp } from '@/lib/ops/quickbooks-sync-retry'
 import {
   getValidQBAccessToken,
   getQBConnectionStatus,
@@ -1508,10 +1509,18 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       err instanceof Error ? err.message : 'Unknown QB sync error'
     console.error(`[QB sync] Failed for appointment ${appointmentId}:`, err)
 
-    // Mark queue rows as failed so they're visible in the admin UI and eligible for retry
+    // Immediate sync uses the same transient-failure policy as the cron.
+    // A brief network/token-service outage must not make a job terminal.
+    const failure = {
+      status: isPermanentFailure(errorMsg) ? 'failed' : 'pending',
+      error_message: errorMsg,
+      sync_attempts: 1,
+      next_retry_at: isPermanentFailure(errorMsg) ? null : retryTimestamp(1),
+      updated_at: new Date().toISOString(),
+    }
     await supabase
       .from('ops_quickbooks_sync_jobs')
-      .update({ status: 'failed', error_message: errorMsg })
+      .update(failure)
       .eq('entity_id', customer.id)
       .eq('entity_type', 'customer')
       .in('status', ['pending', 'held'])
@@ -1519,7 +1528,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
     if (invoice) {
       await supabase
         .from('ops_quickbooks_sync_jobs')
-        .update({ status: 'failed', error_message: errorMsg })
+        .update(failure)
         .eq('entity_id', invoice.id)
         .eq('entity_type', 'invoice')
         .in('status', ['pending', 'held'])

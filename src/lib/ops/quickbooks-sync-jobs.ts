@@ -9,6 +9,30 @@ type AdminClient = ReturnType<typeof createAdminClient>
 
 type CustomerPayload = ReturnType<typeof buildQuickBooksCustomerPayload>
 
+/** Reconnection must also recover old failures and late writes from an old worker. */
+export async function resumeQuickBooksAuthorizationJobs(
+  supabase: AdminClient,
+  afterReconnect = false,
+) {
+  const { error } = await supabase
+    .from('ops_quickbooks_sync_jobs')
+    .update({
+      status: 'pending',
+      error_message: null,
+      sync_attempts: 0,
+      next_retry_at: null,
+      alerted_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'failed')
+    .or(
+      afterReconnect
+        ? 'error_message.like.QB token refresh failed:%,error_message.like.QuickBooks authorization is no longer valid.%'
+        : 'error_message.eq.QB token refresh failed: 400,error_message.like.QuickBooks authorization is no longer valid.%',
+    )
+  if (error) throw error
+}
+
 type EnsureCustomerSyncJobResult =
   | { ok: true; queued: true; status: 'pending' | 'held' | 'synced' | 'failed' }
   | { ok: true; queued: false; reason: string }
@@ -74,6 +98,9 @@ export async function ensureCustomerQuickBooksSyncJob(
         status: syncStatus,
         payload,
         error_message: null,
+        sync_attempts: 0,
+        next_retry_at: null,
+        alerted_at: null,
         updated_at: now,
       })
       .eq('id', primaryRow.id)
@@ -170,6 +197,9 @@ export async function ensureInvoiceQuickBooksSyncJob(
         status: syncStatus,
         payload,
         error_message: null,
+        sync_attempts: 0,
+        next_retry_at: null,
+        alerted_at: null,
         updated_at: now,
       })
       .eq('id', primaryRow.id)

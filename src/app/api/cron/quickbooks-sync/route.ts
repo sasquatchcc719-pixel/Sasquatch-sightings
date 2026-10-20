@@ -25,6 +25,7 @@ import {
   type SyncAlertContext,
 } from '@/lib/ops/quickbooks-sync-retry'
 import { reconcileMissingInvoiceQuickBooksJobs } from '@/lib/ops/quickbooks-sync-reconciliation'
+import { resumeQuickBooksAuthorizationJobs } from '@/lib/ops/quickbooks-sync-jobs'
 
 const BATCH_SIZE = 20
 
@@ -130,6 +131,7 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+    await resumeQuickBooksAuthorizationJobs(supabase)
 
     // Auto-promote held rows now that we've confirmed QB is connected and enabled.
     // Rows are created as 'held' when the QUICKBOOKS_SYNC_ENABLED env var was false

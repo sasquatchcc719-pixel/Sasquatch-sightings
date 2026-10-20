@@ -37,6 +37,8 @@ type QBPendingJob = {
 
 type QBStatus = {
   connected: boolean
+  reconnect_required?: boolean
+  connection_error?: string | null
   sync_enabled: boolean
   realmId: string | null
   accessTokenExpiresAt: string | null
@@ -220,26 +222,17 @@ export function QuickBooksStatus() {
     setActionMessage(null)
     try {
       const res = await fetch('/api/admin/quickbooks/retry', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setStatus((prev) =>
-          prev
-            ? {
-                ...prev,
-                failed: 0,
-                pending:
-                  prev.pending +
-                  (data.retried || 0) +
-                  (data.promoted_from_held || 0),
-              }
-            : prev,
-        )
-      }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to retry jobs')
+      setActionMessage(
+        `${data.retried || 0} failed jobs queued for another attempt.`,
+      )
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'Failed to retry jobs',
       )
     } finally {
+      await loadStatus()
       setRetrying(false)
     }
   }
@@ -259,9 +252,10 @@ export function QuickBooksStatus() {
         throw new Error(data.error || 'Failed to redeploy invoice')
       }
       setActionMessage(
-        data.queued === false
-          ? `${invoice.label}: ${data.reason || 'No redeploy needed'}.`
-          : `${invoice.label} was redeployed to QuickBooks.`,
+        data.message ||
+          (data.queued === false
+            ? `${invoice.label}: ${data.reason || 'No redeploy needed'}.`
+            : `${invoice.label} was synced to QuickBooks.`),
       )
       await loadStatus()
     } catch (error) {
@@ -269,6 +263,7 @@ export function QuickBooksStatus() {
         error instanceof Error ? error.message : 'Failed to redeploy invoice',
       )
     } finally {
+      await loadStatus()
       setRetryingInvoiceId(null)
     }
   }
@@ -327,9 +322,30 @@ export function QuickBooksStatus() {
               : 'bg-red-500/20 text-red-400'
           }`}
         >
-          {status?.connected ? 'Connected' : 'Not Connected'}
+          {status?.connected
+            ? 'Connected'
+            : status?.reconnect_required
+              ? 'Reconnect required'
+              : 'Not Connected'}
         </span>
       </div>
+
+      {actionError && (
+        <p
+          role="alert"
+          className="rounded border border-red-500/20 bg-red-500/10 px-2 py-2 text-xs text-red-200"
+        >
+          {actionError}
+        </p>
+      )}
+      {actionMessage && (
+        <p
+          role="status"
+          className="rounded border border-green-500/20 bg-green-500/10 px-2 py-2 text-xs text-green-200"
+        >
+          {actionMessage}
+        </p>
+      )}
 
       {status?.connected ? (
         <>
@@ -408,16 +424,6 @@ export function QuickBooksStatus() {
               <div className="text-xs font-semibold text-red-300">
                 Stuck invoices needing attention
               </div>
-              {actionError && (
-                <div className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-200">
-                  {actionError}
-                </div>
-              )}
-              {actionMessage && (
-                <div className="rounded border border-green-500/20 bg-green-500/10 px-2 py-1 text-[11px] text-green-200">
-                  {actionMessage}
-                </div>
-              )}
               <div className="space-y-2">
                 {status.stuck_invoices.map((invoice) => {
                   const when = formatDateTime(
@@ -591,12 +597,28 @@ export function QuickBooksStatus() {
           </div>
         </>
       ) : (
-        <a
-          href="/api/admin/quickbooks/connect"
-          className="block w-full rounded-md bg-[#2CA01C] py-2 text-center text-xs font-medium text-white transition-colors hover:bg-[#259018]"
-        >
-          Connect QuickBooks
-        </a>
+        <>
+          {status?.connection_error && (
+            <p className="text-xs leading-5 text-red-200">
+              {status.connection_error}
+            </p>
+          )}
+          {status?.reconnect_required && (
+            <p className="text-xs leading-5 text-white/60">
+              {(status.failed || 0) + (status.pending || 0)} sync jobs are
+              waiting. Reconnecting resumes authorization-blocked jobs
+              automatically.
+            </p>
+          )}
+          <a
+            href="/api/admin/quickbooks/connect"
+            className="block w-full rounded-md bg-[#2CA01C] py-2 text-center text-xs font-medium text-white transition-colors hover:bg-[#259018]"
+          >
+            {status?.reconnect_required
+              ? 'Reconnect QuickBooks'
+              : 'Connect QuickBooks'}
+          </a>
+        </>
       )}
     </div>
   )
