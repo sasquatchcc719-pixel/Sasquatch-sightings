@@ -16,6 +16,7 @@
 import type { FiberVerdict } from './types'
 
 export type StopListHit = {
+  kind?: 'fiber' | 'construction' | 'care' | 'brand'
   /** The matched term as written in this file. */
   term: string
   fiber: string
@@ -25,6 +26,7 @@ export type StopListHit = {
 }
 
 type Rule = {
+  kind?: StopListHit['kind']
   /** Terms to match against normalized tag text. */
   terms: string[]
   fiber: string
@@ -83,6 +85,7 @@ const RULES: Rule[] = [
   {
     // Construction, not fibre. A wool hand-tufted rug passes a fibre check and
     // still comes apart: the latex holding the tufts breaks down with water.
+    kind: 'construction',
     terms: [
       'hand tufted',
       'handtufted',
@@ -104,6 +107,7 @@ const RULES: Rule[] = [
   {
     // Finishes that are destroyed by moisture regardless of the fibre under
     // them. These are the classic X-code textiles.
+    kind: 'construction',
     terms: ['crushed velvet', 'chintz', 'glazed chintz', 'moire'],
     fiber: 'Moisture-sensitive finish (crushed velvet / glazed chintz / moiré)',
     verdict: 'do_not_wet_clean',
@@ -115,6 +119,7 @@ const RULES: Rule[] = [
       'Vacuum only with the upholstery tool. Neither extraction nor encapsulation is safe on this finish. Take it off the invoice.',
   },
   {
+    kind: 'construction',
     terms: ['velvet', 'velour', 'chenille'],
     fiber: 'Pile fabric (velvet / velour / chenille)',
     verdict: 'low_moisture',
@@ -164,7 +169,8 @@ const RULES: Rule[] = [
     warnings: [
       'The leather backing shrinks and stiffens permanently once wet.',
     ],
-    recommendedMethod: 'Dry vacuum only. Take it off the invoice — neither of our methods is safe on a hide.',
+    recommendedMethod:
+      'Dry vacuum only. Take it off the invoice — neither of our methods is safe on a hide.',
   },
   {
     terms: ['haitian cotton'],
@@ -178,6 +184,7 @@ const RULES: Rule[] = [
   },
   {
     // Brands, not fibres. Listed so a brand-only tag still gets a right answer.
+    kind: 'brand',
     terms: ['crypton'],
     fiber: 'Crypton (performance fabric, moisture barrier)',
     verdict: 'go',
@@ -188,6 +195,7 @@ const RULES: Rule[] = [
       'Water-based cleaning and hot water extraction are approved by the manufacturer.',
   },
   {
+    kind: 'brand',
     terms: ['sunbrella'],
     fiber: 'Sunbrella (solution-dyed acrylic)',
     verdict: 'go',
@@ -195,10 +203,10 @@ const RULES: Rule[] = [
       'Air dry only — never apply heat.',
       'Unusually, dilute bleach IS approved by the manufacturer for stubborn stains.',
     ],
-    recommendedMethod:
-      'Water-based cleaning. Rinse thoroughly and air dry.',
+    recommendedMethod: 'Water-based cleaning. Rinse thoroughly and air dry.',
   },
   {
+    kind: 'brand',
     terms: ['revolution fabric', 'revolution performance'],
     fiber: 'Revolution (olefin/polypropylene performance fabric)',
     verdict: 'go',
@@ -290,10 +298,47 @@ const RULES: Rule[] = [
       'Encapsulation, or a light extraction with fast forced-air drying. Keep it dry enough that nothing wicks. Anti-browning agent if one is in stock.',
   },
   {
+    terms: [
+      'polyester',
+      'recycled pet',
+      '100% pet',
+      'polyethylene terephthalate',
+      'triexta',
+    ],
+    fiber: 'Polyester / PET / triexta',
+    verdict: 'go',
+    warnings: [
+      'Pre-test dyes and spotters; avoid over-wetting and dry promptly.',
+    ],
+    recommendedMethod:
+      'Hot water extraction is normally suitable. Use appropriate synthetic-fiber chemistry, rinse thoroughly and dry promptly.',
+  },
+  {
+    terms: ['nylon', 'polyamide'],
+    fiber: 'Nylon',
+    verdict: 'go',
+    warnings: [
+      'Pre-test dyes and spotters; rinse thoroughly and dry promptly.',
+    ],
+    recommendedMethod:
+      'Standard hot water extraction with appropriate synthetic-fiber chemistry.',
+  },
+  {
+    terms: ['polypropylene', 'olefin', 'polyolefin'],
+    fiber: 'Polypropylene / olefin',
+    verdict: 'go',
+    warnings: [
+      'Keep heat moderate, avoid friction damage and extract thoroughly to limit wicking.',
+    ],
+    recommendedMethod:
+      'Hot water extraction with controlled heat, thorough rinsing and prompt drying.',
+  },
+  {
     terms: ['wool', 'new zealand wool', 'virgin wool'],
     fiber: 'Wool',
     verdict: 'go',
     warnings: [
+      'Pre-test each color with the actual cleaning solution before extraction.',
       'Hard cap 120°F — heat felts wool permanently.',
       'pH 4.5-8.5 only. No oxidizers, no chlorine, no high-alkaline prespray.',
       'No aggressive agitation while wet.',
@@ -311,6 +356,14 @@ const CODE_RULES: Array<{
   warnings: string[]
   recommendedMethod: string
 }> = [
+  {
+    pattern: /\b(?:dry clean only|do not wet clean|do not use water)\b/i,
+    code: 'water prohibited',
+    verdict: 'do_not_wet_clean',
+    warnings: ['The tag explicitly prohibits water-based cleaning.'],
+    recommendedMethod:
+      'Vacuum only; do not extract or encapsulate. Document the care restriction.',
+  },
   {
     pattern: /\b(?:cleaning\s*)?code[\s:.\-]*x\b/i,
     code: 'X',
@@ -395,11 +448,38 @@ export function scanTagText(raw: string): StopListHit[] {
   const base = normalizeTagText(raw)
   const collapsed = collapseSpacedLetters(base)
   const hits: StopListHit[] = []
+  // Face yarn, foundation and furniture filling are different evidence.
+  // In particular, a law label's polyester batting says nothing about its cover.
+  const lawTag =
+    /under penalty of law|all new material|foam pad|fiber batting/i.test(raw)
+  const foundationFiber = '(?:cotton|jute|polyester|nylon|polypropylene|olefin)'
+  const foundationPattern = new RegExp(
+    `\\b(?:backing|foundation|warp(?:\\s+yarn)?|weft)\\s*[:=-]?\\s*(?:\\d+\\s*%?\\s*)?${foundationFiber}(?:\\s*(?:[/+,&]|and)\\s*(?:\\d+\\s*%?\\s*)?${foundationFiber})*\\b|\\b(?:cotton|jute)\\s+(?:backing|foundation|warp|weft)\\b`,
+    'gi',
+  )
+  const foundationText = (raw.match(foundationPattern) ?? []).join('\n')
+  // Remove only the named foundation span, never its entire OCR line: a pile
+  // declaration may follow on that same line.
+  const faceText = lawTag
+    ? Array.from(
+        raw.matchAll(
+          /\b(?:fabric content|cover content|pile content)\b\s*:?\s*([^\n]+)/gi,
+        ),
+        (match) => match[0],
+      ).join('\n')
+    : raw.replace(foundationPattern, '')
+  const faceBase = normalizeTagText(faceText)
+  const faceCollapsed = collapseSpacedLetters(faceBase)
 
   for (const rule of RULES) {
+    const isFiber = !rule.kind || rule.kind === 'fiber'
     for (const term of rule.terms) {
-      if (matchesTerm(base, term) || matchesTerm(collapsed, term)) {
+      if (
+        matchesTerm(isFiber ? faceBase : base, term) ||
+        matchesTerm(isFiber ? faceCollapsed : collapsed, term)
+      ) {
         hits.push({
+          kind: rule.kind ?? 'fiber',
           term,
           fiber: rule.fiber,
           verdict: rule.verdict,
@@ -411,9 +491,28 @@ export function scanTagText(raw: string): StopListHit[] {
     }
   }
 
+  for (const material of ['cotton', 'jute']) {
+    if (matchesTerm(normalizeTagText(foundationText), material)) {
+      hits.push({
+        kind: 'construction',
+        term: `${material} foundation`,
+        fiber: `${material === 'cotton' ? 'Cotton' : 'Jute'} backing / foundation`,
+        verdict: material === 'cotton' ? 'go' : 'low_moisture',
+        warnings: [
+          `${material === 'cotton' ? 'Cotton' : 'Jute'} foundation can wick or brown. Control moisture, avoid saturation and dry promptly.`,
+        ],
+        recommendedMethod:
+          material === 'cotton'
+            ? 'Controlled hot water extraction with thorough dry passes and prompt drying; do not saturate the foundation.'
+            : 'Encapsulation or carefully controlled light extraction after a browning/dye pre-test; never saturate the jute foundation.',
+      })
+    }
+  }
+
   for (const code of CODE_RULES) {
     if (code.pattern.test(raw)) {
       hits.push({
+        kind: 'care',
         term: `code ${code.code}`,
         fiber: `Care code ${code.code}`,
         verdict: code.verdict,
@@ -464,7 +563,8 @@ export function burnTestVerdict(result: BurnBucket): {
     case 'burns_like_paper':
       return {
         verdict: 'do_not_wet_clean',
-        fiber: 'Cellulosic (viscose, cotton, or jute — cannot be separated by burn)',
+        fiber:
+          'Cellulosic (viscose, cotton, or jute — cannot be separated by burn)',
         warnings: [
           'Burns like paper means cellulose. That family includes viscose, which is destroyed by water.',
           'Viscose and cotton burn identically — you cannot tell them apart this way, so assume the worst case.',

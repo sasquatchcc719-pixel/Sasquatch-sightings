@@ -8,9 +8,14 @@
  *
  * The split matters: this file can be broad and can go slightly stale without
  * anything becoming unsafe, because a wrong answer here still has to get past
- * the stop list. Researched against rug-industry and IICRC sources 2026-08-13.
+ * the stop list. Updated against manufacturer and WoolSafe guidance 2026-10-20.
  */
-
+// Primary references:
+// https://uk.surya.com/Rug-Guide (material-specific care; polyester vs viscose)
+// https://www.woolsafe.org/wp-content/uploads/2020/07/The-Cleaning-and-Maintenance-of-Wool-Carpets-2020-final.pdf
+// WoolSafe supports spray extraction with pre-testing, appropriate chemistry,
+// limited agitation, moisture control and drying. Fiber alone is not permission
+// to ignore the actual item's manufacturer instructions or construction.
 
 export const EQUIPMENT_REALITY = `
 WHAT THIS CREW CAN ACTUALLY DO — never recommend anything else
@@ -109,7 +114,9 @@ RUG BACKINGS AND FOUNDATIONS
   face fibre. A wool rug on a jute foundation can brown even though wool does
   not.
 - COTTON foundation (most hand-knotted): cellulosic. Browns and wicks; the
-  fringe is usually cotton and yellows first.
+  fringe is usually cotton and yellows first. This is a backing precaution,
+  not a cotton face-fiber identification or an automatic restriction on a
+  polyester/wool pile. Use controlled moisture and prompt drying.
 - FELT / NEEDLE-PUNCH: holds water badly, slow to dry, can bleed its own dye.
 - PVC / TPE / TPR / rubber non-slip backings: stiffen, crack and can mark or
   discolour the floor beneath when wet. Common on cheap kitchen and bath rugs.
@@ -138,7 +145,8 @@ FABRICS THAT NEED CARE FOR REASONS OTHER THAN FIBRE
   Any moisture must be minimal and the pile must be groomed in one direction
   while drying. Crushed velvet and glazed finishes are usually X.
 - CHENILLE: the pile distorts and mats; a great deal of chenille is rayon, so
-  suspect viscose. Encapsulation is the right first answer on chenille.
+  identify the content instead of assuming rayon. Verified polyester chenille
+  is not viscose; assess its pile finish and actual care instructions separately.
 - LINEN and LINEN BLENDS: browning, shrinkage, watermarking.
 - SILK / RAW SILK: do not extract. Off the invoice.
 - LEATHER, BONDED LEATHER, "VEGAN LEATHER" (PU): never run the wand over it.

@@ -6,9 +6,8 @@
  *   2. The burn test bucket, if the tech ran one.
  *   3. The model's own judgement.
  *
- * The model can only make a verdict MORE conservative. It is never allowed to
- * clear an item the stop list flagged — that is the whole point of having a
- * stop list rather than trusting the prompt.
+ * Readable face composition corrects unsupported visual guesses. Care,
+ * construction and dye-test restrictions still take precedence over clearance.
  */
 
 import OpenAI from 'openai'
@@ -19,27 +18,27 @@ import {
   type BurnBucket,
 } from './stop-list'
 import { FIBER_FIELD_REFERENCE } from './reference'
-import type {
-  FiberCheckResult,
-  FiberConfidence,
-  FiberVerdict,
-} from './types'
+import type { FiberCheckResult, FiberConfidence, FiberVerdict } from './types'
 
-const MODEL = process.env.FIBER_CHECK_MODEL || 'gpt-4o'
+const MODEL = process.env.FIBER_CHECK_MODEL || 'gpt-5.5'
 
 const SYSTEM_PROMPT = `You are the fiber identification check for Sasquatch Carpet Cleaning. A technician is standing in a customer's home with a rug or piece of upholstery and needs to know whether it is safe to wet clean, right now, before any water touches it.
 
 This crew has exactly two methods: hot water extraction (truckmount, Hydro-Force, CRB) and encapsulation (Releasit DS2, 19" bonnet). There is no solvent machine and no dry compound system. Every recommendation you give must resolve to hot water extraction, encapsulation, vacuum only, or "do not clean it — take it off the invoice". Never recommend a method they do not own; that reads as a refusal with no way forward.
 
-Your job is identification, not reassurance. A wrong "safe" answer destroys a customer's property and costs an insurance claim. A wrong "unsafe" answer costs thirty seconds. Bias hard toward caution.
+Identify from evidence. False refusals and false clearances both matter. Read the label before reasoning about cleaning. A readable fiber-content label, including handwriting, outranks a guess from sheen, age, price, origin, or construction. Never invent a hazardous fiber to justify caution.
 
 WHAT YOU RECEIVE
 - Photos: a care tag, the pile/face of the item, or the backing. Read any tag by OCR and transcribe it exactly.
 - Optionally, the result of a burn test the tech already ran.
 - Optionally, notes from the tech.
 
-THE FIBER THAT MATTERS MOST
-Viscose (also sold as rayon, art silk, faux silk, bamboo silk, banana silk, sari silk, cactus silk, Sabra silk, eucalyptus silk, vegan silk, soy silk, manmade silk, Tencel, lyocell, modal, cupro, Bemberg) is regenerated cellulose from wood pulp. Treat ANY silk-sounding name that is not verified real silk as viscose until proven otherwise — the trade invents new ones constantly. It loses roughly half its tensile strength when wet, browns permanently, and the pile crushes and never recovers. It is the single most common cause of destroyed rugs in this trade and it is extremely common in mass-market rugs sold since the mid-2010s. If a rug has a bright silvery sheen that shifts dramatically with viewing angle ("flops" light to dark as you walk around it) on a low dense pile, suspect viscose even with no tag.
+FIBER EVIDENCE
+- Wool and polyester are normally suitable for professional wet cleaning. Wool needs wool-safe chemistry, controlled temperature, gentle agitation, dye testing and prompt drying. Polyester/PET, nylon and polypropylene/olefin are not regenerated cellulose. Polyester alone is not a reason to restrict extraction.
+- Viscose/rayon and viscose-marketed art silk/bamboo silk are moisture-sensitive. Tencel/lyocell, modal and cupro are other regenerated cellulosics, not synonyms for every shiny fiber; retain the crew's conservative restriction when actually identified. Sheen alone cannot distinguish these from wool or synthetics. Never call a rug viscose merely because it looks silky. Synthetic product names can include "silk".
+- Keep face/pile fiber separate from backing, warp, foundation, foam and batting. A polyester pile on cotton foundation is still a polyester rug. Cotton foundation needs controlled moisture and drying, not an automatic low-moisture verdict. Jute foundation needs a separate browning warning; jute face fiber remains restricted.
+- Furniture law tags describing foam, batting, felt, stuffing or flame compliance do NOT identify the upholstery cover. Do not call a cover polyester from polyester filling. Ask for its fabric care/content label or a cover-fiber test. Flammability boilerplate is not a cleaning prohibition.
+- Extra restrictions require specific evidence: an explicit care instruction, visible backing deterioration, a sensitive finish, or a reported failed dye test. A generic possibility of dye bleed is a pre-test reminder, not proof of unstable dyes.
 
 VISUAL TELLS
 - Viscose: silvery shifting sheen, low dense pile, cool slick hand, often machine-made with a cotton foundation.
@@ -53,7 +52,9 @@ ALSO WATCH FOR
 - MODACRYLIC / faux fur: melts and mats at low heat.
 
 TRANSCRIBE THE TAG EXACTLY
-If any tag is visible, put its full text in tag_text verbatim, including fiber percentages, collection and design codes, and any care symbols or cleaning codes. Do not summarize it. Downstream safety checks run string matching over this field, so a paraphrase can defeat them.
+If any tag is visible, put its full text in tag_text verbatim, including fiber percentages, collection and design codes, and any care symbols or cleaning codes. Mark unreadable words [illegible]; never complete handwriting using your suspected fiber. Put only the clearly readable face/pile/cover composition in tag_fiber, empty when absent or ambiguous. Set tag_confidence to low for ambiguous handwriting. Do not add viscose or any other fiber that you cannot actually read. Downstream checks match this transcription; matching a guessed word does not confirm the material.
+
+Set restriction_basis to fiber only when the identified face fiber itself requires a restriction; care_instructions for explicit cleaning restrictions; construction for a specific backing/finish issue; dye_test only for actual reported color transfer; unidentified when the evidence cannot identify the face fiber; otherwise none. Keep fiber, verdict, warnings, method, summary and next_test consistent. If the content line is unreadable, say fiber unknown and request a sharp close-up of that line before proposing a burn test. Never request a fringe/backing burn test to identify the pile; only a sample of the actual face yarn can do that.
 
 CONFIDENCE
 Use "high" only when a tag states fiber content, or the item is unmistakable. Photos of pile alone rarely justify "high". When you are not confident, set confidence low and put the single most useful next test in next_test — one test, the simplest one, not a list.
@@ -74,6 +75,15 @@ type AnalyzeInput = {
 
 type ModelOutput = {
   tag_text: string
+  tag_fiber?: string
+  tag_confidence?: FiberConfidence
+  restriction_basis?:
+    | 'none'
+    | 'fiber'
+    | 'care_instructions'
+    | 'construction'
+    | 'dye_test'
+    | 'unidentified'
   fiber: string
   confidence: FiberConfidence
   verdict: FiberVerdict
@@ -88,6 +98,9 @@ const RESPONSE_SCHEMA = {
   additionalProperties: false,
   required: [
     'tag_text',
+    'tag_fiber',
+    'tag_confidence',
+    'restriction_basis',
     'fiber',
     'confidence',
     'verdict',
@@ -101,6 +114,28 @@ const RESPONSE_SCHEMA = {
       type: 'string',
       description:
         'Verbatim transcription of any care tag visible in the photos. Empty string if no tag is visible.',
+    },
+    tag_fiber: {
+      type: 'string',
+      description:
+        'Readable face/pile/cover composition only, excluding backing and filling. Empty if uncertain or absent.',
+    },
+    tag_confidence: {
+      type: 'string',
+      enum: ['high', 'medium', 'low'],
+      description:
+        'Confidence in the face-fiber content reading specifically, independent of illegible design codes or other label text.',
+    },
+    restriction_basis: {
+      type: 'string',
+      enum: [
+        'none',
+        'fiber',
+        'care_instructions',
+        'construction',
+        'dye_test',
+        'unidentified',
+      ],
     },
     fiber: {
       type: 'string',
@@ -128,7 +163,6 @@ const RESPONSE_SCHEMA = {
     },
   },
 } as const
-
 
 /** Fibre words that mean the tag already states its content. */
 const CONTENT_WORDS =
@@ -232,7 +266,7 @@ export async function analyzeFiber(
 
   const completion = await openai.chat.completions.create({
     model: MODEL,
-    max_completion_tokens: 900,
+    max_completion_tokens: 2200,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       {
@@ -241,7 +275,7 @@ export async function analyzeFiber(
           { type: 'text' as const, text: contextLines.join('\n') },
           ...input.images.map((url) => ({
             type: 'image_url' as const,
-            image_url: { url },
+            image_url: { url, detail: 'high' as const },
           })),
         ],
       },
@@ -274,7 +308,7 @@ export async function analyzeFiber(
       try {
         const second = await openai.chat.completions.create({
           model: MODEL,
-          max_completion_tokens: 900,
+          max_completion_tokens: 2200,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: contextLines.join('\n') },
@@ -303,6 +337,8 @@ export async function analyzeFiber(
             // The tag transcription is evidence from the photo. Never let
             // text from the internet reach the stop list.
             tag_text: parsed.tag_text,
+            tag_fiber: parsed.tag_fiber,
+            tag_confidence: parsed.tag_confidence,
           }
           usedResearch = true
         }
@@ -323,7 +359,7 @@ export async function analyzeFiber(
 
 /**
  * Combine the model's answer with the deterministic checks. Deterministic
- * always wins; the model may only escalate.
+ * restrictions win; readable content can correct unsupported fiber suspicion.
  */
 export function reconcile(
   parsed: ModelOutput,
@@ -351,6 +387,45 @@ export function reconcile(
         : 'No care tag — identified from the photo of the pile.',
   )
 
+  const hits = scanTagText(tagRead)
+  const faceHits = scanTagText(parsed.tag_fiber ?? '').filter(
+    (hit) => hit.kind === 'fiber',
+  )
+  const confirmedFace =
+    parsed.tag_confidence === 'high' &&
+    !/unknown|unidentified|illegible|\?/i.test(parsed.tag_fiber ?? '') &&
+    faceHits.length > 0 &&
+    faceHits.every(
+      (hit) =>
+        hit.verdict === 'go' &&
+        hits.some((tagHit) => tagHit.fiber === hit.fiber),
+    )
+  let nextTest = parsed.next_test?.trim() || null
+  let guidanceReplaced = false
+
+  // Only unsupported fiber suspicion can be corrected by a readable content
+  // label. A failed dye test or a backing/care restriction remains independent.
+  if (confirmedFace && !input.burnResult) {
+    fiber = parsed.tag_fiber!.trim()
+    confidence = 'high'
+    if (
+      parsed.restriction_basis === 'fiber' ||
+      parsed.restriction_basis === 'none'
+    ) {
+      verdict = 'go'
+      determinedBy = 'stop_list'
+      warnings = faceHits.flatMap((hit) => hit.warnings)
+      recommendedMethod = (
+        faceHits.find((hit) => hit.fiber === 'Wool') ?? faceHits[0]
+      ).recommendedMethod
+      nextTest = null
+      guidanceReplaced = true
+      trail.push(
+        'Readable face-fiber content takes precedence over an unsupported visual fiber guess.',
+      )
+    }
+  }
+
   // 1. Burn test bucket, if one was run.
   if (input.burnResult) {
     const burn = burnTestVerdict(input.burnResult)
@@ -372,10 +447,9 @@ export function reconcile(
 
   // 2. The stop list, run over the model's own tag transcription. This is the
   // authority — it overrides everything above it.
-  const hits = scanTagText(parsed.tag_text ?? '')
   trail.push(
     hits.length > 0
-      ? `Our fibre list matched "${hits[0].term}" on that tag → ${hits[0].fiber}.`
+      ? `Tag rules matched "${hits[0].term}" in the transcription → ${hits[0].fiber}. This depends on the accuracy of the tag reading.`
       : tagRead
         ? 'Our fibre list found nothing dangerous in the tag text.'
         : 'Our fibre list had no tag text to check.',
@@ -386,13 +460,49 @@ export function reconcile(
     if (escalated === top.verdict && top.verdict !== 'go') {
       verdict = top.verdict
       determinedBy = 'stop_list'
-      fiber = top.fiber
+      fiber =
+        top.kind === 'fiber'
+          ? top.fiber
+          : confirmedFace
+            ? parsed.tag_fiber!.trim()
+            : fiber
       warnings = [...top.warnings, ...warnings]
       recommendedMethod = top.recommendedMethod
-      confidence = 'high'
+      confidence = parsed.tag_confidence ?? 'high'
+      guidanceReplaced = true
     } else {
       verdict = escalated
     }
+  }
+
+  // Foundation precautions should accompany, not replace, a known pile fiber.
+  warnings = [
+    ...hits
+      .filter((hit) => hit.kind === 'construction')
+      .flatMap((hit) => hit.warnings),
+    ...warnings,
+  ]
+
+  if (
+    parsed.tag_confidence === 'low' &&
+    parsed.restriction_basis === 'fiber' &&
+    !input.burnResult &&
+    !hits.some((hit) => hit.kind !== 'fiber' && hit.verdict !== 'go')
+  ) {
+    fiber = 'Unconfirmed face fiber — tag content unclear'
+    verdict = 'do_not_wet_clean'
+    confidence = 'low'
+    determinedBy = 'ai_vision'
+    warnings = [
+      'The content line could not be read confidently. A suspected fiber is not a confirmed identification.',
+    ]
+    recommendedMethod =
+      'Vacuum only until the face-fiber content is confirmed. Do not extract or encapsulate based on a guessed tag reading.'
+    nextTest = 'Get a sharp close-up of the handwritten content line.'
+    guidanceReplaced = true
+    trail.push(
+      'Low-confidence content reading: the material is unconfirmed, not a confirmed stop-list fiber.',
+    )
   }
 
   // A web lookup may RAISE suspicion but must never clear an item. Asked about
@@ -400,11 +510,16 @@ export function reconcile(
   // reads 100% VISCOSE — web search answered "polyester". Confidently, and
   // wrong. Anything cleared on internet evidence alone gets held at
   // encapsulation until a tag or a burn test says otherwise.
-  if (verdict === 'go' && input.usedResearch && !input.burnResult) {
+  if (
+    verdict === 'go' &&
+    input.usedResearch &&
+    !input.burnResult &&
+    !confirmedFace
+  ) {
     verdict = 'low_moisture'
     warnings = [
       'Cleared only by a web lookup, which is not reliable for rug fibre content — held at low moisture.',
-      'Burn a few fibres from the fringe or back edge to confirm before extracting.',
+      'Confirm the actual face yarn, not the fringe or backing, before extracting.',
       ...warnings,
     ]
     recommendedMethod =
@@ -418,18 +533,21 @@ export function reconcile(
   if (
     verdict === 'go' &&
     determinedBy === 'ai_vision' &&
-    confidence !== 'high' &&
+    (confidence !== 'high' || (input.hasTag && parsed.tag_fiber === '')) &&
     !input.burnResult &&
-    !(parsed.tag_text ?? '').trim()
+    !confirmedFace
   ) {
     verdict = 'low_moisture'
     warnings = [
-      'Not positively identified — no tag, no burn test, and the photo alone is not conclusive.',
+      'Not positively identified — no readable face-fiber content or confirming face-yarn test.',
       'Treated as low moisture until identified. Run the burn test to clear it for extraction.',
       ...warnings,
     ]
     recommendedMethod =
-      'Encapsulation until this is identified. Snip a few fibres from the fringe or back edge and burn them — if they melt, it is synthetic and safe to extract.'
+      'Encapsulation only after an inconspicuous color/texture pre-test. Confirm the actual pile/cover before extraction; a fringe, backing or filling test cannot identify it.'
+    nextTest ||= input.hasTag
+      ? 'Get a sharp close-up of the face-fiber content label.'
+      : 'Test an inconspicuous sample of the actual face yarn, not the fringe or backing.'
   }
 
   if (input.usedResearch && input.researchNotes) {
@@ -449,7 +567,7 @@ export function reconcile(
   trail.push(
     `FINAL: ${verdict.replace(/_/g, ' ').toUpperCase()} — decided by ${
       determinedBy === 'stop_list'
-        ? 'the tag matching our fibre list (not a judgment call)'
+        ? 'rules applied to the transcribed tag (dependent on reading accuracy)'
         : determinedBy === 'burn_test'
           ? 'the burn test'
           : 'the AI read of the photo'
@@ -466,8 +584,11 @@ export function reconcile(
     confidence,
     warnings,
     recommendedMethod: recommendedMethod || null,
-    nextTest: parsed.next_test?.trim() ? parsed.next_test.trim() : null,
-    summary: parsed.summary,
+    nextTest,
+    summary:
+      guidanceReplaced || verdict !== parsed.verdict || fiber !== parsed.fiber
+        ? `${fiber || 'Fiber not confirmed'}. ${verdict === 'go' ? 'Suitable for controlled extraction after the normal pre-test.' : verdict === 'low_moisture' ? 'Use the restricted moisture protocol; see care and backing precautions.' : 'Do not wet clean; confirm the restriction before proceeding.'}`
+        : parsed.summary,
     tagText: parsed.tag_text ?? '',
     raw: parsed,
     trail,

@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import type { TechAppointment, TechFiberCheck } from '@/lib/tech/appointments'
 
-const MAX_DIM = 1280
+const MAX_DIM = 2048
 
 async function downscale(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file)
@@ -31,7 +31,7 @@ async function downscale(file: File): Promise<string> {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas unavailable')
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.8)
+  return canvas.toDataURL('image/jpeg', 0.9)
 }
 
 type BurnBucket = 'melts' | 'burning_hair' | 'burns_like_paper'
