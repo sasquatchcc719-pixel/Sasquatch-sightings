@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -200,6 +201,9 @@ export default function FleetPage() {
       <h1 className="flex items-center gap-2 text-xl font-semibold">
         <Truck className="h-5 w-5" /> Fleet &amp; Maintenance
       </h1>
+      <Link href="/admin/fleet/tracking" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-3 text-sm font-medium text-emerald-200 hover:bg-emerald-400/20">
+        <Truck className="h-4 w-4" /> Live vehicle tracking
+      </Link>
 
       {openTasks.length > 0 ? (
         <div className="space-y-2">
