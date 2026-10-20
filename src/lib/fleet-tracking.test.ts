@@ -125,4 +125,15 @@ describe('hardware tracker telemetry', () => {
       ],
     ])
   })
+  it('also breaks saved routes at a flagged GPS jump', () => {
+    const points = [0, 1, 2, 3].map((n) => ({
+      recorded_at: new Date(now + n * 1000).toISOString(),
+      latitude: 39,
+      longitude: -104 + n * 0.001,
+      speed_mps: null,
+      bearing: null,
+      break_before: n === 2,
+    }))
+    expect(trackerHistoryLines(points)).toHaveLength(2)
+  })
 })

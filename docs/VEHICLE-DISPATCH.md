@@ -53,6 +53,44 @@ code remain for reference. Current payroll uses `ops_timesheet_entries`; hardwar
 telemetry does not alter shifts, payroll, or job status. The old phone GPS API's
 shadow arrival stamping is not invoked by hardware telemetry.
 
-Next development can associate vehicles with operators and jobs, add verified
-arrival/departure events and road-based travel estimates, then build temporary
-customer tracking links on this same system.
+## Private invoice travel history
+
+Runtime configuration assigns each truck to a technician and a verified base
+point. Base addresses and coordinates stay in the private configuration table,
+not source control. Recording begins at the configuration's `enabled_at`;
+earlier prototype drives are not backfilled.
+
+A statement-level database trigger processes only newly accepted hardware points
+in timestamp order, in the same transaction as telemetry ingestion. It follows
+the assigned technician's scheduled addresses for the point's Mountain Time day.
+A base stop uses a 150 m radius, jobs 100 m, and requires at least 60 seconds of
+consecutive low-speed observations (at most 2.5 m/s). Departure requires 30 seconds
+outside the larger exit boundary (200 m base / 150 m jobs). The first observed
+entry/exit is saved after that dwell confirms it. GPS visits are observations of
+vehicle presence; they do not establish that work started or finished.
+
+`fleet_job_visits` retains arrival/departure and address snapshots. `fleet_job_trips`
+retains incoming/outgoing origins, destinations, times, observed distance, signal
+gaps, and a sparse actual-point route (15-second samples, capped around 2,000).
+They are not removed by the raw GPS history's 30-day cleanup. Distances exclude
+gaps over 90 seconds and implausible jumps; route maps break at those points.
+Starting away from an established stop gets an explicit unknown origin instead
+of an invented base departure. Reassignment closes incomplete trips and resets
+observation state, preserving old records. Late older points remain raw history
+without rewriting the already-established invoice ledger.
+
+Owner/admin/dispatcher users have a collapsed **Vehicle travel & visits** section
+on the admin invoice page. A separate role-checked `vehicle-history` endpoint
+reads only that invoice's appointment. Shared invoice responses, technician
+views, PDFs, customer portals, email and QuickBooks contain no vehicle ledger.
+All four storage tables have RLS and revoke browser-role access; service-role
+server access is required. There are no payroll, job-status or messaging writes.
+
+Verification: `scripts/test-private-fleet-journeys.mjs` runs the actual SQL against
+a local PGlite PostgreSQL database, never production. Set `PGLITE_MODULE` to an
+installed `@electric-sql/pglite` module, then run it with Node. It covers a complete
+base/job/job/base drive, jitter, short drive-bys, assignments, signal gaps,
+duplicates, older uploads, reassignment, and private-table access. API and panel
+tests cover authorization, invoice scoping, lazy loading and gap labels.
+
+Road-based travel estimates and customer tracking links remain future work.

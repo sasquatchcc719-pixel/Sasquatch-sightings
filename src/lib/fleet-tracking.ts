@@ -45,6 +45,7 @@ export type TrackerHistoryPoint = {
   longitude: number
   speed_mps: number | null
   bearing: number | null
+  break_before?: boolean
 }
 
 export function trackerStatus(tracker: FleetTracker, now = Date.now()) {
@@ -67,8 +68,10 @@ export function trackerHistoryLines(points: TrackerHistoryPoint[]) {
   let previous: TrackerHistoryPoint | undefined
   for (const point of points) {
     if (
-      previous &&
-      Date.parse(point.recorded_at) - Date.parse(previous.recorded_at) > 90_000
+      point.break_before ||
+      (previous &&
+        Date.parse(point.recorded_at) - Date.parse(previous.recorded_at) >
+          90_000)
     ) {
       if (line.length > 1) lines.push(line)
       line = []

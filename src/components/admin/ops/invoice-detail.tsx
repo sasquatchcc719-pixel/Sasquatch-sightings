@@ -1,6 +1,7 @@
 'use client'
 
 import { useLineItemReorder } from '@/components/ops/line-item-reorder'
+import { InvoiceVehicleHistory } from './invoice-vehicle-history'
 
 import { ServiceCategoryPicker } from '@/components/ops/service-category-picker'
 import type { ServicePhotoIdentity } from '@/lib/ops/service-photos'
@@ -166,6 +167,7 @@ type JobPhoto = {
 type InvoiceDetailProps = {
   invoiceId: string
   mode?: 'admin' | 'tech'
+  showVehicleHistory?: boolean
 }
 
 type OpsCustomer = {
@@ -351,6 +353,7 @@ function formatDriveElapsed(elapsedMs: number): string {
 export function InvoiceDetail({
   invoiceId,
   mode = 'admin',
+  showVehicleHistory = false,
 }: InvoiceDetailProps) {
   const isTechMode = mode === 'tech'
   const router = useRouter()
@@ -2233,6 +2236,8 @@ export function InvoiceDetail({
             </div>
           </>
         )}
+
+        {!isTechMode && showVehicleHistory && <InvoiceVehicleHistory invoiceId={invoiceId} />}
 
         {/* Divider + receipt delivery actions */}
         <div className="border-border/60 mt-6 border-t pt-5">

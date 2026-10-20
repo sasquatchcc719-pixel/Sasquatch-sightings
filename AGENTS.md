@@ -295,3 +295,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Verify navigation in both mobile and desktop menus before giving directions; keep Fleet reachable from the mobile Operations section and the Operations page menu.
 
 - Keep the name Live Dispatch for the single vehicle-based tool shared by calendar and dispatch page. Default to the calendar-selected day’s job pins; keep driving routes in an opt-in daily archive, and never tie vehicle movement to payroll or revive the retired technician map.
+
+- Keep vehicle travel/visit logs in separate admin-only storage and APIs; exclude them from technician/shared invoice payloads, customer documents, job-status changes, and payroll. Require an explicit truck/operator/base assignment and start recording at configuration time.
