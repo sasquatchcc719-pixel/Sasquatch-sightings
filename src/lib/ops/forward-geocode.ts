@@ -95,6 +95,14 @@ function normalizedTokens(value: string): string {
     .join(' ')
 }
 
+function normalizedRoad(value: string, state: string): string {
+  const road = normalizedTokens(value)
+  // Colorado's map data labels numbered state highways as "CO 105".
+  return /^(co|colorado)$/.test(normalizedTokens(state))
+    ? road.replace(/^(?:co|state hwy) (\d+)$/, 'hwy $1')
+    : road
+}
+
 function submittedStreetParts(street: string): {
   houseNumber: string
   road: string
@@ -141,7 +149,11 @@ export function isVerifiedStreetCandidate(
   if (normalizedTokens(address.house_number ?? '') !== street.houseNumber) {
     return false
   }
-  if (normalizedTokens(candidateRoad) !== street.road) return false
+  if (
+    normalizedRoad(candidateRoad, submitted.state) !==
+    normalizedRoad(street.road, submitted.state)
+  )
+    return false
 
   const stateCode = normalizedTokens(address['ISO3166-2-lvl4'] ?? '')
   const stateName = normalizedTokens(address.state ?? '')
@@ -169,9 +181,17 @@ export async function forwardGeocodeAddress(
   address: SubmittedAddress,
 ): Promise<ForwardGeocodeResult | null> {
   try {
+    const street = submittedStreetParts(address.street_1)
+    const coloradoHighway = /^(co|colorado)$/.test(
+      normalizedTokens(address.state),
+    )
+      ? street?.road.match(/^(?:hwy|state hwy) (\d+)$/)
+      : null
     const params = new URLSearchParams({
       format: 'json',
-      street: address.street_1,
+      street: coloradoHighway
+        ? `${street!.houseNumber} CO ${coloradoHighway[1]}`
+        : address.street_1,
       city: address.city,
       state: address.state,
       postalcode: address.zip_code,

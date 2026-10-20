@@ -26,11 +26,48 @@ const exactCandidate = {
   },
 }
 
+const highwayAddress = {
+  street_1: '443 Highway 105',
+  city: 'Palmer Lake',
+  state: 'CO',
+  zip_code: '80133',
+}
+const highwayCandidate = {
+  lat: '39.1124001',
+  lon: '-104.8965049',
+  address: {
+    house_number: '443',
+    road: 'CO 105',
+    village: 'Palmer Lake',
+    state: 'Colorado',
+    'ISO3166-2-lvl4': 'US-CO',
+    postcode: '80133',
+  },
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
 describe('isVerifiedStreetCandidate', () => {
+  it('matches a Colorado highway alias while preserving the route and house number', () => {
+    expect(isVerifiedStreetCandidate(highwayAddress, highwayCandidate)).toBe(
+      true,
+    )
+    for (const address of [
+      { ...highwayCandidate.address, road: 'CO 106' },
+      { ...highwayCandidate.address, road: 'US 105' },
+      { ...highwayCandidate.address, house_number: '433' },
+    ]) {
+      expect(
+        isVerifiedStreetCandidate(highwayAddress, {
+          ...highwayCandidate,
+          address,
+        }),
+      ).toBe(false)
+    }
+  })
+
   it('accepts the submitted house number and normalized street', () => {
     expect(isVerifiedStreetCandidate(submitted, exactCandidate)).toBe(true)
   })
@@ -59,6 +96,23 @@ describe('isVerifiedStreetCandidate', () => {
 })
 
 describe('forwardGeocodeAddress', () => {
+  it('queries the provider highway name without changing the submitted address', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [highwayCandidate],
+      }),
+    )
+    await expect(forwardGeocodeAddress(highwayAddress)).resolves.toMatchObject({
+      lat: 39.1124001,
+      lng: -104.8965049,
+    })
+    const url = new URL(vi.mocked(fetch).mock.calls[0][0] as string)
+    expect(url.searchParams.get('street')).toBe('443 CO 105')
+    expect(highwayAddress.street_1).toBe('443 Highway 105')
+  })
+
   it('skips an unverified first candidate and returns a verified result', async () => {
     vi.stubGlobal(
       'fetch',
