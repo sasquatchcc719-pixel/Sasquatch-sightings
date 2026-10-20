@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlsplit, parse_qs
 
 class CameraSerial:
-    def __init__(self, port, baud=921600):
+    def __init__(self, port, baud=4000000):
         self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         self.original = termios.tcgetattr(self.fd)
         tty.setraw(self.fd)
@@ -130,7 +130,7 @@ capture();</script></html>""".encode("utf-8")
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', default='/dev/cu.usbmodem5B910314521')
-    parser.add_argument('--baud', type=int, default=921600, help='USB baud; use 115200 for firmware 0.2.0 or older')
+    parser.add_argument('--baud', type=int, default=4000000, help='USB baud; 921600 for firmware 0.2.1, 115200 for 0.2.0 or older')
     parser.add_argument('--http-port', type=int, default=8770)
     parser.add_argument('--snapshot', type=Path, help='Save one JPEG and exit instead of opening a preview server')
     args = parser.parse_args()

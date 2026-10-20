@@ -24,8 +24,8 @@ inline bool start() {
   config.xclk_freq_hz = 20000000;
   config.ledc_timer = LEDC_TIMER_0; config.ledc_channel = LEDC_CHANNEL_0;
   config.pixel_format = PIXFORMAT_JPEG; config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 16; config.fb_count = 1;
-  config.fb_location = CAMERA_FB_IN_PSRAM; config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.jpeg_quality = 16; config.fb_count = 2;
+  config.fb_location = CAMERA_FB_IN_PSRAM; config.grab_mode = CAMERA_GRAB_LATEST;
   esp_err_t result = esp_camera_init(&config);
   if (result != ESP_OK) { error("check_CAM_switch_and_ribbon", result); return false; }
   ready = true;
