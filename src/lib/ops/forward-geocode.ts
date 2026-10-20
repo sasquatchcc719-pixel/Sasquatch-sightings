@@ -13,6 +13,7 @@ export interface ForwardGeocodeResult {
   displayName: string
   resolvedCity: string
   neighborhood: string
+  source?: 'colorado-state-address-point'
 }
 
 type SubmittedAddress = {
@@ -176,10 +177,85 @@ export function isVerifiedStreetCandidate(
   return zipMatches || cityMatches
 }
 
+/** County-supplied address points give better local home coverage than OSM. */
+export async function coloradoAddressPoint(
+  address: SubmittedAddress,
+): Promise<ForwardGeocodeResult | null> {
+  if (!/^(co|colorado)$/.test(normalizedTokens(address.state))) return null
+  const street = submittedStreetParts(address.street_1)
+  if (!street) return null
+  const params = new URLSearchParams({
+    where: `AddrNum = '${street.houseNumber.replaceAll("'", "''")}'`,
+    outFields: 'AddrFull,PlaceName,Zipcode,Latitude,Longitude',
+    returnGeometry: 'false',
+    f: 'json',
+  })
+  try {
+    const response = await fetch(
+      `https://gis.colorado.gov/public/rest/services/Address_and_Parcel/Colorado_Public_Addresses/FeatureServer/0/query?${params}`,
+      { signal: AbortSignal.timeout(8_000) },
+    )
+    if (!response.ok) return null
+    const payload = await response.json()
+    if (payload.exceededTransferLimit || !Array.isArray(payload.features))
+      return null
+    const matches: ForwardGeocodeResult[] = []
+    for (const feature of payload.features) {
+      const a = feature.attributes ?? {}
+      const candidateStreet = submittedStreetParts(String(a.AddrFull ?? ''))
+      const lat = a.Latitude == null ? NaN : Number(a.Latitude)
+      const lng = a.Longitude == null ? NaN : Number(a.Longitude)
+      if (
+        !candidateStreet ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        lat < 37 ||
+        lat > 41.1 ||
+        lng < -109.1 ||
+        lng > -102 ||
+        !isVerifiedStreetCandidate(address, {
+          address: {
+            house_number: candidateStreet.houseNumber,
+            road: candidateStreet.road,
+            city: String(a.PlaceName ?? ''),
+            postcode: String(a.Zipcode ?? ''),
+            state: 'Colorado',
+          },
+        })
+      )
+        continue
+      matches.push({
+        lat,
+        lng,
+        displayName: [a.AddrFull, a.PlaceName, 'CO', a.Zipcode]
+          .filter(Boolean)
+          .join(', '),
+        resolvedCity: a.PlaceName || address.city,
+        neighborhood: '',
+        source: 'colorado-state-address-point',
+      })
+    }
+    // Multiple unit records are fine only when they identify the same site.
+    if (
+      matches.some(
+        (p) =>
+          Math.abs(p.lat - matches[0].lat) > 0.0005 ||
+          Math.abs(p.lng - matches[0].lng) > 0.0005,
+      )
+    )
+      return null
+    return matches[0] ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Forward-geocode a structured address to a verified street-level point. */
 export async function forwardGeocodeAddress(
   address: SubmittedAddress,
 ): Promise<ForwardGeocodeResult | null> {
+  const official = await coloradoAddressPoint(address)
+  if (official) return official
   try {
     const street = submittedStreetParts(address.street_1)
     const coloradoHighway = /^(co|colorado)$/.test(
@@ -267,7 +343,7 @@ export async function queueGeocodeForAddress(
         latitude: result.lat,
         longitude: result.lng,
         geocoded_at: new Date().toISOString(),
-        geocode_source: 'nominatim-street-verified',
+        geocode_source: result.source ?? 'nominatim-street-verified',
         updated_at: new Date().toISOString(),
       })
       .eq('id', addressId)

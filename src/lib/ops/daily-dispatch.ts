@@ -81,6 +81,8 @@ export function dispatchLocation(
     address?.geocoded_at &&
     [
       'nominatim-street-verified',
+      'nominatim-street-verified-backfill',
+      'colorado-state-address-point',
       'repair:colorado-springs-address-point',
     ].includes(address.geocode_source ?? '')
   const point = verified

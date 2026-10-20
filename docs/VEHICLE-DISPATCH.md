@@ -18,6 +18,15 @@ address-point repair source) or captured on-site GPS. Unverified raw geocodes an
 known area centroids are rejected. Unmapped jobs remain visible in the list with a
 location-verification notice; the map never invents a pin.
 
+Colorado addresses now use the state's county-supplied address-point dataset
+first, with exact house/street and city or ZIP matching. Existing verified
+Nominatim and strict backfill results remain accepted; Nominatim is the fallback
+when the official dataset has no exact point. Coordinates are saved on the shared
+service-address row and invalidated when address text changes. New-address and
+booking reuse lookups finish before the server responds, rather than relying on
+an unawaited request that a serverless process may suspend. No paid geocoding
+account or new subscription is required. Ambiguous/typo results still need review.
+
 Current vehicle positions appear only on today's view. Past and future dates show
 the relevant jobs without overlaying today's vans. Offline markers retain their
 last reported position and are labeled offline.

@@ -59,6 +59,9 @@ export async function resolveServiceAddress(
       return true
     })
     if (match) {
+      if (!match.latitude || !match.longitude || !match.geocoded_at) {
+        await queueGeocodeForAddress(supabase, match.id, match)
+      }
       return match
     }
   }
@@ -83,9 +86,9 @@ export async function resolveServiceAddress(
 
   const newAddress = inserted?.[0] || null
 
-  // Fire-and-forget background geocode for new addresses
+  // Finish the lookup before a serverless response can suspend the process.
   if (newAddress && !newAddress.latitude) {
-    queueGeocodeForAddress(supabase, newAddress.id, {
+    await queueGeocodeForAddress(supabase, newAddress.id, {
       street_1: newAddress.street_1,
       city: newAddress.city,
       state: newAddress.state,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  coloradoAddressPoint,
   forwardGeocodeAddress,
   invalidateGeocodeForAddressUpdate,
   isVerifiedStreetCandidate,
@@ -47,6 +48,7 @@ const highwayCandidate = {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('isVerifiedStreetCandidate', () => {
@@ -99,16 +101,22 @@ describe('forwardGeocodeAddress', () => {
   it('queries the provider highway name without changing the submitted address', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [highwayCandidate],
-      }),
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ features: [] }),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: async () => [highwayCandidate],
+        }),
     )
     await expect(forwardGeocodeAddress(highwayAddress)).resolves.toMatchObject({
       lat: 39.1124001,
       lng: -104.8965049,
     })
-    const url = new URL(vi.mocked(fetch).mock.calls[0][0] as string)
+    const url = new URL(vi.mocked(fetch).mock.calls[1][0] as string)
     expect(url.searchParams.get('street')).toBe('443 CO 105')
     expect(highwayAddress.street_1).toBe('443 Highway 105')
   })
@@ -116,16 +124,26 @@ describe('forwardGeocodeAddress', () => {
   it('skips an unverified first candidate and returns a verified result', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [
-          {
-            ...exactCandidate,
-            address: { city: 'Monument', state: 'Colorado', postcode: '80132' },
-          },
-          exactCandidate,
-        ],
-      }),
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ features: [] }),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: async () => [
+            {
+              ...exactCandidate,
+              address: {
+                city: 'Monument',
+                state: 'Colorado',
+                postcode: '80132',
+              },
+            },
+            exactCandidate,
+          ],
+        }),
     )
 
     await expect(forwardGeocodeAddress(submitted)).resolves.toEqual({
@@ -140,24 +158,79 @@ describe('forwardGeocodeAddress', () => {
   it('returns null instead of falling back to an area centroid', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [
-          {
-            lat: '39.0916586',
-            lon: '-104.872758',
-            address: {
-              town: 'Monument',
-              state: 'Colorado',
-              postcode: '80132',
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ features: [] }),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: async () => [
+            {
+              lat: '39.0916586',
+              lon: '-104.872758',
+              address: {
+                town: 'Monument',
+                state: 'Colorado',
+                postcode: '80132',
+              },
             },
-          },
-        ],
-      }),
+          ],
+        }),
     )
 
     await expect(forwardGeocodeAddress(submitted)).resolves.toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Colorado address points', () => {
+  const point = {
+    AddrFull: '123 N MAIN ST',
+    PlaceName: 'MONUMENT',
+    Zipcode: '80132',
+    Latitude: 39.1001,
+    Longitude: -104.8501,
+  }
+  function reply(features: unknown[], extra = {}) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          features: features.map((attributes) => ({ attributes })),
+          ...extra,
+        }),
+      }),
+    )
+  }
+  it('uses an exact official point without calling the fallback provider', async () => {
+    reply([point])
+    await expect(forwardGeocodeAddress(submitted)).resolves.toMatchObject({
+      lat: point.Latitude,
+      lng: point.Longitude,
+      source: 'colorado-state-address-point',
+    })
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it('rejects wrong houses, roads, localities, empty coordinates and truncated results', async () => {
+    for (const bad of [
+      { ...point, AddrFull: '124 N MAIN ST' },
+      { ...point, AddrFull: '123 N SECOND ST' },
+      { ...point, PlaceName: 'DENVER', Zipcode: '80202' },
+      { ...point, Latitude: null },
+      { ...point, Latitude: 0 },
+    ]) {
+      reply([bad])
+      await expect(coloradoAddressPoint(submitted)).resolves.toBeNull()
+    }
+    reply([point], { exceededTransferLimit: true })
+    await expect(coloradoAddressPoint(submitted)).resolves.toBeNull()
+  })
+  it('rejects conflicting locations for the same address', async () => {
+    reply([point, { ...point, Latitude: point.Latitude + 0.01 }])
+    await expect(coloradoAddressPoint(submitted)).resolves.toBeNull()
   })
 })
 
