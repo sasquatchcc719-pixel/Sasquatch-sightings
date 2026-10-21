@@ -564,6 +564,14 @@ export function PayrollTimesheetsView() {
   )
   const totalEarnedAddOnBonus = addOnBonusesQuery.data?.earnedBonus || 0
   const totalPendingAddOnBonus = addOnBonusesQuery.data?.pendingBonus || 0
+  const summaryQueries = [
+    entriesQuery,
+    gratuitiesQuery,
+    addOnBonusesQuery,
+    premiumsQuery,
+  ]
+  const summaryUnavailable = summaryQueries.some((query) => query.isError)
+  const summaryLoading = summaryQueries.some((query) => query.isPending)
 
   const premiumByDayAndStaff = useMemo(() => {
     const map = new Map<string, PremiumRow>()
@@ -993,6 +1001,142 @@ export function PayrollTimesheetsView() {
         </select>
       </div>
 
+      <section
+        aria-label="Payroll summary"
+        className="overflow-hidden rounded-2xl border border-emerald-400/25 bg-slate-900/70"
+      >
+        <div className="border-b border-white/10 px-5 py-4">
+          <h3 className="text-lg font-semibold text-white">Payroll summary</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            {totalsByStaff.length === 1
+              ? totalsByStaff[0].name
+              : staffFilter
+                ? staff.find((person) => person.id === staffFilter)
+                    ?.display_name
+                : 'All staff'}
+            {' · '}
+            {fmtMin(totalPayableMinutes)} payable time
+          </p>
+        </div>
+        <dl className="divide-y divide-white/10">
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <dt className="text-slate-200">Hourly pay</dt>
+            <dd className="font-mono text-lg text-white">
+              {entriesQuery.isError
+                ? 'Unavailable'
+                : entriesQuery.isPending
+                  ? 'Loading…'
+                  : fmtMoney(totalGrossPay)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <dt className="text-slate-200">Gratuity</dt>
+            <dd className="font-mono text-lg text-white">
+              {gratuitiesQuery.isError
+                ? 'Unavailable'
+                : gratuitiesQuery.isPending
+                  ? 'Loading…'
+                  : fmtMoney(totalGratuity)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <dt className="text-slate-200">Add-on bonus</dt>
+            <dd className="font-mono text-lg text-white">
+              {addOnBonusesQuery.isError
+                ? 'Unavailable'
+                : addOnBonusesQuery.isPending
+                  ? 'Loading…'
+                  : fmtMoney(totalEarnedAddOnBonus)}
+            </dd>
+          </div>
+          {(totalAppliedPremiumPay > 0 ||
+            premiumsQuery.isError ||
+            premiumsQuery.isPending) && (
+            <div className="flex items-center justify-between gap-4 px-5 py-4">
+              <dt className="text-slate-200">After-hours premium</dt>
+              <dd className="font-mono text-lg text-white">
+                {premiumsQuery.isError
+                  ? 'Unavailable'
+                  : premiumsQuery.isPending
+                    ? 'Loading…'
+                    : fmtMoney(totalAppliedPremiumPay)}
+              </dd>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-emerald-500/10 px-5 py-5">
+            <dt className="text-lg font-bold text-white">Total gross pay</dt>
+            <dd className="font-mono text-3xl font-bold text-emerald-300">
+              {summaryUnavailable
+                ? 'Unavailable'
+                : summaryLoading
+                  ? 'Loading…'
+                  : fmtMoney(
+                      totalGrossPay +
+                        totalGratuity +
+                        totalEarnedAddOnBonus +
+                        totalAppliedPremiumPay,
+                    )}
+            </dd>
+          </div>
+        </dl>
+        <p className="px-5 py-3 text-sm text-emerald-100/80">
+          The total includes every amount listed above.
+        </p>
+        {gratuitiesQuery.isError && (
+          <p className="px-5 pb-3 text-sm text-amber-200">
+            Total incomplete — gratuity unavailable
+          </p>
+        )}
+        {totalsByStaff.length > 1 && !summaryUnavailable && !summaryLoading && (
+          <div className="overflow-x-auto border-t border-white/10 px-5 py-4">
+            <table className="w-full text-left text-sm text-slate-300">
+              <caption className="mb-3 text-left font-semibold text-white">
+                By worker
+              </caption>
+              <thead>
+                <tr>
+                  {[
+                    'Worker',
+                    'Hourly pay',
+                    'Gratuity',
+                    'Add-on bonus',
+                    'After-hours',
+                    'Total',
+                  ].map((label) => (
+                    <th key={label} className="px-2 py-2 whitespace-nowrap">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {totalsByStaff.map((total) => (
+                  <tr key={total.name} className="border-t border-white/5">
+                    <th className="px-2 py-2 font-medium whitespace-nowrap">
+                      {total.name}
+                    </th>
+                    {[
+                      total.grossPay,
+                      total.gratuityPay,
+                      total.addOnBonusPay,
+                      total.premiumPay,
+                      total.grossPay +
+                        total.gratuityPay +
+                        total.addOnBonusPay +
+                        total.premiumPay,
+                    ].map((amount, index) => (
+                      <td key={index} className="px-2 py-2 font-mono">
+                        {fmtMoney(amount)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <form
           onSubmit={addEntry}
@@ -1176,83 +1320,6 @@ export function PayrollTimesheetsView() {
               </button>
             </div>
           </form>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-400">Total payable time</p>
-                <p className="mt-1 text-3xl font-bold text-white">
-                  {fmtMin(totalPayableMinutes)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-slate-400">Gross pay</p>
-                <p className="mt-1 text-3xl font-bold text-emerald-300">
-                  {fmtMoney(
-                    totalGrossPay +
-                      totalAppliedPremiumPay +
-                      totalEarnedAddOnBonus +
-                      totalGratuity,
-                  )}
-                </p>
-                {totalAppliedPremiumPay > 0 && (
-                  <p className="mt-0.5 text-xs text-emerald-200/80">
-                    incl. {fmtMoney(totalAppliedPremiumPay)} after-hours
-                  </p>
-                )}
-                {totalEarnedAddOnBonus > 0 && (
-                  <p className="mt-0.5 text-xs text-cyan-200/80">
-                    incl. {fmtMoney(totalEarnedAddOnBonus)} add-on bonus
-                  </p>
-                )}
-                {totalGratuity > 0 && (
-                  <p className="mt-0.5 text-xs text-violet-200/80">
-                    incl. {fmtMoney(totalGratuity)} gratuity
-                  </p>
-                )}
-                {(gratuitiesQuery.isPending || gratuitiesQuery.isError) && (
-                  <p className="mt-1 text-xs text-amber-200">
-                    {gratuitiesQuery.isError
-                      ? 'Total incomplete — gratuity unavailable'
-                      : 'Loading gratuity…'}
-                  </p>
-                )}
-              </div>
-            </div>
-            {totalsByStaff.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {totalsByStaff.map((total) => (
-                  <div
-                    key={total.name}
-                    className="flex justify-between text-sm text-slate-300"
-                  >
-                    <span>{total.name}</span>
-                    <span className="font-mono">
-                      {fmtMin(total.minutes)} ·{' '}
-                      {fmtMoney(
-                        total.grossPay +
-                          total.premiumPay +
-                          total.addOnBonusPay +
-                          total.gratuityPay,
-                      )}
-                      {total.gratuityPay > 0 && (
-                        <span className="block text-xs text-violet-200/80">
-                          incl. {fmtMoney(total.gratuityPay)} gratuity
-                        </span>
-                      )}
-                      {total.premiumPay + total.addOnBonusPay > 0 && (
-                        <span className="text-emerald-300/80">
-                          {' '}
-                          (+
-                          {fmtMoney(total.premiumPay + total.addOnBonusPay)})
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
