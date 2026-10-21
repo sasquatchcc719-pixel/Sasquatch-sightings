@@ -34,9 +34,13 @@ export function buildForwardDial(params: {
     : config.primaryForwardNumber
   const next = `${baseUrl}/api/twilio/dial-failover?screened=1&mode=${encodeURIComponent(mode)}${secondary ? '&stage=secondary' : ''}`
   const screen = `${baseUrl}/api/twilio/call-accept?parent=${encodeURIComponent(callSid)}`
+  const softphone =
+    secondary && (mode === 'water-damage' || mode === 'technical')
+      ? `<Client url="${escapeTwiml(screen)}" method="POST">admin_charles</Client>`
+      : ''
   return `<?xml version="1.0" encoding="UTF-8"?><Response>
   <Dial timeout="${timeout}" action="${escapeTwiml(next)}" callerId="${escapeTwiml(callerPhone)}" answerOnBridge="true">
-    <Number url="${escapeTwiml(screen)}" method="POST">${escapeTwiml(target)}</Number>
+    <Number url="${escapeTwiml(screen)}" method="POST">${escapeTwiml(target)}</Number>${softphone}
   </Dial>
 </Response>`
 }

@@ -244,4 +244,13 @@ describe('POST /api/twilio/dial-failover', () => {
     ).text()
     expect(xml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
   })
+  it('preserves the screened browser phone for the secondary water-damage call', async () => {
+    const xml = await (
+      await POST(
+        twilioRequest('no-answer', { screened: true, mode: 'water-damage' }),
+      )
+    ).text()
+    expect(xml).toMatch(/<Client[^>]*>admin_charles<\/Client>/)
+    expect(xml).toContain('/api/twilio/call-accept?parent=CA123')
+  })
 })

@@ -121,7 +121,9 @@ export function inspectPhoneCall(
       add('Forwarding leg failed', { childSid: child.sid, target: child.to })
     if (
       !targets.includes(child.to) &&
-      child.to !== config.failoverForwardNumber
+      child.to !== config.failoverForwardNumber &&
+      child.to !== 'client:admin_charles' &&
+      child.to !== 'admin_charles'
     )
       add('Unexpected forwarding destination', {
         childSid: child.sid,
