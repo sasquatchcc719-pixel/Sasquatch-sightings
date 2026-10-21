@@ -4,6 +4,7 @@ import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
 import { buildForwardDial } from '@/lib/twilio/forward-twiml'
+import { buildCallerMenu } from '@/lib/twilio/caller-menu'
 
 const SETTINGS = {
   // Static fallback values. Dynamic values come from phone_settings.
@@ -62,25 +63,15 @@ export async function POST(request: NextRequest) {
         caller_phone: callerPhone,
         outcome: 'inbound',
         forwarding_required: true,
+        caller_screening_status: routingConfig.temporaryOpenLineMode
+          ? 'bypassed'
+          : 'pending',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'call_sid', ignoreDuplicates: true },
     )
     if (logError)
       console.error('[Call Router] Could not save inbound call:', logError)
-
-    // Fire push notification immediately (don't await — must not delay TwiML)
-    const displayPhone = callerPhone.replace(
-      /^\+1(\d{3})(\d{3})(\d{4})$/,
-      '($1) $2-$3',
-    )
-    sendOneSignalNotification({
-      heading: 'Incoming Call',
-      content: `${displayPhone || callerPhone} is calling`,
-      data: { type: 'incoming_call', phone: callerPhone, url: '/admin/phone' },
-    }).catch((err) =>
-      console.error('[Call Router] Push notification error:', err),
-    )
 
     // Get current time in Mountain Time
     const now = new Date()
@@ -116,9 +107,24 @@ export async function POST(request: NextRequest) {
     let twimlResponse
 
     const baseUrl = getBaseUrl()
-    const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
-    const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
-    if (routingConfig.temporaryOpenLineMode || isBusinessHours) {
+    if (routingConfig.temporaryOpenLineMode) {
+      // Fire push notification immediately (don't await — must not delay TwiML)
+      const displayPhone = callerPhone.replace(
+        /^\+1(\d{3})(\d{3})(\d{4})$/,
+        '($1) $2-$3',
+      )
+      sendOneSignalNotification({
+        heading: 'Incoming Call',
+        content: `${displayPhone || callerPhone} is calling`,
+        data: {
+          type: 'incoming_call',
+          phone: callerPhone,
+          url: '/admin/phone',
+        },
+      }).catch((err) =>
+        console.error('[Call Router] Push notification error:', err),
+      )
+
       console.log('[Call Router] Direct primary then secondary forwarding')
       twimlResponse = buildForwardDial({
         config: routingConfig,
@@ -128,16 +134,10 @@ export async function POST(request: NextRequest) {
         mode: 'open-line',
       })
     } else {
-      console.log(
-        '[Call Router] After hours - water-damage option then voicemail',
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather action="${ivrMenuUrl}?context=after-hours" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. If you have active water damage, a burst pipe, or flooding, press 2 now. For anything else, stay on the line to leave a message.</Say>
-  </Gather>
-  <Redirect method="POST">${afterHoursUrl}</Redirect>
-</Response>`
+      console.log('[Call Router] Caller spam screening menu', {
+        afterHours: !isBusinessHours,
+      })
+      twimlResponse = buildCallerMenu({ baseUrl, afterHours: !isBusinessHours })
     }
 
     return new NextResponse(twimlResponse, {

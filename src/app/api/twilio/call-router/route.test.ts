@@ -109,20 +109,21 @@ describe('POST /api/twilio/call-router', () => {
     expect(twiml).not.toContain('<Redirect')
   })
 
-  it('rings primary directly in business hours without requiring caller input', async () => {
+  it('requires a caller menu selection during business hours before ringing or pushing', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-07T16:00:00Z'))
     getCallRoutingConfigMock.mockResolvedValue({
       ...routingConfig,
       temporaryOpenLineMode: false,
     })
-    const response = await POST(twilioRequest())
-    const twiml = await response.text()
-    expect(twiml).toContain('<Dial')
-    expect(twiml).toMatch(/<Number[^>]*>\+17206447577<\/Number>/)
-    expect(twiml).not.toContain('<Gather')
-    expect(twiml).not.toContain('<Redirect')
-    expect(twiml).toContain('/api/twilio/call-accept?parent=CA123')
+    const twiml = await (await POST(twilioRequest())).text()
+    expect(twiml).toContain('<Gather')
+    expect(twiml).toContain('press 1.')
+    expect(twiml).toContain('press 2.')
+    expect(twiml).toContain('actionOnEmptyResult="true"')
+    expect(twiml).toContain('context=business-hours&amp;attempt=0')
+    expect(twiml).not.toContain('<Dial')
+    expect(sendOneSignalNotificationMock).not.toHaveBeenCalled()
   })
 
   it('offers the water-damage option before voicemail after hours', async () => {
@@ -141,6 +142,7 @@ describe('POST /api/twilio/call-router', () => {
     )
     expect(twiml).not.toContain('press 1')
     expect(twiml).toContain('/api/twilio/ivr-menu?context=after-hours')
-    expect(twiml).toContain('/api/twilio/call-after-hours')
+    expect(twiml).toContain('actionOnEmptyResult="true"')
+    expect(twiml).not.toContain('<Dial')
   })
 })

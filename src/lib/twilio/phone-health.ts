@@ -39,6 +39,12 @@ type StoredCall = {
   outcome: string
   recording_url: string | null
   forwarding_required?: boolean
+  caller_screening_status?:
+    | 'pending'
+    | 'passed'
+    | 'voicemail'
+    | 'bypassed'
+    | null
   forwarding_accepted_at?: string | null
 }
 export type PhoneHealthIssue = {
@@ -109,13 +115,25 @@ export function inspectPhoneCall(
     })
   // Do not classify callers who hang up before a phone could reasonably ring.
   if (elapsed < 5) return { issues, skipped: 'short' }
-  const expected = forwardingExpectedAt(start, config)
+  // The menu intentionally filters callers who do not select a valid option.
+  // A saved pass also requires forwarding for after-hours water-damage calls.
+  const screening = stored?.caller_screening_status
+  const expected =
+    screening == null
+      ? forwardingExpectedAt(start, config)
+      : screening === 'passed' || screening === 'bypassed'
   const targets = getForwardNumbers(config)
   const actual = children.filter((c) => targets.includes(c.to))
   if (expected && actual.length === 0)
-    add('No forwarding attempt during business hours', {
-      elapsedSeconds: elapsed,
-    })
+    add(
+      screening == null
+        ? 'No forwarding attempt during business hours'
+        : 'Required forwarding was not attempted',
+      {
+        elapsedSeconds: elapsed,
+        ...(screening ? { callerScreeningStatus: screening } : {}),
+      },
+    )
   for (const child of children) {
     if (child.status === 'failed')
       add('Forwarding leg failed', { childSid: child.sid, target: child.to })
@@ -339,7 +357,7 @@ export async function runPhoneHealthCheck(
       const stored = await db
         .from('call_logs')
         .select(
-          'outcome,recording_url,forwarding_required,forwarding_accepted_at',
+          'outcome,recording_url,forwarding_required,forwarding_accepted_at,caller_screening_status',
         )
         .eq('call_sid', parent.sid)
         .maybeSingle()

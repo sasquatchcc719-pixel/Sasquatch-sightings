@@ -83,6 +83,75 @@ describe('provider evidence checks', () => {
       'Inbound call missing from call log',
     ])
   })
+  it.each(['pending', 'voicemail'] as const)(
+    'does not treat intentional menu filtering (%s) as failed forwarding',
+    (status) => {
+      expect(
+        inspect(parent, [], [], {
+          outcome: 'no-answer',
+          recording_url: null,
+          caller_screening_status: status,
+        }).issues,
+      ).toEqual([])
+    },
+  )
+  it.each(['passed', 'bypassed'] as const)(
+    'requires forwarding after the menu is satisfied or bypassed (%s)',
+    (status) => {
+      expect(
+        inspect(parent, [], [], {
+          outcome: 'no-answer',
+          recording_url: null,
+          caller_screening_status: status,
+        }).issues.map((issue) => issue.issue),
+      ).toEqual(['Required forwarding was not attempted'])
+    },
+  )
+  it('requires forwarding for a valid after-hours water-damage selection', () => {
+    expect(
+      inspect(
+        {
+          ...parent,
+          startTime: new Date('2026-10-21T12:00:00Z'),
+          endTime: new Date('2026-10-21T12:02:00Z'),
+        },
+        [],
+        [],
+        {
+          outcome: 'no-answer',
+          recording_url: null,
+          caller_screening_status: 'passed',
+        },
+      ).issues.map((issue) => issue.issue),
+    ).toEqual(['Required forwarding was not attempted'])
+  })
+  it('still checks recording persistence for a caller sent to voicemail by the menu', () => {
+    expect(
+      inspect(parent, [], [recording], {
+        outcome: 'no-answer',
+        recording_url: null,
+        caller_screening_status: 'voicemail',
+      }).issues.map((issue) => issue.issue),
+    ).toEqual(['Voicemail recording missing from call log'])
+  })
+  it('still checks final outcome callbacks when a pending-menu caller hangs up', () => {
+    expect(
+      inspect(parent, [], [], {
+        outcome: 'inbound',
+        recording_url: null,
+        caller_screening_status: 'pending',
+      }).issues.map((issue) => issue.issue),
+    ).toEqual(['Call outcome callback was not saved'])
+  })
+  it('retains legacy business-hours monitoring for an explicit null screening status', () => {
+    expect(
+      inspect(parent, [], [], {
+        outcome: 'no-answer',
+        recording_url: null,
+        caller_screening_status: null,
+      }).issues.map((issue) => issue.issue),
+    ).toEqual(['No forwarding attempt during business hours'])
+  })
   it('uses Mountain business hours at call start, not the monitor run time', () => {
     expect(forwardingExpectedAt(new Date('2026-10-21T14:59:00Z'), config)).toBe(
       false,

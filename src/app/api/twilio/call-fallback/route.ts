@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DEFAULT_CONFIG } from '@/lib/twilio/call-routing-config'
-import { buildForwardDial } from '@/lib/twilio/forward-twiml'
+import { buildCallerMenu } from '@/lib/twilio/caller-menu'
 import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import { isBlacklisted } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
@@ -22,22 +21,17 @@ export async function POST(request: NextRequest) {
       caller_phone: form.From,
       outcome: 'inbound',
       forwarding_required: true,
+      caller_screening_status: 'pending',
     },
     { onConflict: 'call_sid', ignoreDuplicates: true },
   )
   if (error) console.error('[Call Fallback] Could not log call', error)
   console.error(
-    '[Call Fallback] Primary router failed; using emergency forwarding',
+    '[Call Fallback] Primary router failed; using caller screening fallback',
     form.CallSid,
   )
   return new NextResponse(
-    buildForwardDial({
-      config: DEFAULT_CONFIG,
-      callerPhone: form.From,
-      callSid: form.CallSid,
-      baseUrl: 'https://sightings.sasquatchcarpet.com',
-      mode: 'open-line',
-    }),
+    buildCallerMenu({ baseUrl: 'https://sightings.sasquatchcarpet.com' }),
     { headers: { 'Content-Type': 'text/xml' } },
   )
 }
