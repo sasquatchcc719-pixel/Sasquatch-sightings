@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { MapPin, Navigation, Truck } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Navigation,
+  Truck,
+} from 'lucide-react'
 import {
   FleetTracker,
   TrackerHistoryPoint,
@@ -67,8 +73,10 @@ export default function FleetTrackerDashboard({
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  const [chosenDay, setChosenDay] = useState(() => mountainDateKey(new Date()))
-  const day = calendarDay ?? chosenDay
+  const [chosenDay, setChosenDay] = useState(
+    () => calendarDay ?? mountainDateKey(new Date()),
+  )
+  const day = chosenDay
   const today = mountainDateKey(new Date(now))
   const isToday = day === today,
     future = day > today
@@ -78,6 +86,18 @@ export default function FleetTrackerDashboard({
   const [showHistory, setShowHistory] = useState(false)
   const [selectedDrive, setSelectedDrive] = useState<number | null>(null)
   const [focusRequest, setFocusRequest] = useState(0)
+  function changeDay(nextDay: string) {
+    if (!isDispatchDay(nextDay)) return
+    setChosenDay(nextDay)
+    setShowHistory(false)
+    setSelectedDrive(null)
+    setSelectedJobId('')
+  }
+  function stepDay(offset: number) {
+    const next = new Date(`${day}T12:00:00Z`)
+    next.setUTCDate(next.getUTCDate() + offset)
+    changeDay(next.toISOString().slice(0, 10))
+  }
   const schedule = useQuery({
     queryKey: ['dispatch-day', day],
     queryFn: () =>
@@ -168,30 +188,51 @@ export default function FleetTrackerDashboard({
             · Mountain Time
           </p>
         </div>
-        {!embedded && (
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              aria-label="Dispatch date"
-              type="date"
-              value={day}
-              onChange={(event) => {
-                if (isDispatchDay(event.target.value)) {
-                  setChosenDay(event.target.value)
-                  setShowHistory(false)
-                  setSelectedDrive(null)
-                  setSelectedJobId('')
-                }
-              }}
-              className="min-h-11 rounded-lg border border-white/20 bg-slate-900 px-3 text-white [color-scheme:dark]"
-            />
+        <div
+          role="group"
+          aria-label="Dispatch day controls"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <button
+            type="button"
+            aria-label="Previous dispatch day"
+            onClick={() => stepDay(-1)}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-white/20 text-slate-200 hover:bg-white/10"
+          >
+            <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <input
+            aria-label="Dispatch date"
+            type="date"
+            value={day}
+            onClick={(event) => event.currentTarget.showPicker?.()}
+            onChange={(event) => changeDay(event.target.value)}
+            className="min-h-11 min-w-0 rounded-lg border border-white/20 bg-slate-900 px-3 text-sm text-white [color-scheme:dark]"
+          />
+          <button
+            type="button"
+            aria-label="Next dispatch day"
+            onClick={() => stepDay(1)}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-white/20 text-slate-200 hover:bg-white/10"
+          >
+            <ChevronRight aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => changeDay(today)}
+            className="min-h-11 rounded-lg border border-white/20 px-3 text-sm text-slate-200 hover:bg-white/10"
+          >
+            Today
+          </button>
+          {!embedded && (
             <Link
               href={`/admin/operations?date=${day}&view=day`}
               className="rounded-lg border border-white/15 px-3 py-3 text-sm"
             >
               Calendar
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       <div className="flex flex-wrap gap-2 text-sm">
         <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-sky-200">

@@ -233,3 +233,52 @@ it('shows scheduled road estimates while keeping actual vehicle history hidden',
   expect(screen.getByTestId('map')).toHaveAttribute('data-planned', '3')
   expect(screen.getByTestId('map')).toHaveAttribute('data-points', '0')
 })
+
+it('switches days inside the embedded map with the picker, arrows and Today, clearing old GPS overlays', async () => {
+  show('2026-10-19')
+  await screen.findByRole('link', { name: /Example job/ })
+  const picker = screen.getByLabelText('Dispatch date')
+  expect(picker).toHaveValue('2026-10-19')
+  const history = screen
+    .getByText('Driving history · 2026-10-19')
+    .closest('details')!
+  history.open = true
+  fireEvent(history, new Event('toggle'))
+  await waitFor(() =>
+    expect(screen.getByTestId('map')).toHaveAttribute('data-points', '2'),
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Next dispatch day' }))
+  await waitFor(() =>
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      '/api/admin/fleet/daily-map?date=2026-10-20&routes=1',
+      expect.anything(),
+    ),
+  )
+  expect(picker).toHaveValue('2026-10-20')
+  expect(screen.getByText('Tuesday, October 20, 2026')).toBeVisible()
+  expect(history).not.toHaveAttribute('open')
+  expect(screen.getByTestId('map')).toHaveAttribute('data-points', '0')
+  expect(screen.getByTestId('map')).toHaveAttribute('data-vehicles', '0')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Previous dispatch day' }))
+  expect(picker).toHaveValue('2026-10-19')
+  fireEvent.change(picker, { target: { value: '2026-11-01' } })
+  await waitFor(() =>
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      '/api/admin/fleet/daily-map?date=2026-11-01&routes=1',
+      expect.anything(),
+    ),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Previous dispatch day' }))
+  await waitFor(() =>
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      '/api/admin/fleet/daily-map?date=2026-10-31&routes=1',
+      expect.anything(),
+    ),
+  )
+  expect(picker).toHaveValue('2026-10-31')
+  fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+  expect(picker).toHaveValue('2026-10-19')
+  expect(screen.getByText('Monday, October 19, 2026')).toBeVisible()
+})
