@@ -129,6 +129,7 @@ export default function FleetTrackerMap({
           'text-size': 13,
           'text-allow-overlap': false,
           'text-padding': 8,
+          'text-offset': [0, -1.2],
         },
         paint: {
           'text-color': '#e0f2fe',

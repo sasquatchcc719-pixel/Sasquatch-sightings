@@ -338,7 +338,7 @@ export default function FleetTrackerDashboard({
                     disabled={!to.location}
                     onClick={() => setSelectedJobId(to.id)}
                     className="min-h-11 rounded-lg border border-sky-300/25 px-3 py-2 text-sm text-sky-100 disabled:cursor-default disabled:border-amber-400/20 disabled:text-amber-200"
-                    aria-label={`Locate job ${toIndex + 1}: ${to.name}`}
+                    aria-label={`Locate job ${toIndex + 1}: ${to.name} · ${leg.seconds === null ? leg.error : `${estimatedDriveTime(leg.seconds)} estimated`}`}
                   >
                     {leg.seconds === null
                       ? leg.error
