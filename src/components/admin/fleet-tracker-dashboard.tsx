@@ -261,14 +261,38 @@ export default function FleetTrackerDashboard({
           plannedDrives={plannedDrives}
         />
       </div>
+      <div
+        role="group"
+        aria-label="Route legend"
+        className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-white/15 bg-slate-950/50 px-4 py-3 text-sm"
+      >
+        <span className="inline-flex items-center gap-2 text-sky-200">
+          <span
+            aria-hidden="true"
+            className="w-8 border-t-[3px] border-dashed border-[#38bdf8]"
+          />
+          Planned · dashed blue
+        </span>
+        <span className="inline-flex items-center gap-2 text-emerald-200">
+          <span
+            aria-hidden="true"
+            className="w-8 border-t-[3px] border-solid border-[#34d399]"
+          />
+          Actual GPS · solid green
+        </span>
+        <span className="text-xs text-slate-400">
+          {showHistory
+            ? 'Driving history open'
+            : 'Open Driving history to show actual travel'}
+        </span>
+      </div>
       <p className="text-xs text-slate-400">
         Numbered pins are scheduled jobs; B marks the saved vehicle base.{' '}
         {isToday
           ? 'Round markers are vehicles; offline markers show their last reported location.'
           : 'Current vehicle locations are hidden on this date.'}{' '}
-        Blue dashed road lines and arrows show the scheduled job order with
-        estimated drive times. Recorded driving tracks appear only when you open
-        the archive.
+        Planned routes show the scheduled job order and estimated drive times.
+        Actual GPS trails appear only when you open Driving history.
       </p>
       <section
         aria-label="Planned driving"
