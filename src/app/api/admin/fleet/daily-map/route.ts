@@ -97,13 +97,39 @@ export async function GET(request: NextRequest) {
       ),
     }
   })
+  const includeRoutes = request.nextUrl.searchParams.get('routes') === '1'
+  const bases = includeRoutes
+    ? await db
+        .from('fleet_dispatch_tracking')
+        .select(
+          'staff_user_id,base_latitude,base_longitude,fleet_trackers!inner(enabled)',
+        )
+        .eq('fleet_trackers.enabled', true)
+    : null
+  if (bases?.error)
+    return NextResponse.json(
+      { error: 'Unable to load saved vehicle bases' },
+      { status: 503 },
+    )
   return NextResponse.json(
     {
       date,
       jobs,
       defaultStaffId: staff.data?.[0]?.id ?? null,
-      ...(request.nextUrl.searchParams.get('routes') === '1'
-        ? { plannedDrives: await loadPlannedDriving(jobs) }
+      ...(includeRoutes
+        ? {
+            plannedDrives: await loadPlannedDriving(
+              jobs,
+              (bases?.data ?? []).map((base) => ({
+                staffId: base.staff_user_id,
+                location: {
+                  lat: base.base_latitude,
+                  lng: base.base_longitude,
+                  source: 'Saved vehicle base',
+                },
+              })),
+            ),
+          }
         : {}),
     },
     { headers: { 'Cache-Control': 'no-store' } },

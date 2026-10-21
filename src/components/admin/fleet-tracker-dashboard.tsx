@@ -140,7 +140,9 @@ export default function FleetTrackerDashboard({
   const plannedDrives = useMemo(() => {
     const visible = new Set(jobs.map((job) => job.id))
     return (schedule.data?.plannedDrives ?? []).filter(
-      (leg) => visible.has(leg.fromJobId) && visible.has(leg.toJobId),
+      (leg) =>
+        (!leg.fromJobId || visible.has(leg.fromJobId)) &&
+        (!leg.toJobId || visible.has(leg.toJobId)),
     )
   }, [jobs, schedule.data?.plannedDrives])
   const estimatedSeconds = plannedDrives.reduce(
@@ -260,7 +262,7 @@ export default function FleetTrackerDashboard({
         />
       </div>
       <p className="text-xs text-slate-400">
-        Numbered pins are scheduled jobs.{' '}
+        Numbered pins are scheduled jobs; B marks the saved vehicle base.{' '}
         {isToday
           ? 'Round markers are vehicles; offline markers show their last reported location.'
           : 'Current vehicle locations are hidden on this date.'}{' '}
@@ -275,12 +277,12 @@ export default function FleetTrackerDashboard({
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 p-4">
           <div>
             <h3 className="font-semibold text-white">
-              Planned driving · job to job
+              Planned driving · base to base
             </h3>
             <p className="mt-1 text-xs text-slate-400">
-              Scheduled order for each technician. Road estimates exclude
-              traffic, home/base travel and stops between jobs; these are not
-              recorded driving times.
+              Base → scheduled jobs → base for each technician. Road estimates
+              exclude traffic and unscheduled stops; these are not recorded
+              driving times.
             </p>
           </div>
           {plannedDrives.length > 0 && (
@@ -308,8 +310,8 @@ export default function FleetTrackerDashboard({
           </p>
         ) : plannedDrives.length === 0 ? (
           <p className="p-4 text-sm text-slate-400">
-            At least two jobs assigned to the same technician are needed.
-            Unassigned stops need a technician before routing.
+            A job assigned to a technician is needed. Unassigned stops need a
+            technician before routing.
           </p>
         ) : (
           <ol className="divide-y divide-white/10">
@@ -322,23 +324,28 @@ export default function FleetTrackerDashboard({
                 to = jobs[toIndex]
               return (
                 <li
-                  key={`${leg.fromJobId}:${leg.toJobId}`}
+                  key={`${leg.staffId}:${leg.fromJobId}:${leg.toJobId}`}
                   className="flex flex-wrap items-center justify-between gap-3 p-4"
                 >
                   <div>
                     <p className="text-sm font-medium text-white">
-                      {fromIndex + 1} → {toIndex + 1} · {from.name} → {to.name}
+                      {from ? fromIndex + 1 : 'Base'} →{' '}
+                      {to ? toIndex + 1 : 'Base'} · {from?.name ?? 'Base'} →{' '}
+                      {to?.name ?? 'Base'}
                     </p>
                     <p className="mt-1 text-xs text-slate-400">
-                      {from.staffName} · after {jobTime(from.end)}
+                      {(from ?? to).staffName} ·{' '}
+                      {from
+                        ? `after ${jobTime(from.end)}`
+                        : `to first job at ${jobTime(to.start)}`}
                     </p>
                   </div>
                   <button
                     type="button"
-                    disabled={!to.location}
-                    onClick={() => setSelectedJobId(to.id)}
-                    className="min-h-11 rounded-lg border border-sky-300/25 px-3 py-2 text-sm text-sky-100 disabled:cursor-default disabled:border-amber-400/20 disabled:text-amber-200"
-                    aria-label={`Locate job ${toIndex + 1}: ${to.name} · ${leg.seconds === null ? leg.error : `${estimatedDriveTime(leg.seconds)} estimated`}`}
+                    disabled={!to?.location}
+                    onClick={() => to && setSelectedJobId(to.id)}
+                    className="min-h-11 rounded-lg border border-sky-300/25 px-3 py-2 text-sm text-sky-100 disabled:cursor-default"
+                    aria-label={`${to ? `Locate job ${toIndex + 1}: ${to.name}` : 'Return to base'} · ${leg.seconds === null ? leg.error : `${estimatedDriveTime(leg.seconds)} estimated`}`}
                   >
                     {leg.seconds === null
                       ? leg.error

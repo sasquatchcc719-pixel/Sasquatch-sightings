@@ -301,3 +301,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - In QuickBooks settings, “Redeploy” retries an invoice sync; inspect the saved sync error before investigating Vercel deployments.
 - Include every recorded gratuity on David’s paid invoices in payroll regardless of payment method; cash tips paid directly to him are not entered on invoices.
 - Payroll summaries must show logged payable hours × the saved hourly rate on the hourly row (separate calculations for different rates), separate gratuity and add-on rows, and one bottom total that includes them; never require staff to interpret “incl.” or add extras to an already combined figure.
+
+- Planned daily driving routes must include the assigned vehicle’s saved base → first job and last job → base, with a base pin and both legs included in the total. Never substitute the current vehicle position for its base.

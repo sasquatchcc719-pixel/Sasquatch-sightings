@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   appointments: [] as unknown[],
   staff: [] as unknown[],
+  bases: [] as unknown[],
   error: null as unknown,
   planned: vi.fn(),
 }))
@@ -22,6 +23,9 @@ const request = (date = '2026-10-19') =>
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.error = null
+  mocks.bases = [
+    { staff_user_id: 'staff1', base_latitude: 39.2, base_longitude: -104.9 },
+  ]
   mocks.planned.mockResolvedValue([])
   mocks.guard.mockResolvedValue({})
   mocks.staff = [
@@ -61,7 +65,12 @@ beforeEach(() => {
       }
     q.then = (resolve: (value: unknown) => unknown) =>
       Promise.resolve({
-        data: table === 'ops_appointments' ? mocks.appointments : mocks.staff,
+        data:
+          table === 'ops_appointments'
+            ? mocks.appointments
+            : table === 'fleet_dispatch_tracking'
+              ? mocks.bases
+              : mocks.staff,
         error: mocks.error,
       }).then(resolve)
     return q
@@ -78,13 +87,26 @@ it('authenticates before loading job addresses and rejects malformed dates', asy
 it('only calculates road routes when explicitly requested for an authorized daily schedule', async () => {
   await GET(request())
   expect(mocks.planned).not.toHaveBeenCalled()
+  expect(mocks.from).not.toHaveBeenCalledWith('fleet_dispatch_tracking')
   const res = await GET(
     new NextRequest('https://example.test/api?date=2026-10-19&routes=1'),
   )
   expect(res.status).toBe(200)
-  expect(mocks.planned).toHaveBeenCalledWith([
-    expect.objectContaining({ id: 'job1', staffId: 'staff1' }),
-  ])
+  expect(mocks.planned).toHaveBeenCalledWith(
+    [expect.objectContaining({ id: 'job1', staffId: 'staff1' })],
+    [
+      {
+        staffId: 'staff1',
+        location: { lat: 39.2, lng: -104.9, source: 'Saved vehicle base' },
+      },
+    ],
+  )
+  expect(mocks.query).toHaveBeenCalledWith(
+    'fleet_dispatch_tracking',
+    'eq',
+    'fleet_trackers.enabled',
+    true,
+  )
   expect((await res.json()).plannedDrives).toEqual([])
 })
 it('loads only the selected calendar day and omits cancelled and parked visits', async () => {

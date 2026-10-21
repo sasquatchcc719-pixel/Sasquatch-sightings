@@ -44,6 +44,7 @@ export default function FleetTrackerMap({
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const markers = useRef(new Map<string, mapboxgl.Marker>())
   const jobMarkers = useRef(new Map<string, mapboxgl.Marker>())
+  const baseMarkers = useRef<mapboxgl.Marker[]>([])
   const framedJobs = useRef('')
   const onJobRef = useRef(onSelectJob)
   onJobRef.current = onSelectJob
@@ -78,6 +79,7 @@ export default function FleetTrackerMap({
     }
     const activeMarkers = markers.current
     const activeJobs = jobMarkers.current
+    const activeBases = baseMarkers.current
     mapRef.current = map
     const resizeObserver = new ResizeObserver(() => map.resize())
     resizeObserver.observe(container.current)
@@ -165,6 +167,8 @@ export default function FleetTrackerMap({
       activeMarkers.clear()
       for (const marker of activeJobs.values()) marker.remove()
       activeJobs.clear()
+      for (const marker of activeBases) marker.remove()
+      activeBases.length = 0
       map.remove()
       mapRef.current = null
     }
@@ -193,7 +197,7 @@ export default function FleetTrackerMap({
       features: legs.map((leg) => ({
         type: 'Feature' as const,
         properties: {
-          label: `${jobs.findIndex((job) => job.id === leg.fromJobId) + 1} → ${jobs.findIndex((job) => job.id === leg.toJobId) + 1} · ${estimatedDriveTime(leg.seconds!)} est.`,
+          label: `${leg.fromJobId ? jobs.findIndex((job) => job.id === leg.fromJobId) + 1 : 'Base'} → ${leg.toJobId ? jobs.findIndex((job) => job.id === leg.toJobId) + 1 : 'Base'} · ${estimatedDriveTime(leg.seconds!)} est.`,
         },
         geometry: {
           type: 'Point' as const,
@@ -294,7 +298,30 @@ export default function FleetTrackerMap({
     if (!map || !loaded) return
     for (const marker of jobMarkers.current.values()) marker.remove()
     jobMarkers.current.clear()
+    for (const marker of baseMarkers.current) marker.remove()
+    baseMarkers.current.length = 0
     const bounds = new mapboxgl.LngLatBounds()
+    const bases = new Map(
+      plannedDrives.flatMap((leg) =>
+        leg.base ? [[leg.staffId, leg.base] as const] : [],
+      ),
+    )
+    for (const [staffId, base] of bases) {
+      const element = document.createElement('div')
+      element.textContent = 'B'
+      element.title = `Base · ${jobs.find((job) => job.staffId === staffId)?.staffName ?? 'Vehicle'}`
+      element.setAttribute('aria-label', element.title)
+      element.style.cssText =
+        'width:36px;height:36px;border:2px solid white;border-radius:50%;background:#a16207;color:white;font:700 14px system-ui;text-align:center;line-height:32px;box-shadow:0 3px 16px #0008'
+      const coordinate: [number, number] = [
+        base.location.lng,
+        base.location.lat,
+      ]
+      baseMarkers.current.push(
+        new mapboxgl.Marker({ element }).setLngLat(coordinate).addTo(map),
+      )
+      bounds.extend(coordinate)
+    }
     jobs.forEach((job, index) => {
       if (!job.location) return
       const element = document.createElement('button')
@@ -323,7 +350,10 @@ export default function FleetTrackerMap({
         .map((job) => `${job.id}:${job.location?.lat}:${job.location?.lng}`)
         .join('|') +
       plannedDrives
-        .map((leg) => `${leg.fromJobId}:${leg.toJobId}:${leg.meters}`)
+        .map(
+          (leg) =>
+            `${leg.staffId}:${leg.fromJobId}:${leg.toJobId}:${leg.base?.location.lat}:${leg.base?.location.lng}:${leg.meters}`,
+        )
         .join('|')
     if (
       !points.length &&

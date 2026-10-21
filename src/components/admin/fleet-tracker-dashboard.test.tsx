@@ -182,6 +182,33 @@ it('shows scheduled road estimates while keeping actual vehicle history hidden',
         ],
         plannedDrives: [
           {
+            fromJobId: null,
+            toJobId: 'job1',
+            staffId: 'staff1',
+            seconds: 600,
+            meters: 2000,
+            coordinates: [],
+            error: null,
+          },
+          {
+            fromJobId: 'job2',
+            toJobId: null,
+            staffId: 'staff1',
+            seconds: 900,
+            meters: 3000,
+            coordinates: [],
+            error: null,
+          },
+          {
+            fromJobId: null,
+            toJobId: 'hidden-job',
+            staffId: 'staff2',
+            seconds: 10000,
+            meters: 30000,
+            coordinates: [],
+            error: null,
+          },
+          {
             fromJobId: 'job1',
             toJobId: 'job2',
             staffId: 'staff1',
@@ -197,9 +224,12 @@ it('shows scheduled road estimates while keeping actual vehicle history hidden',
       }),
     }
   })
-  show('2026-10-19')
+  show('2026-10-19', 'staff1')
   expect(await screen.findByText('13 min estimated · 5.3 mi')).toBeVisible()
   expect(screen.getByText('1 → 2 · Example job → Afternoon job')).toBeVisible()
-  expect(screen.getByTestId('map')).toHaveAttribute('data-planned', '1')
+  expect(screen.getByText('Base → 1 · Base → Example job')).toBeVisible()
+  expect(screen.getByText('2 → Base · Afternoon job → Base')).toBeVisible()
+  expect(screen.getByText('38 min')).toBeVisible()
+  expect(screen.getByTestId('map')).toHaveAttribute('data-planned', '3')
   expect(screen.getByTestId('map')).toHaveAttribute('data-points', '0')
 })
