@@ -1,6 +1,7 @@
 import type { TrackerHistoryPoint } from '@/lib/fleet-tracking'
 import { PUBLIC_AREAS } from '@/lib/public-areas'
 import { mountainLocalDateTimeToIso } from './timesheet-pay'
+import type { PlannedDriveLeg } from './planned-driving'
 
 export type DispatchLocation = { lat: number; lng: number; source: string }
 export type DispatchJob = {
@@ -20,6 +21,14 @@ export type DailyDispatch = {
   date: string
   jobs: DispatchJob[]
   defaultStaffId: string | null
+  plannedDrives?: PlannedDriveLeg[]
+}
+
+export function estimatedDriveTime(seconds: number): string {
+  const minutes = Math.max(0, Math.ceil(seconds / 60))
+  return minutes < 60
+    ? `${minutes} min`
+    : `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ''}`
 }
 
 export function isDispatchDay(day: string): boolean {

@@ -4,8 +4,14 @@ import {
   dispatchLocation,
   driveIntervals,
   isDispatchDay,
+  estimatedDriveTime,
 } from './daily-dispatch'
 import { PUBLIC_AREAS } from '@/lib/public-areas'
+it('rounds road estimates up to whole minutes while preserving zero travel', () => {
+  expect(estimatedDriveTime(0)).toBe('0 min')
+  expect(estimatedDriveTime(742)).toBe('13 min')
+  expect(estimatedDriveTime(3601)).toBe('1h 1m')
+})
 const point = (time: string, speed: number | null) => ({
   recorded_at: `2026-10-19T${time}Z`,
   latitude: 39.15,

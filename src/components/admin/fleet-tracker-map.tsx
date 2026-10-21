@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import type { DispatchJob } from '@/lib/ops/daily-dispatch'
+import { estimatedDriveTime, type DispatchJob } from '@/lib/ops/daily-dispatch'
+import type { PlannedDriveLeg } from '@/lib/ops/planned-driving'
 
 const NO_JOBS: DispatchJob[] = []
+const NO_DRIVES: PlannedDriveLeg[] = []
 import {
   FleetTracker,
   TrackerHistoryPoint,
@@ -24,6 +26,7 @@ export default function FleetTrackerMap({
   jobs = NO_JOBS,
   selectedJobId = '',
   onSelectJob,
+  plannedDrives = NO_DRIVES,
 }: {
   now: number
   historyKey: string
@@ -35,6 +38,7 @@ export default function FleetTrackerMap({
   jobs?: DispatchJob[]
   selectedJobId?: string
   onSelectJob?: (id: string) => void
+  plannedDrives?: PlannedDriveLeg[]
 }) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
@@ -79,6 +83,59 @@ export default function FleetTrackerMap({
     resizeObserver.observe(container.current)
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.on('load', () => {
+      map.addSource('planned-driving', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addSource('planned-driving-labels', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: 'planned-driving-line',
+        type: 'line',
+        source: 'planned-driving',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#38bdf8',
+          'line-width': 4,
+          'line-dasharray': [2, 1],
+          'line-opacity': 0.9,
+        },
+      })
+      map.addLayer({
+        id: 'planned-driving-arrows',
+        type: 'symbol',
+        source: 'planned-driving',
+        layout: {
+          'symbol-placement': 'line',
+          'symbol-spacing': 100,
+          'text-field': '›',
+          'text-size': 28,
+          'text-keep-upright': false,
+        },
+        paint: {
+          'text-color': '#bae6fd',
+          'text-halo-color': '#082f49',
+          'text-halo-width': 2,
+        },
+      })
+      map.addLayer({
+        id: 'planned-driving-labels',
+        type: 'symbol',
+        source: 'planned-driving-labels',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 13,
+          'text-allow-overlap': false,
+          'text-padding': 8,
+        },
+        paint: {
+          'text-color': '#e0f2fe',
+          'text-halo-color': '#082f49',
+          'text-halo-width': 3,
+        },
+      })
       map.addSource('vehicle-history', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -111,6 +168,39 @@ export default function FleetTrackerMap({
       mapRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    const legs = plannedDrives.filter(
+      (leg) => leg.seconds !== null && leg.coordinates.length > 1,
+    )
+    const source = map.getSource('planned-driving') as mapboxgl.GeoJSONSource
+    source?.setData({
+      type: 'FeatureCollection',
+      features: legs.map((leg) => ({
+        type: 'Feature' as const,
+        properties: {},
+        geometry: { type: 'LineString' as const, coordinates: leg.coordinates },
+      })),
+    })
+    const labels = map.getSource(
+      'planned-driving-labels',
+    ) as mapboxgl.GeoJSONSource
+    labels?.setData({
+      type: 'FeatureCollection',
+      features: legs.map((leg) => ({
+        type: 'Feature' as const,
+        properties: {
+          label: `${jobs.findIndex((job) => job.id === leg.fromJobId) + 1} → ${jobs.findIndex((job) => job.id === leg.toJobId) + 1} · ${estimatedDriveTime(leg.seconds!)} est.`,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: leg.coordinates[Math.floor(leg.coordinates.length / 2)],
+        },
+      })),
+    })
+  }, [plannedDrives, jobs, loaded])
 
   useEffect(() => {
     const map = mapRef.current
@@ -224,10 +314,15 @@ export default function FleetTrackerMap({
       )
       bounds.extend([job.location.lng, job.location.lat])
     })
+    for (const leg of plannedDrives)
+      for (const coordinate of leg.coordinates) bounds.extend(coordinate)
     const frameKey =
       historyKey +
       jobs
         .map((job) => `${job.id}:${job.location?.lat}:${job.location?.lng}`)
+        .join('|') +
+      plannedDrives
+        .map((leg) => `${leg.fromJobId}:${leg.toJobId}:${leg.meters}`)
         .join('|')
     if (
       !points.length &&
@@ -237,7 +332,7 @@ export default function FleetTrackerMap({
       map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 600 })
       framedJobs.current = frameKey
     }
-  }, [jobs, loaded, selectedJobId, historyKey, points.length])
+  }, [jobs, loaded, selectedJobId, historyKey, points.length, plannedDrives])
 
   useEffect(() => {
     const job = jobs.find((item) => item.id === selectedJobId)

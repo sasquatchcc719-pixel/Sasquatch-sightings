@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   appointments: [] as unknown[],
   staff: [] as unknown[],
   error: null as unknown,
+  planned: vi.fn(),
+}))
+vi.mock('@/lib/ops/planned-driving', () => ({
+  loadPlannedDriving: mocks.planned,
 }))
 vi.mock('@/lib/auth', () => ({ requireAnyRole: mocks.guard }))
 vi.mock('@/supabase/server', () => ({
@@ -18,6 +22,7 @@ const request = (date = '2026-10-19') =>
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.error = null
+  mocks.planned.mockResolvedValue([])
   mocks.guard.mockResolvedValue({})
   mocks.staff = [
     { id: 'staff1', user_id: 'user1', display_name: 'Example tech' },
@@ -66,8 +71,21 @@ it('authenticates before loading job addresses and rejects malformed dates', asy
   mocks.guard.mockRejectedValueOnce(Error('Unauthorized'))
   expect((await GET(request())).status).toBe(401)
   expect(mocks.from).not.toHaveBeenCalled()
+  expect(mocks.planned).not.toHaveBeenCalled()
   expect((await GET(request('2026-02-30'))).status).toBe(400)
   expect(mocks.from).not.toHaveBeenCalled()
+})
+it('only calculates road routes when explicitly requested for an authorized daily schedule', async () => {
+  await GET(request())
+  expect(mocks.planned).not.toHaveBeenCalled()
+  const res = await GET(
+    new NextRequest('https://example.test/api?date=2026-10-19&routes=1'),
+  )
+  expect(res.status).toBe(200)
+  expect(mocks.planned).toHaveBeenCalledWith([
+    expect.objectContaining({ id: 'job1', staffId: 'staff1' }),
+  ])
+  expect((await res.json()).plannedDrives).toEqual([])
 })
 it('loads only the selected calendar day and omits cancelled and parked visits', async () => {
   const response = await GET(request())

@@ -13,6 +13,7 @@ import {
 import {
   dispatchDayBounds,
   driveIntervals,
+  estimatedDriveTime,
   isDispatchDay,
   type DailyDispatch,
 } from '@/lib/ops/daily-dispatch'
@@ -81,7 +82,7 @@ export default function FleetTrackerDashboard({
     queryKey: ['dispatch-day', day],
     queryFn: () =>
       fetchJson<DailyDispatch>(
-        `/api/admin/fleet/daily-map?${new URLSearchParams({ date: day })}`,
+        `/api/admin/fleet/daily-map?${new URLSearchParams({ date: day, routes: '1' })}`,
       ),
     enabled: !!bounds,
     refetchInterval: 60000,
@@ -136,6 +137,17 @@ export default function FleetTrackerDashboard({
     : day
   const mapped = jobs.filter((job) => job.location).length
   const selectedJob = jobs.find((job) => job.id === selectedJobId)
+  const plannedDrives = useMemo(() => {
+    const visible = new Set(jobs.map((job) => job.id))
+    return (schedule.data?.plannedDrives ?? []).filter(
+      (leg) => visible.has(leg.fromJobId) && visible.has(leg.toJobId),
+    )
+  }, [jobs, schedule.data?.plannedDrives])
+  const estimatedSeconds = plannedDrives.reduce(
+    (sum, leg) =>
+      sum + (leg.seconds === null ? 0 : Math.ceil(leg.seconds / 60) * 60),
+    0,
+  )
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -244,6 +256,7 @@ export default function FleetTrackerDashboard({
           jobs={jobs}
           selectedJobId={selectedJobId}
           onSelectJob={setSelectedJobId}
+          plannedDrives={plannedDrives}
         />
       </div>
       <p className="text-xs text-slate-400">
@@ -251,8 +264,92 @@ export default function FleetTrackerDashboard({
         {isToday
           ? 'Round markers are vehicles; offline markers show their last reported location.'
           : 'Current vehicle locations are hidden on this date.'}{' '}
-        Driving tracks appear only when you open the archive.
+        Blue dashed road lines and arrows show the scheduled job order with
+        estimated drive times. Recorded driving tracks appear only when you open
+        the archive.
       </p>
+      <section
+        aria-label="Planned driving"
+        className="overflow-hidden rounded-xl border border-sky-400/25 bg-sky-950/20"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 p-4">
+          <div>
+            <h3 className="font-semibold text-white">
+              Planned driving · job to job
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Scheduled order for each technician. Road estimates exclude
+              traffic, home/base travel and stops between jobs; these are not
+              recorded driving times.
+            </p>
+          </div>
+          {plannedDrives.length > 0 && (
+            <div className="text-right">
+              <p className="text-xs text-sky-200">
+                {plannedDrives.some((leg) => leg.seconds === null)
+                  ? 'Available legs only'
+                  : 'Total estimated driving'}
+              </p>
+              <p className="font-mono text-lg font-semibold text-sky-100">
+                {plannedDrives.every((leg) => leg.seconds === null)
+                  ? 'Unavailable'
+                  : estimatedDriveTime(estimatedSeconds)}
+              </p>
+            </div>
+          )}
+        </div>
+        {schedule.isPending ? (
+          <p className="p-4 text-sm text-slate-400">
+            Calculating the day’s route…
+          </p>
+        ) : schedule.error ? (
+          <p className="p-4 text-sm text-amber-200">
+            Driving estimates could not refresh with the schedule.
+          </p>
+        ) : plannedDrives.length === 0 ? (
+          <p className="p-4 text-sm text-slate-400">
+            At least two jobs assigned to the same technician are needed.
+            Unassigned stops need a technician before routing.
+          </p>
+        ) : (
+          <ol className="divide-y divide-white/10">
+            {plannedDrives.map((leg) => {
+              const fromIndex = jobs.findIndex(
+                (job) => job.id === leg.fromJobId,
+              )
+              const toIndex = jobs.findIndex((job) => job.id === leg.toJobId)
+              const from = jobs[fromIndex],
+                to = jobs[toIndex]
+              return (
+                <li
+                  key={`${leg.fromJobId}:${leg.toJobId}`}
+                  className="flex flex-wrap items-center justify-between gap-3 p-4"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {fromIndex + 1} → {toIndex + 1} · {from.name} → {to.name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {from.staffName} · after {jobTime(from.end)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!to.location}
+                    onClick={() => setSelectedJobId(to.id)}
+                    className="min-h-11 rounded-lg border border-sky-300/25 px-3 py-2 text-sm text-sky-100 disabled:cursor-default disabled:border-amber-400/20 disabled:text-amber-200"
+                    aria-label={`Locate job ${toIndex + 1}: ${to.name}`}
+                  >
+                    {leg.seconds === null
+                      ? leg.error
+                      : `${estimatedDriveTime(leg.seconds)} estimated · ${((leg.meters ?? 0) / 1609.344).toFixed(1)} mi`}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        )}
+      </section>
       <section aria-label="Jobs for selected day" className="space-y-2">
         {schedule.isPending && (
           <p className="p-3 text-sm text-slate-400">Loading this day’s jobs…</p>

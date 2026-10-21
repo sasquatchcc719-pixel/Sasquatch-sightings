@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { loadPlannedDriving } from '@/lib/ops/planned-driving'
 import {
   dispatchLocation,
   isDispatchDay,
@@ -97,7 +98,14 @@ export async function GET(request: NextRequest) {
     }
   })
   return NextResponse.json(
-    { date, jobs, defaultStaffId: staff.data?.[0]?.id ?? null },
+    {
+      date,
+      jobs,
+      defaultStaffId: staff.data?.[0]?.id ?? null,
+      ...(request.nextUrl.searchParams.get('routes') === '1'
+        ? { plannedDrives: await loadPlannedDriving(jobs) }
+        : {}),
+    },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }
