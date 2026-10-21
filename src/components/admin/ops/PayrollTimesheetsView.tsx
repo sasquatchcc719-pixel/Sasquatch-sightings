@@ -545,6 +545,34 @@ export function PayrollTimesheetsView() {
   )
   const totalPayableMinutes = entriesQuery.data?.totalPayableMinutes || 0
   const totalGrossPay = entriesQuery.data?.totalGrossPay || 0
+  const hourlyBreakdown = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string
+        name: string
+        minutes: number
+        rate: number
+        payCents: number
+      }
+    >()
+    for (const entry of entries) {
+      const key = `${entry.staffUserId}:${entry.hourlyRate}`
+      const group = groups.get(key) || {
+        key,
+        name: entry.staffDisplayName,
+        minutes: 0,
+        rate: entry.hourlyRate,
+        payCents: 0,
+      }
+      group.minutes += entry.payableMinutes
+      group.payCents += Math.round(entry.grossPay * 100)
+      groups.set(key, group)
+    }
+    return [...groups.values()].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.rate - b.rate,
+    )
+  }, [entries])
 
   const premiums = useMemo(() => {
     const all = premiumsQuery.data?.premiums ?? []
@@ -1020,8 +1048,38 @@ export function PayrollTimesheetsView() {
         </div>
         <dl className="divide-y divide-white/10">
           <div className="flex items-center justify-between gap-4 px-5 py-4">
-            <dt className="text-slate-200">Hourly pay</dt>
-            <dd className="font-mono text-lg text-white">
+            <dt className="text-slate-200">
+              Hourly pay
+              {!entriesQuery.isError && !entriesQuery.isPending && (
+                <div className="mt-2 space-y-1 text-base text-white">
+                  {hourlyBreakdown.length === 0
+                    ? 'No hours logged in this date range.'
+                    : hourlyBreakdown.map((group) => (
+                        <p key={group.key}>
+                          {hourlyBreakdown.length > 1 && (
+                            <span>{group.name}: </span>
+                          )}
+                          <span className="font-mono">
+                            {fmtMin(group.minutes)} × {fmtMoney(group.rate)}/hr
+                            {hourlyBreakdown.length > 1
+                              ? ` = ${fmtMoney(group.payCents / 100)}`
+                              : ''}
+                          </span>
+                        </p>
+                      ))}
+                  {hourlyBreakdown.some(
+                    (group) =>
+                      Math.round((group.minutes / 60) * group.rate * 100) !==
+                      group.payCents,
+                  ) && (
+                    <p>
+                      Shift pay is rounded to cents before adding it together.
+                    </p>
+                  )}
+                </div>
+              )}
+            </dt>
+            <dd className="shrink-0 font-mono text-lg text-white">
               {entriesQuery.isError
                 ? 'Unavailable'
                 : entriesQuery.isPending

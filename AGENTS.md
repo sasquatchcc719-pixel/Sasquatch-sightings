@@ -300,4 +300,4 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Before running the full test suite, inspect legacy `*.test.*` files for real database/API setup; suffix-based integration exclusions are incomplete. Run broad checks from an isolated checkout without production credentials and exclude those legacy integration files.
 - In QuickBooks settings, “Redeploy” retries an invoice sync; inspect the saved sync error before investigating Vercel deployments.
 - Include every recorded gratuity on David’s paid invoices in payroll regardless of payment method; cash tips paid directly to him are not entered on invoices.
-- Payroll summaries must show separate hourly pay, gratuity and add-on rows, followed by one bottom total that includes them; never require staff to interpret “incl.” or add extras to an already combined figure.
+- Payroll summaries must show logged payable hours × the saved hourly rate on the hourly row (separate calculations for different rates), separate gratuity and add-on rows, and one bottom total that includes them; never require staff to interpret “incl.” or add extras to an already combined figure.
