@@ -8,7 +8,10 @@ export function normalizePhone(raw: string): string {
     : digits.slice(-10)
 }
 
-export async function isBlacklisted(phone: string): Promise<boolean> {
+export async function isBlacklisted(
+  phone: string,
+  options: { throwOnError?: boolean } = {},
+): Promise<boolean> {
   try {
     const normalized = normalizePhone(phone)
     console.log(
@@ -22,6 +25,7 @@ export async function isBlacklisted(phone: string): Promise<boolean> {
 
     if (error) {
       console.error('[blacklist] DB query error:', error)
+      if (options.throwOnError) throw error
       // FAIL CLOSED - block call on DB errors to be safe
       return true
     }
@@ -32,6 +36,7 @@ export async function isBlacklisted(phone: string): Promise<boolean> {
     )
     return isBlocked
   } catch (err) {
+    if (options.throwOnError) throw err
     console.error(
       '[blacklist] Unexpected error, BLOCKING call to be safe:',
       err,

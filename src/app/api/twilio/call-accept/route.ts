@@ -34,16 +34,22 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'text/xml' },
     })
   if (form.Digits === '1') {
-    const { data, error } = await createAdminClient()
-      .from('call_logs')
-      .update({
-        forwarding_required: true,
-        forwarding_accepted_at: new Date().toISOString(),
-      })
-      .eq('call_sid', parent)
-      .select('call_sid')
-    if (error || !data?.length)
-      return new NextResponse('Could not accept call', { status: 503 })
+    // A database outage must not disconnect a human who accepted the call.
+    // The signed Dial action's DialBridged flag is the independent fallback.
+    try {
+      const { error } = await createAdminClient()
+        .from('call_logs')
+        .update({
+          forwarding_required: true,
+          forwarding_accepted_at: new Date().toISOString(),
+        })
+        .eq('call_sid', parent)
+        .select('call_sid')
+      if (error)
+        console.error('[Call Accept] Could not save acceptance:', error)
+    } catch (error) {
+      console.error('[Call Accept] Could not save acceptance:', error)
+    }
     return xml('<Say>Connecting.</Say>')
   }
   if (request.nextUrl.searchParams.get('attempt') === '1')

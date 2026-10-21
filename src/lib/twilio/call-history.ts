@@ -104,6 +104,8 @@ export async function writeCallLog(
     call_sid: string
     caller_phone?: string | null
     outcome: string
+    forwarding_required?: boolean
+    forwarding_accepted_at?: string | null
     duration_seconds?: number | null
     raw_dial_status?: string | null
     recording_url?: string

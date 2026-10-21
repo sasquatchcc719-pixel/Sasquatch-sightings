@@ -12,21 +12,19 @@ export async function POST(request: NextRequest) {
   )
   if (!validateTwilioInboundRequest({ request, form }))
     return new NextResponse('Forbidden', { status: 403 })
-  if (await isBlacklisted(form.From))
+  if (await isBlacklisted(form.From, { throwOnError: true }))
     return new NextResponse('<Response><Reject/></Response>', {
       headers: { 'Content-Type': 'text/xml' },
     })
-  const { error } = await createAdminClient()
-    .from('call_logs')
-    .upsert(
-      {
-        call_sid: form.CallSid,
-        caller_phone: form.From,
-        outcome: 'inbound',
-        forwarding_required: true,
-      },
-      { onConflict: 'call_sid', ignoreDuplicates: true },
-    )
+  const { error } = await createAdminClient().from('call_logs').upsert(
+    {
+      call_sid: form.CallSid,
+      caller_phone: form.From,
+      outcome: 'inbound',
+      forwarding_required: true,
+    },
+    { onConflict: 'call_sid', ignoreDuplicates: true },
+  )
   if (error) console.error('[Call Fallback] Could not log call', error)
   console.error(
     '[Call Fallback] Primary router failed; using emergency forwarding',

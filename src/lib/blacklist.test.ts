@@ -45,4 +45,11 @@ describe('blacklist phone matching', () => {
     expect(await isBlacklisted('435')).toBe(false)
     expect(mocks.admin).not.toHaveBeenCalled()
   })
+  it('surfaces phone-routing database failures instead of labeling callers blacklisted', async () => {
+    const error = { message: 'Database unavailable' }
+    blacklist([], error)
+    await expect(
+      isBlacklisted('7195550100', { throwOnError: true }),
+    ).rejects.toEqual(error)
+  })
 })

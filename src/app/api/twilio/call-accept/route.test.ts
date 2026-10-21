@@ -82,8 +82,10 @@ describe('receiving phone acceptance', () => {
     expect((await POST(request('1', true, true, false))).status).toBe(403)
     expect(update).not.toHaveBeenCalled()
   })
-  it('does not bridge if acceptance could not be saved', async () => {
+  it('still bridges an accepted human if the database is unavailable', async () => {
     select.mockResolvedValue({ data: null, error: new Error('DB unavailable') })
-    expect((await POST(request('1', true))).status).toBe(503)
+    expect(await (await POST(request('1', true))).text()).toContain(
+      'Connecting.',
+    )
   })
 })

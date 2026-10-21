@@ -17,6 +17,9 @@ vi.mock('@/supabase/server', () => ({
 }))
 vi.mock('@/lib/twilio/call-history', () => ({ writeCallLog: writeCallLogMock }))
 
+vi.mock('@/lib/twilio/inbound-auth', () => ({
+  validateTwilioInboundRequest: vi.fn(() => true),
+}))
 import { POST } from './route'
 
 const routingConfig = {
@@ -40,17 +43,20 @@ function twilioRequest(
     duration,
     callSid = 'CA123',
     screened = false,
+    bridged,
   }: {
     mode?: string
     stage?: string
     duration?: number
     callSid?: string
     screened?: boolean
+    bridged?: string
   } = {},
 ): NextRequest {
   const body = new URLSearchParams()
   body.set('CallSid', callSid)
   body.set('DialCallStatus', status)
+  if (bridged !== undefined) body.set('DialBridged', bridged)
   if (duration !== undefined) body.set('DialCallDuration', String(duration))
   body.set('From', '+17195550123')
   const query = new URLSearchParams()
@@ -183,12 +189,10 @@ describe('POST /api/twilio/dial-failover', () => {
     const query = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi
-        .fn()
-        .mockResolvedValue({
-          data: { forwarding_accepted_at: null },
-          error: null,
-        }),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { forwarding_accepted_at: null },
+        error: null,
+      }),
     }
     createAdminClientMock.mockReturnValue({ from: vi.fn(() => query) })
     const xml = await (
@@ -203,12 +207,10 @@ describe('POST /api/twilio/dial-failover', () => {
     const query = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi
-        .fn()
-        .mockResolvedValue({
-          data: { forwarding_accepted_at: '2026-10-21T18:00:00Z' },
-          error: null,
-        }),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { forwarding_accepted_at: '2026-10-21T18:00:00Z' },
+        error: null,
+      }),
     }
     createAdminClientMock.mockReturnValue({ from: vi.fn(() => query) })
     expect(
@@ -219,5 +221,27 @@ describe('POST /api/twilio/dial-failover', () => {
     expect(
       await (await POST(twilioRequest('canceled', { screened: true }))).text(),
     ).toContain('<Hangup/>')
+  })
+  it('uses signed provider bridge evidence when the database is unavailable', async () => {
+    createAdminClientMock.mockImplementation(() => {
+      throw new Error('DB down')
+    })
+    const xml = await (
+      await POST(
+        twilioRequest('completed', { screened: true, bridged: 'true' }),
+      )
+    ).text()
+    expect(xml).toContain('<Hangup/>')
+  })
+  it('still attempts Charles after an unaccepted primary during a database outage', async () => {
+    createAdminClientMock.mockImplementation(() => {
+      throw new Error('DB down')
+    })
+    const xml = await (
+      await POST(
+        twilioRequest('completed', { screened: true, bridged: 'false' }),
+      )
+    ).text()
+    expect(xml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
   })
 })

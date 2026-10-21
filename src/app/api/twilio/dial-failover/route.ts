@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { getForwardNumbers } from '@/lib/twilio/forward-numbers'
 import { buildForwardDial } from '@/lib/twilio/forward-twiml'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import {
   classifyCallOutcome,
   parseDialCallDuration,
@@ -35,15 +36,36 @@ export async function POST(request: NextRequest) {
     const stage = request.nextUrl.searchParams.get('stage')
 
     const screened = request.nextUrl.searchParams.get('screened') === '1'
+    if (
+      screened &&
+      !validateTwilioInboundRequest({
+        request,
+        form: Object.fromEntries(
+          [...formData.entries()].map(([k, v]) => [k, String(v)]),
+        ),
+      })
+    )
+      return new NextResponse('Forbidden', { status: 403 })
     let accepted = !screened
     if (screened && dialCallStatus === 'completed') {
-      const { data, error } = await createAdminClient()
-        .from('call_logs')
-        .select('forwarding_accepted_at')
-        .eq('call_sid', callSid)
-        .maybeSingle()
-      if (error) throw error
-      accepted = Boolean(data?.forwarding_accepted_at)
+      const bridged = String(formData.get('DialBridged') || '')
+      if (bridged === 'true' || bridged === 'false')
+        accepted = bridged === 'true'
+      else {
+        try {
+          const { data, error } = await createAdminClient()
+            .from('call_logs')
+            .select('forwarding_accepted_at')
+            .eq('call_sid', callSid)
+            .maybeSingle()
+          if (error)
+            console.error('[Dial Failover] Acceptance read failed:', error)
+          accepted = Boolean(data?.forwarding_accepted_at)
+        } catch (error) {
+          console.error('[Dial Failover] Acceptance read failed:', error)
+          accepted = false
+        }
+      }
     }
     const callOutcome = accepted
       ? classifyCallOutcome(dialCallStatus)
@@ -64,6 +86,7 @@ export async function POST(request: NextRequest) {
         callSid,
         callerPhone,
         outcome: 'answered',
+        accepted: screened,
         dialCallStatus,
         dialCallDuration,
       })
@@ -159,6 +182,7 @@ async function updateCallLog(params: {
   callSid: string
   callerPhone: string
   outcome: 'answered' | 'no-answer'
+  accepted?: boolean
   dialCallStatus: string
   dialCallDuration: number | null
 }): Promise<void> {
@@ -169,6 +193,12 @@ async function updateCallLog(params: {
       call_sid: params.callSid,
       ...(params.callerPhone ? { caller_phone: params.callerPhone } : {}),
       outcome: params.outcome,
+      ...(params.accepted
+        ? {
+            forwarding_required: true,
+            forwarding_accepted_at: new Date().toISOString(),
+          }
+        : {}),
       duration_seconds: params.dialCallDuration,
       raw_dial_status: params.dialCallStatus || null,
     })

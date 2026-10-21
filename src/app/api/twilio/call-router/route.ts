@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const callerPhone = formData.get('From') as string
 
-    if (await isBlacklisted(callerPhone)) {
+    if (await isBlacklisted(callerPhone, { throwOnError: true })) {
       try {
         const supabase = createAdminClient()
         const { error } = await supabase.from('call_logs').upsert(
