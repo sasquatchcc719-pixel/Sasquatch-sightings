@@ -60,6 +60,7 @@ export async function PUT(request: NextRequest) {
       dial_timeout,
       temporary_open_line_mode,
       twilio_primary_forward_number,
+      twilio_secondary_forward_number,
       twilio_failover_forward_number,
       ivr_schedule_timeout_seconds,
       ivr_technical_timeout_seconds,
@@ -122,6 +123,8 @@ export async function PUT(request: NextRequest) {
       updates.temporary_open_line_mode = Boolean(temporary_open_line_mode)
     if (twilio_primary_forward_number !== undefined)
       updates.twilio_primary_forward_number = twilio_primary_forward_number
+    if (twilio_secondary_forward_number !== undefined)
+      updates.twilio_secondary_forward_number = twilio_secondary_forward_number
     if (twilio_failover_forward_number !== undefined)
       updates.twilio_failover_forward_number = twilio_failover_forward_number
     if (ivr_schedule_timeout_seconds !== undefined)

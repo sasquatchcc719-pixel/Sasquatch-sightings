@@ -39,11 +39,13 @@ function twilioRequest(
     stage,
     duration,
     callSid = 'CA123',
+    screened = false,
   }: {
     mode?: string
     stage?: string
     duration?: number
     callSid?: string
+    screened?: boolean
   } = {},
 ): NextRequest {
   const body = new URLSearchParams()
@@ -54,6 +56,7 @@ function twilioRequest(
   const query = new URLSearchParams()
   if (mode) query.set('mode', mode)
   if (stage) query.set('stage', stage)
+  if (screened) query.set('screened', '1')
   const search = query.size ? `?${query}` : ''
 
   return new NextRequest(
@@ -114,9 +117,9 @@ describe('POST /api/twilio/dial-failover', () => {
     )
     const twiml = await response.text()
 
-    expect(twiml).toContain('<Number>+17197498807</Number>')
-    expect(twiml.match(/<Number>/g)).toHaveLength(1)
-    expect(twiml).not.toContain('<Number>+17206447577</Number>')
+    expect(twiml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
+    expect(twiml.match(/<Number[ >]/g)).toHaveLength(1)
+    expect(twiml).not.toContain('<Number>\+17206447577</Number>')
     expect(twiml).toContain('timeout="45"')
     expect(twiml).toContain('callerId="+17195550123"')
     expect(twiml).not.toContain('<Client>admin_charles</Client>')
@@ -127,7 +130,7 @@ describe('POST /api/twilio/dial-failover', () => {
     const response = await POST(twilioRequest('busy', { mode: 'water-damage' }))
     const twiml = await response.text()
 
-    expect(twiml).toContain('<Number>+17197498807</Number>')
+    expect(twiml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
     expect(twiml).toContain('timeout="20"')
     expect(twiml).toContain('<Client>admin_charles</Client>')
   })
@@ -175,5 +178,46 @@ describe('POST /api/twilio/dial-failover', () => {
       expect.anything(),
       expect.objectContaining({ outcome: 'answered', duration_seconds: 7 }),
     )
+  })
+  it('continues to Charles when the primary carrier voicemail answers without acceptance', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi
+        .fn()
+        .mockResolvedValue({
+          data: { forwarding_accepted_at: null },
+          error: null,
+        }),
+    }
+    createAdminClientMock.mockReturnValue({ from: vi.fn(() => query) })
+    const xml = await (
+      await POST(
+        twilioRequest('completed', { mode: 'open-line', screened: true }),
+      )
+    ).text()
+    expect(xml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
+    expect(xml).toContain('screened=1&amp;mode=open-line&amp;stage=secondary')
+  })
+  it('hangs up after a screened call was explicitly accepted', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi
+        .fn()
+        .mockResolvedValue({
+          data: { forwarding_accepted_at: '2026-10-21T18:00:00Z' },
+          error: null,
+        }),
+    }
+    createAdminClientMock.mockReturnValue({ from: vi.fn(() => query) })
+    expect(
+      await (await POST(twilioRequest('completed', { screened: true }))).text(),
+    ).toContain('<Hangup/>')
+  })
+  it('does not call a second phone after the caller canceled', async () => {
+    expect(
+      await (await POST(twilioRequest('canceled', { screened: true }))).text(),
+    ).toContain('<Hangup/>')
   })
 })

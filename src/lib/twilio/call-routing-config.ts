@@ -6,7 +6,7 @@ export type CallRoutingConfig = {
   businessHoursEnd: number
   businessDays: string[]
   primaryForwardNumber: string
-  /** Second phone to ring alongside the primary (e.g. owner's wife). Empty when unset. */
+  /** Second phone in the sequential forwarding chain. */
   secondaryForwardNumber: string
   failoverForwardNumber: string
   openLineTimeoutSeconds: number
@@ -16,13 +16,13 @@ export type CallRoutingConfig = {
 }
 
 /** Primary PSTN ring target for business-hours forwarding. */
-const DEFAULT_CONFIG: CallRoutingConfig = {
+export const DEFAULT_CONFIG: CallRoutingConfig = {
   temporaryOpenLineMode: false,
   businessHoursStart: 9,
   businessHoursEnd: 17,
   businessDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   primaryForwardNumber: '+17206447577',
-  secondaryForwardNumber: '',
+  secondaryForwardNumber: '+17197498807',
   failoverForwardNumber: '+17206447577',
   openLineTimeoutSeconds: 30,
   ivrScheduleTimeoutSeconds: 30,

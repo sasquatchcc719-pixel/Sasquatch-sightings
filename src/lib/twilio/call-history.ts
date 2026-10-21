@@ -36,7 +36,10 @@ export function resolveCallHistory(
   children: Call[],
   recordings: Recording[],
   existing?: Pick<CallLogRow, 'recording_url' | 'transcription'> &
-    Partial<Pick<CallLogRow, 'duration_seconds'>>,
+    Partial<Pick<CallLogRow, 'duration_seconds'>> & {
+      forwarding_required?: boolean
+      forwarding_accepted_at?: string | null
+    },
 ) {
   if (
     activeStatuses.has(parent.status) ||
@@ -60,7 +63,12 @@ export function resolveCallHistory(
     )
   )
     return null
-  const answered = children.filter((c) => c.status === 'completed')
+  const answered = children.filter(
+    (c) =>
+      c.status === 'completed' &&
+      (!existing?.forwarding_required ||
+        Boolean(existing.forwarding_accepted_at)),
+  )
   const outcome =
     recording || existing?.recording_url || existing?.transcription
       ? 'voicemail'
@@ -129,7 +137,9 @@ export async function reconcileEndedCall(
     client.recordings.list({ callSid, pageSize: 1000 }),
     db
       .from('call_logs')
-      .select('recording_url,transcription,outcome,duration_seconds')
+      .select(
+        'recording_url,transcription,outcome,duration_seconds,forwarding_required,forwarding_accepted_at',
+      )
       .eq('call_sid', callSid)
       .maybeSingle(),
   ])

@@ -32,6 +32,24 @@ describe('call history evidence', () => {
       duration_seconds: 7,
     })
   })
+  it('does not treat carrier voicemail as a human answer on screened calls', () => {
+    expect(
+      resolveCallHistory(parent, [connected], [], {
+        recording_url: null,
+        transcription: null,
+        forwarding_required: true,
+        forwarding_accepted_at: null,
+      })?.outcome,
+    ).toBe('no-answer')
+    expect(
+      resolveCallHistory(parent, [connected], [], {
+        recording_url: null,
+        transcription: null,
+        forwarding_required: true,
+        forwarding_accepted_at: '2026-10-21T18:00:00Z',
+      })?.outcome,
+    ).toBe('answered')
+  })
   it('uses the answered secondary leg even if the primary did not answer', () => {
     expect(
       resolveCallHistory(

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
 import { writeCallLog } from '@/lib/twilio/call-history'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
+import {
+  mergeVoicemailCallback,
+  resolveVoicemailCaller,
+  type VoicemailMessage as ConversationMessage,
+} from '@/lib/twilio/voicemail'
 
 /** Twilio may run 120s+; default Vercel timeout would kill the SMS send. */
 export const maxDuration = 300
@@ -15,30 +20,8 @@ const voicemailFromEmail =
 const voicemailNotifyEmail =
   process.env.OWNER_ALERT_EMAIL || 'sasquatchcc719@gmail.com'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
-const MIN_VOICEMAIL_EMAIL_DURATION_SECONDS = 5
 const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 120000
 const RECENT_REPLY_SUPPRESSION_MS = 15 * 60 * 1000
-
-type ConversationMessage = {
-  role?: string
-  content?: string
-  timestamp?: string
-  twilio_sid?: string
-  metadata?: {
-    type?: string
-    transcription?: string | null
-    recording_url?: string | null
-    recording_sid?: string | null
-    duration?: string | null
-    voicemail_harry_reply_for?: string | null
-    email_sent?: boolean
-  } | null
-}
 
 function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
   const normalized = transcriptionText?.trim().toLowerCase() ?? ''
@@ -114,160 +97,111 @@ function buildVoicemailAutoReply(latestTranscript: string | null): string {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
+    const params = Object.fromEntries(
+      [...formData.entries()].map(([key, value]) => [key, String(value)]),
+    )
+    if (!validateTwilioInboundRequest({ request, form: params }))
+      return new NextResponse('Forbidden', { status: 403 })
+
+    const recordingSid = params.RecordingSid
+    const callSid = params.CallSid
+    if (
+      !/^CA[0-9a-f]{32}$/i.test(callSid || '') ||
+      !/^RE[0-9a-f]{32}$/i.test(recordingSid || '')
+    )
+      return new NextResponse('Invalid call or recording SID', { status: 400 })
+
+    const supabase = createAdminClient()
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN,
+    )
+    const normalizedPhone = await resolveVoicemailCaller(
+      supabase,
+      twilioClient,
+      callSid,
+      params.From || null,
+    )
+    if (!normalizedPhone)
+      return new NextResponse('Could not identify voicemail caller', {
+        status: 422,
+      })
+
     const adminBaseUrl = getBaseUrl()
-
-    // Twilio sends these fields
-    const recordingUrl = formData.get('RecordingUrl') as string
-    const recordingSid = formData.get('RecordingSid') as string
-    const transcriptionText = formData.get('TranscriptionText') as string
-    const callerPhone = formData.get('From') as string
-    const callSid = formData.get('CallSid') as string
-    const recordingDuration = formData.get('RecordingDuration') as string
-    // Only the transcribe callback carries TranscriptionStatus (completed |
-    // failed). The earlier recording/status callbacks don't — we use this to
-    // send a single notification once transcription has finished.
-    const transcriptionStatus = formData.get('TranscriptionStatus') as
-      | string
-      | null
-
-    console.log('[Voicemail] Received:', {
-      from: callerPhone,
-      duration: recordingDuration,
-      hasTranscription: !!transcriptionText,
+    const recordingUrl = params.RecordingUrl || null
+    const recordingDuration = params.RecordingDuration || null
+    const transcriptionText = params.TranscriptionText || null
+    const audioUrl = recordingUrl
+      ? recordingUrl.replace(/\.(mp3|wav)$/, '') + '.mp3'
+      : null
+    const callback = {
+      phone: normalizedPhone,
+      callSid,
       recordingSid,
+      audioUrl,
+      duration: recordingDuration,
+      transcription: transcriptionText,
+      completed: params.RecordingStatus === 'completed',
+    }
+    const merged = await mergeVoicemailCallback(supabase, callback)
+    const conversationId = merged.conversation_id
+    const messages = merged.messages
+    const metadata = merged.voicemail.metadata!
+    const mergedAudioUrl = metadata.recording_url
+    const mergedDuration = metadata.duration
+    const mergedTranscription = metadata.transcription
+    const hasRecording = Boolean(
+      mergedAudioUrl &&
+      (Number(mergedDuration) > 0 ||
+        hasMeaningfulTranscription(mergedTranscription ?? null)),
+    )
+    await writeCallLog(supabase, {
+      call_sid: callSid,
+      caller_phone: normalizedPhone,
+      outcome: hasRecording ? 'voicemail' : 'no-answer',
+      ...(hasRecording && Number(mergedDuration) > 0
+        ? { duration_seconds: Number(mergedDuration) }
+        : {}),
+      ...(hasRecording && mergedAudioUrl
+        ? { recording_url: mergedAudioUrl }
+        : {}),
+      ...(mergedTranscription ? { transcription: mergedTranscription } : {}),
     })
 
-    // Normalize phone number
-    const digits = callerPhone?.replace(/\D/g, '') || ''
-    const normalizedPhone =
-      digits.length === 10
-        ? `+1${digits}`
-        : digits.length === 11 && digits.startsWith('1')
-          ? `+${digits}`
-          : `+${digits}`
-
-    // The actual audio file URL (add .mp3 to get downloadable file)
-    const audioUrl = recordingUrl ? `${recordingUrl}.mp3` : null
-
-    // Create or find conversation for this caller
-    const { data: existingConvo } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('phone_number', normalizedPhone)
-      .eq('source', 'inbound')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    let conversationId = existingConvo?.id
-
-    if (!existingConvo) {
-      const { data: newConvo, error: convoError } = await supabase
-        .from('conversations')
-        .insert({
-          phone_number: normalizedPhone,
-          source: 'inbound',
-          status: 'active',
-          ai_enabled: true,
-          messages: [],
-          metadata: { trigger: 'voicemail', call_sid: callSid },
-        })
-        .select()
-        .single()
-
-      if (!convoError && newConvo) {
-        conversationId = newConvo.id
-      }
-    }
-
-    // Add or merge voicemail. Twilio hits this endpoint more than once for a
-    // single voicemail — the recording/status callbacks first (duration, no
-    // transcript), then the transcribe callback later (transcript, no
-    // duration). Merge by RecordingSid, always keeping the best-known value so
-    // a later callback never clobbers good data with a blank.
-    const messages = (existingConvo?.messages || []) as ConversationMessage[]
-    const priorVoicemail = recordingSid
-      ? messages.find(
-          (m) =>
-            m?.role === 'user' &&
-            m?.metadata?.type === 'voicemail' &&
-            m?.metadata?.recording_sid === recordingSid,
+    // Recording completion must alert the owner even if transcription never
+    // arrives. The payload stays identical on retries and transcript updates,
+    // so simultaneous callbacks share the provider's idempotency key.
+    if (
+      metadata.recording_completed &&
+      mergedAudioUrl &&
+      !metadata.email_sent
+    ) {
+      const { data: delivery, error: deliveryError } = await resend.emails.send(
+        {
+          from: voicemailFromEmail,
+          to: voicemailNotifyEmail,
+          subject: `New voicemail recording from ${normalizedPhone}`,
+          html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #166534;">New voicemail recording</h2>
+            <p>From: <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
+            <p>A voicemail recording is available. Short recordings can still contain a message; listen to confirm.</p>
+            <p><a href="${adminBaseUrl}/admin/conversations?source=phone">Listen and view the caller's conversation</a></p>
+            <p>A transcription will appear there when available.</p>
+            <p style="color: #6b7280; font-size: 12px;">Recording: ${recordingSid}</p>
+          </div>
+        `,
+        },
+        { idempotencyKey: `voicemail-recording/${recordingSid}` },
+      )
+      if (deliveryError || !delivery?.id)
+        throw new Error(
+          deliveryError?.message || 'Email provider did not confirm delivery',
         )
-      : undefined
-
-    const mergedTranscription =
-      transcriptionText || priorVoicemail?.metadata?.transcription || null
-    const mergedDuration =
-      recordingDuration || priorVoicemail?.metadata?.duration || null
-    const mergedAudioUrl =
-      audioUrl || priorVoicemail?.metadata?.recording_url || null
-    const alreadyEmailed = priorVoicemail?.metadata?.email_sent === true
-
-    // Persist before notification work. Callback omissions must never erase
-    // the saved recording, duration, or transcription.
-    if (callSid) {
-      try {
-        const hasRecording = Boolean(
-          mergedAudioUrl &&
-          (Number(mergedDuration) > 0 ||
-            hasMeaningfulTranscription(mergedTranscription)),
-        )
-        await writeCallLog(createAdminClient(), {
-          call_sid: callSid,
-          ...(callerPhone ? { caller_phone: normalizedPhone } : {}),
-          outcome: hasRecording ? 'voicemail' : 'no-answer',
-          ...(hasRecording && Number(mergedDuration) > 0
-            ? { duration_seconds: Number(mergedDuration) }
-            : {}),
-          ...(hasRecording && mergedAudioUrl
-            ? { recording_url: mergedAudioUrl }
-            : {}),
-          ...(mergedTranscription
-            ? { transcription: mergedTranscription }
-            : {}),
-        })
-      } catch (error) {
-        console.error('[Voicemail] Could not save call log:', error)
-      }
-    }
-
-    // Notify exactly once, when transcription has finished (success or
-    // failure). Only the transcribe callback sets TranscriptionStatus, so the
-    // earlier recording callbacks are skipped — this is what kills the old
-    // "blank first email" duplicate.
-    const isTranscriptionCallback = transcriptionStatus != null
-    const willEmail = isTranscriptionCallback && !alreadyEmailed
-
-    if (conversationId && recordingSid) {
-      const line = `[VOICEMAIL - ${mergedDuration ?? '?'}s] ${mergedTranscription || '(No transcription available)'}`
-      const mergedMeta = {
-        type: 'voicemail' as const,
-        recording_url: mergedAudioUrl,
-        recording_sid: recordingSid,
-        duration: mergedDuration,
-        transcription: mergedTranscription,
-        email_sent: alreadyEmailed || willEmail,
-      }
-      if (priorVoicemail) {
-        priorVoicemail.content = line
-        priorVoicemail.metadata = { ...priorVoicemail.metadata, ...mergedMeta }
-      } else {
-        messages.push({
-          role: 'user',
-          content: line,
-          timestamp: new Date().toISOString(),
-          metadata: mergedMeta,
-        })
-      }
-
-      await supabase
-        .from('conversations')
-        .update({
-          messages,
-          status: 'escalated', // Mark as escalated so you see it
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conversationId)
+      // Mark only after the provider accepted it. If this save fails, the same
+      // key makes a retried completion safe rather than suppressing the alert.
+      await mergeVoicemailCallback(supabase, callback, true)
+      console.log('[Voicemail] Recording notification accepted:', delivery.id)
     }
 
     // Context-aware voicemail reply:
@@ -373,92 +307,6 @@ export async function POST(request: NextRequest) {
       sent_at: new Date().toISOString(),
     })
 
-    // Send email notification
-    const timestamp = new Date().toLocaleString('en-US', {
-      timeZone: 'America/Denver',
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-
-    if (willEmail) {
-      // Decide what actually happened: a real message, a recording we can't
-      // transcribe, or a caller who reached voicemail and left nothing.
-      const hasTranscript = hasMeaningfulTranscription(mergedTranscription)
-      const durationSeconds = Number(mergedDuration ?? '0')
-      const leftAMessage =
-        hasTranscript || durationSeconds >= MIN_VOICEMAIL_EMAIL_DURATION_SECONDS
-      const durationLabel = mergedDuration ? `${mergedDuration} seconds` : '—'
-
-      const transcriptionBlock = hasTranscript
-        ? `
-              <h3 style="color: #166534;">Transcription</h3>
-              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 0; white-space: pre-wrap;">${mergedTranscription}</p>
-              </div>`
-        : leftAMessage
-          ? `
-              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 0; color: #6b7280;">A message was left, but no transcription is available. Tap below to listen.</p>
-              </div>`
-          : `
-              <div style="background: #fef3c7; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 0; color: #92400e;">The caller reached your voicemail but did not leave a message.</p>
-              </div>`
-
-      const listenBlock = mergedAudioUrl
-        ? `
-              <div style="margin: 24px 0;">
-                <a href="${mergedAudioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
-                  🔊 Listen to Voicemail
-                </a>
-              </div>`
-        : ''
-
-      try {
-        await resend.emails.send({
-          from: voicemailFromEmail,
-          to: voicemailNotifyEmail,
-          subject: leftAMessage
-            ? `🎤 New Voicemail from ${normalizedPhone}`
-            : `📞 Missed call (no message) from ${normalizedPhone}`,
-          html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #166534;">${leftAMessage ? 'New Voicemail Received' : 'Missed Call — No Message Left'}</h2>
-
-              <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
-                <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${durationLabel}</p>
-                <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
-              </div>
-              ${transcriptionBlock}
-              ${listenBlock}
-              <p style="color: #6b7280; font-size: 14px;">
-                View in admin: <a href="${adminBaseUrl}/admin/conversations?source=phone">Phone Calls</a>
-              </p>
-            </div>
-          `,
-        })
-        console.log(`[Voicemail] Email sent to ${voicemailNotifyEmail}`)
-      } catch (emailError) {
-        console.error('[Voicemail] Failed to send email:', emailError)
-      }
-    } else {
-      console.log(
-        '[Voicemail] No email this callback:',
-        JSON.stringify({
-          from: normalizedPhone,
-          isTranscriptionCallback,
-          alreadyEmailed,
-          duration: mergedDuration ?? '(none)',
-          transcription: mergedTranscription || '(none)',
-        }),
-      )
-    }
-
     console.log('========================================')
     console.log('🎤 NEW VOICEMAIL RECEIVED')
     console.log(`📞 From: ${normalizedPhone}`)
@@ -477,12 +325,8 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     console.error('[Voicemail] Error:', error)
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml' },
-      },
-    )
+    return new NextResponse('Could not process voicemail callback', {
+      status: 500,
+    })
   }
 }

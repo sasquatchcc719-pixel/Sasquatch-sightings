@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/phone-health",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/invoice-emails",
       "schedule": "*/5 * * * *"
     },

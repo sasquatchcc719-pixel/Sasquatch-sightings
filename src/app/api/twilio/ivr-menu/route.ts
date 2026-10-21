@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
+import { buildForwardDial } from '@/lib/twilio/forward-twiml'
 
 function getBaseUrl(): string {
   const url = (
@@ -23,41 +24,20 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
-    const failoverUrl = `${baseUrl}/api/twilio/dial-failover`
 
     let twimlResponse
 
-    if (digits === '1' && !isAfterHours) {
-      console.log(
-        `[IVR Menu] Option 1 -> Dialing primary scheduling number first`,
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${failoverUrl}?mode=schedule" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
-  </Dial>
-</Response>`
-    } else if (digits === '2') {
-      console.log(
-        `[IVR Menu] Option 2 -> Dialing primary water-damage number first`,
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${failoverUrl}?mode=water-damage" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
-  </Dial>
-</Response>`
+    if (!isAfterHours || digits === '2') {
+      // Legacy menu callbacks also ring through when a key was not recognized.
+      twimlResponse = buildForwardDial({
+        config: routingConfig,
+        callerPhone,
+        callSid: String(formData.get('CallSid') || ''),
+        baseUrl,
+        mode: digits === '2' ? 'water-damage' : 'schedule',
+      })
     } else {
-      // Invalid input or Timeout -> Treat as spam/bot or confusion -> Voicemail/Hangup
-      // The user wants to filter bots so no input = no service generally.
-      // We will redirect to after-hours which typically goes to voicemail.
-      console.log(
-        `[IVR Menu] No input or invalid input. Redirecting to voicemail flow.`,
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${afterHoursUrl}</Redirect>
-</Response>`
+      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${afterHoursUrl}</Redirect></Response>`
     }
 
     return new NextResponse(twimlResponse, {

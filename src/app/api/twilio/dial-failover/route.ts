@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { getForwardNumbers } from '@/lib/twilio/forward-numbers'
+import { buildForwardDial } from '@/lib/twilio/forward-twiml'
 import {
   classifyCallOutcome,
   parseDialCallDuration,
@@ -33,7 +34,24 @@ export async function POST(request: NextRequest) {
     const mode = request.nextUrl.searchParams.get('mode')
     const stage = request.nextUrl.searchParams.get('stage')
 
-    const callOutcome = classifyCallOutcome(dialCallStatus)
+    const screened = request.nextUrl.searchParams.get('screened') === '1'
+    let accepted = !screened
+    if (screened && dialCallStatus === 'completed') {
+      const { data, error } = await createAdminClient()
+        .from('call_logs')
+        .select('forwarding_accepted_at')
+        .eq('call_sid', callSid)
+        .maybeSingle()
+      if (error) throw error
+      accepted = Boolean(data?.forwarding_accepted_at)
+    }
+    const callOutcome = accepted
+      ? classifyCallOutcome(dialCallStatus)
+      : 'no-answer'
+    if (dialCallStatus === 'canceled')
+      return new NextResponse('<Response><Hangup/></Response>', {
+        headers: { 'Content-Type': 'text/xml' },
+      })
 
     console.log(
       `[Dial Failover] Status: ${dialCallStatus || 'unknown'}, Duration: ${dialCallDuration ?? 'unknown'}s, Stage: ${stage || 'primary'}`,
@@ -106,34 +124,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const timeout =
-      mode === 'open-line'
-        ? routingConfig.openLineTimeoutSeconds
-        : isWaterDamageMode
-          ? routingConfig.ivrTechnicalTimeoutSeconds
-          : routingConfig.ivrScheduleTimeoutSeconds
-    const browserClient = isWaterDamageMode
-      ? '\n    <Client>admin_charles</Client>'
-      : ''
-    const secondaryActionUrl = `${baseUrl}/api/twilio/dial-failover?stage=secondary`
-
-    console.log(
-      '[Dial Failover] Primary leg did not answer — dialing secondary',
-    )
-    return new NextResponse(
-      `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial timeout="${timeout}" action="${secondaryActionUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${secondaryForwardNumber}</Number>${browserClient}
-  </Dial>
-</Response>`,
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/xml',
-        },
-      },
-    )
+    const twiml = screened
+      ? buildForwardDial({
+          config: routingConfig,
+          callerPhone,
+          callSid,
+          baseUrl,
+          mode: mode || 'schedule',
+          secondary: true,
+        })
+      : `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${mode === 'open-line' ? routingConfig.openLineTimeoutSeconds : isWaterDamageMode ? routingConfig.ivrTechnicalTimeoutSeconds : routingConfig.ivrScheduleTimeoutSeconds}" action="${baseUrl}/api/twilio/dial-failover?stage=secondary" callerId="${callerPhone}" answerOnBridge="true"><Number>${secondaryForwardNumber}</Number>${isWaterDamageMode ? '<Client>admin_charles</Client>' : ''}</Dial></Response>`
+    return new NextResponse(twiml, {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml' },
+    })
   } catch (error) {
     console.error('[Dial Failover] Error:', error)
 

@@ -3,6 +3,7 @@ import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
+import { buildForwardDial } from '@/lib/twilio/forward-twiml'
 
 const SETTINGS = {
   // Static fallback values. Dynamic values come from phone_settings.
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
         call_sid: formData.get('CallSid') as string,
         caller_phone: callerPhone,
         outcome: 'inbound',
+        forwarding_required: true,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'call_sid', ignoreDuplicates: true },
@@ -116,27 +118,15 @@ export async function POST(request: NextRequest) {
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
     const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
-    const failoverUrl = `${baseUrl}/api/twilio/dial-failover?mode=open-line`
-
-    if (routingConfig.temporaryOpenLineMode) {
-      console.log(
-        '[Call Router] Temporary open line mode active - dialing primary first',
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${failoverUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
-  </Dial>
-</Response>`
-    } else if (isBusinessHours) {
-      console.log('[Call Router] Business hours - IVR menu')
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. To book or change an appointment, press 1. For active water damage, a burst pipe, or flooding, press 2.</Say>
-  </Gather>
-  <Redirect method="POST">${afterHoursUrl}</Redirect>
-</Response>`
+    if (routingConfig.temporaryOpenLineMode || isBusinessHours) {
+      console.log('[Call Router] Direct primary then secondary forwarding')
+      twimlResponse = buildForwardDial({
+        config: routingConfig,
+        callerPhone,
+        callSid: String(formData.get('CallSid') || ''),
+        baseUrl,
+        mode: 'open-line',
+      })
     } else {
       console.log(
         '[Call Router] After hours - water-damage option then voicemail',
@@ -159,14 +149,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[Call Router] Error:', error)
 
-    // Fallback to after hours handler on error
+    // Keep the phone sequence available when logging or configuration fails.
     const baseUrl = getBaseUrl()
-    const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
-
-    const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${afterHoursUrl}</Redirect>
-</Response>`
+    const fallbackTwiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${baseUrl}/api/twilio/call-fallback</Redirect></Response>`
 
     return new NextResponse(fallbackTwiml, {
       status: 200,

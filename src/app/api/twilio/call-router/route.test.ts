@@ -81,9 +81,11 @@ describe('POST /api/twilio/call-router', () => {
     const response = await POST(twilioRequest())
     const twiml = await response.text()
 
-    expect(twiml).toContain('<Number>+17206447577</Number>')
-    expect(twiml).not.toContain('<Number>+17197498807</Number>')
-    expect(twiml).toContain('/api/twilio/dial-failover?mode=open-line')
+    expect(twiml).toMatch(/<Number[^>]*>\+17206447577<\/Number>/)
+    expect(twiml).not.toContain('<Number>\+17197498807</Number>')
+    expect(twiml).toContain(
+      '/api/twilio/dial-failover?screened=1&amp;mode=open-line',
+    )
   })
 
   it('rejects a blocked caller without dialing or playing a menu', async () => {
@@ -107,23 +109,20 @@ describe('POST /api/twilio/call-router', () => {
     expect(twiml).not.toContain('<Redirect')
   })
 
-  it('uses option 2 for water damage during business hours', async () => {
+  it('rings primary directly in business hours without requiring caller input', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-07T16:00:00Z'))
     getCallRoutingConfigMock.mockResolvedValue({
       ...routingConfig,
       temporaryOpenLineMode: false,
     })
-
     const response = await POST(twilioRequest())
     const twiml = await response.text()
-
-    expect(twiml).toContain('To book or change an appointment, press 1.')
-    expect(twiml).toContain(
-      'For active water damage, a burst pipe, or flooding, press 2.',
-    )
-    expect(twiml).not.toContain('technical help')
-    expect(twiml).toContain('/api/twilio/ivr-menu')
+    expect(twiml).toContain('<Dial')
+    expect(twiml).toMatch(/<Number[^>]*>\+17206447577<\/Number>/)
+    expect(twiml).not.toContain('<Gather')
+    expect(twiml).not.toContain('<Redirect')
+    expect(twiml).toContain('/api/twilio/call-accept?parent=CA123')
   })
 
   it('offers the water-damage option before voicemail after hours', async () => {
