@@ -77,6 +77,16 @@ beforeEach(() => {
   mocks.send.mockResolvedValue(true)
 })
 describe('provider evidence checks', () => {
+  it('recognizes queued callers without requiring a separate dial per caller', () => {
+    expect(
+      inspect(parent, [], [], {
+        outcome: 'no-answer',
+        recording_url: null,
+        caller_screening_status: 'passed',
+        appointment_queued_at: '2026-10-22T18:00:00Z',
+      }).issues,
+    ).toEqual([])
+  })
   it('detects a business-hours menu bypass even when local call logs are absent', () => {
     expect(inspect(parent, [], [], null).issues.map((i) => i.issue)).toEqual([
       'No forwarding attempt during business hours',

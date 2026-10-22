@@ -46,6 +46,7 @@ type StoredCall = {
     | 'bypassed'
     | null
   forwarding_accepted_at?: string | null
+  appointment_queued_at?: string | null
 }
 export type PhoneHealthIssue = {
   key: string
@@ -124,7 +125,7 @@ export function inspectPhoneCall(
       : screening === 'passed' || screening === 'bypassed'
   const targets = getForwardNumbers(config)
   const actual = children.filter((c) => targets.includes(c.to))
-  if (expected && actual.length === 0)
+  if (expected && !stored?.appointment_queued_at && actual.length === 0)
     add(
       screening == null
         ? 'No forwarding attempt during business hours'
@@ -357,7 +358,7 @@ export async function runPhoneHealthCheck(
       const stored = await db
         .from('call_logs')
         .select(
-          'outcome,recording_url,forwarding_required,forwarding_accepted_at,caller_screening_status',
+          'outcome,recording_url,forwarding_required,forwarding_accepted_at,caller_screening_status,appointment_queued_at',
         )
         .eq('call_sid', parent.sid)
         .maybeSingle()

@@ -5,6 +5,7 @@ import { buildCallerMenu } from '@/lib/twilio/caller-menu'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
+import { buildAppointmentEnqueue } from '@/lib/twilio/appointment-queue'
 
 function getBaseUrl(): string {
   const url = (
@@ -70,13 +71,21 @@ export async function POST(request: NextRequest) {
       }).catch((error) =>
         console.error('[IVR Menu] Push notification failed:', error),
       )
-      twimlResponse = buildForwardDial({
-        config: routingConfig,
-        callerPhone,
-        callSid,
-        baseUrl,
-        mode: digits === '2' ? 'water-damage' : 'schedule',
-      })
+      if (digits === '1') {
+        const { error } = await createAdminClient()
+          .from('call_logs')
+          .update({ appointment_queued_at: new Date().toISOString() })
+          .eq('call_sid', callSid)
+        if (error) throw error
+        twimlResponse = buildAppointmentEnqueue(baseUrl)
+      } else
+        twimlResponse = buildForwardDial({
+          config: routingConfig,
+          callerPhone,
+          callSid,
+          baseUrl,
+          mode: digits === '2' ? 'water-damage' : 'schedule',
+        })
     } else if (!isAfterHours && attempt === 0) {
       twimlResponse = buildCallerMenu({ baseUrl, attempt: 1 })
     } else {

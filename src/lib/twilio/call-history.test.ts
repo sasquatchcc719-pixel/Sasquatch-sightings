@@ -20,6 +20,31 @@ const recording = {
 }
 
 describe('call history evidence', () => {
+  it('preserves a confirmed FIFO queue conversation without a child call', () => {
+    expect(
+      resolveCallHistory(parent, [], [], {
+        recording_url: null,
+        transcription: null,
+        duration_seconds: 42,
+        forwarding_required: true,
+        forwarding_accepted_at: '2026-10-22T18:00:00Z',
+        queue_worker_sid: 'CAworker',
+      }),
+    ).toMatchObject({
+      outcome: 'answered',
+      duration_seconds: 42,
+      raw_dial_status: 'completed',
+    })
+  })
+  it('does not mistake an unaccepted queue worker for an answer', () => {
+    expect(
+      resolveCallHistory(parent, [], [], {
+        recording_url: null,
+        transcription: null,
+        queue_worker_sid: 'CAworker',
+      })?.outcome,
+    ).toBe('no-answer')
+  })
   it('counts a long IVR call with no connection or recording as missed', () => {
     expect(resolveCallHistory(parent, [], [])).toMatchObject({
       outcome: 'no-answer',

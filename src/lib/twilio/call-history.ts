@@ -39,6 +39,7 @@ export function resolveCallHistory(
     Partial<Pick<CallLogRow, 'duration_seconds'>> & {
       forwarding_required?: boolean
       forwarding_accepted_at?: string | null
+      queue_worker_sid?: string | null
     },
 ) {
   if (
@@ -69,10 +70,13 @@ export function resolveCallHistory(
       (!existing?.forwarding_required ||
         Boolean(existing.forwarding_accepted_at)),
   )
+  const queueAnswered = Boolean(
+    existing?.queue_worker_sid && existing.forwarding_accepted_at,
+  )
   const outcome =
     recording || existing?.recording_url || existing?.transcription
       ? 'voicemail'
-      : answered.length
+      : answered.length || queueAnswered
         ? 'answered'
         : 'no-answer'
   return {
@@ -86,8 +90,11 @@ export function resolveCallHistory(
               (seconds, c) => seconds + Number(c.duration || 0),
               0,
             )
-          : null,
-    raw_dial_status: answered.length ? 'completed' : parent.status,
+          : queueAnswered
+            ? (existing?.duration_seconds ?? null)
+            : null,
+    raw_dial_status:
+      answered.length || queueAnswered ? 'completed' : parent.status,
     ...(recording
       ? {
           recording_url: `https://api.twilio.com${recording.uri.replace(/\.json$/, '.mp3')}`,
@@ -106,6 +113,7 @@ export async function writeCallLog(
     outcome: string
     forwarding_required?: boolean
     forwarding_accepted_at?: string | null
+    queue_worker_sid?: string | null
     duration_seconds?: number | null
     raw_dial_status?: string | null
     recording_url?: string
@@ -140,7 +148,7 @@ export async function reconcileEndedCall(
     db
       .from('call_logs')
       .select(
-        'recording_url,transcription,outcome,duration_seconds,forwarding_required,forwarding_accepted_at',
+        'recording_url,transcription,outcome,duration_seconds,forwarding_required,forwarding_accepted_at,queue_worker_sid',
       )
       .eq('call_sid', callSid)
       .maybeSingle(),

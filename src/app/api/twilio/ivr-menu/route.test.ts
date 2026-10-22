@@ -69,15 +69,17 @@ describe('POST /api/twilio/ivr-menu', () => {
     getCallRoutingConfigMock.mockResolvedValue(routingConfig)
   })
 
-  it('dials the primary scheduling phone before failover', async () => {
+  it('puts scheduling callers into the appointment queue with hold music', async () => {
     const response = await POST(twilioRequest('1'))
     const twiml = await response.text()
 
-    expect(twiml).toMatch(/<Number[^>]*>\+17206447577<\/Number>/)
-    expect(twiml).not.toContain('<Number>\+17197498807</Number>')
-    expect(twiml).toContain(
-      '/api/twilio/dial-failover?screened=1&amp;mode=schedule',
-    )
+    expect(twiml).toContain('<Enqueue')
+    expect(twiml).toContain('event=wait')
+    expect(twiml).toContain('>sasquatch-appointments</Enqueue>')
+    expect(twiml).not.toContain('<Dial')
+    expect(update).toHaveBeenCalledWith({
+      appointment_queued_at: expect.any(String),
+    })
   })
 
   it('dials the primary water-damage phone before the secondary-stage softphone', async () => {
@@ -133,7 +135,7 @@ describe('POST /api/twilio/ivr-menu', () => {
       const xml = await (
         await POST(twilioRequest(digits, { attempt: '1' }))
       ).text()
-      expect(xml).toContain('<Dial')
+      expect(xml).toContain(digits === '1' ? '<Enqueue' : '<Dial')
       expect(update).toHaveBeenCalledWith({ caller_screening_status: 'passed' })
       expect(push).toHaveBeenCalledOnce()
     },
