@@ -54,6 +54,23 @@ export type PhoneHealthIssue = {
   details: Record<string, unknown>
 }
 
+/** Supabase can throw plain objects rather than Error instances. */
+function phoneHealthError(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const fields = error as Record<string, unknown>
+    const message = ['message', 'code', 'details', 'hint']
+      .filter(
+        (key) =>
+          ['string', 'number'].includes(typeof fields[key]) &&
+          fields[key] !== '',
+      )
+      .map((key) => `${key}: ${fields[key]}`)
+      .join('; ')
+    if (message) return message
+  }
+  return String(error)
+}
+
 export function forwardingExpectedAt(
   start: Date,
   config: CallRoutingConfig,
@@ -191,6 +208,9 @@ export async function deliverPhoneHealthAlert(
   db: SupabaseClient,
   item: PhoneHealthIssue,
 ): Promise<boolean> {
+  const details = Object.entries(item.details)
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join('\n')
   const claim = await db.rpc('claim_phone_health_alert', {
     p_key: item.key,
     p_issue: item.issue,
@@ -201,7 +221,7 @@ export async function deliverPhoneHealthAlert(
     // There is no durable deduplication available until storage recovers.
     if (item.key.startsWith('monitor-error:')) {
       const sent = await sendTelegramNotification(
-        `PHONE MONITOR ERROR\n${item.issue}\nAlert storage is unavailable. Check the phone system and server logs.`,
+        `PHONE MONITOR ERROR\n${item.issue}\n${details}\nAlert storage is unavailable: ${phoneHealthError(claim.error)}. Check the phone system and server logs.`,
       )
       if (!sent)
         throw new Error(
@@ -212,9 +232,7 @@ export async function deliverPhoneHealthAlert(
   }
   if (!claim.data) return false
   const sent = await sendTelegramNotification(
-    `PHONE SYSTEM ALERT\n${item.issue}\n${Object.entries(item.details)
-      .map(([key, value]) => `${key}: ${String(value)}`)
-      .join('\n')}\nCheck: ${BASE_URL}/admin/phone`,
+    `${item.key.startsWith('monitor-error:') ? 'PHONE MONITOR ERROR' : 'PHONE SYSTEM ALERT'}\n${item.issue}\n${details}\nCheck: ${BASE_URL}/admin/phone`,
   )
   const result = await db
     .from('phone_health_alerts')
@@ -249,6 +267,7 @@ export async function runPhoneHealthCheck(
     errors: [] as string[],
   }
   const issues: PhoneHealthIssue[] = []
+  let stage = 'load monitor settings'
   try {
     const [rollout, settings] = await Promise.all([
       db
@@ -264,6 +283,7 @@ export async function runPhoneHealthCheck(
     if (!Number.isFinite(rolloutTime))
       throw new Error('Phone monitoring rollout timestamp is invalid')
     const since = new Date(Math.max(now.getTime() - 60 * 60_000, rolloutTime))
+    stage = 'check Twilio configuration and recent activity'
     const [numbers, calls, recordings, providerAlerts, config] =
       await Promise.all([
         client.incomingPhoneNumbers.list({ phoneNumber: phone, limit: 2 }),
@@ -355,6 +375,7 @@ export async function runPhoneHealthCheck(
       })
     }
     for (const parent of parents) {
+      stage = `check saved call ${parent.sid}`
       const stored = await db
         .from('call_logs')
         .select(
@@ -389,6 +410,7 @@ export async function runPhoneHealthCheck(
           r.status === 'completed' &&
           Number(r.duration) > 0,
       )) {
+        stage = `check saved voicemail ${recording.sid}`
         // Check recording identity in the real caller's thread, not merely any
         // conversation containing the SID (the former bug saved it under '+').
         const conversation = await db
@@ -437,12 +459,13 @@ export async function runPhoneHealthCheck(
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    summary.errors.push(message)
+    const message = phoneHealthError(error)
+    console.error('[Phone Health] Check failed:', { stage, error: message })
+    summary.errors.push(`${stage}: ${message}`)
     issues.push({
       key: `monitor-error:${now.toISOString().slice(0, 10)}`,
       issue: 'Phone monitor could not complete its checks',
-      details: { error: message },
+      details: { stage, error: message },
     })
   }
   // Retry unsent alerts even if their original call has left the hourly window.
@@ -451,7 +474,10 @@ export async function runPhoneHealthCheck(
     .select('alert_key,issue,details')
     .is('sent_at', null)
     .limit(LIMIT)
-  if (pending.error) summary.errors.push(pending.error.message)
+  if (pending.error)
+    summary.errors.push(
+      `load pending alerts: ${phoneHealthError(pending.error)}`,
+    )
   else if (pending.data.length >= LIMIT)
     summary.errors.push('Pending phone health alerts reached the safety cap')
   else
@@ -469,14 +495,19 @@ export async function runPhoneHealthCheck(
       if (await deliverPhoneHealthAlert(db, issue)) summary.alertsSent++
     } catch (error) {
       summary.errors.push(
-        error instanceof Error ? error.message : String(error),
+        `deliver alert ${issue.key}: ${phoneHealthError(error)}`,
       )
     }
   }
   const saved = await db
     .from('phone_health_state')
     .upsert(
-      { key: 'latest', checked_at: now.toISOString(), summary },
+      [
+        { key: 'latest', checked_at: now.toISOString(), summary },
+        ...(summary.errors.length
+          ? [{ key: 'last-error', checked_at: now.toISOString(), summary }]
+          : []),
+      ],
       { onConflict: 'key' },
     )
   if (saved.error) throw saved.error

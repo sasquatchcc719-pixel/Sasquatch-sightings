@@ -447,6 +447,71 @@ function fixture(
   }
 }
 describe('independent scheduled monitor', () => {
+  it('preserves Supabase error fields, the failed check, and the last failure after recovery', async () => {
+    const { db, client, write } = fixture()
+    const error = {
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+      details: 'Database is overloaded',
+      hint: 'Check disk IO',
+    }
+    vi.mocked(db.from).mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({
+            eq: () => ({ single: async () => ({ data: null, error }) }),
+          }),
+        }) as never,
+    )
+    const summary = await runPhoneHealthCheck(db, client, parent.to, now)
+    expect(summary.errors[0]).toContain(error.message)
+    expect(summary.errors[0]).toContain(error.code)
+    expect(summary.errors[0]).not.toContain('[object Object]')
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.stringContaining(error.details),
+    )
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.stringContaining('stage: load monitor settings'),
+    )
+    expect(write).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'last-error', summary }),
+        expect.objectContaining({ key: 'latest', summary }),
+      ]),
+      { onConflict: 'key' },
+    )
+    write.mockClear()
+    await runPhoneHealthCheck(db, client, parent.to, now)
+    expect(write).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          key: 'latest',
+          summary: expect.objectContaining({ errors: [] }),
+        }),
+      ],
+      { onConflict: 'key' },
+    )
+  })
+  it('includes the original check error when alert storage is also unavailable', async () => {
+    const { db } = fixture()
+    vi.mocked(db.rpc).mockResolvedValue({
+      data: null,
+      error: { message: 'upstream request timeout' },
+    } as never)
+    await expect(
+      deliverPhoneHealthAlert(db, {
+        key: 'monitor-error:today',
+        issue: 'Phone monitor could not complete its checks',
+        details: {
+          stage: 'load monitor settings',
+          error: 'Database statement timed out',
+        },
+      }),
+    ).rejects.toMatchObject({ message: 'upstream request timeout' })
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.stringContaining('Database statement timed out'),
+    )
+  })
   it('retries undelivered alerts even after the call leaves the hourly window', async () => {
     const { db, client } = fixture({ pendingAlert: true })
     expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject(
@@ -466,7 +531,7 @@ describe('independent scheduled monitor', () => {
       errors: [],
     })
     expect(write).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'latest', summary }),
+      [expect.objectContaining({ key: 'latest', summary })],
       { onConflict: 'key' },
     )
   })
