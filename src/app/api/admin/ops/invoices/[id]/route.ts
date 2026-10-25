@@ -921,7 +921,10 @@ export async function PATCH(
       const { error: appointmentError } = await supabase
         .from('ops_appointments')
         .update({
-          quoted_total: Number(subtotal.toFixed(2)),
+          quoted_total:
+            discountMetadata.gap_offer || discountMetadata.returning_offer
+              ? total
+              : Number(subtotal.toFixed(2)),
           updated_at: new Date().toISOString(),
         })
         .eq('id', current.appointment_id)

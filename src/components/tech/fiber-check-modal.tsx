@@ -217,6 +217,15 @@ export function FiberCheckModal({
           </button>
         </div>
 
+        {error ? (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg bg-red-950/60 p-2 text-sm text-red-300"
+          >
+            {error}
+          </p>
+        ) : null}
+
         {result && style ? (
           <div className="space-y-4">
             <div
@@ -236,7 +245,7 @@ export function FiberCheckModal({
                 <p className="mt-2 text-sm text-white">{result.fiber}</p>
               ) : null}
               {result.determinedBy === 'stop_list' ? (
-                <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">
+                <p className="mt-1 text-xs tracking-wide text-slate-400 uppercase">
                   Matched on the care tag — this verdict is not a judgment call
                 </p>
               ) : null}
@@ -255,7 +264,7 @@ export function FiberCheckModal({
 
             {result.recommendedMethod ? (
               <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <p className="mb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
                   Method
                 </p>
                 <p className="text-sm text-slate-200">
@@ -376,19 +385,15 @@ export function FiberCheckModal({
               />
             ) : null}
 
-            {error ? (
-              <p className="rounded-lg bg-red-950/60 p-2 text-sm text-red-300">
-                {error}
-              </p>
-            ) : null}
-
             {hasTag !== null ? (
               <Button
                 onClick={() => void submit()}
                 disabled={busy || (images.length === 0 && !burnResult)}
                 className="w-full"
               >
-                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {busy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
                 Identify fiber
               </Button>
             ) : null}

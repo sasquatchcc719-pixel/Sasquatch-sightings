@@ -61,6 +61,7 @@ type CurrentInvoice = {
   ops_invoice_line_items: unknown[]
 }
 
+let queriedSubtotal: number
 let current: CurrentInvoice
 let promo: Record<string, unknown>
 let invoiceUpdate: Record<string, unknown> | null
@@ -77,6 +78,8 @@ beforeEach(() => {
   mocks.access.mockResolvedValue({ id: 'owner-a', role: 'owner' })
   mocks.assertAccess.mockResolvedValue(undefined)
   mocks.excludeCashInvoice.mockResolvedValue(true)
+  queriedSubtotal = 566
+  mocks.syncAppointment.mockResolvedValue(undefined)
   invoiceUpdate = null
   rpcCalls = []
   reportingUpdates = []
@@ -115,6 +118,7 @@ beforeEach(() => {
       let lineWrite: (typeof lineWrites)[number] | undefined
       const builder = {
         select: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
         eq: vi.fn((key: string, value: string) => {
           if (key === 'id' && lineWrite) lineWrite.id = value
           return builder
@@ -130,7 +134,7 @@ beforeEach(() => {
             lineWrites.push(lineWrite)
           }
           if (table === 'ops_invoices') invoiceUpdate = payload
-          if (table === 'jobs' || table === 'revenue_entries')
+          if (['jobs', 'revenue_entries', 'ops_appointments'].includes(table))
             reportingUpdates.push({ table, payload })
           return builder
         }),
@@ -144,7 +148,19 @@ beforeEach(() => {
         then: (resolve: (value: { data: unknown; error: null }) => unknown) =>
           Promise.resolve({
             data:
-              table === 'ops_invoice_line_items' ? [{ line_total: 566 }] : [],
+              table === 'ops_invoice_line_items'
+                ? [{ line_total: queriedSubtotal }]
+                : table === 'service_catalog_items'
+                  ? [
+                      {
+                        id: 'carpet',
+                        name: 'Carpet',
+                        category: 'Carpet Cleaning',
+                        slug: 'carpet',
+                        is_active: true,
+                      },
+                    ]
+                  : [],
             error: null,
           }).then(resolve),
       }
@@ -168,6 +184,31 @@ async function patchInvoice(body: Record<string, unknown>) {
 }
 
 describe('invoice coupon tracking', () => {
+  it('keeps the appointment quote equal to the retained TF35 net invoice', async () => {
+    current.appointment_id = 'appointment-a'
+    current.discount_amount = 35
+    current.discount_metadata = {
+      promo: { code: 'TF35', amount: 35 },
+      gap_offer: { minimum_service_cents: 30000 },
+    }
+    current.ops_invoice_line_items = [
+      {
+        id: 'line-a',
+        service_catalog_item_id: 'carpet',
+        quantity: 1,
+        unit_price: 300,
+        line_total: 300,
+      },
+    ]
+    queriedSubtotal = 300
+    const response = await patchInvoice({})
+    expect(response.status).toBe(200)
+    expect(invoiceUpdate).toMatchObject({ subtotal: 300, total: 265 })
+    expect(
+      reportingUpdates.find((row) => row.table === 'ops_appointments')?.payload,
+    ).toMatchObject({ quoted_total: 265 })
+  })
+
   it('persists submitted order on existing invoice and appointment lines without rebilling excluded work', async () => {
     current.ops_invoice_line_items = [
       { id: 'line-a', appointment_line_item_id: 'appt-a' },

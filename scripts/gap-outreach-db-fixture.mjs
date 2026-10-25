@@ -1,5 +1,8 @@
 import { readFile } from 'node:fs/promises'
-export async function setupSyntheticGapDatabase(db) {
+export async function setupSyntheticGapDatabase(
+  db,
+  { existingAuth = false } = {},
+) {
   const fixture = await readFile(
     new URL(
       '../supabase/tests/mcp_operation_controls_fixture.sql',
@@ -11,7 +14,11 @@ export async function setupSyntheticGapDatabase(db) {
     fixture
       .split('-- APPLY_MCP_OPERATION_CONTROLS_MIGRATION_HERE')[0]
       .replace(/^\\.*$/gm, '')
-      .replace('create extension if not exists pgcrypto;', ''),
+      .replace('create extension if not exists pgcrypto;', '')
+      .replace(
+        /create table auth\.users \([\s\S]*?\);/,
+        existingAuth ? '' : '$&',
+      ),
   )
   await db.exec(
     await readFile(
@@ -64,7 +71,7 @@ create table reactivation_email_log(id uuid default gen_random_uuid(),customer_i
     address = '40000000-0000-4000-8000-000000000001',
     catalog = '50000000-0000-4000-8000-000000000001'
   await db.exec(
-    `insert into auth.users values('${owner}'); insert into staff_users(id,user_id,display_name,role) values('${staff}','${owner}','Test owner','owner'); insert into mcp_authorized_users values('${owner}',array['business:read','outreach:write','customer:contact','business:write','finance:write','estimates:write'],null); insert into ops_customers(id,full_name,email,phone) values('${customer}','Fixture Customer','fixture@example.test','+17195550100'); insert into ops_service_addresses(id,customer_id,street_1,city,state,zip_code) values('${address}','${customer}','123 Fixture St','Monument','CO','80132'); insert into service_catalog_items(id,base_price) values('${catalog}',300); insert into sms_marketing_consents values('${customer}','+17195550100','opted_in',now()-interval '1 year','Explicit test consent');`,
+    `insert into auth.users(id) values('${owner}') on conflict do nothing; insert into staff_users(id,user_id,display_name,role) values('${staff}','${owner}','Test owner','owner'); insert into mcp_authorized_users values('${owner}',array['business:read','outreach:write','customer:contact','business:write','finance:write','estimates:write'],null); insert into ops_customers(id,full_name,email,phone) values('${customer}','Fixture Customer','fixture@example.test','+17195550100'); insert into ops_service_addresses(id,customer_id,street_1,city,state,zip_code) values('${address}','${customer}','123 Fixture St','Monument','CO','80132'); insert into service_catalog_items(id,base_price) values('${catalog}',300); insert into sms_marketing_consents values('${customer}','+17195550100','opted_in',now()-interval '1 year','Explicit test consent');`,
   )
   const date = (await db.query('select (current_date+2)::text d')).rows[0].d
   return { owner, staff, customer, address, catalog, date }
