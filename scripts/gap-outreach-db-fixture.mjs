@@ -22,6 +22,19 @@ export async function setupSyntheticGapDatabase(db) {
       'utf8',
     ),
   )
+  await db.exec(
+    'alter table ops_appointment_line_items add column created_at timestamptz default now()',
+  )
+  // Production metadata confirms this newer conversion body (line-order preservation).
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261018154345_add_line_item_sort_order.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  )
   await db.exec(`alter table conversations add column phone_number text,add column messages jsonb default '[]';
 alter table ops_appointments add column parked_at timestamptz;
 alter table service_catalog_items add column name text default 'Carpet',add column category text default 'Carpet Cleaning',add column slug text default 'carpet';

@@ -55,6 +55,30 @@ function fixture(fail?: string) {
 }
 const now = new Date('2026-10-25T12:00:00Z')
 describe('genuinely read-only schedule interface', () => {
+  it('paginates sources by their actual production primary keys', async () => {
+    const expected: Record<string, string[]> = {
+      hcp_customer_history: ['hcp_id'],
+      qb_historical_transactions: ['txn_type', 'qb_txn_id'],
+      sms_marketing_consents: ['customer_id'],
+      gap_outreach_contacts: ['source', 'source_id', 'phone'],
+    }
+    for (const [table, keys] of Object.entries(expected)) {
+      const orders: string[] = []
+      const query = {
+        select: () => query,
+        order: (key: string) => {
+          orders.push(key)
+          if (!keys.includes(key)) throw new Error('Column does not exist')
+          return query
+        },
+        range: async () => ({ data: [], error: null }),
+      }
+      await expect(
+        readGapRows({ from: () => query } as unknown as SupabaseClient, table),
+      ).resolves.toEqual([])
+      expect(orders).toEqual(keys)
+    }
+  })
   it('returns schema-valid complete gaps using only selects', async () => {
     const f = fixture()
     const result = await readScheduleGaps(

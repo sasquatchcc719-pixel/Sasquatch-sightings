@@ -28,11 +28,15 @@ export async function readGapRows(
 ): Promise<Row[]> {
   const rows: Row[] = []
   for (let offset = 0; offset < 50000; offset += 500) {
-    const { data, error } = await db
-      .from(table)
-      .select('*')
-      .order(table === 'hcp_customer_history' ? 'hcp_id' : 'id')
-      .range(offset, offset + 499)
+    const keys: Record<string, string[]> = {
+      hcp_customer_history: ['hcp_id'],
+      qb_historical_transactions: ['txn_type', 'qb_txn_id'],
+      sms_marketing_consents: ['customer_id'],
+      gap_outreach_contacts: ['source', 'source_id', 'phone'],
+    }
+    let query = db.from(table).select('*')
+    for (const key of keys[table] || ['id']) query = query.order(key)
+    const { data, error } = await query.range(offset, offset + 499)
     if (error) throw new Error(`${table} unavailable: ${error.message}`)
     rows.push(...(data || []))
     if (!data || data.length < 500) return rows
@@ -316,7 +320,7 @@ export async function readGapCandidates(
     ))
       history.push({
         source: 'quickbooks',
-        record_id: str(q.id),
+        record_id: `${str(q.txn_type)}:${str(q.qb_txn_id)}`,
         date: str(q.txn_date),
         date_kind: 'accounting_transaction',
         verified: false,
