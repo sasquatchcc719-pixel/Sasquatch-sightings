@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    let privateOfferAmount: number | undefined
     let minimumSubtotal: number | undefined
     if (code === 'TF35') {
       const offer = await validateTomorrowFillPromoToken(tomorrowFillToken)
@@ -49,6 +50,7 @@ export async function GET(request: NextRequest) {
         )
       }
       minimumSubtotal = offer.minimumSubtotal
+      privateOfferAmount = offer.offerAmount
       if (subtotal < minimumSubtotal) {
         return NextResponse.json(
           {
@@ -117,7 +119,9 @@ export async function GET(request: NextRequest) {
     }
 
     let discount_amount: number
-    if (promo.discount_type === 'tiered') {
+    if (privateOfferAmount !== undefined) {
+      discount_amount = privateOfferAmount
+    } else if (promo.discount_type === 'tiered') {
       const { data: tiers } = await supabase
         .from('promo_code_tiers')
         .select('min_spend, discount_amount')

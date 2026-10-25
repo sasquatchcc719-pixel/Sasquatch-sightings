@@ -73,6 +73,7 @@ export async function getAllStaffSlots(params: {
   requiredMinutes: number
   minStartMinutes?: number
   maxResults?: number
+  requestedStartTime?: string
 }): Promise<StaffSlotResult[]> {
   const {
     supabase,
@@ -80,6 +81,7 @@ export async function getAllStaffSlots(params: {
     requiredMinutes,
     minStartMinutes,
     maxResults = 8,
+    requestedStartTime,
   } = params
 
   const openStaff = await getOpenStaffForDate(supabase, date)
@@ -99,6 +101,7 @@ export async function getAllStaffSlots(params: {
       appointments: bundle.appointments,
       minStartMinutes,
       maxResults,
+      requestedStartTime,
     })
 
     if (slots.length > 0) {

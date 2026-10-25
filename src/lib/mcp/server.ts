@@ -1,3 +1,20 @@
+import { readScheduleGaps, readGapCandidates } from '@/lib/ops/gap-read'
+import {
+  previewGapOutreach,
+  executeGapOutreach,
+  readGapOutreach,
+  stopGapOutreach,
+} from '@/lib/ops/gap-outreach'
+import { createAdminClient } from '@/supabase/server'
+import {
+  scheduleGapsInput,
+  gapCandidatesInput,
+  gapBatchInput,
+  gapPreviewInput,
+  gapExecuteInput,
+  gapOutput,
+  gapRecordsOutput,
+} from './gap-schemas'
 import {
   McpServer,
   type AuthInfo,
@@ -333,6 +350,8 @@ const previewAppointmentCreateInput = z
     lead_source: z.string().trim().min(1).max(120),
     lead_source_detail: z.string().trim().max(500).nullable().optional(),
     accepted_minimum_charge: z.boolean().default(false),
+    gap_offer_id: z.string().uuid().optional(),
+    approve_alternate_offer: z.boolean().default(false),
     notify_customer: z.boolean().default(false),
     notify_internal: z.boolean().default(true),
     sync_quickbooks: z.boolean().default(true),
@@ -425,6 +444,8 @@ const previewEstimateConversionInput = z
       .optional(),
     assigned_staff_user_id: z.string().uuid(),
     discount_amount: z.number().nonnegative().max(1_000_000).default(0),
+    gap_offer_id: z.string().uuid().optional(),
+    approve_alternate_offer: z.boolean().default(false),
     notify_customer: z.boolean().default(false),
     sync_quickbooks: z.boolean().default(true),
     idempotency_key: idempotencyKey,
@@ -477,7 +498,7 @@ const securitySchemes = [
 ]
 
 export const MCP_SERVER_INSTRUCTIONS =
-  "Operate as Charles's trusted secretary. A direct instruction from the authenticated owner to perform an exact exposed action counts as authorization; preview and revalidate it, then execute without asking the same question again when the preview matches. A single native ChatGPT approval is enough. Standing authority covers routine factual replies and exact customer-accepted bookings or schedule changes, but never invent terms. Ask once before a new or materially changed customer, schedule, price, estimate, invoice, payment, refund, or liability commitment. Never perform bulk contact, deletion, credential or permission administration, arbitrary code/HTTP/SQL/shell, charges, or refunds. Availability is not a booking."
+  "Operate as Charles's trusted secretary. A direct instruction from the authenticated owner to perform an exact exposed action counts as authorization; preview and revalidate it, then execute without asking the same question again when the preview matches. A single native ChatGPT approval is enough. Standing authority covers routine factual replies and exact customer-accepted bookings or schedule changes, but never invent terms. Ask once before a new or materially changed customer, schedule, price, estimate, invoice, payment, refund, or liability commitment. Never perform unbounded bulk contact or campaigns; bounded gap outreach requires exact owner approval, separate activation and outreach:write. Never perform deletion, credential or permission administration, arbitrary code/HTTP/SQL/shell, charges, or refunds. Availability is not a booking."
 
 type HandlerExtra = ServerContext
 
@@ -1061,6 +1082,110 @@ const toolDefinitions: ToolDefinition[] = [
             ...(input as z.infer<typeof executeConfirmedActionInput>),
             expected_action_type: 'estimate.convert',
           },
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'get_schedule_gaps',
+    title: 'Read exact-duration schedule gaps',
+    description:
+      'Read real staff/calendar gaps for a complete job duration, with internal gaps prioritized and protected neighboring appointments. Travel remains inside scheduled blocks. Customer-requested alternate available times remain allowed. No writes, holds or bookings.',
+    inputSchema: scheduleGapsInput,
+    outputSchema: gapOutput,
+    async handler(input) {
+      return toolResult(
+        await readScheduleGaps(
+          createAdminClient(),
+          scheduleGapsInput.parse(input),
+        ),
+      )
+    },
+  },
+  {
+    name: 'get_gap_candidates',
+    title: 'Read ranked past-customer candidates',
+    description:
+      'Read oldest-service-first candidates for one current gap, with history provenance, prior duration, route ZIP review, consent evidence, contact history across recorded channels, exclusions and owner-review needs. No campaign or consent records are created.',
+    inputSchema: gapCandidatesInput,
+    outputSchema: gapRecordsOutput,
+    async handler(input) {
+      const value = gapCandidatesInput.parse(input)
+      return toolResult({
+        result: await readGapCandidates(
+          createAdminClient(),
+          value.gap,
+          value.limit,
+        ),
+      })
+    },
+  },
+  {
+    name: 'get_gap_outreach',
+    title: 'Read gap outreach state',
+    description:
+      'Read one bounded batch, provider acceptance and uncertainty, suppressed recipients, stop reasons and booking linkage. Does not resume or send.',
+    inputSchema: gapBatchInput,
+    outputSchema: gapRecordsOutput,
+    async handler(input) {
+      return toolResult({
+        result: await readGapOutreach(
+          createAdminClient(),
+          gapBatchInput.parse(input).batch_id,
+        ),
+      })
+    },
+  },
+  {
+    name: 'preview_gap_outreach',
+    title: 'Preview one exact gap outreach batch',
+    description:
+      'Prepare an actor-bound ten-minute approval for one to five named eligible customers, exact generated TF35 offer messages, gap/calendar version and no automatic substitutes. Writes approval rows only; never creates consent or sends. Requires outreach:write and customer:contact; never infer campaign authority from a general task.',
+    inputSchema: gapPreviewInput,
+    outputSchema: gapRecordsOutput,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await previewGapOutreach(
+          createAdminClient(),
+          gapPreviewInput.parse(input),
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'execute_gap_outreach',
+    title: 'Execute an owner-approved bounded batch',
+    description:
+      'Execute only the exact explicitly approved recipient/message/gap snapshot. Separate activation and grants are required. Atomically claims sends, revalidates live availability/eligibility, stops pending work after replies, owner takeover or bookings, and never retries uncertain provider outcomes. An in-flight SMS cannot be recalled.',
+    inputSchema: gapExecuteInput,
+    outputSchema: gapRecordsOutput,
+    annotations: customerContactAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await executeGapOutreach(
+          createAdminClient(),
+          gapExecuteInput.parse(input).confirmation_id,
+          actorInfo(extra),
+        ),
+      })
+    },
+  },
+  {
+    name: 'stop_gap_outreach',
+    title: 'Stop pending gap outreach',
+    description:
+      'On the owner instruction, stop remaining pending invitations and hand the batch to the owner. Does not recall already accepted or in-flight messages. Requires outreach:write.',
+    inputSchema: gapBatchInput,
+    outputSchema: gapRecordsOutput,
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult({
+        result: await stopGapOutreach(
+          createAdminClient(),
+          gapBatchInput.parse(input).batch_id,
           actorInfo(extra),
         ),
       })

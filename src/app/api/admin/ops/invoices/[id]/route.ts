@@ -1,3 +1,4 @@
+import { validateReturningInvoiceEdit } from '@/lib/ops/gap-invoice-edit'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import {
   invoiceCatalogService,
@@ -304,6 +305,19 @@ export async function PATCH(
       .single()
 
     if (currentError) throw currentError
+    try {
+      await validateReturningInvoiceEdit(supabase, current, body)
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Invalid returning-customer offer edit',
+        },
+        { status: 400 },
+      )
+    }
 
     // ── Customer / address inline edits ──────────────────────
     if (body.customer || body.address) {
@@ -653,7 +667,7 @@ export async function PATCH(
           .toUpperCase()
           .trim()
       : ''
-    const currentDiscountMetadata =
+    let currentDiscountMetadata =
       current.discount_metadata &&
       typeof current.discount_metadata === 'object' &&
       !Array.isArray(current.discount_metadata)
@@ -668,6 +682,11 @@ export async function PATCH(
     const currentPromoCode = String(currentPromo?.code || '')
       .toUpperCase()
       .trim()
+    if (promoCodeInBody && requestedPromoCode !== 'TF35') {
+      currentDiscountMetadata = { ...currentDiscountMetadata }
+      delete currentDiscountMetadata.gap_offer
+      delete currentDiscountMetadata.returning_offer
+    }
     let discountAmount =
       body.discount_amount !== undefined
         ? Math.max(0, Number(body.discount_amount || 0))
@@ -675,10 +694,25 @@ export async function PATCH(
     let discountMetadata: Record<string, unknown> = currentDiscountMetadata
     let promoCodeIdToIncrement: string | null = null
 
+    if (requestedPromoCode === 'TF35' && currentPromoCode !== 'TF35')
+      return NextResponse.json(
+        {
+          error:
+            'TF35 requires its approved gap-offer booking or private returning-customer offer context.',
+        },
+        { status: 400 },
+      )
     if (promoCodeInBody) {
       if (!requestedPromoCode) {
         discountMetadata = { ...currentDiscountMetadata }
         delete discountMetadata.promo
+        if (
+          current.discount_metadata?.gap_offer ||
+          current.discount_metadata?.returning_offer
+        ) {
+          delete discountMetadata.gap_offer
+          discountAmount = 0
+        }
       } else {
         const { data: promo, error: promoError } = await supabase
           .from('promo_codes')
@@ -726,7 +760,13 @@ export async function PATCH(
           )
         }
 
-        if (promo.discount_type === 'tiered') {
+        if (
+          requestedPromoCode === 'TF35' &&
+          (currentDiscountMetadata.gap_offer ||
+            currentDiscountMetadata.returning_offer)
+        ) {
+          discountAmount = 35
+        } else if (promo.discount_type === 'tiered') {
           const { data: tiers, error: tiersError } = await supabase
             .from('promo_code_tiers')
             .select('min_spend, discount_amount')

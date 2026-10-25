@@ -1,3 +1,4 @@
+import { validateReturningInvoiceEdit } from '@/lib/ops/gap-invoice-edit'
 /**
  * Exclude a line item from an invoice without deleting it.
  *
@@ -49,9 +50,69 @@ export async function POST(
 
     const line = appointment.lineItems.find((l) => l.id === lineItemId)
     if (!line) {
-      return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Line item not found' },
+        { status: 404 },
+      )
     }
 
+    if (!restore) {
+      const { data: offerInvoice, error: offerError } = await supabase
+        .from('ops_invoices')
+        .select(
+          'discount_metadata,discount_amount,percentage_discount_amount,ops_invoice_line_items(*)',
+        )
+        .eq('appointment_id', appointmentId)
+        .maybeSingle()
+      if (offerError) throw offerError
+      if (
+        offerInvoice?.discount_metadata?.gap_offer ||
+        offerInvoice?.discount_metadata?.returning_offer
+      ) {
+        const rows = offerInvoice.ops_invoice_line_items || []
+        const targets = rows.filter(
+          (row) =>
+            row.appointment_line_item_id === lineItemId ||
+            (!row.appointment_line_item_id && row.description === line.name),
+        )
+        if (targets.length !== 1)
+          return NextResponse.json(
+            {
+              error:
+                'The returning-customer offer needs owner review before removing this work.',
+            },
+            { status: 400 },
+          )
+        const target = targets[0],
+          units = unitsForLine(line)
+        const projected = rows.map((row) => ({
+          id: row.id,
+          quantity:
+            row.id === target.id ? Math.max(1, units - 1) : row.quantity,
+          unit_price:
+            row.id === target.id
+              ? units > 1
+                ? Number(line.unitPrice || 0)
+                : 0
+              : row.unit_price,
+        }))
+        try {
+          await validateReturningInvoiceEdit(supabase, offerInvoice, {
+            line_items: projected,
+          })
+        } catch (error) {
+          return NextResponse.json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Remove or review TF35 before removing this work.',
+            },
+            { status: 400 },
+          )
+        }
+      }
+    }
     await captureAddOnBonusBaseline(supabase, appointmentId)
 
     if (restore) {
@@ -255,7 +316,10 @@ async function recalculateInvoice(
     .eq('invoice_id', invoice.id)
 
   const appointmentLines = lines ?? []
-  const pairings = pairInvoiceLines(appointmentLines, existingInvoiceLines ?? [])
+  const pairings = pairInvoiceLines(
+    appointmentLines,
+    existingInvoiceLines ?? [],
+  )
 
   for (const [index, line] of appointmentLines.entries()) {
     const payload = {

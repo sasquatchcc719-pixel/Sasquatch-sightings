@@ -986,6 +986,8 @@ export async function previewAppointmentCreate(
     lead_source: string
     lead_source_detail?: string | null
     accepted_minimum_charge: boolean
+    gap_offer_id?: string
+    approve_alternate_offer?: boolean
     notify_customer: boolean
     notify_internal: boolean
     sync_quickbooks: boolean
@@ -1017,6 +1019,8 @@ export async function previewAppointmentCreate(
     actor_label: `MCP (${actor.label})`,
     admin_heading: 'MCP booking',
     accepted_minimum_charge: input.accepted_minimum_charge,
+    gap_offer_id: input.gap_offer_id,
+    approve_alternate_offer: input.approve_alternate_offer,
     assigned_staff_user_id: input.assigned_staff_user_id || null,
     notify_customer: input.notify_customer,
     notify_internal: input.notify_internal,
@@ -1053,6 +1057,8 @@ export async function previewAppointmentCreate(
         actor_label: bookingInput.actor_label,
         admin_heading: bookingInput.admin_heading,
         accepted_minimum_charge: bookingInput.accepted_minimum_charge,
+        gap_offer_id: bookingInput.gap_offer_id,
+        approve_alternate_offer: bookingInput.approve_alternate_offer,
         assigned_staff_user_id: bookingInput.assigned_staff_user_id,
         notify_customer: bookingInput.notify_customer,
         notify_internal: bookingInput.notify_internal,
@@ -1075,6 +1081,7 @@ export async function previewAppointmentCreate(
       line_items: planned.line_items,
       subtotal: planned.subtotal,
       discount: planned.discount_applied,
+      discount_metadata: planned.discount_metadata || null,
       total: planned.total,
       effects: [
         'Creates or reuses the customer and service address.',
@@ -1488,6 +1495,8 @@ export async function previewEstimateConversion(
     end_time?: string | null
     assigned_staff_user_id: string
     discount_amount: number
+    gap_offer_id?: string
+    approve_alternate_offer?: boolean
     notify_customer: boolean
     sync_quickbooks: boolean
     idempotency_key: string
@@ -1508,6 +1517,8 @@ export async function previewEstimateConversion(
     endTime: input.end_time,
     assignedStaffUserId: input.assigned_staff_user_id,
     discountAmount: input.discount_amount,
+    gapOfferId: input.gap_offer_id,
+    approveAlternateOffer: input.approve_alternate_offer,
     allowConflict: false,
     notifyCustomer: input.notify_customer,
     syncQuickBooks: input.sync_quickbooks,
@@ -1547,6 +1558,7 @@ export async function previewEstimateConversion(
       line_items: prepared.line_items,
       subtotal: prepared.subtotal,
       discount_amount: prepared.discount_amount,
+      discount_metadata: prepared.discount_metadata || null,
       total: prepared.total,
       current_estimate_status: prepared.expected_status,
       notify_customer: input.notify_customer,
@@ -1821,10 +1833,21 @@ async function executeAppointmentCreate(
       ? getQuickBooksSyncStatus()
       : 'held',
   }
-  const { data, error } = await supabase.rpc('mcp_create_appointment', {
-    p_plan: plan,
-    p_actor_user_id: actor.subject,
-  })
+  const { data, error } = await supabase.rpc(
+    bookingInput.gap_offer_id
+      ? 'mcp_create_gap_appointment'
+      : 'mcp_create_appointment',
+    {
+      p_plan: plan,
+      p_actor_user_id: actor.subject,
+      ...(bookingInput.gap_offer_id
+        ? {
+            p_offer: bookingInput.gap_offer_id,
+            p_allow_alternate: Boolean(bookingInput.approve_alternate_offer),
+          }
+        : {}),
+    },
+  )
   if (error) throw error
   const result = data as {
     customer_id: string

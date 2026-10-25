@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -33,6 +33,12 @@
     "preview_estimate_send",
     "execute_estimate_send",
     "preview_estimate_conversion",
-    "execute_estimate_conversion"
+    "execute_estimate_conversion",
+    "get_schedule_gaps",
+    "get_gap_candidates",
+    "get_gap_outreach",
+    "preview_gap_outreach",
+    "execute_gap_outreach",
+    "stop_gap_outreach"
   ]
 }

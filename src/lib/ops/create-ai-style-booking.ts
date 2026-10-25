@@ -1,3 +1,4 @@
+import { calculateGapOffer, loadGapOffer } from './gap-offer'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   applyAppointmentBuffer,
@@ -67,6 +68,8 @@ export type CreateAiStyleBookingInput = {
   admin_heading: string
   /** Rabecca may apply the AI promo only when the caller explicitly asks. */
   discount_requested?: boolean
+  gap_offer_id?: string
+  approve_alternate_offer?: boolean
   /** Customer explicitly agreed to pay the booking minimum even when catalog lines price lower. */
   accepted_minimum_charge?: boolean
   /** Staff member to assign this appointment to. */
@@ -92,6 +95,7 @@ export type CreateAiStyleBookingPreviewSuccess = {
   technician_name: string
   subtotal: number
   discount_applied: number
+  discount_metadata?: Record<string, unknown>
   total: number
   line_items: Array<{
     service_catalog_item_id: string | null
@@ -470,13 +474,15 @@ export async function createAiStyleBooking(
   }
 
   const promo = await getAgentPromoSettings()
-  const discountAmount = calculateAiStyleBookingDiscount({
-    booking_channel: bookingChannel,
-    subtotal,
-    promo,
-    discount_requested: discountRequested,
-  })
-  const total = Math.max(0, subtotal - discountAmount)
+  let discountAmount = input.gap_offer_id
+    ? 0
+    : calculateAiStyleBookingDiscount({
+        booking_channel: bookingChannel,
+        subtotal,
+        promo,
+        discount_requested: discountRequested,
+      })
+  let total = Math.max(0, subtotal - discountAmount)
 
   // Calculate duration based on dollar amount (simple tier system)
   // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
@@ -489,6 +495,31 @@ export async function createAiStyleBooking(
   }
   const endTotal = sh * 60 + sm + buffered
   const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
+  let discountMetadata: Record<string, unknown> | undefined
+  if (input.gap_offer_id) {
+    if (!input.preview_only)
+      return {
+        ok: false,
+        error: 'Gap offers must use the atomic confirmed MCP booking workflow',
+      }
+    const terms = await loadGapOffer(
+      supabase,
+      input.gap_offer_id,
+      phone,
+      appointmentDate,
+      startTime,
+      endTime,
+      Boolean(input.approve_alternate_offer),
+    )
+    const calculated = calculateGapOffer({
+      terms,
+      service_subtotal: serviceSubtotal,
+      fees: googleLsaCharge + travelCharge,
+    })
+    discountAmount = calculated.discount_amount
+    total = calculated.total
+    discountMetadata = calculated.discount_metadata
+  }
   // Per-staff availability — the same logic the public booking widget uses. A
   // time is open if ANY active crew is free for the whole job, and we assign that
   // crew. The old check pooled every appointment onto one calendar, so a single
@@ -498,6 +529,7 @@ export async function createAiStyleBooking(
     supabase,
     date: appointmentDate,
     requiredMinutes: buffered,
+    requestedStartTime: requestedStart,
   })
   const freeStaff = staffSlots.find(
     (result) =>
@@ -555,6 +587,7 @@ export async function createAiStyleBooking(
       technician_name: technicianSchedule,
       subtotal,
       discount_applied: discountAmount,
+      ...(discountMetadata ? { discount_metadata: discountMetadata } : {}),
       total,
       line_items: lineItems.map((item) => ({
         service_catalog_item_id: item.service_catalog_item_id,

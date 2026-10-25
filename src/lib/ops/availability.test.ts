@@ -10,6 +10,38 @@ import {
 } from './availability'
 
 describe('availability gap fill', () => {
+  it('accepts a specific off-grid customer time when its whole job fits', () => {
+    const params = {
+      date: '2026-10-27',
+      requiredMinutes: 120,
+      templates: DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+      overrides: [],
+      appointments: [
+        {
+          appointment_date: '2026-10-27',
+          start_time: '09:00',
+          end_time: '10:00',
+          status: 'booked',
+        },
+        {
+          appointment_date: '2026-10-27',
+          start_time: '13:00',
+          end_time: '15:00',
+          status: 'booked',
+        },
+      ],
+      requestedStartTime: '10:30',
+      maxResults: 1,
+    }
+    expect(getAvailableSlots(params)).toContainEqual({
+      start_time: '10:30:00',
+      end_time: '12:30:00',
+    })
+    expect(
+      getAvailableSlots({ ...params, requiredMinutes: 180 }),
+    ).not.toContainEqual({ start_time: '10:30:00', end_time: '13:30:00' })
+  })
+
   it('keeps the default booking window open through 6 PM', () => {
     const slots = getAvailableSlots({
       date: '2026-05-04',

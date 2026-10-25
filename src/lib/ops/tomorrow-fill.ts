@@ -632,19 +632,6 @@ export async function scanTomorrowFill(params?: {
     .upsert(recipientRows, { onConflict: 'campaign_id,customer_id' })
   if (recipientsError) throw recipientsError
 
-  const consentRows = candidates.map((candidate) => ({
-    customer_id: candidate.customerId,
-    phone_normalized: candidate.phone,
-    status: 'opted_in',
-    source: 'existing_customer_terms',
-    disclosure:
-      'Existing customer promotional messaging disclosure confirmed by owner.',
-    updated_at: new Date().toISOString(),
-  }))
-  await supabase
-    .from('sms_marketing_consents')
-    .upsert(consentRows, { onConflict: 'customer_id', ignoreDuplicates: true })
-
   await supabase.from('tomorrow_fill_events').insert({
     campaign_id: campaign.id,
     event_type: audienceBelowMinimum ? 'scan_skipped' : 'scanned',

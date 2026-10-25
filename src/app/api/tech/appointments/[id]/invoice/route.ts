@@ -1,3 +1,4 @@
+import { validateReturningInvoiceEdit } from '@/lib/ops/gap-invoice-edit'
 import { captureAddOnBonusBaseline } from '@/lib/ops/add-on-bonuses'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
@@ -88,6 +89,7 @@ export async function PATCH(
           ops_invoices (
             id,
             discount_amount,
+            discount_metadata,
             percentage_discount_amount,
             tax_amount,
             minimum_charge_adjustment
@@ -119,14 +121,14 @@ export async function PATCH(
       )
     }
 
-    await captureAddOnBonusBaseline(supabase, id)
-
     // Update in place rather than delete-and-recreate. Recreating dropped
     // service_catalog_item_id (which is how rug/upholstery items are detected
     // for fiber checks) and orphaned any fiber check anchored to a line.
     const { data: existingLines, error: existingLinesError } = await supabase
       .from('ops_appointment_line_items')
-      .select('id, excluded_at, excluded_original_total')
+      .select(
+        'id, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total, excluded_at, excluded_original_total',
+      )
       .eq('appointment_id', id)
 
     if (existingLinesError) throw existingLinesError
@@ -162,6 +164,37 @@ export async function PATCH(
       }
     })
 
+    try {
+      await validateReturningInvoiceEdit(
+        supabase,
+        {
+          ...invoice,
+          ops_invoice_line_items: (existingLines || []).map((line) => ({
+            ...line,
+            description: line.name_snapshot,
+          })),
+        },
+        {
+          line_items: normalized.map((n) => ({
+            id: n.existingId || undefined,
+            description: n.row.name_snapshot,
+            quantity: n.row.quantity,
+            unit_price: n.row.unit_price,
+          })),
+        },
+      )
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Invalid returning-customer offer edit',
+        },
+        { status: 400 },
+      )
+    }
+    await captureAddOnBonusBaseline(supabase, id)
     const keptIds = new Set(
       normalized
         .map((n) => n.existingId)
@@ -246,12 +279,13 @@ export async function PATCH(
     )
     const nowIso = new Date().toISOString()
 
-    await supabase
+    const { error: appointmentTotalError } = await supabase
       .from('ops_appointments')
       .update({ quoted_total: subtotal, updated_at: nowIso })
       .eq('id', id)
+    if (appointmentTotalError) throw appointmentTotalError
 
-    await supabase
+    const { error: invoiceTotalError } = await supabase
       .from('ops_invoices')
       .update({
         subtotal: Number(subtotal.toFixed(2)),
@@ -259,6 +293,7 @@ export async function PATCH(
         updated_at: nowIso,
       })
       .eq('id', invoice.id)
+    if (invoiceTotalError) throw invoiceTotalError
 
     const updated = await getAssignedTechAppointment(supabase, staffUserId, id)
     return NextResponse.json({ appointment: updated })

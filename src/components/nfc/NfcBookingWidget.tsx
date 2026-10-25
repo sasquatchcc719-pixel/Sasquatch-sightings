@@ -892,7 +892,7 @@ export function NfcBookingWidget({
     (upsell) => upsell.slug === 'free-uv-inspection',
   )
   const rugUnits = rugUnitCount(cart)
-  const rugDiscountAmount = multiRugDiscount(cart)
+  const rugDiscountAmount = campaignToken ? 0 : multiRugDiscount(cart)
   const promoDiscountAmount = reviewPromo?.discountAmount ?? 0
   const reviewTotal = Math.max(
     0,
@@ -1692,8 +1692,9 @@ export function NfcBookingWidget({
 
             {reviewPromo?.minimumSubtotal ? (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-300/80">
-                Your private offer requires {formatPrice(reviewPromo.minimumSubtotal)}
-                {' '}or more in services before the discount.
+                Your private offer requires{' '}
+                {formatPrice(reviewPromo.minimumSubtotal)} or more in services
+                before the discount.
                 {subtotal < reviewPromo.minimumSubtotal
                   ? ' Add more services to qualify.'
                   : ''}

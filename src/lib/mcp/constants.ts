@@ -11,6 +11,7 @@ export const MCP_INTERNAL_SCOPES = [
   'estimates:write',
   'business:write',
   'finance:write',
+  'outreach:write',
 ] as const
 
 export type McpInternalScope = (typeof MCP_INTERNAL_SCOPES)[number]

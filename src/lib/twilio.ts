@@ -37,6 +37,7 @@ export type CustomerSmsMeta = {
   sentBy?: string
   customerId?: string
   tomorrowFillRecipientId?: string
+  gapOutreachRecipientId?: string
 }
 
 /**
@@ -264,18 +265,23 @@ export async function sendCustomerSMSWithResult(
   console.log(`📤 SENDING SMS: From=${sender} To=${toPhone}`)
   console.log(`   Message: ${normalizedMessage.substring(0, 50)}...`)
 
+  const statusCallback = meta?.gapOutreachRecipientId
+    ? `https://sightings.sasquatchcarpet.com/api/twilio/gap-status?recipient=${encodeURIComponent(meta.gapOutreachRecipientId)}`
+    : undefined
   const result = await client.messages.create(
     useMessagingService
       ? {
           body: normalizedMessage,
           messagingServiceSid,
           to: toPhone,
+          ...(statusCallback ? { statusCallback } : {}),
           ...(mediaUrls.length > 0 ? { mediaUrl: mediaUrls } : {}),
         }
       : {
           body: normalizedMessage,
           from: sender,
           to: toPhone,
+          ...(statusCallback ? { statusCallback } : {}),
           ...(mediaUrls.length > 0 ? { mediaUrl: mediaUrls } : {}),
         },
   )

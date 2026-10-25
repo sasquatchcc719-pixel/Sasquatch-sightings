@@ -313,6 +313,14 @@ export async function POST(request: NextRequest) {
       : String(body.promo_code || '')
           .toUpperCase()
           .trim() || null
+    if (promoCode === 'TF35')
+      return NextResponse.json(
+        {
+          error:
+            'TF35 requires its approved gap-offer booking or private returning-customer offer context.',
+        },
+        { status: 400 },
+      )
     let promoCodeId: string | null = null
     let appliedPromoCode: string | null = null
     let appliedPromoType: string | null = null

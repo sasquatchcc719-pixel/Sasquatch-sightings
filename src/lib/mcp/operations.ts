@@ -74,7 +74,7 @@ export function getCapabilityCatalog() {
         'Any action whose preview differs materially from the instruction or accepted customer terms.',
       ],
       never_exposed: [
-        'Bulk customer contact, campaigns, or silent multi-customer actions.',
+        'Unbounded bulk customer contact or campaigns, and silent multi-customer actions.',
         'Business-record deletion, credential changes, user or permission administration, arbitrary SQL, shell, HTTP, or code execution.',
         'Charges, refunds, payment collection, or direct QuickBooks administration.',
       ],
@@ -82,6 +82,38 @@ export function getCapabilityCatalog() {
         'ChatGPT may still display its own native approval control for a write tool. Treat that single control as the confirmation; do not add a second conversational confirmation unless this policy requires one.',
     },
     capabilities: [
+      {
+        area: 'gap_management',
+        workflows: [
+          'exact-duration gap planning',
+          'ranked past-customer review',
+          'bounded owner-approved outreach',
+          'stop pending outreach',
+        ],
+        tools: [
+          'get_schedule_gaps',
+          'get_gap_candidates',
+          'get_gap_outreach',
+          'preview_gap_outreach',
+          'execute_gap_outreach',
+          'stop_gap_outreach',
+        ],
+        access: 'partial' as const,
+        scope:
+          'business:read for reads; separately granted outreach:write and customer:contact for batch sending',
+        side_effects: [
+          'approval and send-state records',
+          'only explicitly approved bounded SMS contact after separate activation',
+        ],
+        approval:
+          'Exact named recipients, bodies and gap snapshot; one explicit owner approval per batch',
+        limitations: [
+          'Disabled until GAP_OUTREACH_ENABLED and new grants are explicitly approved.',
+          'Internal gaps are prioritized; alternate available times remain allowed.',
+          'Prior service duration and same ZIP do not establish actual job or driving fit.',
+          'Uncertain provider outcomes are never automatically retried; in-flight messages cannot be recalled.',
+        ],
+      },
       {
         area: 'appointments_and_dispatch',
         workflows: [
@@ -263,7 +295,7 @@ export function getCapabilityCatalog() {
     ],
     unavailable: [
       'arbitrary HTTP, SQL, shell, code execution, environment, token, or security administration',
-      'bulk customer contact or campaigns',
+      'unbounded bulk customer contact or campaigns',
       'dispatch, completion, and customer notification execution for schedule changes',
       'invoice publication/sending/payment and recurring, commercial, restoration, referral, or Ranger mutations',
       'payment collection, payment-link creation, refunds, or direct QuickBooks administration/arbitrary sync control',

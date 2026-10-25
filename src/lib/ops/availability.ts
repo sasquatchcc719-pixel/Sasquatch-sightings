@@ -217,6 +217,7 @@ export function getAvailableSlots(params: {
   appointments: ExistingAppointmentWindow[]
   minStartMinutes?: number
   maxResults?: number
+  requestedStartTime?: string
 }): SlotOption[] {
   const {
     date,
@@ -226,6 +227,7 @@ export function getAvailableSlots(params: {
     appointments,
     minStartMinutes,
     maxResults = 6,
+    requestedStartTime,
   } = params
 
   if (!date || requiredMinutes <= 0) {
@@ -332,10 +334,29 @@ export function getAvailableSlots(params: {
     }
   }
 
+  if (
+    requestedStartTime &&
+    /^([01]\d|2[0-3]):[0-5]\d(?::00)?$/.test(requestedStartTime)
+  ) {
+    for (const template of dayTemplates)
+      trySlot(
+        timeToMinutes(requestedStartTime),
+        timeToMinutes(template.start_time),
+        timeToMinutes(template.end_time),
+      )
+  }
   slots.sort(
     (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time),
   )
-  return slots.slice(0, maxResults)
+  const selected = slots.slice(0, maxResults)
+  const requested = slots.find(
+    (slot) =>
+      requestedStartTime &&
+      timeToMinutes(slot.start_time) === timeToMinutes(requestedStartTime),
+  )
+  if (requested && !selected.includes(requested) && maxResults > 0)
+    selected.splice(Math.max(0, selected.length - 1), 1, requested)
+  return selected
 }
 
 /**

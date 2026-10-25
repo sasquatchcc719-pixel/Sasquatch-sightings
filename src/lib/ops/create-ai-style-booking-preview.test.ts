@@ -55,6 +55,26 @@ class ReadQuery {
     }
     return this
   }
+  single() {
+    if (this.table !== 'gap_outreach_recipients')
+      throw new Error('Unexpected single read')
+    return Promise.resolve({
+      data: {
+        id: 'offer',
+        customer_id: 'customer',
+        phone: '+17195550123',
+        status: 'accepted',
+        appointment_id: null,
+        batch: {
+          payload: {
+            gap: { date: '2026-10-20', start_time: '09:00', end_time: '12:00' },
+            offer: { minimum_service_cents: 30000, amount: 35 },
+          },
+        },
+      },
+      error: null,
+    })
+  }
   maybeSingle() {
     if (this.table !== 'staff_users') throw new Error('Unexpected table read')
     return Promise.resolve({
@@ -197,5 +217,56 @@ describe('AI-style booking preview', () => {
 
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error).toContain('not available')
+  })
+  it('uses TF35 instead of the agent promo and previews matching invoice metadata', async () => {
+    mocks.getAgentPromoSettings.mockResolvedValue({
+      enabled: true,
+      discount: 20,
+      minimum: 220,
+    })
+    mocks.checkServiceArea.mockReturnValue({
+      allowed: true,
+      travelCharge: 50,
+      message: '',
+    })
+    const result = await createAiStyleBooking({
+      supabase: { from: (table: string) => new ReadQuery(table) } as never,
+      customer: {
+        first_name: 'Test',
+        last_name: 'Customer',
+        email: 'test@example.com',
+        phone: '+17195550123',
+      },
+      address: {
+        street_1: '123 Main St',
+        city: 'Colorado Springs',
+        state: 'CO',
+        zip_code: '80903',
+      },
+      appointment_date: '2026-10-20',
+      start_time: '09:00',
+      line_items: [
+        { service_id: '10000000-0000-4000-8000-000000000001', quantity: 1 },
+      ],
+      booking_mode: 'direct',
+      booking_channel: 'ai_agent',
+      source_label: 'Dot MCP',
+      lead_source: 'google',
+      actor_label: 'Owner',
+      admin_heading: 'Test',
+      gap_offer_id: 'offer',
+      preview_only: true,
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      subtotal: 350,
+      discount_applied: 35,
+      total: 315,
+      discount_metadata: {
+        promo: { code: 'TF35', amount: 35 },
+        gap_offer: { id: 'offer', service_subtotal: 300 },
+      },
+      end_time: '11:00',
+    })
   })
 })

@@ -316,4 +316,38 @@ describe('cash invoice cleanup', () => {
       sync_status: 'held',
     })
   })
+  it('rejects a stacked TF35 edit before any invoice line or total write', async () => {
+    current.discount_amount = 35
+    current.discount_metadata = {
+      promo: { code: 'TF35', amount: 35 },
+      gap_offer: { minimum_service_cents: 30000 },
+    }
+    const response = await patchInvoice({
+      customer: { email: 'changed@example.test' },
+      line_items: [{ id: 'new-line', quantity: 1, unit_price: 175 }],
+      percentage_discount_amount: 10,
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: 'TF35 cannot combine with another discount',
+    })
+    expect(lineWrites).toEqual([])
+    expect(invoiceUpdate).toBeNull()
+    expect(reportingUpdates).toEqual([])
+  })
+  it('clears old offer provenance when explicitly replacing TF35', async () => {
+    current.discount_amount = 35
+    current.discount_metadata = {
+      promo: { code: 'TF35', amount: 35 },
+      gap_offer: { minimum_service_cents: 30000 },
+      returning_offer: { minimum_service_cents: 30000 },
+    }
+    const response = await patchInvoice({ promo_code: 'PARTNER10' })
+    expect(response.status).toBe(200)
+    expect(invoiceUpdate?.discount_metadata).not.toHaveProperty('gap_offer')
+    expect(invoiceUpdate?.discount_metadata).not.toHaveProperty(
+      'returning_offer',
+    )
+    expect(invoiceUpdate).toMatchObject({ discount_amount: 56.6 })
+  })
 })

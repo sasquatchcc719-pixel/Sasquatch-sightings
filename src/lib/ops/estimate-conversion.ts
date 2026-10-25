@@ -1,3 +1,4 @@
+import { calculateGapOffer, loadGapOffer } from './gap-offer'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -41,6 +42,9 @@ export type PreparedEstimateConversion = {
   assigned_staff_auth_user_id: string
   technician_name: string
   discount_amount: number
+  gap_offer_id?: string
+  approve_alternate_offer?: boolean
+  discount_metadata?: Record<string, unknown>
   subtotal: number
   total: number
   service_minutes: number
@@ -85,6 +89,8 @@ export async function prepareEstimateConversion(params: {
   endTime?: string | null
   assignedStaffUserId: string
   discountAmount?: number
+  gapOfferId?: string
+  approveAlternateOffer?: boolean
   allowConflict?: boolean
   notifyCustomer?: boolean
   syncQuickBooks?: boolean
@@ -105,7 +111,7 @@ export async function prepareEstimateConversion(params: {
        converted_appointment_id, updated_at,
        ops_customers!ops_appointments_customer_id_fkey(id, full_name, business_name, email, phone),
        ops_service_addresses(id, street_1, street_2, city, state, zip_code),
-       ops_appointment_line_items(id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total,
+       ops_appointment_line_items(id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total,
          length_value, width_value, pricing_unit_snapshot, area_segments)`,
     )
     .eq('id', params.estimateId)
@@ -139,20 +145,59 @@ export async function prepareEstimateConversion(params: {
       .reduce((sum, line) => sum + Number(line.line_total || 0), 0)
       .toFixed(2),
   )
-  const discountAmount = Number(
+  let discountAmount = Number(
     Math.max(0, Number(params.discountAmount || 0)).toFixed(2),
   )
-  const total = Number(Math.max(0, subtotal - discountAmount).toFixed(2))
-  const serviceMinutes = calculateAppointmentDurationFromTotal(subtotal)
+  let total = Number(Math.max(0, subtotal - discountAmount).toFixed(2))
+  const serviceSubtotal = sourceLines
+    .filter(
+      (line) =>
+        line.service_catalog_item_id &&
+        !/^(mileage[ /-]*travel|travel fee|tax|fees?|google lsa.*)$/i.test(
+          line.name_snapshot,
+        ),
+    )
+    .reduce((sum, line) => sum + Number(line.line_total || 0), 0)
+  const serviceMinutes = calculateAppointmentDurationFromTotal(
+    params.gapOfferId ? serviceSubtotal : subtotal,
+  )
   const totalMinutesWithBuffer = applyAppointmentBuffer(serviceMinutes)
   const startTime = normalizedTime(params.startTime)
   const endTime = params.endTime
     ? normalizedTime(params.endTime)
     : addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer)
+  if (
+    params.gapOfferId &&
+    timeMinutes(endTime) - timeMinutes(startTime) < totalMinutesWithBuffer
+  )
+    throw new Error('The complete job duration must fit the selected time')
   if (timeMinutes(endTime) <= timeMinutes(startTime)) {
     throw new Error('The conversion end time must be after its start time')
   }
 
+  let discountMetadata: Record<string, unknown> | undefined
+  if (params.gapOfferId) {
+    if (params.discountAmount)
+      throw new Error('TF35 cannot stack with another estimate discount')
+    const terms = await loadGapOffer(
+      params.supabase,
+      params.gapOfferId,
+      customer.phone,
+      params.appointmentDate,
+      startTime,
+      endTime,
+      Boolean(params.approveAlternateOffer),
+    )
+    const offer = calculateGapOffer({
+      terms,
+      service_subtotal: serviceSubtotal,
+      fees: subtotal - serviceSubtotal,
+      negative_lines: sourceLines.some((line) => Number(line.line_total) < 0),
+    })
+    discountAmount = offer.discount_amount
+    total = offer.total
+    discountMetadata = offer.discount_metadata
+  }
   if (!params.allowConflict) {
     const conflict = await findAppointmentConflict(params.supabase, {
       date: params.appointmentDate,
@@ -192,6 +237,7 @@ export async function prepareEstimateConversion(params: {
         end_time: endTime,
         assigned_staff_user_id: staff.id,
         discount_amount: discountAmount,
+        ...(discountMetadata ? { discount_metadata: discountMetadata } : {}),
         subtotal,
         total,
         line_items: lineItems,
@@ -210,6 +256,13 @@ export async function prepareEstimateConversion(params: {
     assigned_staff_auth_user_id: staff.user_id,
     technician_name: staff.display_name,
     discount_amount: discountAmount,
+    ...(params.gapOfferId
+      ? {
+          gap_offer_id: params.gapOfferId,
+          approve_alternate_offer: Boolean(params.approveAlternateOffer),
+          discount_metadata: discountMetadata,
+        }
+      : {}),
     subtotal,
     total,
     service_minutes: serviceMinutes,
@@ -254,7 +307,11 @@ export async function executeAtomicEstimateConversion(params: {
     startTime: params.prepared.start_time,
     endTime: params.prepared.end_time,
     assignedStaffUserId: params.prepared.assigned_staff_user_id,
-    discountAmount: params.prepared.discount_amount,
+    discountAmount: params.prepared.gap_offer_id
+      ? 0
+      : params.prepared.discount_amount,
+    gapOfferId: params.prepared.gap_offer_id,
+    approveAlternateOffer: params.prepared.approve_alternate_offer,
     allowConflict: params.allowConflict,
     notifyCustomer: params.notifyCustomer,
     syncQuickBooks: params.syncQuickBooks,
@@ -269,19 +326,28 @@ export async function executeAtomicEstimateConversion(params: {
     )
   }
 
-  const { data, error } = await params.supabase.rpc('mcp_convert_estimate', {
-    p_estimate_id: current.estimate_id,
-    p_expected_updated_at: current.expected_updated_at,
-    p_expected_status: current.expected_status,
-    p_appointment_date: current.appointment_date,
-    p_start_time: current.start_time,
-    p_end_time: current.end_time,
-    p_assigned_staff_user_id: current.assigned_staff_user_id,
-    p_discount_amount: current.discount_amount,
-    p_actor_user_id: params.actorId,
-    p_sync_status: current.sync_status,
-    p_allow_conflict: Boolean(params.allowConflict),
-  })
+  const { data, error } = await params.supabase.rpc(
+    current.gap_offer_id ? 'mcp_convert_gap_estimate' : 'mcp_convert_estimate',
+    {
+      p_estimate_id: current.estimate_id,
+      p_expected_updated_at: current.expected_updated_at,
+      p_expected_status: current.expected_status,
+      p_appointment_date: current.appointment_date,
+      p_start_time: current.start_time,
+      p_end_time: current.end_time,
+      p_assigned_staff_user_id: current.assigned_staff_user_id,
+      p_discount_amount: current.discount_amount,
+      p_actor_user_id: params.actorId,
+      p_sync_status: current.sync_status,
+      p_allow_conflict: Boolean(params.allowConflict),
+      ...(current.gap_offer_id
+        ? {
+            p_offer: current.gap_offer_id,
+            p_allow_alternate: Boolean(current.approve_alternate_offer),
+          }
+        : {}),
+    },
+  )
   if (error) throw error
   const result = data as {
     appointment_id: string

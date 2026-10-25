@@ -217,6 +217,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Offer qualification is service-only. Travel, tax and fees never unlock TF35.
+    const serviceOnlySubtotal = lineItems
+      .filter(
+        (item) =>
+          !['travel', 'fees', 'tax'].includes(
+            String(item.category || '').toLowerCase(),
+          ) &&
+          !/^(mileage[ /-]*travel|travel fee|tax|fee)$/i.test(
+            item.name_snapshot,
+          ),
+      )
+      .reduce((sum, item) => sum + item.unit_price * item.quantity, 0)
     if (serviceAreaCheck.travelCharge > 0) {
       lineItems.push({
         name_snapshot: 'Mileage/ Travel',
@@ -401,6 +413,23 @@ export async function POST(request: NextRequest) {
 
     const addressId = resolved.id
 
+    if (
+      tomorrowFillOffer &&
+      (body.percentage_discount ||
+        lineItems.some((item) => item.unit_price < 0 || item.quantity <= 0))
+    )
+      return NextResponse.json(
+        { error: 'TF35 cannot combine with another discount or credit.' },
+        { status: 400, headers: CORS },
+      )
+    if (tomorrowFillOffer && !promoCodeId)
+      return NextResponse.json(
+        {
+          error:
+            'This private offer coupon is unavailable; please contact the office.',
+        },
+        { status: 409, headers: CORS },
+      )
     const requestedPercentageDiscount =
       body.percentage_discount &&
       typeof body.percentage_discount === 'object' &&
@@ -442,6 +471,8 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.unit_price * item.quantity,
       0,
     )
+    if (tomorrowFillOffer)
+      discountAmount = Number(tomorrowFillOffer.offerAmount)
     const total = Math.max(
       0,
       subtotal - discountAmount - percentageDiscountAmount,
@@ -458,7 +489,7 @@ export async function POST(request: NextRequest) {
 
     if (
       tomorrowFillOffer &&
-      subtotal < Number(tomorrowFillOffer.minimumSubtotal)
+      serviceOnlySubtotal < Number(tomorrowFillOffer.minimumSubtotal)
     ) {
       return NextResponse.json(
         {
@@ -470,7 +501,8 @@ export async function POST(request: NextRequest) {
 
     // --- Calculate end time based on dollar amount ---
     // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-    const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+    const appointmentDuration =
+      calculateAppointmentDurationFromTotal(serviceOnlySubtotal)
     const buffered = applyAppointmentBuffer(appointmentDuration)
     const [sh, sm] = startTime.split(':').map(Number)
     if (!Number.isFinite(sh) || !Number.isFinite(sm)) {
@@ -619,6 +651,17 @@ export async function POST(request: NextRequest) {
         // (which jobs, how much revenue) is queryable — use_count alone is
         // just a global counter.
         discount_metadata: {
+          ...(tomorrowFillOffer
+            ? {
+                returning_offer: {
+                  recipient_id: tomorrowFillOffer.recipientId,
+                  minimum_service_cents: Math.round(
+                    tomorrowFillOffer.minimumSubtotal * 100,
+                  ),
+                  amount: tomorrowFillOffer.offerAmount,
+                },
+              }
+            : {}),
           ...(rugDiscountEligible
             ? {
                 multi_rug: {
