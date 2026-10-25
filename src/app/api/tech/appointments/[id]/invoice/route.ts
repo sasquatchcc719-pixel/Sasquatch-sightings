@@ -205,10 +205,11 @@ export async function PATCH(
       .filter((existingId) => !keptIds.has(existingId))
 
     if (removedIds.length > 0) {
-      await supabase
+      const { error: deleteAppointmentLinesError } = await supabase
         .from('ops_appointment_line_items')
         .delete()
         .in('id', removedIds)
+      if (deleteAppointmentLinesError) throw deleteAppointmentLinesError
     }
 
     for (const entry of normalized.filter((n) => n.existingId)) {
@@ -238,10 +239,11 @@ export async function PATCH(
 
     if (appointmentLinesError) throw appointmentLinesError
 
-    await supabase
+    const { error: deleteInvoiceLinesError } = await supabase
       .from('ops_invoice_line_items')
       .delete()
       .eq('invoice_id', invoice.id)
+    if (deleteInvoiceLinesError) throw deleteInvoiceLinesError
 
     if (appointmentLines && appointmentLines.length > 0) {
       const { error: invoiceLinesError } = await supabase
@@ -279,12 +281,17 @@ export async function PATCH(
     )
     const nowIso = new Date().toISOString()
 
-    const { error: appointmentTotalError } = await supabase
-      .from('ops_appointments')
-      .update({ quoted_total: subtotal, updated_at: nowIso })
-      .eq('id', id)
-    if (appointmentTotalError) throw appointmentTotalError
-
+    const retainedOffer = Boolean(
+      invoice.discount_metadata?.gap_offer ||
+      invoice.discount_metadata?.returning_offer,
+    )
+    if (!retainedOffer) {
+      const { error: appointmentTotalError } = await supabase
+        .from('ops_appointments')
+        .update({ quoted_total: subtotal, updated_at: nowIso })
+        .eq('id', id)
+      if (appointmentTotalError) throw appointmentTotalError
+    }
     const { error: invoiceTotalError } = await supabase
       .from('ops_invoices')
       .update({
@@ -294,6 +301,13 @@ export async function PATCH(
       })
       .eq('id', invoice.id)
     if (invoiceTotalError) throw invoiceTotalError
+    if (retainedOffer) {
+      const { error: quoteError } = await supabase
+        .from('ops_appointments')
+        .update({ quoted_total: total, updated_at: nowIso })
+        .eq('id', id)
+      if (quoteError) throw quoteError
+    }
 
     const updated = await getAssignedTechAppointment(supabase, staffUserId, id)
     return NextResponse.json({ appointment: updated })

@@ -115,10 +115,11 @@ export async function POST(
     }
     await captureAddOnBonusBaseline(supabase, appointmentId)
 
+    let ownerNotification: string | null = null
     if (restore) {
       const original = line.excludedOriginalTotal ?? 0
       const quantity = line.quantity || 1
-      await supabase
+      const { error: restoreError } = await supabase
         .from('ops_appointment_line_items')
         .update({
           excluded_at: null,
@@ -129,6 +130,7 @@ export async function POST(
           unit_price: Number((original / quantity).toFixed(2)),
         })
         .eq('id', lineItemId)
+      if (restoreError) throw restoreError
     } else {
       if (!reason) {
         return NextResponse.json(
@@ -188,13 +190,14 @@ export async function POST(
         if (splitError) throw splitError
 
         const remaining = units - 1
-        await supabase
+        const { error: remainingError } = await supabase
           .from('ops_appointment_line_items')
           .update({
             quantity: remaining,
             line_total: Number((remaining * unitPrice).toFixed(2)),
           })
           .eq('id', lineItemId)
+        if (remainingError) throw remainingError
 
         // Move the excluded piece's check onto the new row, then close the gap
         // in the remaining unit numbers so the gate can still be satisfied.
@@ -236,20 +239,20 @@ export async function POST(
 
       const who = access.staff?.display_name ?? access.email
       const amount = originalTotal.toFixed(2)
-      void sendTelegramNotification(
+      ownerNotification =
         `Work removed from an invoice\n\n` +
-          `Item: ${line.name}\n` +
-          `Customer: ${appointment.customerName}\n` +
-          `Value removed: $${amount}\n` +
-          `Reason: ${reason}\n` +
-          (check
-            ? `Fiber: ${check.fiber ?? 'unknown'} (${check.verdict})\n`
-            : '') +
-          `By: ${who}`,
-      )
+        `Item: ${line.name}\n` +
+        `Customer: ${appointment.customerName}\n` +
+        `Value removed: $${amount}\n` +
+        `Reason: ${reason}\n` +
+        (check
+          ? `Fiber: ${check.fiber ?? 'unknown'} (${check.verdict})\n`
+          : '') +
+        `By: ${who}`
     }
 
     await recalculateInvoice(supabase, appointmentId)
+    if (ownerNotification) void sendTelegramNotification(ownerNotification)
 
     const updated = await getTechAppointmentForAccess(supabase, {
       role: access.role,
@@ -270,20 +273,22 @@ async function recalculateInvoice(
   supabase: ReturnType<typeof createAdminClient>,
   appointmentId: string,
 ) {
-  const { data: lines } = await supabase
+  const { data: lines, error: lineReadError } = await supabase
     .from('ops_appointment_line_items')
     .select(
       'id, name_snapshot, quantity, unit_price, line_total, excluded_at, excluded_reason, excluded_original_total',
     )
     .eq('appointment_id', appointmentId)
+  if (lineReadError) throw lineReadError
 
-  const { data: invoice } = await supabase
+  const { data: invoice, error: invoiceReadError } = await supabase
     .from('ops_invoices')
     .select(
-      'id, discount_amount, percentage_discount_amount, tax_amount, minimum_charge_adjustment',
+      'id, discount_metadata, discount_amount, percentage_discount_amount, tax_amount, minimum_charge_adjustment',
     )
     .eq('appointment_id', appointmentId)
     .maybeSingle()
+  if (invoiceReadError) throw invoiceReadError
 
   const appointmentSubtotal = (lines ?? []).reduce(
     (sum, line) => sum + Number(line.line_total || 0),
@@ -291,10 +296,17 @@ async function recalculateInvoice(
   )
   const nowIso = new Date().toISOString()
 
-  await supabase
-    .from('ops_appointments')
-    .update({ quoted_total: appointmentSubtotal, updated_at: nowIso })
-    .eq('id', appointmentId)
+  const retainedOffer = Boolean(
+    invoice?.discount_metadata?.gap_offer ||
+    invoice?.discount_metadata?.returning_offer,
+  )
+  if (!retainedOffer) {
+    const { error: quoteError } = await supabase
+      .from('ops_appointments')
+      .update({ quoted_total: appointmentSubtotal, updated_at: nowIso })
+      .eq('id', appointmentId)
+    if (quoteError) throw quoteError
+  }
 
   if (!invoice) return
 
@@ -310,10 +322,11 @@ async function recalculateInvoice(
   // Pruitt's $544 job briefly showed a little over $1,000 on the schedule.
   // Adopt an unlinked line that describes the same work instead of
   // duplicating it, and record the link so it only has to happen once.
-  const { data: existingInvoiceLines } = await supabase
+  const { data: existingInvoiceLines, error: mirrorReadError } = await supabase
     .from('ops_invoice_line_items')
     .select('id, appointment_line_item_id, description')
     .eq('invoice_id', invoice.id)
+  if (mirrorReadError) throw mirrorReadError
 
   const appointmentLines = lines ?? []
   const pairings = pairInvoiceLines(
@@ -333,19 +346,23 @@ async function recalculateInvoice(
     const { invoiceLineId } = pairings[index]
 
     if (invoiceLineId) {
-      await supabase
+      const { error: mirrorUpdateError } = await supabase
         .from('ops_invoice_line_items')
         // Writing the link back means the next recalc matches outright
         // instead of having to recognise the description again.
         .update({ ...payload, appointment_line_item_id: line.id })
         .eq('id', invoiceLineId)
+      if (mirrorUpdateError) throw mirrorUpdateError
     } else {
-      await supabase.from('ops_invoice_line_items').insert({
-        invoice_id: invoice.id,
-        appointment_line_item_id: line.id,
-        description: line.name_snapshot,
-        ...payload,
-      })
+      const { error: mirrorInsertError } = await supabase
+        .from('ops_invoice_line_items')
+        .insert({
+          invoice_id: invoice.id,
+          appointment_line_item_id: line.id,
+          description: line.name_snapshot,
+          ...payload,
+        })
+      if (mirrorInsertError) throw mirrorInsertError
     }
   }
 
@@ -354,10 +371,11 @@ async function recalculateInvoice(
   // linked to an appointment line item exist only here, and summing the
   // appointment side silently dropped them — leaving a stored total lower
   // than what the customer actually owes.
-  const { data: invoiceLines } = await supabase
+  const { data: invoiceLines, error: invoiceLinesReadError } = await supabase
     .from('ops_invoice_line_items')
     .select('line_total')
     .eq('invoice_id', invoice.id)
+  if (invoiceLinesReadError) throw invoiceLinesReadError
 
   const subtotal = (invoiceLines ?? []).reduce(
     (sum, line) => sum + Number(line.line_total || 0),
@@ -374,7 +392,7 @@ async function recalculateInvoice(
     ).toFixed(2),
   )
 
-  await supabase
+  const { error: invoiceTotalError } = await supabase
     .from('ops_invoices')
     .update({
       subtotal: Number(subtotal.toFixed(2)),
@@ -382,4 +400,12 @@ async function recalculateInvoice(
       updated_at: nowIso,
     })
     .eq('id', invoice.id)
+  if (invoiceTotalError) throw invoiceTotalError
+  if (retainedOffer) {
+    const { error: quoteError } = await supabase
+      .from('ops_appointments')
+      .update({ quoted_total: total, updated_at: nowIso })
+      .eq('id', appointmentId)
+    if (quoteError) throw quoteError
+  }
 }

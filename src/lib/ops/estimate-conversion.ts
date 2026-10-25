@@ -1,4 +1,8 @@
-import { calculateGapOffer, loadGapOffer } from './gap-offer'
+import {
+  calculateGapOffer,
+  loadGapOffer,
+  assertSupportedGapEstimate,
+} from './gap-offer'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -108,10 +112,10 @@ export async function prepareEstimateConversion(params: {
     .from('ops_appointments')
     .select(
       `id, kind, customer_id, service_address_id, estimate_status,
-       converted_appointment_id, updated_at,
+       converted_appointment_id, updated_at, internal_notes,
        ops_customers!ops_appointments_customer_id_fkey(id, full_name, business_name, email, phone),
        ops_service_addresses(id, street_1, street_2, city, state, zip_code),
-       ops_appointment_line_items(id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total,
+       ops_appointment_line_items(id, sort_order, created_at, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total, notes,
          length_value, width_value, pricing_unit_snapshot, area_segments)`,
     )
     .eq('id', params.estimateId)
@@ -140,6 +144,11 @@ export async function prepareEstimateConversion(params: {
     throw new Error('Add at least one line item before converting')
   }
 
+  assertSupportedGapEstimate(
+    sourceLines,
+    estimate.internal_notes,
+    Boolean(params.gapOfferId),
+  )
   const subtotal = Number(
     sourceLines
       .reduce((sum, line) => sum + Number(line.line_total || 0), 0)

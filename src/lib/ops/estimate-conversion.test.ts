@@ -12,12 +12,14 @@ const ESTIMATE_ID = '50000000-0000-4000-8000-000000000001'
 function fixture() {
   const state = {
     firstLineTotal: 910,
+    internalNotes: '',
     firstSortOrder: 0,
     rpcCalls: [] as Array<{ name: string; params: Record<string, unknown> }>,
   }
   const estimate = () => ({
     id: ESTIMATE_ID,
     kind: 'estimate',
+    internal_notes: state.internalNotes,
     customer_id: '30000000-0000-4000-8000-000000000001',
     service_address_id: '40000000-0000-4000-8000-000000000001',
     estimate_status: 'accepted',
@@ -111,6 +113,22 @@ function fixture() {
 }
 
 describe('atomic estimate conversion service', () => {
+  it('rejects an unbound TF35 saved quote before any conversion mutation', async () => {
+    const { client, state } = fixture()
+    state.internalNotes = 'Customer was quoted TF35'
+    await expect(
+      prepareEstimateConversion({
+        supabase: client as never,
+        estimateId: ESTIMATE_ID,
+        appointmentDate: '2030-01-16',
+        startTime: '09:00',
+        assignedStaffUserId: STAFF_ID,
+        allowConflict: true,
+      }),
+    ).rejects.toThrow('approved booking or estimate-conversion preview')
+    expect(state.rpcCalls).toEqual([])
+  })
+
   it('previews the exact tiered window, copied measurements, and invoice totals', async () => {
     const { client } = fixture()
     const prepared = await prepareEstimateConversion({

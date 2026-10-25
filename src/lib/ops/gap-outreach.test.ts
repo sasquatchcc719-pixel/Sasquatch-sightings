@@ -54,10 +54,12 @@ function fixture() {
     payload: { gap, recipients: recipients.map(({ status: _, ...r }) => r) },
     expires_at: '2099-10-27T00:00:00Z',
   }
+  const storedHash = digest(batch.payload)
   const call = vi.fn(async (name: string, args: Record<string, unknown>) => {
     const r = recipients.find((r) => r.id === args.p_recipient)
     if (name === 'approve_gap_outreach') {
-      if (batch.status !== 'pending') return { data: false, error: null }
+      if (batch.status !== 'pending' || args.p_hash !== storedHash)
+        return { data: false, error: null }
       batch.status = 'approved'
       return { data: true, error: null }
     }
@@ -91,7 +93,16 @@ function fixture() {
       const chain = {
         select: () => chain,
         eq: () => chain,
-        single: async () => ({ data: { ...batch }, error: null }),
+        single: async () => ({
+          data: {
+            ...batch,
+            payload: {
+              recipients: batch.payload.recipients,
+              gap: batch.payload.gap,
+            },
+          },
+          error: null,
+        }),
         order: async () => ({
           data: table === 'gap_outreach_recipients' ? recipients : [],
           error: null,

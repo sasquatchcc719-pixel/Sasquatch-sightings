@@ -1,3 +1,4 @@
+import { assertSupportedGapEstimate } from '@/lib/ops/gap-offer'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/supabase/server'
@@ -1231,7 +1232,7 @@ export async function previewEstimateSave(
     ? await supabase
         .from('ops_appointments')
         .select(
-          'id, kind, customer_id, service_address_id, appointment_date, start_time, end_time, assigned_staff_user_id, internal_notes, estimate_status, quoted_total, updated_at, ops_appointment_line_items(id, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total)',
+          'id, kind, customer_id, service_address_id, appointment_date, start_time, end_time, assigned_staff_user_id, internal_notes, estimate_status, quoted_total, updated_at, ops_appointment_line_items(id, service_catalog_item_id, name_snapshot, quantity, unit_price, line_total, notes)',
         )
         .eq('id', input.estimate_id)
         .eq('kind', 'estimate')
@@ -1294,6 +1295,12 @@ export async function previewEstimateSave(
   }
   const lines =
     input.line_items || existing.data?.ops_appointment_line_items || []
+  assertSupportedGapEstimate(
+    lines,
+    input.internal_notes === undefined
+      ? existing.data?.internal_notes
+      : input.internal_notes,
+  )
   const total = lines.reduce(
     (sum, line) =>
       sum + Number(line.quantity || 0) * Number(line.unit_price || 0),

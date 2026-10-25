@@ -1,4 +1,4 @@
--- Proposal only. No grants, activation, consent backfill, coupon seed, or existing campaign changes.
+-- Proposal only. No owner-scope grants, activation, consent backfill, coupon seed, or existing campaign changes.
 create table public.gap_outreach_batches (
   id uuid primary key default gen_random_uuid(), actor_user_id uuid not null references auth.users(id),
   idempotency_key text not null check(length(idempotency_key) between 8 and 200),

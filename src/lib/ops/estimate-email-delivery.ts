@@ -1,3 +1,4 @@
+import { assertSupportedGapEstimate } from './gap-offer'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -99,7 +100,7 @@ export async function prepareEstimateQuote(params: {
   const { data: estimate, error } = await params.supabase
     .from('ops_appointments')
     .select(
-      `id, quoted_total, estimate_status, converted_appointment_id, updated_at,
+      `id, quoted_total, internal_notes, estimate_status, converted_appointment_id, updated_at,
        ops_customers!ops_appointments_customer_id_fkey(id, full_name, first_name, email, phone, email_opt_out),
        ops_service_addresses(street_1, city, state, zip_code),
        ops_appointment_line_items(id, sort_order, created_at, name_snapshot, quantity, unit_price, line_total, notes, pricing_unit_snapshot)`,
@@ -110,6 +111,17 @@ export async function prepareEstimateQuote(params: {
   if (error) throw error
   if (!estimate) throw new EstimateDeliveryError('Estimate not found', 404)
 
+  try {
+    assertSupportedGapEstimate(
+      estimate.ops_appointment_line_items || [],
+      estimate.internal_notes,
+    )
+  } catch (error) {
+    throw new EstimateDeliveryError(
+      error instanceof Error ? error.message : 'Unsupported TF35 estimate',
+      409,
+    )
+  }
   const previousStatus = estimate.estimate_status || 'draft'
   if (estimate.converted_appointment_id || previousStatus === 'converted') {
     throw new EstimateDeliveryError(

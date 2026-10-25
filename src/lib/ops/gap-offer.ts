@@ -108,3 +108,29 @@ export async function loadGapOffer(
     code: 'TF35',
   }
 }
+
+/** Generic saved/email estimates cannot encode TF35 without the linked conversion path. */
+export function assertSupportedGapEstimate(
+  lines: Array<{
+    description?: unknown
+    name_snapshot?: unknown
+    notes?: unknown
+  }>,
+  internalNotes: unknown,
+  approvedOffer = false,
+) {
+  const text = [
+    internalNotes,
+    ...lines.flatMap((line) => [
+      line.description,
+      line.name_snapshot,
+      line.notes,
+    ]),
+  ]
+    .filter((value) => typeof value === 'string')
+    .join('\n')
+  if (!approvedOffer && /\bTF35\b/i.test(text))
+    throw new Error(
+      'TF35 must be quoted through an approved booking or estimate-conversion preview; generic saved/emailed estimates cannot carry this offer',
+    )
+}

@@ -154,4 +154,24 @@ describe('shared estimate quote delivery', () => {
       }),
     ).rejects.toThrow('suppressed')
   })
+  it('blocks a TF35-labelled generic email estimate before delivery or state writes', async () => {
+    const { client, state } = fixture(),
+      previous = estimate.ops_appointment_line_items[0].name_snapshot
+    estimate.ops_appointment_line_items[0].name_snapshot =
+      'TF35 returning-customer offer'
+    try {
+      await expect(
+        prepareEstimateQuote({
+          supabase: client as never,
+          estimateId: estimate.id,
+          publicOrigin: 'https://example.test',
+          decisionExpiresAt: '2030-01-01T00:00:00Z',
+          isPhoneBlacklisted: async () => false,
+        }),
+      ).rejects.toThrow('estimate-conversion preview')
+      expect(state.inserts).toEqual([])
+    } finally {
+      estimate.ops_appointment_line_items[0].name_snapshot = previous
+    }
+  })
 })

@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   planGaps,
+  digest,
   rankGapCandidates,
   type Calendar,
   type GapCustomer,
@@ -96,6 +97,14 @@ function rank(c: Partial<GapCustomer> = {}) {
     .candidates[0]
 }
 describe('gap-first planning without schedule changes', () => {
+  it('keeps approval hashes stable across JSONB object ordering but not recipient ordering', () => {
+    expect(digest({ gap: { z: 1, a: 2 }, recipients: ['one', 'two'] })).toBe(
+      digest({ recipients: ['one', 'two'], gap: { a: 2, z: 1 } }),
+    )
+    expect(digest({ recipients: ['one', 'two'] })).not.toBe(
+      digest({ recipients: ['two', 'one'] }),
+    )
+  })
   it('fits the whole three-hour Tuesday gap and preserves both anchors', () => {
     const before = JSON.stringify(calendar)
     expect(gap).toMatchObject({

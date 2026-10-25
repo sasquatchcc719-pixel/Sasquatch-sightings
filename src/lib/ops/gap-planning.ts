@@ -61,8 +61,22 @@ export type Calendar = {
   >
   events: Parameters<typeof calendarEventsToAppointmentWindows>[1]
 }
+function canonicalGapValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalGapValue)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, item]) => [key, canonicalGapValue(item)]),
+    )
+  return value
+}
 export function digest(value: unknown) {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  // JSONB may reorder object keys. The exact approved content, not serialization order,
+  // is the integrity boundary; arrays deliberately retain their order.
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalGapValue(value)))
+    .digest('hex')
 }
 export function mountainDate(now = new Date()) {
   return now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
