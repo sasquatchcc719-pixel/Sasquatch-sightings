@@ -61,6 +61,29 @@ create table reactivation_email_log(id uuid default gen_random_uuid(),customer_i
       'utf8',
     ),
   )
+  await db.exec(`create table drip_campaign_enrollments(id uuid primary key default gen_random_uuid(),customer_id uuid references ops_customers(id));
+create table drip_email_log(id uuid primary key default gen_random_uuid(),enrollment_id uuid references drip_campaign_enrollments(id),to_email text,status text,sent_at timestamptz default now());`)
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261025225245_include_drip_email_gap_suppression.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  )
+  await db.exec(`create table ops_sms_consent_events(id uuid primary key default gen_random_uuid(),customer_id uuid references ops_customers(id),user_id uuid references auth.users(id),phone text,action text not null,consent_text text,source text not null,created_at timestamptz default now(),
+constraint ops_sms_consent_events_action_check check(action in('opted_in','opted_out')),
+constraint ops_sms_consent_events_source_check check(source in('commercial_portal','customer_reply'))); grant select,insert,update on ops_sms_consent_events to service_role;`)
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261025230034_support_truthful_owner_permission_attestation.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  )
   console.log(
     'PASS: proposed migration compiles with actual existing MCP atomic transactions',
   )

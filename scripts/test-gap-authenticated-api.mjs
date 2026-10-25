@@ -157,6 +157,32 @@ try {
   pass(
     'candidate tool reads real local PostgREST sources with verified non-id pagination keys',
   )
+  await d.query(
+    'delete from public.sms_marketing_consents where customer_id=$1',
+    [s.ids.customer],
+  )
+  await d.query(
+    "insert into public.ops_sms_consent_events(customer_id,user_id,phone,action,source,owner_attested_at,evidence_ref,consent_text) values($1,$2,'+17195550100','owner_attested_existing_permission','owner_attestation',now(),$3,'Synthetic owner confirms prior permission; original customer opt-in date unknown') on conflict do nothing",
+    [
+      s.ids.customer,
+      s.ids.owner,
+      'synthetic-owner-approval#customer=' + s.ids.customer,
+    ],
+  )
+  r = await mcp(s.sessions.owner.token, 'get_gap_candidates', {
+    gap: currentGap,
+    limit: 10,
+  })
+  const permissionResult = decode(r.body).result.structuredContent.result
+  const recorded = [
+    ...permissionResult.data,
+    ...permissionResult.excluded,
+  ].find((row) => row.customer_id === s.ids.customer)
+  assert.equal(recorded.consent.status, 'owner_attested')
+  assert.equal(recorded.consent.consented_at, null)
+  pass(
+    'real authenticated candidate read reports owner attestation separately from unknown customer opt-in date',
+  )
   const batch = 'a0000000-0000-4000-8000-000000000009'
   await d.query(
     "insert into public.gap_outreach_batches(id,actor_user_id,idempotency_key,payload,payload_hash,gap_date,staff_id,start_time,end_time,status,expires_at) values($1,$2,'synthetic-read-state',$3,'synthetic',$4,$5,'10:00','13:00','stopped',now()+interval '10 minutes') on conflict(id) do nothing",

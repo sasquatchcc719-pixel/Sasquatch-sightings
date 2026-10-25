@@ -62,6 +62,18 @@ export const gapPreviewInput = z
     gap: gapSchema,
     customer_ids: z.array(z.string().uuid()).min(1).max(5),
     idempotency_key: z.string().min(8).max(200),
+    messages: z
+      .array(
+        z
+          .object({
+            customer_id: z.string().uuid(),
+            body: z.string().min(1).max(1600),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5)
+      .optional(),
   })
   .strict()
 export const gapExecuteInput = z

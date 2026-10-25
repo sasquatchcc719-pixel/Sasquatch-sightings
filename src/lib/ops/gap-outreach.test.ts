@@ -4,10 +4,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 vi.mock('@/lib/twilio', () => ({ sendCustomerSMSWithResult: vi.fn() }))
 import {
   executeGapOutreach,
+  previewGapOutreach,
   requireGapScope,
   type GapSendDependencies,
 } from './gap-outreach'
 import { digest, type Gap } from './gap-planning'
+import * as gapReads from './gap-read'
 const actor = {
   subject: 'owner',
   label: 'Owner',
@@ -216,5 +218,84 @@ describe('exact owner-approved gap batch execution', () => {
       .mockImplementationOnce(async () => ({ data: false, error: null }))
     await executeGapOutreach(f.db, 'batch', actor, f.deps)
     expect(f.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('exact owner-reviewed message binding', () => {
+  it('preserves caller wording exactly and includes it in the approval hash', async () => {
+    const f = fixture()
+    const spy = vi.spyOn(gapReads, 'readGapCandidates').mockResolvedValue({
+      data: [
+        {
+          customer_id: 'one',
+          name: 'Jolie Larder',
+          phone: '+17195550100',
+          business_number: '+17195550199',
+        },
+      ],
+    } as never)
+    try {
+      const body =
+        'Hi Jolie, Harry with Sasquatch Carpet Cleaning. We have an opening Tuesday late morning. Ready for another cleaning? We’re offering $35 off services totaling $300 or more. Let me know what you’d like cleaned and I’ll check the price and timing. If another time works better, let me know. Reply STOP to opt out.'
+      await previewGapOutreach(
+        f.db,
+        {
+          gap,
+          customer_ids: ['one'],
+          idempotency_key: 'exact-approved-body',
+          messages: [{ customer_id: 'one', body }],
+        },
+        actor,
+        new Date('2026-10-25T12:00:00Z'),
+      )
+      const args = f.call.mock.calls.find(
+        ([name]) => name === 'preview_gap_outreach',
+      )![1]
+      const payload = args.p_payload as { recipients: Array<{ body: string }> }
+      expect(payload.recipients[0].body).toBe(body)
+      expect(args.p_hash).toBe(digest(payload))
+      expect(
+        digest({
+          ...payload,
+          recipients: [{ ...payload.recipients[0], body: body + ' Changed' }],
+        }),
+      ).not.toBe(args.p_hash)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+  it('rejects unbound recipients, missing STOP, altered amounts and stacking wording', async () => {
+    const f = fixture(),
+      input = {
+        gap,
+        customer_ids: ['one'],
+        idempotency_key: 'exact-message-negative',
+      }
+    await expect(
+      previewGapOutreach(
+        f.db,
+        {
+          ...input,
+          messages: [
+            { customer_id: 'two', body: '$35 off $300 or more. Reply STOP' },
+          ],
+        },
+        actor,
+      ),
+    ).rejects.toThrow('exactly once')
+    for (const body of [
+      '$35 off $300 or more',
+      '$50 off $300 or more. Reply STOP',
+      '$35 off $175 or more. Reply STOP',
+      '$35 off $300 or more plus 10%. Reply STOP',
+    ])
+      await expect(
+        previewGapOutreach(
+          f.db,
+          { ...input, messages: [{ customer_id: 'one', body }] },
+          actor,
+        ),
+      ).rejects.toThrow('approved $35')
+    expect(f.call).not.toHaveBeenCalled()
   })
 })

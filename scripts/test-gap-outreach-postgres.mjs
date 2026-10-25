@@ -64,7 +64,7 @@ try {
     })
   async function reset() {
     await pool.query(
-      'truncate gap_outreach_contacts,gap_outreach_recipients,gap_outreach_batches,ops_invoice_line_items,ops_invoices,ops_appointment_line_items,ops_appointment_status_events,ops_invoice_status_events,ops_appointments restart identity cascade',
+      'truncate ops_sms_consent_events,drip_email_log,drip_campaign_enrollments,gap_outreach_contacts,gap_outreach_recipients,gap_outreach_batches,ops_invoice_line_items,ops_invoices,ops_appointment_line_items,ops_appointment_status_events,ops_invoice_status_events,ops_appointments restart identity cascade',
     )
     await pool.query(
       "update sms_marketing_consents set status='opted_in'; update mcp_authorized_users set scopes=array['business:read','outreach:write','customer:contact','business:write','finance:write','estimates:write']",
@@ -218,6 +218,43 @@ try {
       const pid = (await c.query('select pg_backend_pid() pid')).rows[0].pid
       const blocked = c.query(
         "insert into sms_logs(recipient_phone,status) values('+17195550100','sent')",
+      )
+      await waitForLock(pid)
+      await a.query('commit')
+      await blocked
+      assert.equal(
+        (
+          await pool.query('select check_gap_outreach_send($1,$2) x', [
+            b.recipient,
+            owner,
+          ])
+        ).rows[0].x,
+        false,
+      )
+    } finally {
+      await a.query('rollback')
+      a.release()
+      c.release()
+    }
+  })
+  await test('drip email committing after a claim suppresses final provider preflight', async () => {
+    const b = await preview()
+    await approve(b)
+    const enrollment = (
+      await pool.query(
+        'insert into drip_campaign_enrollments(customer_id) values($1) returning id',
+        [customer],
+      )
+    ).rows[0].id
+    const a = await pool.connect(),
+      c = await pool.connect()
+    try {
+      await a.query('begin')
+      assert.equal((await claim(b, a)).rows[0].x, true)
+      const pid = (await c.query('select pg_backend_pid() pid')).rows[0].pid
+      const blocked = c.query(
+        "insert into drip_email_log(enrollment_id,status) values($1,'sent')",
+        [enrollment],
       )
       await waitForLock(pid)
       await a.query('commit')

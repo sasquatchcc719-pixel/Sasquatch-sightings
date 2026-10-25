@@ -27,7 +27,12 @@ async function rpc<T>(
 }
 export async function previewGapOutreach(
   db: SupabaseClient,
-  input: { gap: Gap; customer_ids: string[]; idempotency_key: string },
+  input: {
+    gap: Gap
+    customer_ids: string[]
+    idempotency_key: string
+    messages?: Array<{ customer_id: string; body: string }>
+  },
   actor: GapActor,
   now = new Date(),
 ) {
@@ -38,6 +43,35 @@ export async function previewGapOutreach(
     new Set(input.customer_ids).size !== input.customer_ids.length
   )
     throw new Error('Approve one to five distinct named customers')
+  const exactBodies = new Map<string, string>()
+  if (input.messages) {
+    if (
+      input.messages.length !== input.customer_ids.length ||
+      new Set(input.messages.map((m) => m.customer_id)).size !==
+        input.messages.length ||
+      input.messages.some((m) => !input.customer_ids.includes(m.customer_id))
+    )
+      throw new Error(
+        'Reviewed messages must match each selected customer exactly once',
+      )
+    for (const message of input.messages) {
+      const amounts = [...message.body.matchAll(/\$\s*(\d+(?:\.\d+)?)/g)].map(
+        (m) => Number(m[1]),
+      )
+      if (
+        message.body.length > 1600 ||
+        !/\$\s*35(?:\.00)?\s+off/i.test(message.body) ||
+        !/\$\s*300(?:\.00)?\s*(?:\+|or\s+more)/i.test(message.body) ||
+        !/reply\s+STOP/i.test(message.body) ||
+        amounts.some((value) => value !== 35 && value !== 300) ||
+        /\d\s*%/.test(message.body)
+      )
+        throw new Error(
+          'Gap invitation must retain the approved $35 off $300-or-more offer and Reply STOP; no other discount amounts or percentages',
+        )
+      exactBodies.set(message.customer_id, message.body)
+    }
+  }
   const ranked = await readGapCandidates(db, input.gap, 1000, now)
   const recipients = input.customer_ids.map((id) => {
     const c = ranked.data.find((c) => c.customer_id === id)
@@ -51,7 +85,7 @@ export async function previewGapOutreach(
       phone: c.phone,
       conversation_id: c.conversation_id,
       conversation_updated_at: c.conversation_updated_at,
-      body: gapInvitation(c.name, input.gap),
+      body: exactBodies.get(id) ?? gapInvitation(c.name, input.gap),
       name: c.name,
       from: c.business_number,
       eligibility_hash: digest(c),

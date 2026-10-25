@@ -1141,7 +1141,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'preview_gap_outreach',
     title: 'Preview one exact gap outreach batch',
     description:
-      'Prepare an actor-bound ten-minute approval for one to five named eligible customers, exact generated TF35 offer messages, gap/calendar version and no automatic substitutes. Writes approval rows only; never creates consent or sends. Requires outreach:write and customer:contact; never infer campaign authority from a general task.',
+      'Prepare an actor-bound ten-minute approval for one to five named eligible customers, exact caller-reviewed TF35 offer messages (or the displayed default when messages are omitted), gap/calendar version and no automatic substitutes. Writes approval rows only; never creates consent or sends. Requires outreach:write and customer:contact; never infer campaign authority from a general task.',
     inputSchema: gapPreviewInput,
     outputSchema: gapRecordsOutput,
     annotations: stateChangeAnnotations,

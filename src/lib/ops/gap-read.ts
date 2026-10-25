@@ -211,9 +211,13 @@ export async function readGapCandidates(
     'hcp_customer_history',
     'qb_historical_transactions',
     'sms_marketing_consents',
+    'ops_sms_consent_events',
+    'staff_users',
     'blacklist',
     'sms_logs',
     'reactivation_email_log',
+    'drip_email_log',
+    'drip_campaign_enrollments',
     'conversations',
     'tomorrow_fill_recipients',
     'tomorrow_fill_settings',
@@ -228,9 +232,13 @@ export async function readGapCandidates(
     hcp,
     qb,
     consents,
+    consentEvents,
+    permissionOwners,
     blacklist,
     sms,
     email,
+    dripEmail,
+    dripEnrollments,
     conversations,
     fill,
     settings,
@@ -358,6 +366,21 @@ export async function readGapCandidates(
           direction: 'outbound',
           source_id: str(m.id),
         })
+    const myDripEnrollments = new Set(
+      dripEnrollments.filter((e) => ids.has(e.customer_id)).map((e) => e.id),
+    )
+    for (const message of dripEmail.filter(
+      (m) =>
+        myDripEnrollments.has(m.enrollment_id) ||
+        emails.has(str(m.to_email).trim().toLowerCase()),
+    ))
+      if (message.status === 'sent')
+        contacts.push({
+          channel: 'drip_email',
+          at: str(message.sent_at),
+          direction: 'outbound',
+          source_id: `drip_email:${str(message.id)}`,
+        })
     for (const t of owned)
       for (const m of (Array.isArray(t.messages) ? t.messages : []) as Row[])
         contacts.push({
@@ -406,6 +429,34 @@ export async function readGapCandidates(
     const myConsents = consents.filter(
       (s) => ids.has(s.customer_id) || phones.has(str(s.phone_normalized)),
     )
+    const optOutEvent = consentEvents.some(
+      (e) =>
+        e.action === 'opted_out' &&
+        (ids.has(e.customer_id) ||
+          phones.has(normalizeFillPhone(str(e.phone)))),
+    )
+    const ownerEvent = consentEvents
+      .filter(
+        (e) =>
+          e.customer_id === c.id &&
+          e.action === 'owner_attested_existing_permission' &&
+          e.source === 'owner_attestation' &&
+          normalizeFillPhone(str(e.phone)) ===
+            normalizeFillPhone(str(c.phone)) &&
+          str(e.evidence_ref).endsWith(`#customer=${str(c.id)}`) &&
+          e.owner_attested_at &&
+          Date.parse(str(e.owner_attested_at)) <= now.getTime() &&
+          str(e.consent_text).trim() &&
+          permissionOwners.some(
+            (owner) =>
+              owner.user_id === e.user_id &&
+              owner.role === 'owner' &&
+              owner.is_active,
+          ),
+      )
+      .sort((a, b) =>
+        str(b.owner_attested_at).localeCompare(str(a.owner_attested_at)),
+      )[0]
     const consent =
       myConsents.find((s) => s.status === 'opted_out') ||
       myConsents.find((s) => s.status === 'opted_in' && s.consented_at) ||
@@ -470,14 +521,39 @@ export async function readGapCandidates(
           !a.converted_appointment_id &&
           !['declined', 'converted'].includes(str(a.estimate_status)),
       ),
-      consent: consent
+      consent: optOutEvent
         ? {
-            status: str(consent.status),
-            source: str(consent.source),
-            consented_at: str(consent.consented_at) || null,
-            disclosure: str(consent.disclosure) || null,
+            status: 'opted_out',
+            source: 'consent_event',
+            consented_at: null,
+            disclosure: null,
           }
-        : null,
+        : consent?.status !== 'opted_out' &&
+            !(
+              consent?.status === 'opted_in' &&
+              consent.consented_at &&
+              consent.disclosure
+            ) &&
+            ownerEvent
+          ? {
+              status: 'owner_attested',
+              source: 'owner_attestation',
+              consented_at: null,
+              disclosure: str(ownerEvent.consent_text),
+              customer_id: str(c.id),
+              phone: str(ownerEvent.phone),
+              owner_user_id: str(ownerEvent.user_id),
+              owner_attested_at: str(ownerEvent.owner_attested_at),
+              evidence_ref: str(ownerEvent.evidence_ref),
+            }
+          : consent
+            ? {
+                status: str(consent.status),
+                source: str(consent.source),
+                consented_at: str(consent.consented_at) || null,
+                disclosure: str(consent.disclosure) || null,
+              }
+            : null,
     }
   })
   const s = settings[0]
@@ -496,6 +572,14 @@ export async function readGapCandidates(
     exclusion_counts: ranked.exclusions,
     total_eligible: ranked.candidates.filter((c) => !c.exclusions.length)
       .length,
+    eligibility_rules: {
+      dormancy_months: Number(s.dormancy_months),
+      customer_cooldown_days: Number(s.customer_cooldown_days),
+      unanswered_limit: Number(s.unanswered_limit),
+      rest_days: Number(s.rest_days),
+      opt_out_always_blocks: true,
+      history_requires_owner_review: true,
+    },
     gap,
     freshness: {
       generated_at: now.toISOString(),

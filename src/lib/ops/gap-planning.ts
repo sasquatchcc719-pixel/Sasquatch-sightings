@@ -277,6 +277,11 @@ export type GapCustomer = {
     source: string
     consented_at: string | null
     disclosure: string | null
+    customer_id?: string
+    phone?: string
+    owner_user_id?: string
+    owner_attested_at?: string
+    evidence_ref?: string
   } | null
 }
 export function rankGapCandidates(
@@ -321,11 +326,24 @@ export function rankGapCandidates(
       if (!phone) reasons.push('invalid_phone')
       if (customer.blocked || customer.do_not_contact)
         reasons.push('do_not_contact')
+      const consent = customer.consent
+      const customerOptIn =
+        consent?.status === 'opted_in' &&
+        consent.consented_at &&
+        consent.disclosure
+      const ownerAttestation =
+        consent?.status === 'owner_attested' &&
+        consent.source === 'owner_attestation' &&
+        consent.customer_id === customer.id &&
+        normalizeFillPhone(consent.phone || '') === phone &&
+        consent.owner_user_id &&
+        consent.owner_attested_at &&
+        consent.evidence_ref?.endsWith(`#customer=${customer.id}`) &&
+        consent.disclosure &&
+        Date.parse(consent.owner_attested_at) <= now.getTime()
       if (
-        !customer.consent ||
-        customer.consent.status !== 'opted_in' ||
-        !customer.consent.consented_at ||
-        !customer.consent.disclosure
+        consent?.status === 'opted_out' ||
+        (!customerOptIn && !ownerAttestation)
       )
         reasons.push(
           customer.consent?.status === 'opted_out'
@@ -373,6 +391,12 @@ export function rankGapCandidates(
         conversation_updated_at: customer.conversation_updated_at,
         last_service: last,
         history,
+        history_coverage: {
+          complete: false as const,
+          conversation_service_dates_reconciled: false as const,
+          owner_review_required: true as const,
+          note: 'Recorded operations, HCP snapshots and accounting dates may omit a later cleaning confirmed in conversation. Review the linked conversation before approving a shortlist.',
+        },
         contacts: contacts.slice(0, 20),
         route_fit: routeFit,
         route_detour_miles: routeDetour,

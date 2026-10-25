@@ -165,6 +165,38 @@ describe('gap-first planning without schedule changes', () => {
     ).toEqual([]))
 })
 describe('eligible oldest customers with evidence', () => {
+  it('accepts a truthful exact-recipient owner assertion with original customer date unknown', () => {
+    const evidence = {
+      status: 'owner_attested',
+      source: 'owner_attestation',
+      consented_at: null,
+      disclosure: 'Owner confirms prior permission; original date unknown',
+      customer_id: customer.id,
+      phone: customer.phone!,
+      owner_user_id: 'verified-owner',
+      owner_attested_at: '2026-10-25T11:00:00Z',
+      evidence_ref: `approved-owner-message#customer=${customer.id}`,
+    }
+    expect(rank({ consent: evidence }).exclusions).not.toContain(
+      'consent_unverified',
+    )
+    expect(rank({ consent: evidence }).consent?.consented_at).toBeNull()
+    for (const patch of [
+      { customer_id: 'different' },
+      { phone: '7195550199' },
+      { source: 'existing_customer_terms' },
+      { evidence_ref: 'generic owner permission' },
+      { owner_user_id: '' },
+      { owner_attested_at: '2027-01-01T00:00:00Z' },
+    ])
+      expect(rank({ consent: { ...evidence, ...patch } }).exclusions).toContain(
+        'consent_unverified',
+      )
+    expect(
+      rank({ consent: { ...evidence, status: 'opted_out' } }).exclusions,
+    ).toContain('opted_out')
+  })
+
   it('does not manufacture consent from existing-customer status', () =>
     expect(
       rank({

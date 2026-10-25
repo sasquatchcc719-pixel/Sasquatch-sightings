@@ -126,6 +126,106 @@ await test('email outreach suppresses pending SMS, too', async () => {
   )
   assert.equal(await status(b), 'suppressed')
 })
+await test('drip email suppresses pending SMS by enrollment or normalized email; failed mail does not', async () => {
+  const b = await preview()
+  await approve(b)
+  const e = (
+    await db.query(
+      'insert into drip_campaign_enrollments(customer_id) values($1) returning id',
+      [customer],
+    )
+  ).rows[0].id
+  await db.query(
+    "insert into drip_email_log(enrollment_id,status) values($1,'failed')",
+    [e],
+  )
+  assert.equal(await status(b), 'pending')
+  await db.query(
+    "insert into drip_email_log(enrollment_id,status) values($1,'sent')",
+    [e],
+  )
+  assert.equal(await status(b), 'suppressed')
+  assert.equal(await claim(b), false)
+  const second = await preview({ key: 'different-drip-preview' })
+  await approve(second)
+  await db.query(
+    "insert into drip_email_log(to_email,status) values(' FIXTURE@example.test ','sent')",
+  )
+  assert.equal(await status(second), 'suppressed')
+})
+async function attest(options = {}) {
+  return db.query(
+    "insert into ops_sms_consent_events(customer_id,user_id,phone,action,source,owner_attested_at,evidence_ref,consent_text) values($1,$2,$3,'owner_attested_existing_permission','owner_attestation',now(),$4,'Owner confirms prior permission; original customer date unknown')",
+    [
+      options.customer || customer,
+      options.owner || owner,
+      options.phone || '+17195550100',
+      options.reference || 'approved-owner-message#customer=' + customer,
+    ],
+  )
+}
+await test('owner assertion permits unknown original date without creating a customer opt-in', async () => {
+  await db.exec('delete from sms_marketing_consents')
+  await attest()
+  const b = await preview()
+  await approve(b)
+  assert.equal(await claim(b), true)
+  assert.equal(
+    (await db.query('select count(*)::int n from sms_marketing_consents'))
+      .rows[0].n,
+    0,
+  )
+  const evidence = (
+    await db.query(
+      'select source,owner_attested_at,evidence_ref from ops_sms_consent_events',
+    )
+  ).rows[0]
+  assert.equal(evidence.source, 'owner_attestation')
+  assert.ok(evidence.owner_attested_at)
+  assert.ok(evidence.evidence_ref.endsWith(customer))
+})
+await test('later customer STOP defeats the owner assertion after a send claim', async () => {
+  await db.exec('delete from sms_marketing_consents')
+  await attest()
+  const b = await preview()
+  await approve(b)
+  assert.equal(await claim(b), true)
+  await db.query(
+    "insert into ops_sms_consent_events(customer_id,phone,action,source,consent_text) values($1,'+17195550100','opted_out','customer_reply','STOP')",
+    [customer],
+  )
+  assert.equal(
+    (
+      await db.query('select check_gap_outreach_send($1,$2) x', [
+        b.recipient,
+        owner,
+      ])
+    ).rows[0].x,
+    false,
+  )
+})
+await test('undated generic opted-in flags never become owner assertions', async () => {
+  await db.exec('update sms_marketing_consents set consented_at=null')
+  const b = await preview()
+  await approve(b)
+  assert.equal(await claim(b), false)
+})
+await test('an owner assertion cannot bind a different phone', async () => {
+  await assert.rejects(
+    attest({ phone: '+17195550199' }),
+    /customer\/phone mismatch/,
+  )
+})
+await test('an owner assertion requires this exact customer approval reference', async () => {
+  await assert.rejects(
+    attest({ reference: 'approved-owner-message#customer=other' }),
+    /gap_owner_attestation_shape/,
+  )
+})
+await test('attestation cannot override an existing customer opt-out', async () => {
+  await db.exec("update sms_marketing_consents set status='opted_out'")
+  await assert.rejects(attest(), /opt-out takes precedence/)
+})
 await test('a concurrent booking fills the gap and suppresses pending work', async () => {
   const b = await preview()
   await approve(b)
