@@ -204,6 +204,42 @@ export async function POST(request: NextRequest) {
       console.log('[Voicemail] Recording notification accepted:', delivery.id)
     }
 
+    // Transcription normally arrives after the recording alert. Keep a separate
+    // acceptance marker and provider key so late and repeated callbacks are safe.
+    const transcriptEmailText = metadata.transcription_email_text
+    if (
+      hasMeaningfulTranscription(transcriptEmailText ?? null) &&
+      !metadata.transcription_email_id
+    ) {
+      const { data: delivery, error: deliveryError } = await resend.emails.send(
+        {
+          from: voicemailFromEmail,
+          to: voicemailNotifyEmail,
+          subject: `Voicemail transcription from ${normalizedPhone}`,
+          text: [
+            'Voicemail transcription',
+            `From: ${normalizedPhone}`,
+            '',
+            transcriptEmailText,
+            '',
+            `Listen and view the caller's conversation: ${adminBaseUrl}/admin/conversations?source=phone`,
+            `Recording: ${recordingSid}`,
+          ].join('\n'),
+        },
+        { idempotencyKey: `voicemail-transcription/${recordingSid}` },
+      )
+      if (deliveryError || !delivery?.id)
+        throw new Error(
+          deliveryError?.message ||
+            'Email provider did not accept the voicemail transcription',
+        )
+      await mergeVoicemailCallback(supabase, callback, false, delivery.id)
+      console.log(
+        '[Voicemail] Transcription notification accepted:',
+        delivery.id,
+      )
+    }
+
     // Context-aware voicemail reply:
     // Wait briefly for transcription callback data, then send a reply that references
     // what the caller said. We skip if transcription isn't meaningful.

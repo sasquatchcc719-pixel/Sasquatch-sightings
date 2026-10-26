@@ -15,6 +15,8 @@ export type VoicemailMessage = {
     voicemail_harry_reply_for?: string | null
     recording_completed?: boolean
     email_sent?: boolean
+    transcription_email_text?: string | null
+    transcription_email_id?: string | null
   } | null
 }
 
@@ -67,6 +69,7 @@ export async function mergeVoicemailCallback(
   db: SupabaseClient,
   callback: VoicemailCallback,
   emailSent = false,
+  transcriptionEmailId: string | null = null,
 ) {
   // SQL serializes callbacks for this phone and merges by RecordingSid. A
   // read/replace messages update here loses data when callbacks overlap.
@@ -79,6 +82,7 @@ export async function mergeVoicemailCallback(
     p_transcription: callback.transcription,
     p_recording_completed: callback.completed,
     p_email_sent: emailSent,
+    p_transcription_email_id: transcriptionEmailId,
   })
   if (error) throw error
   const result = data as {
