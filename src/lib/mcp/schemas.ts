@@ -1,3 +1,4 @@
+import { unscheduledFollowUpSchema } from '@/lib/ops/unscheduled-follow-up'
 import { z } from 'zod'
 
 const nullableString = z.string().nullable()
@@ -178,6 +179,7 @@ export const unscheduledAppointmentListOutputSchema = z
           id: z.string(),
           queue_reason: z.literal('parked_for_rescheduling'),
           parked_at: z.string(),
+          follow_up: unscheduledFollowUpSchema.nullable(),
           status: z.string(),
           kind: nullableString,
           last_scheduled_time_window: timeWindowSchema,
@@ -263,7 +265,7 @@ export const unscheduledAppointmentListOutputSchema = z
       })
       .strict(),
     follow_up_tracking: z
-      .object({ available: z.literal(false), reason: z.string() })
+      .object({ available: z.literal(true), reason: z.string() })
       .strict(),
   })
   .strict()

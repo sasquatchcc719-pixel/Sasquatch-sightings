@@ -1,3 +1,4 @@
+import type { UnscheduledFollowUp } from '@/lib/ops/unscheduled-follow-up'
 export type ScheduleView = 'week' | 'day' | 'month'
 
 export type QueuedVisit = {
@@ -12,6 +13,7 @@ export type QueuedVisit = {
   sequence: number | null
   /** Minutes, so a parked job keeps the length it was booked for. */
   durationMinutes?: number
+  followUp?: UnscheduledFollowUp | null
   contact?: {
     phone: string | null
     email: string | null

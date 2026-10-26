@@ -31,6 +31,7 @@ import {
   appointmentDisplayRevenue,
   appointmentScheduleRevenue,
 } from '@/lib/ops/utilization-metrics'
+import { UnscheduledFollowUpEditor } from './unscheduled-follow-up-editor'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
 import type {
@@ -363,6 +364,7 @@ export function OperationsSchedule() {
               sequence: null,
               durationMinutes: job.duration_minutes ?? 120,
               contact: job.contact,
+              followUp: job.follow_up,
             })
           }
         }
@@ -2213,6 +2215,23 @@ export function OperationsSchedule() {
                     Email is turned off for this customer.
                   </p>
                 ) : null}
+                <UnscheduledFollowUpEditor
+                  key={contactVisit.id}
+                  appointmentId={contactVisit.id}
+                  followUp={contactVisit.followUp ?? null}
+                  onSaved={(followUp) => {
+                    setContactVisit((current) =>
+                      current ? { ...current, followUp } : current,
+                    )
+                    setQueuedVisits((current) =>
+                      current.map((visit) =>
+                        visit.id === contactVisit.id
+                          ? { ...visit, followUp }
+                          : visit,
+                      ),
+                    )
+                  }}
+                />
                 <Button
                   type="button"
                   variant="outline"
@@ -2262,6 +2281,13 @@ export function OperationsSchedule() {
                     className="min-w-0 flex-1 px-3 py-2 text-left"
                   >
                     <span className="font-medium">{visit.label}</span>
+                    {visit.source === 'appointment' ? (
+                      <span className="ml-2 inline-block rounded border border-current/20 px-1.5 py-0.5 text-[11px] font-medium">
+                        {visit.followUp
+                          ? `${visit.followUp.due ? 'Follow-up due' : 'Follow-up'} · ${visit.followUp.next_follow_up_date}`
+                          : 'Follow-up date unavailable'}
+                      </span>
+                    ) : null}
                     {visit.place ? (
                       <span className="block text-xs opacity-70">
                         {visit.place}

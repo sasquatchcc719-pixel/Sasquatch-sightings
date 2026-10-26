@@ -1,3 +1,7 @@
+import {
+  saveUnscheduledFollowUpInput,
+  unscheduledFollowUpSchema,
+} from '@/lib/ops/unscheduled-follow-up'
 import { readScheduleGaps, readGapCandidates } from '@/lib/ops/gap-read'
 import {
   previewGapOutreach,
@@ -62,6 +66,7 @@ import {
   getConversation,
   getInvoice,
   listUnscheduledAppointments,
+  setUnscheduledFollowUp,
   listConversations,
   previewAppointmentCreate,
   previewAppointmentUpdate,
@@ -599,7 +604,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'list_unscheduled_appointments',
     title: 'List unscheduled appointments',
     description:
-      "List the exact parked-appointment half of Sightings' calendar Unscheduled tray: appointments where parked_at is set, oldest first, with stable customer/conversation references, recorded message context, and Sightings blacklist status. The separate restoration-monitor queue is excluded. Queue membership never proves unresponsiveness or permission for automatic outreach, and a non-blocked result does not verify provider/carrier opt-out state. No messages are sent and no records are changed.",
+      "List the exact parked-appointment half of Sightings' calendar Unscheduled tray: appointments where parked_at is set, oldest first, with saved next follow-up dates, due status, stable customer/conversation references, recorded message context, and Sightings blacklist status. The separate restoration-monitor queue is excluded. Queue membership never proves unresponsiveness or permission for automatic outreach, and a non-blocked result does not verify provider/carrier opt-out state. No messages are sent and no records are changed.",
     inputSchema: listUnscheduledAppointmentsInput,
     outputSchema: unscheduledAppointmentListOutputSchema,
     async handler(input, extra) {
@@ -1189,6 +1194,27 @@ const toolDefinitions: ToolDefinition[] = [
           actorInfo(extra),
         ),
       })
+    },
+  },
+  {
+    name: 'set_unscheduled_follow_up',
+    title: 'Record an unscheduled job follow-up',
+    description:
+      'Save an internal review note and next America/Denver follow-up date for one parked job. Requires business:write and the current follow_up.updated_at version. Never sends a message or changes the appointment. Re-read if the version changed or the job has been rescheduled.',
+    inputSchema: saveUnscheduledFollowUpInput.extend({
+      review_note: z.string().trim().min(1).max(2000),
+    }),
+    outputSchema: z
+      .object({ data: unscheduledFollowUpSchema, effect: z.string() })
+      .strict(),
+    annotations: stateChangeAnnotations,
+    async handler(input, extra) {
+      return toolResult(
+        await setUnscheduledFollowUp(
+          saveUnscheduledFollowUpInput.parse(input),
+          actorInfo(extra),
+        ),
+      )
     },
   },
 ]

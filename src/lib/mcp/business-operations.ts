@@ -1,3 +1,9 @@
+import {
+  projectUnscheduledFollowUp,
+  saveUnscheduledFollowUp,
+  saveUnscheduledFollowUpInput,
+} from '@/lib/ops/unscheduled-follow-up'
+import type { z } from 'zod'
 import { assertSupportedGapEstimate } from '@/lib/ops/gap-offer'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -111,6 +117,7 @@ export async function listUnscheduledAppointments(
     .select(
       `id, customer_id, appointment_date, start_time, end_time, status,
        quoted_total, kind, internal_notes, parked_at, created_at, updated_at,
+       follow_up:ops_unscheduled_follow_ups (next_follow_up_date, reviewed_at, review_note, updated_at, resolved_at),
        customer:ops_customers!ops_appointments_customer_id_fkey (
          id, full_name, business_name, phone, email, email_opt_out
        ),
@@ -245,6 +252,7 @@ export async function listUnscheduledAppointments(
         id: appointment.id,
         queue_reason: 'parked_for_rescheduling' as const,
         parked_at: parkedAt,
+        follow_up: projectUnscheduledFollowUp(appointment.follow_up),
         status: appointment.status,
         kind: appointment.kind,
         last_scheduled_time_window: {
@@ -343,9 +351,9 @@ export async function listUnscheduledAppointments(
         'not_blocked_by_sightings means only that the normalized phone does not match the Sightings blacklist. Provider or carrier opt-out state is not verified by this tool.',
     },
     follow_up_tracking: {
-      available: false,
+      available: true,
       reason:
-        'Sightings does not record a dedicated reliable follow-up-attempt count or next-contact date for this queue.',
+        'Saved internal follow-up dates use America/Denver. Review due records and current conversations; use set_unscheduled_follow_up to record a review and the next date. Dates do not authorize customer contact.',
     },
   }
 }
@@ -677,6 +685,25 @@ export type McpActor = {
 function requireScope(actor: McpActor, scope: string) {
   if (!actor.scopes.includes(scope)) {
     throw new Error(`This OAuth grant does not include ${scope}`)
+  }
+}
+
+export async function setUnscheduledFollowUp(
+  input: z.infer<typeof saveUnscheduledFollowUpInput>,
+  actor: McpActor,
+  supplied?: Db,
+) {
+  requireScope(actor, 'business:write')
+  if (!input.review_note?.trim()) throw new Error('A review note is required')
+  const data = await saveUnscheduledFollowUp(
+    client(supplied),
+    input,
+    actor.subject,
+  )
+  return {
+    data,
+    effect:
+      'Internal follow-up saved. No customer message or appointment change.',
   }
 }
 

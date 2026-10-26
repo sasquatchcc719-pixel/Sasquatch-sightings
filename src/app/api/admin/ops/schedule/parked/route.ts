@@ -1,7 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { normalizePhone } from '@/lib/blacklist'
+import {
+  projectUnscheduledFollowUp,
+  saveUnscheduledFollowUp,
+  saveUnscheduledFollowUpInput,
+} from '@/lib/ops/unscheduled-follow-up'
 
 /**
  * Jobs taken off the schedule but not given up on.
@@ -18,6 +23,7 @@ export async function GET() {
       .from('ops_appointments')
       .select(
         `id, appointment_date, start_time, end_time, quoted_total, kind,
+         follow_up:ops_unscheduled_follow_ups (next_follow_up_date, reviewed_at, review_note, updated_at, resolved_at),
          ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, phone, email, email_opt_out ),
          ops_service_addresses ( street_1, city )`,
       )
@@ -51,6 +57,7 @@ export async function GET() {
     return NextResponse.json({
       appointments: (data ?? []).map((job) => ({
         ...job,
+        follow_up: projectUnscheduledFollowUp(job.follow_up),
         contact: (() => {
           const customer = Array.isArray(job.ops_customers)
             ? job.ops_customers[0]
@@ -86,4 +93,38 @@ function durationMinutes(start: string | null, end: string | null): number {
   const to = toMinutes(end)
   if (from == null || to == null || to <= from) return 120
   return to - from
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const input = saveUnscheduledFollowUpInput.safeParse(await request.json())
+    if (!input.success)
+      return NextResponse.json(
+        { error: 'Invalid follow-up date or version' },
+        { status: 400 },
+      )
+    const follow_up = await saveUnscheduledFollowUp(
+      createAdminClient(),
+      input.data,
+      access.id,
+    )
+    return NextResponse.json({ follow_up })
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to save follow-up'
+    return NextResponse.json(
+      { error: message },
+      {
+        status:
+          message === 'Not authorized'
+            ? 403
+            : message.includes('Refresh')
+              ? 409
+              : message.startsWith('Choose today')
+                ? 400
+                : 500,
+      },
+    )
+  }
 }

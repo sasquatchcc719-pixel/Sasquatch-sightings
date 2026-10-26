@@ -70,6 +70,12 @@ describe('MCP Unscheduled appointment queue', () => {
         kind: 'service',
         internal_notes: null,
         parked_at: '2026-10-12T19:48:30.000Z',
+        follow_up: {
+          next_follow_up_date: '2026-10-15',
+          reviewed_at: null,
+          review_note: null,
+          updated_at: '2026-10-12T19:48:30.000Z',
+        },
         created_at: '2026-09-23T15:00:00.000Z',
         updated_at: '2026-10-12T19:48:30.000Z',
         customer: {
@@ -166,10 +172,11 @@ describe('MCP Unscheduled appointment queue', () => {
       criterion: 'ops_appointments.parked_at IS NOT NULL',
       restoration_monitor_visits_included: false,
     })
-    expect(result.follow_up_tracking.available).toBe(false)
+    expect(result.follow_up_tracking.available).toBe(true)
     expect(result.data[0]).toMatchObject({
       id: '10000000-0000-4000-8000-000000000001',
       queue_reason: 'parked_for_rescheduling',
+      follow_up: { next_follow_up_date: '2026-10-15', due: true },
       parked_at: '2026-10-12T19:48:30.000Z',
       duration_minutes: 180,
       contact_controls: {

@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -39,6 +39,7 @@
     "get_gap_outreach",
     "preview_gap_outreach",
     "execute_gap_outreach",
-    "stop_gap_outreach"
+    "stop_gap_outreach",
+    "set_unscheduled_follow_up"
   ]
 }

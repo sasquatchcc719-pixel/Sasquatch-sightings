@@ -128,6 +128,7 @@ export function getCapabilityCatalog() {
           'list_appointments',
           'get_appointment',
           'list_unscheduled_appointments',
+          'set_unscheduled_follow_up',
           'get_availability',
           'preview_appointment_create',
           'execute_appointment_create',
