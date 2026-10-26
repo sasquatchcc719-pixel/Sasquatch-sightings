@@ -4,6 +4,8 @@ TASK_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$TASK_REPO_DIR"
 # Selected suites were inspected: all use pure fixtures/mocks, no .env loading or real sends.
 pnpm exec vitest run --cache false \
+  src/lib/ops/first-customer-message.test.ts \
+  src/lib/mcp/first-message-preview.test.ts \
   src/lib/ops/gap-{read,planning,outreach,invoice-edit,offer}.test.ts \
   src/app/api/twilio/gap-status/route.test.ts \
   src/lib/ops/availability.test.ts \

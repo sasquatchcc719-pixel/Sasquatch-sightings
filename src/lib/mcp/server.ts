@@ -285,12 +285,17 @@ const previewCustomerUpdateInput = z
   })
 const previewConversationSendInput = z
   .object({
-    conversation_id: z.string().uuid(),
+    conversation_id: z.string().uuid().optional(),
+    customer_id: z.string().uuid().optional(),
     body: z.string().trim().min(1).max(1600),
     media_ids: z.array(z.string().uuid()).max(5).default([]),
     idempotency_key: idempotencyKey,
   })
   .strict()
+  .refine(
+    (v) => Boolean(v.conversation_id) !== Boolean(v.customer_id),
+    'Choose exactly one conversation_id or customer_id',
+  )
 const previewAppointmentUpdateInput = z
   .object({
     appointment_id: z.string().uuid(),
@@ -837,7 +842,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'preview_customer_message',
     title: 'Preview customer SMS or MMS',
     description:
-      'Prepare an exact, expiring preview showing the conversation, recipient, retained business sender, complete body, and selected existing media. This does not contact the customer.',
+      'Prepare an exact, expiring message preview for either an existing conversation_id or a verified customer_id first contact. First contact supports text only, durable one-send claims and truthful provider outcomes; existing conversation media remains supported. This does not contact the customer.',
     inputSchema: previewConversationSendInput,
     outputSchema: actionPreviewOutputSchema,
     annotations: stateChangeAnnotations,

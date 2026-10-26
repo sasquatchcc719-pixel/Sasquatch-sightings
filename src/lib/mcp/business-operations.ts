@@ -5,6 +5,10 @@ import {
 } from '@/lib/ops/unscheduled-follow-up'
 import type { z } from 'zod'
 import { assertSupportedGapEstimate } from '@/lib/ops/gap-offer'
+import {
+  FirstMessageOutcomeError,
+  sendFirstCustomerMessage,
+} from '@/lib/ops/first-customer-message'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/supabase/server'
@@ -927,7 +931,8 @@ export async function previewCustomerUpdate(
 
 export async function previewConversationSend(
   input: {
-    conversation_id: string
+    conversation_id?: string
+    customer_id?: string
     body: string
     media_ids: string[]
     idempotency_key: string
@@ -936,6 +941,61 @@ export async function previewConversationSend(
   supplied?: Db,
 ) {
   const supabase = client(supplied)
+  requireScope(actor, 'customer:contact')
+  if (Boolean(input.customer_id) === Boolean(input.conversation_id))
+    throw new Error('Choose exactly one conversation or verified customer')
+  if (input.customer_id) {
+    if (input.media_ids.length)
+      throw new Error('First contact supports text only')
+    const customer = await supabase
+      .from('ops_customers')
+      .select('id,full_name,phone,updated_at,is_internal')
+      .eq('id', input.customer_id)
+      .single()
+    if (customer.error) throw customer.error
+    const phone = normalizeOpsPhone(customer.data.phone)
+    if (!/^\+1\d{10}$/.test(phone) || customer.data.is_internal)
+      throw new Error('Customer has no eligible verified phone')
+    const existing = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`ops_customer_id.eq.${input.customer_id},phone_number.eq.${phone}`)
+      .limit(1)
+      .maybeSingle()
+    if (existing.error) throw existing.error
+    if (existing.data)
+      throw new Error(
+        `Existing conversation ${existing.data.id}; inspect it and use conversation_id`,
+      )
+    return storePreview({
+      actor,
+      actionType: 'conversation.send',
+      requiredScope: 'customer:contact',
+      idempotencyKey: input.idempotency_key,
+      payload: {
+        first_contact: {
+          customer_id: customer.data.id,
+          phone,
+          customer_updated_at: customer.data.updated_at,
+        },
+        body: input.body.trim(),
+        media_ids: [],
+      },
+      preview: {
+        action: 'Send first customer SMS',
+        customer_id: customer.data.id,
+        customer_name: customer.data.full_name,
+        to: phone,
+        body: input.body.trim(),
+        effects: [
+          'Sends this exact text once after a durable owner-authorized claim.',
+          'Creates truthful conversation history only after provider acceptance.',
+          'Uncertain outcomes never retry automatically; no booking or promotion changes.',
+        ],
+      },
+      supabase,
+    })
+  }
   const { data: conversation, error } = await supabase
     .from('conversations')
     .select('id, phone_number, ops_customer_id, updated_at')
@@ -1787,14 +1847,29 @@ async function executeConversationSend(
   payload: Record<string, any>,
   actor: McpActor,
   supabase: Db,
+  previewId: string,
 ) {
+  if (payload.first_contact)
+    return sendFirstCustomerMessage(supabase, previewId, actor.subject)
   const { data: conversation, error } = await supabase
     .from('conversations')
-    .select('updated_at')
+    .select('updated_at,phone_number')
     .eq('id', payload.conversation_id)
     .maybeSingle()
   if (error) throw error
   if (!conversation) throw new Error('Conversation not found')
+  const unresolved = await supabase
+    .from('mcp_first_message_attempts')
+    .select('preview_id')
+    .eq('phone', normalizeOpsPhone(conversation.phone_number))
+    .in('status', ['sending', 'unknown'])
+    .limit(1)
+    .maybeSingle()
+  if (unresolved.error) throw unresolved.error
+  if (unresolved.data)
+    throw new Error(
+      'Unresolved first-contact attempt; reconcile provider outcome before another send',
+    )
   if (conversation.updated_at !== payload.expected_updated_at) {
     throw new Error(
       'Conversation changed after preview; preview the reply again',
@@ -2419,6 +2494,7 @@ export async function executePreparedAction(
         action.action_payload,
         actor,
         supabase,
+        action.id,
       )
     } else if (action.action_type === 'appointment.create') {
       result = await executeAppointmentCreate(
@@ -2459,6 +2535,9 @@ export async function executePreparedAction(
       .update({
         status: 'failed',
         error_message: message,
+        ...(executionError instanceof FirstMessageOutcomeError
+          ? { result: executionError.result }
+          : {}),
         action_payload: {},
         preview: {},
       })
@@ -2469,7 +2548,12 @@ export async function executePreparedAction(
       action_type: action.action_type,
       status: 'failed',
       payload_hash: action.payload_hash,
-      result: { error: message },
+      result: {
+        error: message,
+        ...(executionError instanceof FirstMessageOutcomeError
+          ? executionError.result
+          : {}),
+      },
     })
     throw executionError
   }
