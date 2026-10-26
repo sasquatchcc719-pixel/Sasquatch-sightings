@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from 'react'
 import Image from 'next/image'
+import { isNextdoorCode, nextdoorServiceSubtotal } from '@/lib/nextdoor-promo'
 import { Check, Sparkles } from 'lucide-react'
 import {
   CANONICAL_LEAD_SOURCE_OPTIONS,
@@ -627,6 +628,10 @@ export default function BookPage() {
 
   // Review / submit
   const [promoCode, setPromoCode] = useState('')
+  const [nextdoorPreview, setNextdoorPreview] = useState<{
+    discount: number
+    error?: string
+  } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState<BookingResult | null>(null)
@@ -692,6 +697,49 @@ export default function BookPage() {
 
   // ── Derived totals ──
   const subtotal = cartTotal(cart)
+  const nextdoor = isNextdoorCode(promoCode)
+  const serviceSubtotal = nextdoorServiceSubtotal(
+    cart.map((c) => ({
+      name_snapshot: c.service.name,
+      category: c.service.category,
+      slug: c.service.slug || undefined,
+      unit_price: c.service.base_price,
+      quantity: c.quantity,
+    })),
+  )
+  useEffect(() => {
+    setNextdoorPreview(null)
+    if (step !== 4 || !nextdoor) return
+    const controller = new AbortController()
+    const params = new URLSearchParams({
+      code: 'NEXTDOOR35',
+      subtotal: String(subtotal),
+      service_subtotal: String(serviceSubtotal),
+    })
+    void fetch(`/api/public/promo-preview?${params}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok)
+          throw new Error(data.error || 'Unable to check NEXTDOOR35.')
+        if (!controller.signal.aborted)
+          setNextdoorPreview({
+            discount: data.discount_amount,
+            error: data.applied
+              ? undefined
+              : 'NEXTDOOR35 requires $300 or more in services before discount, travel, fees and tax.',
+          })
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setNextdoorPreview({
+            discount: 0,
+            error: error.message || 'Unable to check NEXTDOOR35.',
+          })
+      })
+    return () => controller.abort()
+  }, [step, nextdoor, subtotal, serviceSubtotal])
   const meetsMinimum = subtotal >= MINIMUM_JOB_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
   const selectedLeadSource = useMemo(
@@ -1305,6 +1353,22 @@ export default function BookPage() {
                       {formatPrice(subtotal)}
                     </span>
                   </div>
+                  {nextdoor &&
+                  nextdoorPreview &&
+                  nextdoorPreview.discount > 0 ? (
+                    <>
+                      <div className="mt-2 flex justify-between text-sm text-green-700">
+                        <span>Discount (NEXTDOOR35)</span>
+                        <span>−{formatPrice(nextdoorPreview.discount)}</span>
+                      </div>
+                      <div className="mt-2 flex justify-between text-sm font-bold">
+                        <span>Total before travel, fees and tax</span>
+                        <span>
+                          {formatPrice(subtotal - nextdoorPreview.discount)}
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 {/* Appointment details */}
@@ -1381,7 +1445,12 @@ export default function BookPage() {
                     />
                   </div>
                   <p className="mt-2 text-xs text-gray-400">
-                    Discount will be applied at checkout if the code is valid.
+                    {nextdoor
+                      ? nextdoorPreview === null
+                        ? 'Checking NEXTDOOR35…'
+                        : nextdoorPreview.error ||
+                          '$35 off applied. Cannot combine with other discounts.'
+                      : 'Discount will be applied at checkout if the code is valid.'}
                   </p>
                 </div>
 
@@ -1423,7 +1492,11 @@ export default function BookPage() {
                   </button>
                   <button
                     onClick={handleSubmit}
-                    disabled={submitting}
+                    disabled={
+                      submitting ||
+                      (nextdoor &&
+                        (!nextdoorPreview || !!nextdoorPreview.error))
+                    }
                     className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white transition-colors hover:bg-green-700 disabled:opacity-50"
                   >
                     {submitting ? (
