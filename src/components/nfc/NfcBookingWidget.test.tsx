@@ -165,3 +165,77 @@ describe('forest estimator', () => {
     expect(container.querySelector(`.${styles.forest}`)).toBeNull()
   })
 })
+
+describe('NEXTDOOR35 checkout displays one saving', () => {
+  async function reviewRugs(price: number) {
+    const original = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).includes('/api/public/services'))
+        return response({
+          services: [{ ...room, base_price: price, category: 'rug cleaning' }],
+          checkoutUpsells: [],
+        })
+      if (String(input).includes('/api/public/promo-preview'))
+        return response({
+          discount_amount: 35,
+          total: price * 2 - 35,
+          minimum_subtotal: 300,
+        })
+      return original(input, init)
+    })
+    render(<NfcBookingWidget couponCode="NEXTDOOR35" cardId={null} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rug Cleaning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Regular room' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add one Regular room' }),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Next →' })[0])
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Tuesday, September 8 — Available',
+      }),
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '10:00 AM' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue →' }))
+    fillDetails()
+    fireEvent.click(screen.getByRole('button', { name: 'Review →' }))
+    await screen.findByText(
+      /NEXTDOOR35 and the multi-rug discount cannot combine/,
+    )
+  }
+  it('keeps and clearly shows a larger multi-rug saving; submits no coupon', async () => {
+    await reviewRugs(300)
+    expect(screen.getByText('$540.00')).toBeInTheDocument()
+    expect(
+      screen.getByText(/The higher multi-rug discount is applied/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('−$35.00')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Booking' }))
+    await screen.findByText("You're booked!")
+    const request = vi
+      .mocked(fetch)
+      .mock.calls.find(([u]) => u === '/api/book')!
+    const body = JSON.parse(String(request[1]?.body))
+    expect(body.promo_code).toBeUndefined()
+    expect(body.percentage_discount).toMatchObject({
+      percent: 10,
+      scope: 'rug_cleaning',
+    })
+  })
+  it('shows only the $35 coupon when it beats the multi-rug saving', async () => {
+    await reviewRugs(150)
+    expect(screen.getByText('$265.00')).toBeInTheDocument()
+    expect(screen.queryByText('−$30.00')).toBeNull()
+    expect(
+      screen.getByText(/NEXTDOOR35 is applied instead/),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Booking' }))
+    await screen.findByText("You're booked!")
+    const request = vi
+      .mocked(fetch)
+      .mock.calls.find(([u]) => u === '/api/book')!
+    const body = JSON.parse(String(request[1]?.body))
+    expect(body.promo_code).toBe('NEXTDOOR35')
+    expect(body.percentage_discount).toBeUndefined()
+  })
+})

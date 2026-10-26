@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isNextdoorCode, nextdoorDiscount } from '@/lib/nextdoor-promo'
 import { createAdminClient } from '@/supabase/server'
 import {
   computePromoDiscountAmount,
@@ -113,6 +114,38 @@ export async function GET(request: NextRequest) {
           total: subtotal,
           applied: false,
           reason: 'max_uses',
+        },
+        { headers: CORS },
+      )
+    }
+
+    if (isNextdoorCode(code)) {
+      const services = Number(searchParams.get('service_subtotal'))
+      if (
+        !searchParams.has('service_subtotal') ||
+        !Number.isFinite(services) ||
+        services < 0 ||
+        services > subtotal
+      )
+        return NextResponse.json(
+          {
+            error:
+              'A valid service_subtotal excluding travel, fees and tax is required.',
+          },
+          { status: 400, headers: CORS },
+        )
+      const discount = nextdoorDiscount(services)
+      return NextResponse.json(
+        {
+          code,
+          subtotal,
+          service_subtotal: services,
+          discount_amount: discount,
+          total: Math.round((subtotal - discount) * 100) / 100,
+          applied: discount > 0,
+          minimum_subtotal: 300,
+          stacking: false,
+          ...(discount ? {} : { reason: 'minimum_subtotal' }),
         },
         { headers: CORS },
       )

@@ -1,5 +1,10 @@
 'use client'
 
+import {
+  isNextdoorCode,
+  nextdoorServiceSubtotal,
+  chooseNextdoorDiscount,
+} from '@/lib/nextdoor-promo'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import styles from './booking-forest.module.css'
@@ -892,8 +897,21 @@ export function NfcBookingWidget({
     (upsell) => upsell.slug === 'free-uv-inspection',
   )
   const rugUnits = rugUnitCount(cart)
-  const rugDiscountAmount = campaignToken ? 0 : multiRugDiscount(cart)
-  const promoDiscountAmount = reviewPromo?.discountAmount ?? 0
+  const rawRugDiscount = campaignToken ? 0 : multiRugDiscount(cart)
+  const nextdoor = isNextdoorCode(couponCode)
+  const serviceSubtotal = nextdoorServiceSubtotal(
+    cart.map((c) => ({
+      name_snapshot: c.service.name,
+      category: c.service.category,
+      unit_price: c.service.base_price,
+      quantity: c.quantity,
+    })),
+  )
+  const selectedDiscount = nextdoor
+    ? chooseNextdoorDiscount(reviewPromo?.discountAmount ?? 0, rawRugDiscount)
+    : { promo: reviewPromo?.discountAmount ?? 0, rug: rawRugDiscount }
+  const rugDiscountAmount = selectedDiscount.rug
+  const promoDiscountAmount = selectedDiscount.promo
   const reviewTotal = Math.max(
     0,
     subtotal - promoDiscountAmount - rugDiscountAmount,
@@ -960,6 +978,8 @@ export function NfcBookingWidget({
     const u = new URL('/api/public/promo-preview', window.location.origin)
     u.searchParams.set('code', couponCode.trim().toUpperCase())
     u.searchParams.set('subtotal', String(subtotal))
+    if (nextdoor)
+      u.searchParams.set('service_subtotal', String(serviceSubtotal))
     if (campaignToken) u.searchParams.set('tomorrow_fill_token', campaignToken)
     void fetch(u.toString(), { signal: ac.signal })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
@@ -980,7 +1000,7 @@ export function NfcBookingWidget({
         }
       })
     return () => ac.abort()
-  }, [step, couponCode, subtotal, campaignToken])
+  }, [step, couponCode, subtotal, campaignToken, nextdoor, serviceSubtotal])
 
   function validateStep3(): string {
     if (!form.first_name.trim() || !form.last_name.trim())
@@ -1047,7 +1067,8 @@ export function NfcBookingWidget({
               scope: 'rug_cleaning',
             }
           : undefined,
-      promo_code: couponCode || undefined,
+      promo_code:
+        nextdoor && rugDiscountAmount > 0 ? undefined : couponCode || undefined,
       tomorrow_fill_token: campaignToken || undefined,
     }
 
@@ -1584,7 +1605,7 @@ export function NfcBookingWidget({
                     <span>…</span>
                   </div>
                 ) : null}
-                {reviewPromo && reviewPromo.discountAmount > 0 ? (
+                {reviewPromo && promoDiscountAmount > 0 ? (
                   <div className="flex justify-between text-green-400/95">
                     <span>
                       Discount (
@@ -1594,7 +1615,7 @@ export function NfcBookingWidget({
                       )
                     </span>
                     <span className="font-semibold">
-                      −{formatPrice(reviewPromo.discountAmount)}
+                      −{formatPrice(promoDiscountAmount)}
                     </span>
                   </div>
                 ) : null}
@@ -1667,9 +1688,7 @@ export function NfcBookingWidget({
               </div>
             </div>
 
-            {couponCode.trim() &&
-            reviewPromo &&
-            reviewPromo.discountAmount > 0 ? (
+            {couponCode.trim() && reviewPromo && promoDiscountAmount > 0 ? (
               <div className="mb-3 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-3">
                 <svg
                   className="h-4 w-4 shrink-0 text-green-400"
@@ -1690,12 +1709,23 @@ export function NfcBookingWidget({
               </div>
             ) : null}
 
+            {nextdoor && rawRugDiscount > 0 && reviewPromo ? (
+              <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
+                NEXTDOOR35 and the multi-rug discount cannot combine.{' '}
+                {rugDiscountAmount > 0
+                  ? 'The higher multi-rug discount is applied; NEXTDOOR35 is not applied.'
+                  : 'NEXTDOOR35 is applied instead of the multi-rug discount.'}
+              </p>
+            ) : null}
             {reviewPromo?.minimumSubtotal ? (
               <p className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-300/80">
-                Your private offer requires{' '}
+                {nextdoor
+                  ? 'NEXTDOOR35 requires '
+                  : 'Your private offer requires '}
                 {formatPrice(reviewPromo.minimumSubtotal)} or more in services
                 before the discount.
-                {subtotal < reviewPromo.minimumSubtotal
+                {(nextdoor ? serviceSubtotal : subtotal) <
+                reviewPromo.minimumSubtotal
                   ? ' Add more services to qualify.'
                   : ''}
               </p>
@@ -1739,7 +1769,12 @@ export function NfcBookingWidget({
               </button>
               <button
                 type="button"
-                disabled={submitting}
+                disabled={
+                  submitting ||
+                  (nextdoor &&
+                    (reviewPromo === null ||
+                      (promoDiscountAmount === 0 && rugDiscountAmount === 0)))
+                }
                 onClick={() => void handleSubmit()}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white transition-colors hover:bg-green-500 disabled:opacity-50"
               >

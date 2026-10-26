@@ -5,6 +5,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  isNextdoorCode,
+  nextdoorServiceSubtotal,
+  nextdoorDiscount,
+} from '@/lib/nextdoor-promo'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
@@ -243,6 +248,10 @@ export async function POST(request: NextRequest) {
     // Hydrate pricing_unit from the catalog for any items that provided a
     // service_catalog_item_id. This ensures duration is not multiplied by
     // quantity for measurement-based services (per_linear_foot, per_sqft, etc.)
+    const nextdoorCatalog = new Map<
+      string,
+      { name: string; slug: string; category: string }
+    >()
     const catalogIds = lineItems
       .map((i) => i.service_catalog_item_id)
       .filter(Boolean) as string[]
@@ -252,6 +261,7 @@ export async function POST(request: NextRequest) {
         .select('id, name, slug, pricing_unit, category')
         .in('id', catalogIds)
       if (catalogRows) {
+        for (const row of catalogRows) nextdoorCatalog.set(row.id, row)
         if (catalogRows.some((item) => isExcludedFromBooking(item))) {
           return NextResponse.json(
             {
@@ -286,6 +296,11 @@ export async function POST(request: NextRequest) {
       ? String(body.promo_code).toUpperCase().trim()
       : null
     const tomorrowFillToken = String(body.tomorrow_fill_token || '').trim()
+    if (isNextdoorCode(promoCode) && tomorrowFillToken)
+      return NextResponse.json(
+        { error: 'NEXTDOOR35 cannot combine with another offer.' },
+        { status: 400, headers: CORS },
+      )
     const tomorrowFillOffer = tomorrowFillToken
       ? await validateTomorrowFillPromoToken(tomorrowFillToken)
       : null
@@ -302,6 +317,56 @@ export async function POST(request: NextRequest) {
         { error: 'A valid private offer link is required for TF35.' },
         { status: 409, headers: CORS },
       )
+    }
+    let nextdoorServiceTotal: number | null = null
+    if (isNextdoorCode(promoCode)) {
+      if (
+        body.percentage_discount ||
+        body.discount_amount ||
+        body.discount_applied ||
+        lineItems.some(
+          (l) =>
+            !Number.isFinite(l.unit_price) ||
+            !Number.isFinite(l.quantity) ||
+            l.unit_price < 0 ||
+            l.quantity <= 0,
+        )
+      )
+        return NextResponse.json(
+          {
+            error:
+              'NEXTDOOR35 cannot combine with another discount or credit. Choose one discount.',
+          },
+          { status: 400, headers: CORS },
+        )
+      if (catalogIds.some((id) => !nextdoorCatalog.has(id)))
+        return NextResponse.json(
+          { error: 'Please refresh the service list before using NEXTDOOR35.' },
+          { status: 400, headers: CORS },
+        )
+      nextdoorServiceTotal = nextdoorServiceSubtotal(
+        lineItems.map((l) => {
+          const canonical = l.service_catalog_item_id
+            ? nextdoorCatalog.get(l.service_catalog_item_id)
+            : null
+          return canonical
+            ? {
+                ...l,
+                name_snapshot: canonical.name,
+                category: canonical.category,
+                slug: canonical.slug,
+              }
+            : l
+        }),
+      )
+      if (!nextdoorDiscount(nextdoorServiceTotal))
+        return NextResponse.json(
+          {
+            error:
+              'NEXTDOOR35 requires services totaling $300 or more before discount, travel, fees and tax.',
+          },
+          { status: 400, headers: CORS },
+        )
     }
     let promoCodeId: string | null = null
     let appliedPromoCode: string | null = null
@@ -336,7 +401,9 @@ export async function POST(request: NextRequest) {
           (sum, item) => sum + item.unit_price * item.quantity,
           0,
         )
-        if (promo.discount_type === 'tiered') {
+        if (isNextdoorCode(promoCode)) {
+          discountAmount = nextdoorDiscount(nextdoorServiceTotal!)
+        } else if (promo.discount_type === 'tiered') {
           const { data: tiers } = await supabase
             .from('promo_code_tiers')
             .select('min_spend, discount_amount')
@@ -359,6 +426,12 @@ export async function POST(request: NextRequest) {
         appliedPromoCode = String(promoCode).toUpperCase()
       }
     }
+
+    if (isNextdoorCode(promoCode) && !promoCodeId)
+      return NextResponse.json(
+        { error: 'NEXTDOOR35 is unavailable.' },
+        { status: 400, headers: CORS },
+      )
 
     // --- Partner attribution ---
     // A booking belongs to a partner location when the landing page passed
@@ -651,6 +724,16 @@ export async function POST(request: NextRequest) {
         // (which jobs, how much revenue) is queryable — use_count alone is
         // just a global counter.
         discount_metadata: {
+          ...(isNextdoorCode(appliedPromoCode)
+            ? {
+                public_offer: {
+                  code: 'NEXTDOOR35',
+                  minimum_service_cents: 30000,
+                  service_subtotal: nextdoorServiceTotal,
+                  stacking: false,
+                },
+              }
+            : {}),
           ...(tomorrowFillOffer
             ? {
                 returning_offer: {

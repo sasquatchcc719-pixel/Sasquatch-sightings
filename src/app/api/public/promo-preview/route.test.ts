@@ -92,3 +92,60 @@ describe('private offer checkout preview', () => {
     expect(response.status).toBe(409)
   })
 })
+
+describe('public NEXTDOOR35 preview', () => {
+  beforeEach(() => {
+    const q = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi
+        .fn()
+        .mockResolvedValue({
+          data: {
+            id: 'nextdoor-promo',
+            code: 'NEXTDOOR35',
+            discount_type: 'tiered',
+            discount_amount: 0,
+            expires_at: null,
+            max_uses: null,
+            use_count: 0,
+          },
+          error: null,
+        }),
+    }
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn(() => q) })
+  })
+  it('needs no private token and applies exactly35 at300 services', async () => {
+    const r = await GET(
+      new NextRequest(
+        'https://example.test/api/public/promo-preview?code=NEXTDOOR35&subtotal=300&service_subtotal=300',
+      ),
+    )
+    expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({
+      discount_amount: 35,
+      total: 265,
+      applied: true,
+      minimum_subtotal: 300,
+      stacking: false,
+    })
+  })
+  it('does not qualify299.99 services plus fees or accept an unspecified service basis', async () => {
+    const r = await GET(
+      new NextRequest(
+        'https://example.test/api/public/promo-preview?code=NEXTDOOR35&subtotal=324.99&service_subtotal=299.99',
+      ),
+    )
+    expect(await r.json()).toMatchObject({
+      discount_amount: 0,
+      applied: false,
+      total: 324.99,
+    })
+    const missing = await GET(
+      new NextRequest(
+        'https://example.test/api/public/promo-preview?code=NEXTDOOR35&subtotal=300',
+      ),
+    )
+    expect(missing.status).toBe(400)
+  })
+})
