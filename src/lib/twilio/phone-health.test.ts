@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Twilio } from 'twilio'
 import {
   deliverPhoneHealthAlert,
@@ -326,6 +326,7 @@ function fixture(
     missingConversation?: boolean
     misconfigured?: boolean
     rollout?: string
+    realConversationQuery?: boolean
   } = {},
 ) {
   const write = vi.fn().mockResolvedValue({ error: null })
@@ -366,6 +367,28 @@ function fixture(
                       ],
                     },
                   ]
+    if (table === 'conversations' && options.realConversationQuery) {
+      return createClient('https://phone-health.test', 'test-key', {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: {
+          fetch: async (input) => {
+            const url = new URL(String(input))
+            expect(url.searchParams.get('phone_number')).toBe(
+              `eq.${parent.from}`,
+            )
+            expect(url.searchParams.get('source')).toBe('eq.inbound')
+            const filter = url.searchParams.get('messages')!
+            expect(filter.startsWith('cs.')).toBe(true)
+            expect(JSON.parse(filter.slice(3))).toEqual([
+              { metadata: { recording_sid: recording.sid } },
+            ])
+            return new Response(JSON.stringify(result), {
+              headers: { 'Content-Type': 'application/json' },
+            })
+          },
+        },
+      }).from(table)
+    }
     const q = {
       select: vi.fn(),
       eq: vi.fn(),
@@ -447,6 +470,15 @@ function fixture(
   }
 }
 describe('independent scheduled monitor', () => {
+  it('sends valid JSON containment through the real query builder for a saved voicemail', async () => {
+    const { db, client } = fixture({ realConversationQuery: true })
+    expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject({
+      callsChecked: 1,
+      issues: 0,
+      errors: [],
+    })
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
   it('preserves Supabase error fields, the failed check, and the last failure after recovery', async () => {
     const { db, client, write } = fixture()
     const error = {

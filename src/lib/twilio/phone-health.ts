@@ -418,9 +418,11 @@ export async function runPhoneHealthCheck(
           .select('id,messages')
           .eq('phone_number', parent.from)
           .eq('source', 'inbound')
-          .contains('messages', [
-            { metadata: { recording_sid: recording.sid } },
-          ])
+          // Array arguments otherwise use PostgreSQL array syntax, not JSONB.
+          .contains(
+            'messages',
+            JSON.stringify([{ metadata: { recording_sid: recording.sid } }]),
+          )
           .limit(1)
         if (conversation.error) throw conversation.error
         if (!conversation.data?.length)
