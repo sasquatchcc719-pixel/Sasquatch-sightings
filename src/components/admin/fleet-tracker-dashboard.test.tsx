@@ -128,6 +128,7 @@ it('uses the calendar day for job pins and keeps driving tracks hidden until req
   )
   expect(screen.getByTestId('map')).toHaveAttribute('data-jobs', '1')
   expect(screen.getByTestId('map')).toHaveAttribute('data-points', '0')
+  expect(screen.queryByText('Incomplete map')).not.toBeInTheDocument()
   expect(
     mocks.fetch.mock.calls.some(([url]) => url.includes('/history?')),
   ).toBe(false)
@@ -145,6 +146,46 @@ it('uses the calendar day for job pins and keeps driving tracks hidden until req
   await waitFor(() =>
     expect(screen.getByTestId('map')).toHaveAttribute('data-points', '0'),
   )
+})
+it('identifies missing stops above the map instead of making a partial route look complete', async () => {
+  const base = mocks.fetch.getMockImplementation()!
+  mocks.fetch.mockImplementation(async (url: string) => {
+    const response = await base(url)
+    if (!url.includes('daily-map?')) return response
+    const data = await response.json()
+    return {
+      ok: true,
+      json: async () => ({
+        ...data,
+        jobs: [
+          {
+            ...data.jobs[0],
+            id: 'christy',
+            name: 'Christy Schmitt',
+            location: null,
+          },
+          {
+            ...data.jobs[0],
+            id: 'ricky',
+            name: 'Ricky Swanson',
+            location: null,
+          },
+          { ...data.jobs[0], id: 'recovery', name: 'Recovery Village' },
+        ],
+      }),
+    }
+  })
+  show('2026-10-19')
+  const warning = await screen.findByRole('status', { name: 'Incomplete map' })
+  expect(warning).toHaveTextContent('2 scheduled stops need verified locations')
+  expect(warning).toHaveTextContent('Christy Schmitt')
+  expect(warning).toHaveTextContent('Ricky Swanson')
+  expect(warning).toHaveTextContent('The planned route is incomplete')
+  expect(
+    warning.compareDocumentPosition(screen.getByTestId('map')) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(screen.getByText('3 jobs · 1 mapped')).toBeVisible()
 })
 it.each(['2026-10-18', '2026-10-20'])(
   'does not show current vehicle locations on %s',

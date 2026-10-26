@@ -52,6 +52,56 @@ afterEach(() => {
 })
 
 describe('isVerifiedStreetCandidate', () => {
+  it('matches directional suffixes and Point abbreviations without losing direction, house or ZIP checks', () => {
+    const address = {
+      street_1: '20071 Thunder Road W',
+      city: 'Colorado Springs',
+      state: 'CO',
+      zip_code: '80908',
+    }
+    const candidate = {
+      address: {
+        house_number: '20071',
+        road: 'W Thunder Rd',
+        city: 'Monument',
+        state: 'Colorado',
+        postcode: '80908',
+      },
+    }
+    expect(isVerifiedStreetCandidate(address, candidate)).toBe(true)
+    for (const change of [
+      { road: 'E Thunder Rd' },
+      { road: 'W Lightning Rd' },
+      { house_number: '20072' },
+      { postcode: '80132' },
+    ]) {
+      expect(
+        isVerifiedStreetCandidate(address, {
+          address: { ...candidate.address, ...change },
+        }),
+      ).toBe(false)
+    }
+    expect(
+      isVerifiedStreetCandidate(
+        {
+          street_1: '890 East Kings Deer Point',
+          city: 'Monument',
+          state: 'CO',
+          zip_code: '80132',
+        },
+        {
+          address: {
+            house_number: '890',
+            road: 'E Kings Deer Pt',
+            city: 'Monument',
+            state: 'Colorado',
+            postcode: '80132',
+          },
+        },
+      ),
+    ).toBe(true)
+  })
+
   it('matches a Colorado highway alias while preserving the route and house number', () => {
     expect(isVerifiedStreetCandidate(highwayAddress, highwayCandidate)).toBe(
       true,

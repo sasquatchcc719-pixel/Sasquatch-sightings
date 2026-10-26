@@ -44,11 +44,35 @@ it('requires verified street coordinates or captured on-site GPS, never raw geoc
   for (const source of [
     'colorado-state-address-point',
     'nominatim-street-verified-backfill',
+    'repair:colorado-state-address-point',
+    'repair:census-exact',
+    'repair:photon-street-verified',
   ]) {
     expect(
       dispatchLocation({ ...a, geocode_source: source }, null, null)?.source,
     ).toBe('Verified address')
   }
+  for (const source of [
+    'nominatim-backfill',
+    'repair:census-non-exact',
+    'unknown',
+  ]) {
+    expect(
+      dispatchLocation({ ...a, geocode_source: source }, null, null),
+    ).toBeNull()
+  }
+  expect(
+    dispatchLocation(
+      {
+        ...a,
+        geocode_source: 'repair:census-exact',
+        latitude: PUBLIC_AREAS.monument.lat,
+        longitude: PUBLIC_AREAS.monument.lng,
+      },
+      null,
+      null,
+    ),
+  ).toBeNull()
   expect(dispatchLocation(a, 39.16, -104.88)?.source).toBe('On-site GPS')
   expect(dispatchLocation(null, 91, -104)).toBeNull()
   expect(

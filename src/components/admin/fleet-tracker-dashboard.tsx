@@ -155,7 +155,8 @@ export default function FleetTrackerDashboard({
         year: 'numeric',
       })
     : day
-  const mapped = jobs.filter((job) => job.location).length
+  const unmapped = jobs.filter((job) => !job.location)
+  const mapped = jobs.length - unmapped.length
   const selectedJob = jobs.find((job) => job.id === selectedJobId)
   const plannedDrives = useMemo(() => {
     const visible = new Set(jobs.map((job) => job.id))
@@ -284,6 +285,24 @@ export default function FleetTrackerDashboard({
               </span>
             </button>
           ))}
+        </div>
+      )}
+      {unmapped.length > 0 && (
+        <div
+          role="status"
+          aria-label="Incomplete map"
+          className="rounded-xl border border-amber-300/30 bg-amber-950/30 p-4 text-sm text-amber-100"
+        >
+          <p className="font-semibold">Incomplete map</p>
+          <p className="mt-1">
+            {unmapped.length} scheduled{' '}
+            {unmapped.length === 1 ? 'stop needs' : 'stops need'} verified
+            locations: {unmapped.map((job) => job.name).join(', ')}.
+          </p>
+          <p className="mt-1 text-amber-200/80">
+            The planned route is incomplete. Legs touching these stops cannot be
+            shown yet.
+          </p>
         </div>
       )}
       <div className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950">

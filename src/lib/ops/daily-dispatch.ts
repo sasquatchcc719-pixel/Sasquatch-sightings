@@ -93,6 +93,9 @@ export function dispatchLocation(
       'nominatim-street-verified-backfill',
       'colorado-state-address-point',
       'repair:colorado-springs-address-point',
+      'repair:colorado-state-address-point',
+      'repair:census-exact',
+      'repair:photon-street-verified',
     ].includes(address.geocode_source ?? '')
   const point = verified
     ? streetPoint(address?.latitude, address?.longitude)
