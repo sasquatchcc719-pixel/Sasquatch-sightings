@@ -8,6 +8,7 @@ import {
 } from './call-routing-config'
 import { getForwardNumbers } from './forward-numbers'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { hasMeaningfulTranscription } from './voicemail'
 
 const BASE_URL = 'https://sightings.sasquatchcarpet.com'
 const LIMIT = 1000
@@ -442,14 +443,17 @@ export async function runPhoneHealthCheck(
           const message = messages.find(
             (message) => message?.metadata?.recording_sid === recording.sid,
           )
+          const transcript =
+            message?.metadata?.transcription_email_text ||
+            message?.metadata?.transcription
           if (
-            message?.metadata?.recording_completed === true &&
-            message.metadata.email_sent !== true
+            hasMeaningfulTranscription(transcript) &&
+            !message?.metadata?.transcription_email_id
           ) {
             issues.push({
-              key: `${parent.sid}:notification:${recording.sid}`,
+              key: `${parent.sid}:transcription-notification:${recording.sid}`,
               issue:
-                'Owner voicemail recording notification was not confirmed delivered',
+                'Owner voicemail transcription email was not accepted by the email provider',
               details: {
                 callSid: parent.sid,
                 caller: parent.from,

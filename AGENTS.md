@@ -211,7 +211,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 - For the Sapphire Scientific 370 guide, preserve Charles’s NAPA Gold 3054 and familiar tool names. List the socket set, adjustable wrench, and vice grips under “Tools needed”; keep the repair action in the heading and do not silently substitute tools.
 
 - Call-log repairs include backfilling existing affected records from Twilio child-call and recording evidence; verify the repaired production history before declaring completion. Parent-call duration alone does not prove an answered call or a voicemail.
-- Voicemail alerts must email the transcript when it becomes available, with duplicate-safe retries; a link to the conversation alone does not satisfy transcription delivery.
+- Send one voicemail email only when its transcript is available, with the transcript in the body and a prominent phone-number callback button; suppress recording-only emails and duplicate callbacks.
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 

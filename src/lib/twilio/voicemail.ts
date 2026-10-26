@@ -1,6 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Twilio } from 'twilio'
 
+export function hasMeaningfulTranscription(value: unknown): value is string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return Boolean(
+    normalized &&
+    ![
+      '(no transcription available)',
+      'no transcription',
+      '(none)',
+      'none',
+    ].includes(normalized),
+  )
+}
+
 export type VoicemailMessage = {
   role?: string
   content?: string

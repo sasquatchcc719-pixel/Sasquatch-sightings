@@ -7,8 +7,10 @@ import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import {
   mergeVoicemailCallback,
   resolveVoicemailCaller,
+  hasMeaningfulTranscription,
   type VoicemailMessage as ConversationMessage,
 } from '@/lib/twilio/voicemail'
+import { buildVoicemailEmail } from '@/lib/twilio/voicemail-email'
 
 /** Twilio may run 120s+; default Vercel timeout would kill the SMS send. */
 export const maxDuration = 300
@@ -22,19 +24,6 @@ const voicemailNotifyEmail =
 
 const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 120000
 const RECENT_REPLY_SUPPRESSION_MS = 15 * 60 * 1000
-
-function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
-  const normalized = transcriptionText?.trim().toLowerCase() ?? ''
-
-  if (!normalized) return false
-
-  return ![
-    '(no transcription available)',
-    'no transcription',
-    '(none)',
-    'none',
-  ].includes(normalized)
-}
 
 function getBaseUrl(): string {
   const url = (
@@ -168,72 +157,30 @@ export async function POST(request: NextRequest) {
       ...(mergedTranscription ? { transcription: mergedTranscription } : {}),
     })
 
-    // Recording completion must alert the owner even if transcription never
-    // arrives. The payload stays identical on retries and transcript updates,
-    // so simultaneous callbacks share the provider's idempotency key.
-    if (
-      metadata.recording_completed &&
-      mergedAudioUrl &&
-      !metadata.email_sent
-    ) {
-      const { data: delivery, error: deliveryError } = await resend.emails.send(
-        {
-          from: voicemailFromEmail,
-          to: voicemailNotifyEmail,
-          subject: `New voicemail recording from ${normalizedPhone}`,
-          html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #166534;">New voicemail recording</h2>
-            <p>From: <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
-            <p>A voicemail recording is available. Short recordings can still contain a message; listen to confirm.</p>
-            <p><a href="${adminBaseUrl}/admin/conversations?source=phone">Listen and view the caller's conversation</a></p>
-            <p>A transcription will appear there when available.</p>
-            <p style="color: #6b7280; font-size: 12px;">Recording: ${recordingSid}</p>
-          </div>
-        `,
-        },
-        { idempotencyKey: `voicemail-recording/${recordingSid}` },
-      )
-      if (deliveryError || !delivery?.id)
-        throw new Error(
-          deliveryError?.message || 'Email provider did not confirm delivery',
-        )
-      // Mark only after the provider accepted it. If this save fails, the same
-      // key makes a retried completion safe rather than suppressing the alert.
-      await mergeVoicemailCallback(supabase, callback, true)
-      console.log('[Voicemail] Recording notification accepted:', delivery.id)
-    }
-
-    // Transcription normally arrives after the recording alert. Keep a separate
-    // acceptance marker and provider key so late and repeated callbacks are safe.
+    // Wait for the transcript and send one complete, duplicate-safe email.
     const transcriptEmailText = metadata.transcription_email_text
     if (
-      hasMeaningfulTranscription(transcriptEmailText ?? null) &&
+      hasMeaningfulTranscription(transcriptEmailText) &&
       !metadata.transcription_email_id
     ) {
       const { data: delivery, error: deliveryError } = await resend.emails.send(
         {
           from: voicemailFromEmail,
           to: voicemailNotifyEmail,
-          subject: `Voicemail transcription from ${normalizedPhone}`,
-          text: [
-            'Voicemail transcription',
-            `From: ${normalizedPhone}`,
-            '',
-            transcriptEmailText,
-            '',
-            `Listen and view the caller's conversation: ${adminBaseUrl}/admin/conversations?source=phone`,
-            `Recording: ${recordingSid}`,
-          ].join('\n'),
+          ...buildVoicemailEmail({
+            phone: normalizedPhone,
+            transcript: transcriptEmailText,
+            conversationUrl: `${adminBaseUrl}/admin/conversations?source=phone`,
+          }),
         },
-        { idempotencyKey: `voicemail-transcription/${recordingSid}` },
+        { idempotencyKey: `voicemail-transcription-v2/${recordingSid}` },
       )
       if (deliveryError || !delivery?.id)
         throw new Error(
           deliveryError?.message ||
             'Email provider did not accept the voicemail transcription',
         )
-      await mergeVoicemailCallback(supabase, callback, false, delivery.id)
+      await mergeVoicemailCallback(supabase, callback, true, delivery.id)
       console.log(
         '[Voicemail] Transcription notification accepted:',
         delivery.id,

@@ -81,14 +81,10 @@ describe('voicemail recording callbacks', () => {
     savedMessages = []
     storedPhone = phone
     vi.clearAllMocks()
-    mocks.send.mockReset().mockImplementation(async (email) => ({
-      data: {
-        id: email.subject.startsWith('Voicemail transcription')
-          ? 'transcript-email-1'
-          : 'email-1',
-      },
+    mocks.send.mockReset().mockResolvedValue({
+      data: { id: 'transcript-email-1' },
       error: null,
-    }))
+    })
     mocks.fetchCall
       .mockReset()
       .mockResolvedValue({ direction: 'inbound', from: phone })
@@ -154,25 +150,15 @@ describe('voicemail recording callbacks', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
 
-  it('resolves a callback without From to the stored caller and alerts without a transcript', async () => {
+  it('saves a recording-only callback without emailing the owner', async () => {
     expect((await POST(request())).status).toBe(200)
-    expect(mocks.rpc).toHaveBeenCalledWith(
-      'merge_voicemail_callback',
-      expect.objectContaining({
-        p_phone_number: phone,
-        p_recording_sid: recordingSid,
-        p_recording_completed: true,
-      }),
-    )
     expect(mocks.fetchCall).not.toHaveBeenCalled()
-    expect(mocks.send).toHaveBeenCalledTimes(1)
-    expect(mocks.send.mock.calls[0][1]).toEqual({
-      idempotencyKey: `voicemail-recording/${recordingSid}`,
+    expect(mocks.send).not.toHaveBeenCalled()
+    expect(savedMessages[0].metadata).toMatchObject({
+      recording_url: `${audio}.mp3`,
+      email_sent: false,
+      transcription_email_id: null,
     })
-    expect(mocks.send.mock.calls[0][0].html).not.toContain(
-      'did not leave a message',
-    )
-    expect(savedMessages[0].metadata?.email_sent).toBe(true)
     expect(mocks.writeCallLog).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -183,11 +169,12 @@ describe('voicemail recording callbacks', () => {
     )
   })
 
-  it('uses the Twilio inbound parent when the stored caller is absent', async () => {
+  it('resolves omitted From through the parent call without emailing a recording-only alert', async () => {
     storedPhone = null
     expect((await POST(request())).status).toBe(200)
     expect(mocks.fetchCall).toHaveBeenCalledOnce()
     expect(mocks.rpc.mock.calls[0][1].p_phone_number).toBe(phone)
+    expect(mocks.send).not.toHaveBeenCalled()
   })
 
   it('rejects unresolved identity rather than creating a plus-sign conversation', async () => {
@@ -202,33 +189,29 @@ describe('voicemail recording callbacks', () => {
     expect(mocks.writeCallLog).not.toHaveBeenCalled()
   })
 
-  it('stores an initial Record action but waits for final recording completion to alert', async () => {
-    expect((await POST(request({ RecordingStatus: '' }))).status).toBe(200)
+  it('waits through initial and completed recordings, then sends the late transcript exactly once', async () => {
+    await POST(request({ RecordingStatus: '' }))
+    await POST(request())
+    await POST(request())
     expect(mocks.send).not.toHaveBeenCalled()
-    expect((await POST(request())).status).toBe(200)
+    const transcript = {
+      RecordingStatus: '',
+      RecordingUrl: '',
+      RecordingDuration: '',
+      TranscriptionStatus: 'completed',
+      TranscriptionText: 'Please call me about cleaning.',
+    }
+    expect((await POST(request(transcript))).status).toBe(200)
+    await POST(request(transcript))
+    await POST(request())
     expect(mocks.send).toHaveBeenCalledOnce()
-  })
-
-  it('emails the late transcript once without repeating the recording alert or losing audio', async () => {
-    await POST(request())
-    await POST(request())
-    await POST(
-      request({
-        RecordingStatus: '',
-        RecordingUrl: '',
-        RecordingDuration: '',
-        TranscriptionStatus: 'completed',
-        TranscriptionText: 'Please call me about cleaning.',
-      }),
-    )
-    await POST(request())
-    expect(mocks.send).toHaveBeenCalledTimes(2)
-    expect(mocks.send.mock.calls[1]).toEqual([
+    expect(mocks.send.mock.calls[0]).toEqual([
       expect.objectContaining({
-        subject: `Voicemail transcription from ${phone}`,
+        subject: 'New voicemail from (719) 555-0123',
         text: expect.stringContaining('Please call me about cleaning.'),
+        html: expect.stringContaining(`href="tel:${phone}"`),
       }),
-      { idempotencyKey: `voicemail-transcription/${recordingSid}` },
+      { idempotencyKey: `voicemail-transcription-v2/${recordingSid}` },
     ])
     expect(savedMessages).toHaveLength(1)
     expect(savedMessages[0].metadata).toMatchObject({
@@ -240,16 +223,23 @@ describe('voicemail recording callbacks', () => {
     })
   })
 
-  it('emails a transcript already present when the recording completes', async () => {
+  it('sends one complete formatted email when the first callback already has a transcript', async () => {
     expect(
       (await POST(request({ TranscriptionText: 'Please book two rooms.' })))
         .status,
     ).toBe(200)
-    expect(mocks.send).toHaveBeenCalledTimes(2)
-    expect(mocks.send.mock.calls[1][0].text).toContain('Please book two rooms.')
+    expect(mocks.send).toHaveBeenCalledOnce()
+    const email = mocks.send.mock.calls[0][0]
+    expect(email.html).toContain('Call back (719) 555-0123')
+    expect(email.html).toContain(`href="tel:${phone}"`)
+    expect(email.html).toContain('Please book two rooms.')
+    expect(email.html).toContain('Listen to the recording')
+    expect(email.html).not.toContain('will appear')
+    expect(email.text).toContain('Please book two rooms.')
+    expect(email.text).toContain(`tel:${phone}`)
   })
 
-  it('emails a completed transcription even if the recording-completion callback was missed', async () => {
+  it('emails a completed transcript even if the recording-completion callback was missed', async () => {
     expect(
       (
         await POST(
@@ -261,53 +251,55 @@ describe('voicemail recording callbacks', () => {
         )
       ).status,
     ).toBe(200)
-    expect(
-      mocks.send.mock.calls.some(([email]) =>
-        email.text?.includes('Call me back.'),
-      ),
-    ).toBe(true)
+    expect(mocks.send).toHaveBeenCalledOnce()
+    expect(mocks.send.mock.calls[0][0].text).toContain('Call me back.')
   })
 
-  it.each(['', '(No transcription available)', 'none', '(none)'])(
-    'does not email a placeholder transcript: %s',
+  it.each([
+    '',
+    '  ',
+    '(No transcription available)',
+    'no transcription',
+    'none',
+    '(none)',
+  ])(
+    'sends no email for a blank or placeholder transcript: %s',
     async (TranscriptionText) => {
       await POST(request({ TranscriptionText }))
-      expect(mocks.send).toHaveBeenCalledOnce()
+      expect(mocks.send).not.toHaveBeenCalled()
       expect(savedMessages[0].metadata?.transcription_email_id).toBeNull()
     },
   )
 
-  it('puts caller-supplied transcript text in a plain-text email', async () => {
-    const transcript = '<img src=x onerror=alert(1)> & cleaning'
+  it('escapes caller-supplied HTML while preserving the plain-text transcript', async () => {
+    const transcript = '<img src=x onerror=alert(1)> & "cleaning"'
     await POST(request({ TranscriptionText: transcript }))
-    expect(mocks.send.mock.calls[1][0].text).toContain(transcript)
-    expect(mocks.send.mock.calls[1][0].html).toBeUndefined()
+    const email = mocks.send.mock.calls[0][0]
+    expect(email.text).toContain(transcript)
+    expect(email.html).not.toContain('<img src=x')
+    expect(email.html).toContain(
+      '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;cleaning&quot;',
+    )
   })
 
-  it('retries a rejected transcript without repeating the accepted recording alert', async () => {
-    await POST(request())
+  it('retries rejected email without marking accepted or changing the payload', async () => {
     mocks.send.mockResolvedValueOnce({
       data: null,
       error: { message: 'Try again' },
     })
-    const transcript = {
-      RecordingStatus: '',
-      TranscriptionStatus: 'completed',
-      TranscriptionText: 'Please call back.',
-    }
+    const transcript = { TranscriptionText: 'Please call back.' }
     expect((await POST(request(transcript))).status).toBe(500)
-    expect(savedMessages[0].metadata?.email_sent).toBe(true)
+    expect(savedMessages[0].metadata?.email_sent).toBe(false)
     expect(savedMessages[0].metadata?.transcription_email_id).toBeNull()
     expect((await POST(request(transcript))).status).toBe(200)
-    expect(mocks.send).toHaveBeenCalledTimes(3)
-    expect(mocks.send.mock.calls[1]).toEqual(mocks.send.mock.calls[2])
+    expect(mocks.send).toHaveBeenCalledTimes(2)
+    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
     expect(savedMessages[0].metadata?.transcription_email_id).toBe(
       'transcript-email-1',
     )
   })
 
-  it('keeps transcript retry content stable when saving acceptance fails and later callbacks change text', async () => {
-    await POST(request())
+  it('preserves a stable email on retry when acceptance persistence fails and later text changes', async () => {
     const merge = mocks.rpc.getMockImplementation()!
     let failMarker = true
     mocks.rpc.mockImplementation(async (name, args) => {
@@ -328,8 +320,8 @@ describe('voicemail recording callbacks', () => {
       (await POST(request({ TranscriptionText: 'Later corrected transcript' })))
         .status,
     ).toBe(200)
-    expect(mocks.send.mock.calls[1]).toEqual(mocks.send.mock.calls[2])
-    expect(mocks.send.mock.calls[2][0].text).toContain('First transcript')
+    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
+    expect(mocks.send.mock.calls[1][0].text).toContain('First transcript')
     expect(savedMessages[0].metadata?.transcription).toBe(
       'Later corrected transcript',
     )
@@ -338,98 +330,30 @@ describe('voicemail recording callbacks', () => {
     )
   })
 
-  it('uses the same transcript provider key and payload for overlapping callbacks', async () => {
-    await POST(request())
+  it('uses the same provider key and payload for overlapping transcript callbacks', async () => {
     const transcript = { TranscriptionText: 'Please call back.' }
     await Promise.all([POST(request(transcript)), POST(request(transcript))])
-    const transcriptCalls = mocks.send.mock.calls.slice(1)
-    expect(transcriptCalls).toHaveLength(2)
-    expect(transcriptCalls[0]).toEqual(transcriptCalls[1])
+    expect(mocks.send).toHaveBeenCalledTimes(2)
+    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
+    expect(savedMessages).toHaveLength(1)
     expect(savedMessages[0].metadata?.transcription_email_id).toBe(
       'transcript-email-1',
     )
   })
 
-  it('does not mark a transcript accepted without a provider email id', async () => {
-    await POST(request())
+  it('does not mark email accepted without a provider email id', async () => {
     mocks.send.mockResolvedValueOnce({ data: {}, error: null })
     expect(
       (await POST(request({ TranscriptionText: 'Call me.' }))).status,
     ).toBe(500)
+    expect(savedMessages[0].metadata?.email_sent).toBe(false)
     expect(savedMessages[0].metadata?.transcription_email_id).toBeNull()
   })
 
-  it('uses the same provider key and payload for overlapping completion callbacks', async () => {
-    await Promise.all([POST(request()), POST(request())])
-    expect(mocks.send).toHaveBeenCalledTimes(2)
-    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
-    expect(savedMessages).toHaveLength(1)
-    expect(savedMessages[0].metadata?.email_sent).toBe(true)
-  })
-
-  it('returns a retryable failure without marking sent when the provider rejects email', async () => {
-    mocks.send.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'Temporary outage' },
-    })
-    expect((await POST(request())).status).toBe(500)
-    expect(savedMessages[0].metadata?.email_sent).toBe(false)
-    expect((await POST(request())).status).toBe(200)
-    expect(mocks.send).toHaveBeenCalledTimes(2)
-    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
-    expect(savedMessages[0].metadata?.email_sent).toBe(true)
-  })
-
-  it('reuses the provider key if saving the success marker fails after acceptance', async () => {
-    const merge = mocks.rpc.getMockImplementation()!
-    let failMarker = true
-    mocks.rpc.mockImplementation(async (name, args) => {
-      if (args.p_email_sent && failMarker) {
-        failMarker = false
-        return {
-          data: null,
-          error: { message: 'Database temporarily unavailable' },
-        }
-      }
-      return merge(name, args)
-    })
-    expect((await POST(request())).status).toBe(500)
-    expect(savedMessages[0].metadata?.email_sent).toBe(false)
-    expect((await POST(request())).status).toBe(200)
-    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
-    expect(savedMessages[0].metadata?.email_sent).toBe(true)
-  })
-
-  it('does not mark sent when the provider returns no delivery id', async () => {
-    mocks.send.mockResolvedValue({ data: {}, error: null })
-    expect((await POST(request())).status).toBe(500)
-    expect(savedMessages[0].metadata?.email_sent).toBe(false)
-  })
-
-  it('reuses identical email content if a transcript arrives after a failed notification', async () => {
-    mocks.send.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'Try again' },
-    })
-    await POST(request())
+  it('rejects forged callbacks before database or email work', async () => {
     expect(
-      (
-        await POST(
-          request({
-            RecordingStatus: '',
-            RecordingUrl: '',
-            RecordingDuration: '',
-            TranscriptionText: 'A later transcript',
-            TranscriptionStatus: 'completed',
-          }),
-        )
-      ).status,
-    ).toBe(200)
-    expect(mocks.send.mock.calls[0]).toEqual(mocks.send.mock.calls[1])
-  })
-
-  it('rejects forged callbacks before any database or provider work', async () => {
-    expect((await POST(request({}, false))).status).toBe(403)
+      (await POST(request({ TranscriptionText: 'Call me.' }, false))).status,
+    ).toBe(403)
     expect(mocks.from).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()

@@ -320,7 +320,11 @@ describe('durable notification delivery', () => {
 function fixture(
   options: {
     pendingAlert?: boolean
-    emailFailed?: boolean
+    transcript?: string
+    transcriptAccepted?: boolean
+    recordingEmailAccepted?: boolean
+    recordingCompleted?: boolean
+    legacyTranscript?: boolean
     providerError?: boolean
     capped?: boolean
     missingConversation?: boolean
@@ -360,8 +364,16 @@ function fixture(
                         {
                           metadata: {
                             recording_sid: recording.sid,
-                            recording_completed: true,
-                            email_sent: !options.emailFailed,
+                            recording_completed:
+                              options.recordingCompleted ?? true,
+                            email_sent: options.recordingEmailAccepted ?? true,
+                            transcription: options.transcript,
+                            transcription_email_text: options.legacyTranscript
+                              ? null
+                              : options.transcript,
+                            transcription_email_id: options.transcriptAccepted
+                              ? 'email-1'
+                              : null,
                           },
                         },
                       ],
@@ -472,11 +484,13 @@ function fixture(
 describe('independent scheduled monitor', () => {
   it('sends valid JSON containment through the real query builder for a saved voicemail', async () => {
     const { db, client } = fixture({ realConversationQuery: true })
-    expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject({
-      callsChecked: 1,
-      issues: 0,
-      errors: [],
-    })
+    expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject(
+      {
+        callsChecked: 1,
+        issues: 0,
+        errors: [],
+      },
+    )
     expect(mocks.send).not.toHaveBeenCalled()
   })
   it('preserves Supabase error fields, the failed check, and the last failure after recovery', async () => {
@@ -603,14 +617,62 @@ describe('independent scheduled monitor', () => {
       expect.stringContaining('correct caller conversation'),
     )
   })
-  it('alerts when the owner voicemail notification was not delivered after grace', async () => {
-    const { db, client } = fixture({ emailFailed: true })
+  it('alerts when a ready transcript email has not been accepted, even if a legacy recording email was sent', async () => {
+    const { db, client } = fixture({ transcript: 'Please call me back.' })
     expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject(
       { issues: 1, alertsSent: 1 },
     )
     expect(mocks.send).toHaveBeenCalledWith(
-      expect.stringContaining('notification was not confirmed'),
+      expect.stringContaining('transcription email was not accepted'),
     )
+  })
+  it.each([undefined, '', '(No transcription available)', 'none'])(
+    'does not demand an email while waiting for a transcript: %s',
+    async (transcript) => {
+      const { db, client } = fixture({
+        transcript,
+        recordingEmailAccepted: false,
+      })
+      expect(
+        await runPhoneHealthCheck(db, client, parent.to, now),
+      ).toMatchObject({ issues: 0, errors: [] })
+      expect(mocks.send).not.toHaveBeenCalled()
+    },
+  )
+  it('accepts an email with its persisted transcript provider id', async () => {
+    const { db, client } = fixture({
+      transcript: 'Call me.',
+      transcriptAccepted: true,
+    })
+    expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject(
+      { issues: 0, errors: [] },
+    )
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+  it('checks legacy raw transcripts and does not require a local recording-completion marker', async () => {
+    const { db, client } = fixture({
+      transcript: 'Call me.',
+      legacyTranscript: true,
+      recordingCompleted: false,
+    })
+    expect(await runPhoneHealthCheck(db, client, parent.to, now)).toMatchObject(
+      { issues: 1, errors: [] },
+    )
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.stringContaining('transcription email was not accepted'),
+    )
+  })
+  it('allows callback grace before checking a ready transcript email', async () => {
+    const { db, client } = fixture({ transcript: 'Call me.' })
+    expect(
+      await runPhoneHealthCheck(
+        db,
+        client,
+        parent.to,
+        new Date('2026-10-21T18:04:00Z'),
+      ),
+    ).toMatchObject({ issues: 0, errors: [] })
+    expect(mocks.send).not.toHaveBeenCalled()
   })
   it('flags missing or duplicate forwarding targets before a call is missed', async () => {
     const { db, client } = fixture()
