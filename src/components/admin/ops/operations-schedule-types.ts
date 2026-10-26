@@ -12,6 +12,12 @@ export type QueuedVisit = {
   sequence: number | null
   /** Minutes, so a parked job keeps the length it was booked for. */
   durationMinutes?: number
+  contact?: {
+    phone: string | null
+    email: string | null
+    blocked: boolean
+    emailOptOut: boolean
+  }
 }
 
 export type StaffMember = {

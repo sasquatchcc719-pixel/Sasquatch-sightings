@@ -96,6 +96,7 @@ type Conversation = {
 
 type ConversationsViewProps = {
   conversations: Conversation[]
+  initialPhone?: string
 }
 
 // Build initials from a name or phone number
@@ -131,12 +132,23 @@ function getAvatarColor(phone: string): string {
 
 export function ConversationsView({
   conversations: initialConversations,
+  initialPhone,
 }: ConversationsViewProps) {
+  const normalized = (value: string) =>
+    value.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '')
+  const initialConversation = initialPhone
+    ? (initialConversations.find(
+        (conversation) =>
+          normalized(conversation.phone_number) === normalized(initialPhone),
+      ) ?? null)
+    : null
   const router = useRouter()
   const queryClient = useQueryClient()
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations)
-  const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null)
+  const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(
+    initialConversation,
+  )
   const [filterStatus, setFilterStatus] = useState<
     'all' | 'active' | 'completed' | 'escalated'
   >('all')
@@ -146,8 +158,10 @@ export function ConversationsView({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [composePhone, setComposePhone] = useState('')
+  const [composeOpen, setComposeOpen] = useState(
+    Boolean(initialPhone && !initialConversation),
+  )
+  const [composePhone, setComposePhone] = useState(initialPhone ?? '')
   const [composeMessage, setComposeMessage] = useState('')
   const [composeSending, setComposeSending] = useState(false)
   const [harryDraftLoading, setHarryDraftLoading] = useState(false)

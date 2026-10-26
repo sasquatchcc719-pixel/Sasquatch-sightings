@@ -601,3 +601,112 @@ describe('unscheduled job deletion', () => {
     expect(confirmMock).not.toHaveBeenCalled()
   })
 })
+
+describe('unscheduled customer contact', () => {
+  function setup(
+    contact = {
+      phone: '+1 (555) 555-0100',
+      email: 'judy@example.test',
+      blocked: false,
+      emailOptOut: false,
+    },
+  ) {
+    const fetchMock = mockSchedule(1, [])
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/ops/restoration/projects')
+        return { ok: true, json: async () => ({ projects: [] }) }
+      if (url === '/api/admin/ops/schedule/parked')
+        return {
+          ok: true,
+          json: async () => ({
+            appointments: [
+              {
+                id: 'parked-job',
+                duration_minutes: 120,
+                contact,
+                ops_customers: { full_name: 'Judy Brown', business_name: null },
+                ops_service_addresses: {
+                  street_1: '7711 Barkway Ct',
+                  city: 'Lone Tree',
+                },
+              },
+            ],
+          }),
+        }
+      return original(url)
+    })
+    render(<OperationsSchedule />)
+    return fetchMock
+  }
+  it('opens contact choices without arming a booking, then explicitly places the existing job', async () => {
+    const fetchMock = setup()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Judy Brown.*needs a date/ }),
+    )
+    const panel = screen.getByRole('region', { name: 'Contact Judy Brown' })
+    expect(
+      within(panel).getByRole('link', { name: 'Call Judy Brown' }),
+    ).toHaveAttribute('href', 'tel:+15555550100')
+    expect(
+      within(panel).getByRole('link', { name: 'Text Judy Brown' }),
+    ).toHaveAttribute('href', '/admin/conversations?phone=%2B15555550100')
+    expect(
+      within(panel).getByRole('link', { name: 'Email Judy Brown' }),
+    ).toHaveAttribute('href', 'mailto:judy@example.test')
+    expect(screen.queryByText(/Placing:/)).not.toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.every(
+        (call) => !call[1]?.method || call[1].method === 'GET',
+      ),
+    ).toBe(true)
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Place on calendar' }),
+    )
+    expect(screen.getByText(/Placing: Judy Brown/)).toBeVisible()
+    expect(
+      screen.queryByRole('region', { name: 'Contact Judy Brown' }),
+    ).not.toBeInTheDocument()
+  })
+  it('hides contact actions for a blacklisted customer without removing scheduling controls', async () => {
+    setup({
+      phone: '+15555550100',
+      email: 'judy@example.test',
+      blocked: true,
+      emailOptOut: false,
+    })
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Judy Brown.*needs a date/ }),
+    )
+    const panel = screen.getByRole('region', { name: 'Contact Judy Brown' })
+    expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(panel).getByText(/customer is blacklisted/)).toBeVisible()
+    expect(
+      within(panel).getByRole('button', { name: 'Place on calendar' }),
+    ).toBeEnabled()
+  })
+  it('respects email suppression while keeping the phone actions available', async () => {
+    setup({
+      phone: '+15555550100',
+      email: 'judy@example.test',
+      blocked: false,
+      emailOptOut: true,
+    })
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Judy Brown.*needs a date/ }),
+    )
+    const panel = screen.getByRole('region', { name: 'Contact Judy Brown' })
+    expect(
+      within(panel).queryByRole('link', { name: 'Email Judy Brown' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(panel).getByRole('link', { name: 'Call Judy Brown' }),
+    ).toBeVisible()
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Close contact' }),
+    )
+    expect(
+      screen.queryByRole('region', { name: 'Contact Judy Brown' }),
+    ).not.toBeInTheDocument()
+  })
+})

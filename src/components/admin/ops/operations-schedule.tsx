@@ -20,6 +20,9 @@ import {
   Trash2,
   Truck,
   Droplets,
+  Phone,
+  Mail,
+  MessageSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -300,6 +303,7 @@ export function OperationsSchedule() {
   const [deletingQueuedVisitId, setDeletingQueuedVisitId] = useState<
     string | null
   >(null)
+  const [contactVisit, setContactVisit] = useState<QueuedVisit | null>(null)
 
   const loadQueuedVisits = useCallback(async () => {
     try {
@@ -358,6 +362,7 @@ export function OperationsSchedule() {
               visitType: 'needs a date',
               sequence: null,
               durationMinutes: job.duration_minutes ?? 120,
+              contact: job.contact,
             })
           }
         }
@@ -398,6 +403,7 @@ export function OperationsSchedule() {
         current.filter((queued) => queued.id !== visit.id),
       )
       setArmedVisit((current) => (current?.id === visit.id ? null : current))
+      setContactVisit((current) => (current?.id === visit.id ? null : current))
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
@@ -2113,7 +2119,8 @@ export function OperationsSchedule() {
             </div>
             {!armedVisit ? (
               <p className="mb-2 text-xs text-sky-900/70">
-                Drag one onto the calendar, or tap it and then tap a slot.
+                Tap a customer to contact them or choose a new date. You can
+                also drag a card onto the calendar.
               </p>
             ) : null}
             {armedVisit ? (
@@ -2124,6 +2131,101 @@ export function OperationsSchedule() {
                 {armedVisit.sequence ? ` ${armedVisit.sequence}` : ''} — tap a
                 slot
               </p>
+            ) : null}
+            {contactVisit ? (
+              <section
+                aria-label={`Contact ${contactVisit.label}`}
+                className="mb-3 rounded-xl border border-cyan-400/30 bg-slate-950 p-4 text-slate-100"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{contactVisit.label}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {contactVisit.place}
+                    </p>
+                    <p className="mt-2 text-sm break-all">
+                      {contactVisit.contact?.phone || 'No phone saved'}
+                    </p>
+                    <p className="text-sm break-all">
+                      {contactVisit.contact?.email || 'No email saved'}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setContactVisit(null)}
+                  >
+                    Close contact
+                  </Button>
+                </div>
+                {contactVisit.contact?.blocked ? (
+                  <p className="mt-3 text-sm text-amber-200">
+                    Contact blocked: this customer is blacklisted.
+                  </p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {contactVisit.contact?.phone?.replace(/\D/g, '') ? (
+                      <>
+                        <Button asChild className="min-h-11 gap-2">
+                          <a
+                            href={`tel:${contactVisit.contact.phone.replace(/[^+\d]/g, '')}`}
+                            aria-label={`Call ${contactVisit.label}`}
+                          >
+                            <Phone className="h-4 w-4" />
+                            Call
+                          </a>
+                        </Button>
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="min-h-11 gap-2"
+                        >
+                          <Link
+                            href={`/admin/conversations?phone=${encodeURIComponent(contactVisit.contact.phone.replace(/[^+\d]/g, ''))}`}
+                            aria-label={`Text ${contactVisit.label}`}
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                            Text
+                          </Link>
+                        </Button>
+                      </>
+                    ) : null}
+                    {contactVisit.contact?.email &&
+                    !contactVisit.contact.emailOptOut ? (
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="min-h-11 gap-2"
+                      >
+                        <a
+                          href={`mailto:${contactVisit.contact.email}`}
+                          aria-label={`Email ${contactVisit.label}`}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Email
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+                {contactVisit.contact?.emailOptOut ? (
+                  <p className="mt-2 text-xs text-amber-200">
+                    Email is turned off for this customer.
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 min-h-11 gap-2"
+                  onClick={() => {
+                    setArmedVisit(contactVisit)
+                    setContactVisit(null)
+                  }}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Place on calendar
+                </Button>
+              </section>
             ) : null}
             <div className="flex flex-wrap gap-2">
               {queuedVisits.map((visit) => (
@@ -2139,20 +2241,24 @@ export function OperationsSchedule() {
                     draggingYOffsetRef.current = 0
                     // Clear any armed card so a drag and a tap cannot both fire.
                     setArmedVisit(null)
+                    setContactVisit(null)
                   }}
                   className={`flex overflow-hidden rounded-lg border text-sm transition ${
-                    armedVisit?.id === visit.id
+                    armedVisit?.id === visit.id || contactVisit?.id === visit.id
                       ? 'border-sky-600 bg-sky-600 text-white'
                       : 'border-sky-300 bg-white text-slate-800 hover:bg-sky-100'
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() =>
-                      setArmedVisit((current) =>
-                        current?.id === visit.id ? null : visit,
-                      )
-                    }
+                    onClick={() => {
+                      setArmedVisit(null)
+                      if (visit.source === 'appointment')
+                        setContactVisit((current) =>
+                          current?.id === visit.id ? null : visit,
+                        )
+                      else setArmedVisit(visit)
+                    }}
                     className="min-w-0 flex-1 px-3 py-2 text-left"
                   >
                     <span className="font-medium">{visit.label}</span>
@@ -2172,7 +2278,8 @@ export function OperationsSchedule() {
                     disabled={deletingQueuedVisitId === visit.id}
                     onClick={() => void deleteQueuedVisit(visit)}
                     className={`flex min-h-11 w-11 shrink-0 items-center justify-center border-l transition disabled:cursor-wait disabled:opacity-60 ${
-                      armedVisit?.id === visit.id
+                      armedVisit?.id === visit.id ||
+                      contactVisit?.id === visit.id
                         ? 'border-white/30 text-white hover:bg-white/15'
                         : 'border-sky-200 text-red-600 hover:bg-red-50 hover:text-red-700'
                     }`}

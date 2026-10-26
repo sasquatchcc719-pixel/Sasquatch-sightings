@@ -3,12 +3,15 @@ import { ConversationsView } from '@/components/admin/conversations-view'
 import { getCustomerContextForConversations } from '@/lib/ops/conversation-customer-context'
 
 interface PageProps {
-  searchParams: Promise<{ source?: string }>
+  searchParams: Promise<{ source?: string; phone?: string }>
 }
 
 export default async function ConversationsPage({ searchParams }: PageProps) {
   const params = await searchParams
   const source = params.source
+  const initialPhone = /^\+?\d{7,15}$/.test(params.phone ?? '')
+    ? params.phone
+    : undefined
   const supabase = createAdminClient()
 
   // Fetch all conversations with linked lead info
@@ -184,7 +187,11 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
         <p className="text-muted-foreground">{subtitle}</p>
       </div>
 
-      <ConversationsView conversations={conversations} />
+      <ConversationsView
+        key={initialPhone ?? 'all'}
+        conversations={conversations}
+        initialPhone={initialPhone}
+      />
     </div>
   )
 }
