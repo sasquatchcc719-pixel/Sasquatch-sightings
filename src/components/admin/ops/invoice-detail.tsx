@@ -1295,9 +1295,9 @@ export function InvoiceDetail({
     }
   }
 
-  // In-person Tap to Pay: hand the amount to the Square POS app, which taps
-  // the customer's card and switches back to the square-pos-return route.
-  const chargeByTap = async () => {
+  // Hand the amount to Square for Tap to Pay or manual card entry, then
+  // return through the existing payment confirmation route.
+  const chargeWithSquare = async () => {
     const apptId = unwrapRelation(invoice?.ops_appointments)?.id
     if (!apptId) {
       setPaymentLinkFeedback({
@@ -2376,7 +2376,7 @@ export function InvoiceDetail({
                   <Button
                     className="flex-1 gap-2 bg-emerald-500 text-white hover:bg-emerald-600"
                     disabled={startingTap || paymentLinkLoading !== null}
-                    onClick={() => void chargeByTap()}
+                    onClick={() => void chargeWithSquare()}
                   >
                     {startingTap ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2402,6 +2402,24 @@ export function InvoiceDetail({
                         : 'Text Link'}
                   </Button>
                 </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 gap-1.5 border-neutral-600 bg-transparent text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                  disabled={startingTap || paymentLinkLoading !== null}
+                  onClick={() => void chargeWithSquare()}
+                  aria-describedby="square-manual-entry-help"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  Manual Card Entry
+                </Button>
+                <p
+                  id="square-manual-entry-help"
+                  className="mt-1 text-xs text-neutral-400"
+                >
+                  For phone payments, choose Manual Card Entry in Square.
+                </p>
                 <PaymentTextLastSent send={lastSquareText} tone="dark" />
                 {paymentLinkFeedback?.type === 'square' ? (
                   <p
