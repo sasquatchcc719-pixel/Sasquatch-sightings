@@ -18,6 +18,6 @@ After promotion, verify the custom domain independently:
 pnpm mcp:verify-release -- https://sightings.sasquatchcarpet.com
 ```
 
-Both checks must report `sasquatch-sightings-read@1.8.0` and 49 tools. Do not refresh connector metadata until both checks pass. If the live check later fails, inspect the current domain-to-deployment mapping before changing connector metadata; a newer deployment may have replaced the alias.
+Both checks must report `sasquatch-sightings-read@1.8.1` and 50 tools. Do not refresh connector metadata until both checks pass. If the live check later fails, inspect the current domain-to-deployment mapping before changing connector metadata; a newer deployment may have replaced the alias.
 
 Commercial workspace verification is described in `HARRY-COMMERCIAL-WORKSPACE.md`. Keep outgoing Outreach email and real measuring creation off during connector checks.

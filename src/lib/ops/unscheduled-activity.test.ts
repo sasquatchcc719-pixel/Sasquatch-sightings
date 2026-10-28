@@ -71,6 +71,7 @@ function fixture(
         subject: 'Cleaning estimate',
       },
     ],
+    ops_customer_email_history: [],
     ...overrides,
   }
   const queries: Record<string, Record<string, ReturnType<typeof vi.fn>>> = {}
@@ -118,6 +119,45 @@ it('matches stable customer IDs and restricts phone fallback to unlinked records
   expect(f.queries.conversations.or).toHaveBeenCalledWith(
     'ops_customer_id.eq.customer-1,and(ops_customer_id.is.null,phone_number.in.(7195550100,17195550100,+17195550100))',
   )
+})
+it('includes both sides of imported Gmail exchanges at their original times', async () => {
+  const f = fixture({
+    ops_customer_email_history: [
+      {
+        id: 'reply',
+        occurred_at: '2026-10-26T18:33:28Z',
+        direction: 'inbound',
+        subject: 'Re: Cleaning',
+        body_text: 'After November 1 please',
+        message_id: '1a1798436c57eef1',
+      },
+      {
+        id: 'answer',
+        occurred_at: '2026-10-26T19:01:43Z',
+        direction: 'outbound',
+        subject: 'Re: Cleaning',
+        body_text: 'Which day would work?',
+        message_id: '1a17997073ad944e',
+      },
+    ],
+  })
+  const { events } = await loadUnscheduledActivity(f.db, 'job')
+  expect(
+    events.filter((e) => e.id.startsWith('gmail:')).map((e) => [e.title, e.at]),
+  ).toEqual([
+    ['Outgoing email · Gmail', '2026-10-26T19:01:43Z'],
+    ['Customer email received · Gmail', '2026-10-26T18:33:28Z'],
+  ])
+  expect(f.queries.ops_customer_email_history.eq).toHaveBeenCalledWith(
+    'customer_id',
+    'customer-1',
+  )
+  await expect(
+    loadUnscheduledActivity(
+      fixture({}, 'ops_customer_email_history').db,
+      'job',
+    ),
+  ).rejects.toThrow('Database unavailable')
 })
 it('surfaces missing jobs and partial history failures', async () => {
   const missing = fixture({ ops_appointments: null })

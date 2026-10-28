@@ -34,7 +34,7 @@ export async function loadUnscheduledActivity(
     : []
   const match = (column: string, customerColumn: string) =>
     `${customerColumn}.eq.${job.customer_id}${phones.length ? `,and(${customerColumn}.is.null,${column}.in.(${phones.join(',')}))` : ''}`
-  const [history, sms, conversations, calls, emails] = await Promise.all([
+  const [history, sms, conversations, calls, emails, gmail] = await Promise.all([
     db
       .from('ops_unscheduled_follow_up_events')
       .select(
@@ -71,8 +71,14 @@ export async function loadUnscheduledActivity(
       .eq('customer_id', job.customer_id)
       .order('sent_at', { ascending: false })
       .limit(100),
+    db
+      .from('ops_customer_email_history')
+      .select('id, occurred_at, direction, subject, body_text, message_id')
+      .eq('customer_id', job.customer_id)
+      .order('occurred_at', { ascending: false })
+      .limit(100),
   ])
-  for (const result of [history, sms, conversations, calls, emails]) {
+  for (const result of [history, sms, conversations, calls, emails, gmail]) {
     if (result.error) throw result.error
   }
   const events: UnscheduledActivity[] = [
@@ -158,6 +164,17 @@ export async function loadUnscheduledActivity(
       title: `Outgoing email · ${row.status || 'status unknown'}`,
       detail: [row.subject, row.error_message].filter(Boolean).join(' · '),
       actor: null,
+    })
+  for (const row of gmail.data ?? [])
+    events.push({
+      id: `gmail:${row.id}`,
+      at: row.occurred_at,
+      title:
+        row.direction === 'inbound'
+          ? 'Customer email received · Gmail'
+          : 'Outgoing email · Gmail',
+      detail: `${row.subject}\n\n${row.body_text}`,
+      actor: `Imported Gmail evidence · Message ${row.message_id}`,
     })
   events.sort(
     (a, b) => (b.at ? Date.parse(b.at) : 0) - (a.at ? Date.parse(a.at) : 0),

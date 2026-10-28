@@ -4,6 +4,10 @@ import {
   saveUnscheduledFollowUpInput,
 } from '@/lib/ops/unscheduled-follow-up'
 import type { z } from 'zod'
+import {
+  recordUnscheduledEmail,
+  recordUnscheduledEmailInput,
+} from '@/lib/ops/unscheduled-email'
 import { assertSupportedGapEstimate } from '@/lib/ops/gap-offer'
 import {
   FirstMessageOutcomeError,
@@ -690,6 +694,20 @@ function requireScope(actor: McpActor, scope: string) {
   if (!actor.scopes.includes(scope)) {
     throw new Error(`This OAuth grant does not include ${scope}`)
   }
+}
+
+export async function recordUnscheduledEmailEvidence(
+  input: z.infer<typeof recordUnscheduledEmailInput>,
+  actor: McpActor,
+  supplied?: Db,
+) {
+  requireScope(actor, 'business:write')
+  return recordUnscheduledEmail(
+    client(supplied),
+    input,
+    actor.subject,
+    `Connected assistant · ${actor.label}`,
+  )
 }
 
 export async function setUnscheduledFollowUp(

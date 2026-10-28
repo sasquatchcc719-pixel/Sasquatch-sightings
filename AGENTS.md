@@ -194,6 +194,10 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ## 11. Project Learnings
 
+- For append-only evidence tables, revoke Supabase’s default service_role privileges before granting SELECT/INSERT; verify UPDATE and DELETE are denied.
+
+- Customer contact history must check Gmail as well as SMS; preserve original inbound and outbound email timestamps and provider IDs, and never imply the SMS conversation is the whole exchange.
+
 - Line-item reordering must visibly move the whole card under the mouse or finger, with a touch-sized corner grip; preserve form values and normal scrolling outside the grip.
 
 - Show the wall-tile cleaner facing upward, with the operator’s forearm entering from the left and the hoses trailing down.

@@ -231,7 +231,8 @@ export function UnscheduledFollowUpEditor({
         </div>
         <p className="mb-3 text-xs text-slate-400">
           Latest 100 recorded events · Mountain Time. Customer communications
-          can include other jobs.
+          can include other jobs. Gmail exchanges appear when Harry records
+          them; this is not a live inbox.
         </p>
         {loading ? (
           <p className="text-sm text-slate-400">Loading contact history…</p>
