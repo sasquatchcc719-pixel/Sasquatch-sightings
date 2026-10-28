@@ -15,6 +15,11 @@ export const saveUnscheduledFollowUpInput = z
   .object({
     appointment_id: z.string().uuid(),
     next_follow_up_date: followUpDateSchema,
+    next_follow_up_time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .nullable()
+      .optional(),
     expected_updated_at: z.string().datetime({ offset: true }),
     review_note: z.string().trim().min(1).max(2000).optional(),
   })
@@ -23,6 +28,7 @@ export const saveUnscheduledFollowUpInput = z
 export const unscheduledFollowUpSchema = z
   .object({
     next_follow_up_date: z.string(),
+    next_follow_up_time: z.string().nullable().optional(),
     due: z.boolean(),
     reviewed_at: z.string().nullable(),
     review_note: z.string().nullable(),
@@ -42,7 +48,18 @@ export function projectUnscheduledFollowUp(
   const today = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
   return {
     next_follow_up_date: row.next_follow_up_date,
-    due: row.next_follow_up_date <= today,
+    next_follow_up_time: row.next_follow_up_time?.slice(0, 5) ?? null,
+    due:
+      row.next_follow_up_date < today ||
+      (row.next_follow_up_date === today &&
+        (!row.next_follow_up_time ||
+          row.next_follow_up_time.slice(0, 5) <=
+            now.toLocaleTimeString('en-GB', {
+              timeZone: 'America/Denver',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            }))),
     reviewed_at: row.reviewed_at,
     review_note: row.review_note,
     updated_at: row.updated_at,
@@ -54,6 +71,7 @@ export async function saveUnscheduledFollowUp(
   db: SupabaseClient,
   value: z.infer<typeof saveUnscheduledFollowUpInput>,
   actorId: string,
+  actorLabel = 'Staff',
 ) {
   const input = saveUnscheduledFollowUpInput.parse(value)
   const today = new Date().toLocaleDateString('en-CA', {
@@ -66,6 +84,10 @@ export async function saveUnscheduledFollowUp(
     .from('ops_unscheduled_follow_ups')
     .update({
       next_follow_up_date: input.next_follow_up_date,
+      // Date-only callers clear a previous exact time instead of carrying it to another day.
+      next_follow_up_time: input.next_follow_up_time ?? null,
+      updated_by: actorId,
+      updated_by_label: actorLabel,
       updated_at: now,
       ...(input.review_note
         ? {
@@ -78,7 +100,9 @@ export async function saveUnscheduledFollowUp(
     .eq('appointment_id', input.appointment_id)
     .eq('updated_at', input.expected_updated_at)
     .is('resolved_at', null)
-    .select('next_follow_up_date, reviewed_at, review_note, updated_at')
+    .select(
+      'next_follow_up_date, next_follow_up_time, reviewed_at, review_note, updated_at',
+    )
     .maybeSingle()
   if (error) throw error
   if (!data)

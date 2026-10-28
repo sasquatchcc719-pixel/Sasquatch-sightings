@@ -1205,7 +1205,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'set_unscheduled_follow_up',
     title: 'Record an unscheduled job follow-up',
     description:
-      'Save an internal review note and next America/Denver follow-up date for one parked job. Requires business:write and the current follow_up.updated_at version. Never sends a message or changes the appointment. Re-read if the version changed or the job has been rescheduled.',
+      'Save an internal review note and next America/Denver follow-up date and optional HH:mm next_follow_up_time for one parked job. Every save is retained in its follow-up history. Record the actual outcome and planned next attempt; a review alone is not a contact attempt. Requires business:write and the current follow_up.updated_at version. Never sends a message or changes the appointment. Re-read if the version changed or the job has been rescheduled.',
     inputSchema: saveUnscheduledFollowUpInput.extend({
       review_note: z.string().trim().min(1).max(2000),
     }),

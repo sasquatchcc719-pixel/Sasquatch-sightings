@@ -21,3 +21,11 @@ The recurring schedule is not active until Harry confirms creation. If the nativ
 - Focused Vitest suites cover Denver due boundaries, valid dates, optimistic locking, scope checks, calendar controls and failed saves.
 - `node scripts/test-unscheduled-follow-up-db.mjs /absolute/path/to/pglite/dist/index.js` uses only synthetic in-memory PostgreSQL. It covers initial backfill, DST, parking, rescheduling, re-parking and private grants. It reads no environment file or production credentials.
 - Production verification uses read-only calendar/MCP reads and checks that every currently parked appointment has an unresolved follow-up row. No customer messages or bookings are used as tests.
+
+## Contact history and exact next-attempt time
+
+Click an unscheduled appointment to see Harry’s next saved plan, an optional Mountain time, and the latest 100 recorded customer communication and follow-up events. The history reads existing SMS delivery logs, linked conversations, phone-matched calls and operational email logs. Delivery failures and inbound calls retain their factual labels; customer communications may relate to other jobs. Missing timestamps remain unknown. Opening a card is read-only.
+
+Every dashboard or MCP follow-up save now appends a private `ops_unscheduled_follow_up_events` entry in the same transaction as the plan update. Reviews and plan changes are distinct from actual contact attempts. Earlier overwritten notes cannot be recovered; the migration preserves the previously saved latest review. New parking cycles clear old exact times but retain the event history.
+
+Harry can pass optional `next_follow_up_time` in 24-hour `HH:mm` America/Denver together with `next_follow_up_date` and the current version to `set_unscheduled_follow_up`. Record the actual outcome in `review_note` and the intended next attempt after each review. Date-only clients remain supported and clear any prior exact time. The UI exposes overdue or missing plans; it does not claim the separate Harry recurring task is active.

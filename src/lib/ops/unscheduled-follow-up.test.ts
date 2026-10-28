@@ -95,3 +95,34 @@ it('requires a write scope and review note before Harry changes the date', async
   ).rejects.toThrow('review note')
   expect(f.from).not.toHaveBeenCalled()
 })
+
+it('uses saved Mountain wall time on the due day, including after DST ends', () => {
+  const timed = { ...row, next_follow_up_time: '09:30:00' }
+  expect(
+    projectUnscheduledFollowUp(timed, new Date('2026-11-01T16:29:00Z'))?.due,
+  ).toBe(false)
+  expect(
+    projectUnscheduledFollowUp(timed, new Date('2026-11-01T16:30:00Z'))?.due,
+  ).toBe(true)
+})
+it('validates a planned time and records the editor identity atomically with the plan', async () => {
+  expect(
+    saveUnscheduledFollowUpInput.safeParse({
+      ...input,
+      next_follow_up_time: '25:30',
+    }).success,
+  ).toBe(false)
+  const f = fixture()
+  await saveUnscheduledFollowUp(
+    f.db,
+    { ...input, next_follow_up_time: '14:30' },
+    'owner',
+    'Connected assistant · Harry',
+  )
+  expect(f.q.update).toHaveBeenCalledWith(
+    expect.objectContaining({
+      next_follow_up_time: '14:30',
+      updated_by_label: 'Connected assistant · Harry',
+    }),
+  )
+})

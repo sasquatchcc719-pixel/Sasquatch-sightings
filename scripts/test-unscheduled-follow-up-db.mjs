@@ -20,6 +20,15 @@ try {
       'utf8',
     ),
   )
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261028221424_unscheduled_contact_history.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  )
   const rows = await db.query(`select * from ops_unscheduled_follow_ups`)
   assert.equal(rows.rows.length, 1)
   const today = (
@@ -54,6 +63,15 @@ try {
     'PASS: unrelated appointment edits preserve staff follow-up dates',
   )
   await db.exec(
+    `update ops_unscheduled_follow_ups set next_follow_up_time='14:30', reviewed_at=clock_timestamp(), review_note='Spoke with customer; try again Friday' where appointment_id='10000000-0000-4000-8000-000000000003'`,
+  )
+  const notesBefore = (
+    await db.query(
+      `select count(*)::int n from ops_unscheduled_follow_up_events where note='Spoke with customer; try again Friday'`,
+    )
+  ).rows[0].n
+  assert.equal(notesBefore, 1)
+  await db.exec(
     `update ops_appointments set parked_at=null where id='10000000-0000-4000-8000-000000000003'`,
   )
   row = (
@@ -76,6 +94,21 @@ try {
   assert.equal(row.next_follow_up_date.toISOString().slice(0, 10), '2027-03-13')
   assert.equal(row.resolved_at, null)
   assert.equal(row.review_note, null)
+  assert.equal(row.next_follow_up_time, null)
+  const history = (
+    await db.query(
+      `select event_type,note from ops_unscheduled_follow_up_events where appointment_id='10000000-0000-4000-8000-000000000003' order by occurred_at`,
+    )
+  ).rows
+  assert.ok(history.some((e) => e.event_type === 'resolved'))
+  assert.equal(history.filter((e) => e.event_type === 'reopened').length, 1)
+  assert.equal(history.length, 5)
+  assert.ok(
+    history.some((e) => e.note === 'Spoke with customer; try again Friday'),
+  )
+  console.log(
+    'PASS: review history survives rescheduling and re-parking; exact-time plans reset',
+  )
   console.log('PASS: re-parking begins a new follow-up cycle')
   const access = (
     await db.query(`select has_table_privilege('anon','ops_unscheduled_follow_ups','select') a,
@@ -83,6 +116,12 @@ try {
     has_table_privilege('service_role','ops_unscheduled_follow_ups','update') c,
     has_function_privilege('authenticated','sync_unscheduled_follow_up()','execute') d`)
   ).rows[0]
+  const historyAccess = (
+    await db.query(
+      `select has_table_privilege('authenticated','ops_unscheduled_follow_up_events','select') r, has_table_privilege('service_role','ops_unscheduled_follow_up_events','update') u, has_table_privilege('service_role','ops_unscheduled_follow_up_events','select') s`,
+    )
+  ).rows[0]
+  assert.deepEqual(historyAccess, { r: false, u: false, s: true })
   assert.deepEqual(access, { a: false, b: false, c: true, d: false })
   console.log(
     'PASS: table and trigger function are private to server operations',

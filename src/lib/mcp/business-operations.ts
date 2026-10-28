@@ -121,7 +121,7 @@ export async function listUnscheduledAppointments(
     .select(
       `id, customer_id, appointment_date, start_time, end_time, status,
        quoted_total, kind, internal_notes, parked_at, created_at, updated_at,
-       follow_up:ops_unscheduled_follow_ups (next_follow_up_date, reviewed_at, review_note, updated_at, resolved_at),
+       follow_up:ops_unscheduled_follow_ups (next_follow_up_date, next_follow_up_time, reviewed_at, review_note, updated_at, resolved_at),
        customer:ops_customers!ops_appointments_customer_id_fkey (
          id, full_name, business_name, phone, email, email_opt_out
        ),
@@ -703,6 +703,7 @@ export async function setUnscheduledFollowUp(
     client(supplied),
     input,
     actor.subject,
+    `Connected assistant · ${actor.label}`,
   )
   return {
     data,

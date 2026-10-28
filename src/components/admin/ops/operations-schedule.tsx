@@ -2284,7 +2284,7 @@ export function OperationsSchedule() {
                     {visit.source === 'appointment' ? (
                       <span className="ml-2 inline-block rounded border border-current/20 px-1.5 py-0.5 text-[11px] font-medium">
                         {visit.followUp
-                          ? `${visit.followUp.due ? 'Follow-up due' : 'Follow-up'} · ${visit.followUp.next_follow_up_date}`
+                          ? `${visit.followUp.due ? 'Follow-up due' : 'Follow-up'} · ${visit.followUp.next_follow_up_date}${visit.followUp.next_follow_up_time ? ` at ${visit.followUp.next_follow_up_time} MT` : ''}`
                           : 'Follow-up date unavailable'}
                       </span>
                     ) : null}

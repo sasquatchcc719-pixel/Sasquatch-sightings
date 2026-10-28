@@ -149,7 +149,7 @@ export function getCapabilityCatalog() {
         limitations: [
           'Availability assumes a 120-minute visit and is not a booking.',
           'The Unscheduled appointment view exactly means parked_at is set; it excludes the separate restoration-monitor queue and never implies unresponsiveness or automatic-outreach eligibility.',
-          'Dedicated follow-up attempt counts and next-contact dates are not tracked for the parked queue, so the tool reports them unavailable instead of inferring zero.',
+          'Parked jobs expose saved next follow-up dates, optional Mountain times and latest review notes. Every saved review or plan change is retained in the calendar contact history. Reviews are not confirmed contact attempts; inspect recorded communications instead of inferring an attempt count.',
           'Dispatch and completion are not yet exposed.',
           'Booking core rows commit through one service-role-only transaction; geocoding, reactivation suppression, notifications, reminders, and optional QuickBooks work are post-commit follow-ups.',
         ],

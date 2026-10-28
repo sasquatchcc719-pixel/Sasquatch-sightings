@@ -23,7 +23,7 @@ export async function GET() {
       .from('ops_appointments')
       .select(
         `id, appointment_date, start_time, end_time, quoted_total, kind,
-         follow_up:ops_unscheduled_follow_ups (next_follow_up_date, reviewed_at, review_note, updated_at, resolved_at),
+         follow_up:ops_unscheduled_follow_ups (next_follow_up_date, next_follow_up_time, reviewed_at, review_note, updated_at, resolved_at),
          ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, phone, email, email_opt_out ),
          ops_service_addresses ( street_1, city )`,
       )
@@ -108,6 +108,7 @@ export async function PATCH(request: NextRequest) {
       createAdminClient(),
       input.data,
       access.id,
+      access.staff?.display_name || access.email || 'Staff',
     )
     return NextResponse.json({ follow_up })
   } catch (error) {
