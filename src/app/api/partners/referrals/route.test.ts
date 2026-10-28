@@ -20,7 +20,7 @@ const request = (extra: Record<string, unknown> = {}) =>
     body: JSON.stringify({ ...details, ...extra }),
   })
 
-let auth: { data: { user: { id: string } | null }; error: Error | null }
+let auth: { data: { user: { id: string; is_anonymous?: boolean } | null }; error: Error | null }
 let partner: {
   data: { id: string; backlink_verified: boolean } | null
   error: Error | null
@@ -79,10 +79,11 @@ beforeEach(() => {
 })
 
 describe('partner referral submission authority', () => {
-  it.each(['missing', 'invalid'])(
+  it.each(['missing', 'invalid', 'anonymous'])(
     'rejects a %s session before privileged work',
     async (kind) => {
       if (kind === 'missing') auth.data.user = null
+      else if (kind === 'anonymous') auth.data.user = { id: 'temporary-user', is_anonymous: true }
       else auth.error = new Error('Invalid token')
       expect((await POST(request())).status).toBe(401)
       expect(mocks.admin).not.toHaveBeenCalled()

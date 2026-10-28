@@ -25,7 +25,7 @@ export async function GET() {
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) {
+    if (!user || user.is_anonymous) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -71,7 +71,7 @@ export async function PATCH(request: NextRequest) {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser()
-    if (authError || !user) {
+    if (authError || !user || user.is_anonymous) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

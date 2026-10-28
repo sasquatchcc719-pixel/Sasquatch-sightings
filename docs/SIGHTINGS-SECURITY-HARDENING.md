@@ -51,13 +51,13 @@ Run fixtures with `PGLITE_MODULE` pointing to a local PGlite installation:
 They use fake records and no network. Default tests exclude both named
 integration tests and six legacy tests that load production credentials.
 
-The isolated broad test run passed 2,317 tests; four date-sensitive scheduling
+The security-focused tests passed 205 cases. The isolated broad test run passed 2,317 tests; four date-sensitive scheduling
 tests also fail on the unchanged starting commit. No real appointment, payment,
 customer message or provider authorization was created for verification.
 
 Old unsigned in-flight Square launches require receipt reconciliation; actual
-POS note propagation still needs a controlled owner test. Existing partner PINs
-have not been reissued or converted to hashes. Public engagement intake still
+POS note propagation still needs a controlled owner test. There are no currently configured location-partner PIN accounts; hash-at-rest
+provisioning remains future work before adding those accounts. Public engagement intake still
 needs separate abuse-volume controls before a wider campaign. Supabase's
 nonrelocatable `pg_net` extension was not dropped or rebuilt merely to remove
 an advisory. Owner-deferred compromised-password protection remains deferred.

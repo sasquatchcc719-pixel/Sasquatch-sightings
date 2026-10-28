@@ -11,7 +11,7 @@ vi.mock('@/supabase/server', () => ({
   createClient: mocks.session,
   createAdminClient: mocks.admin,
 }))
-import { PATCH } from './route'
+import { GET, PATCH } from './route'
 
 const referralId = '10000000-0000-4000-8000-000000000001'
 const userId = '10000000-0000-4000-8000-000000000002'
@@ -24,7 +24,7 @@ const request = (extra: Record<string, unknown> = {}) =>
       ...extra,
     }),
   })
-let auth: { data: { user: { id: string } | null }; error: Error | null }
+let auth: { data: { user: { id: string; is_anonymous?: boolean } | null }; error: Error | null }
 const savedReceipt = {
   success: true,
   referral_id: referralId,
@@ -47,15 +47,21 @@ beforeEach(() => {
 })
 
 describe('verified partner outbound referral decisions', () => {
-  it.each(['absent', 'invalid'])(
+  it.each(['absent', 'invalid', 'anonymous'])(
     'requires a %s session to be rejected before server work',
     async (kind) => {
       if (kind === 'absent') auth.data.user = null
+      else if (kind === 'anonymous') auth.data.user = { id: userId, is_anonymous: true }
       else auth.error = new Error('Invalid session')
       expect((await PATCH(request())).status).toBe(401)
       expect(mocks.admin).not.toHaveBeenCalled()
     },
   )
+  it('denies anonymous referral reads before any table access', async () => {
+    auth.data.user = { id: userId, is_anonymous: true }
+    expect((await GET()).status).toBe(401)
+    expect(mocks.admin).not.toHaveBeenCalled()
+  })
   it.each([
     { partner_id: 'forged-partner' },
     { p_user_id: 'forged-user' },
