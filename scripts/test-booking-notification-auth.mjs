@@ -15,7 +15,7 @@ try {
       insert into net.requests values(url,body,headers); return 1;
     end $$;
   `)
-  await db.exec(await readFile(new URL('../supabase/migrations/20261028220415_authenticate_booking_notifications.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261028220855_authenticate_booking_notifications.sql', import.meta.url), 'utf8'))
   await db.exec('create trigger booked after insert on public.ops_appointments for each row execute function public.notify_appointment_booked()')
   const id = '10000000-0000-4000-8000-000000000001'
   const insert = (source = 'fixture', kind = 'cleaning') => db.query('insert into public.ops_appointments values($1,$2,$3)', [id,source,kind])

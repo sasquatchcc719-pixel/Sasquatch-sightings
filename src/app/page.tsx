@@ -93,7 +93,9 @@ export default async function Home() {
     image_url: job.image_url,
     gps_fuzzy_lat: job.gps_fuzzy_lat,
     gps_fuzzy_lng: job.gps_fuzzy_lng,
-    service: job.service?.map((service) => ({ name: service.name })),
+    service: (Array.isArray(job.service) ? job.service : [job.service])
+      .filter((service) => service != null)
+      .map((service) => ({ name: service.name })),
   }))
 
   return (

@@ -64,12 +64,14 @@ const sighting = {
   phone_number: 'private',
   coupon_code: 'private',
 }
+let serviceShape: unknown
 beforeEach(() => {
   vi.resetAllMocks()
+  serviceShape = job.service
   mocks.historical.mockResolvedValue([])
   mocks.admin.mockReturnValue({
     from: (table: string) => {
-      const rows = table === 'jobs' ? [job] : [sighting]
+      const rows = table === 'jobs' ? [{ ...job, service: serviceShape }] : [sighting]
       const query = {
         select: (fields: string) => {
           mocks.select(table, fields)
@@ -103,6 +105,17 @@ function mapProps(node: unknown): Record<string, unknown> | undefined {
 }
 
 describe('public server data is projected before reaching the browser', () => {
+  it.each([
+    ['object', { name: 'Carpet Cleaning', private_field: 'private' }, [{ name: 'Carpet Cleaning' }]],
+    ['array', [{ name: 'Carpet Cleaning', private_field: 'private' }], [{ name: 'Carpet Cleaning' }]],
+    ['missing', null, []],
+  ])('preserves public map rendering with a %s service relation', async (_shape, service, expected) => {
+    serviceShape = service
+    const props = mapProps(await Home())!
+    expect((props.jobs as Array<{ service: unknown }>)[0].service).toEqual(expected)
+    expect(JSON.stringify(props)).not.toContain('private')
+  })
+
   it('keeps internal job coordinates/invoice IDs out of map props and drops contact data', async () => {
     const tree = await Home()
     expect(mocks.historical).toHaveBeenCalledWith([job])
