@@ -1,8 +1,13 @@
-import { createHmac } from 'crypto'
 import { Resend } from 'resend'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
+import { generateUnsubscribeToken } from '@/lib/ops/unsubscribe-token'
+export {
+  generateUnsubscribeToken,
+  verifyUnsubscribeToken,
+} from '@/lib/ops/unsubscribe-token'
+import { isEmailMarketingSuppressed } from '@/lib/ops/email-marketing-preferences'
 import { isBlacklisted } from '@/lib/blacklist'
 
 const BOOK_URL = 'https://sightings.sasquatchcarpet.com/book'
@@ -55,28 +60,6 @@ export function nextDripSchedule(params: {
     .find((schedule) => schedule.sendDate > params.asOfDate)
 
   return nextTemplate || null
-}
-
-// ── Unsubscribe token helpers ──
-
-function getHmacSecret(): string {
-  return (
-    process.env.DRIP_HMAC_SECRET ||
-    process.env.CRON_SECRET ||
-    'sasquatch-drip-default'
-  )
-}
-
-export function generateUnsubscribeToken(customerId: string): string {
-  return createHmac('sha256', getHmacSecret()).update(customerId).digest('hex')
-}
-
-export function verifyUnsubscribeToken(
-  customerId: string,
-  token: string,
-): boolean {
-  const expected = generateUnsubscribeToken(customerId)
-  return expected === token
 }
 
 function unsubscribeUrl(customerId: string): string {
@@ -228,6 +211,7 @@ export async function enrollCustomerInDrip(
     : appt.ops_customers
   if (!isDeliverableCustomerEmail(customer?.email) || customer.email_opt_out)
     return
+  if (await isEmailMarketingSuppressed(supabase, customer.email)) return
 
   const { data: latestCompleted } = await supabase
     .from('ops_appointments')
@@ -468,11 +452,28 @@ export async function processDripEmails(): Promise<{
     const html = buildDripEmailHtml(body, customer.id)
 
     try {
+      // Recheck after loading/rendering: a fresh opt-out wins over a queued send.
+      if (await isEmailMarketingSuppressed(supabase, customer.email)) {
+        const { error } = await supabase
+          .from('drip_campaign_enrollments')
+          .update({
+            status: 'unsubscribed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', enrollment.id)
+        if (error) throw new Error('Marketing enrollment could not be stopped')
+        results.skipped++
+        continue
+      }
       const emailResult = await resend.emails.send({
         from: fromEmail,
         to: customer.email,
         subject,
         html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl(customer.id)}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
       })
 
       await supabase.from('drip_email_log').insert({

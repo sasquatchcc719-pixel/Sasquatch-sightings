@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto'
 import { Resend } from 'resend'
-import { generateUnsubscribeToken } from '@/lib/ops/drip-campaign'
+import { generateUnsubscribeToken } from '@/lib/ops/unsubscribe-token'
+import {
+  isEmailMarketingSuppressed,
+  suppressedMarketingEmails,
+  unsubscribeEmailMarketing,
+} from '@/lib/ops/email-marketing-preferences'
 import { createAdminClient } from '@/supabase/server'
 import { isBlacklisted } from '@/lib/blacklist'
 import {
@@ -360,6 +365,7 @@ function statusForCustomer(params: {
   existingEnrollment?: EnrollmentRow
   settings: ReactivationSettings
   asOfDate: string
+  marketingSuppressed: boolean
 }): {
   status: ReactivationStatus
   nextSendAt: string | null
@@ -369,6 +375,16 @@ function statusForCustomer(params: {
 } {
   const email = normalizedEmail(params.customer.email)
   const ownerId = params.emailOwnerByEmail.get(email)
+
+  if (params.marketingSuppressed) {
+    return {
+      status: 'suppressed_unsubscribed',
+      nextSendAt: null,
+      pausedUntil: null,
+      stopReason: 'marketing_email_opt_out',
+      source: 'customer_opt_out',
+    }
+  }
 
   if (
     params.existingEnrollment?.status === 'suppressed_manual' ||
@@ -541,8 +557,14 @@ async function loadEligibilityData(supabase: SupabaseAdmin) {
     console.error('[reactivation] value index failed, continuing without', err)
   }
 
+  const marketingSuppressed = await suppressedMarketingEmails(
+    supabase,
+    customers.map((customer) => customer.email),
+  )
+
   return {
     customers,
+    marketingSuppressed,
     valueIndex,
     latestAppointment: latestAppointmentByCustomer(appointments),
     enrollmentsByCustomer: new Map(
@@ -591,6 +613,9 @@ export async function enrollEligibleReactivationCustomers(params?: {
         ? history.lastKnownService
         : opsLatest
     const computed = statusForCustomer({
+      marketingSuppressed: data.marketingSuppressed.has(
+        normalizedEmail(customer.email),
+      ),
       customer,
       latestAppointmentDate,
       history,
@@ -884,12 +909,28 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
     // lost 124 of 400 emails to 429s by sending full speed. Space sends out.
     await new Promise((resolve) => setTimeout(resolve, 400))
 
+    // A saved audience snapshot cannot override a more recent unsubscribe.
+    if (await isEmailMarketingSuppressed(supabase, customer.email)) {
+      await suppressEnrollment({
+        supabase,
+        enrollmentId: enrollment.id,
+        customerId: customer.id,
+        status: 'suppressed_unsubscribed',
+        reason: 'marketing_email_opt_out',
+      })
+      results.skipped++
+      continue
+    }
     const emailResult = await resend.emails.send(
       {
         from: fromEmail,
         to: normalizedEmail(customer.email),
         subject,
         html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl(customer.id)}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
       },
       { idempotencyKey: `reactivation/${enrollment.id}/${sendNumber}` },
     )
@@ -993,10 +1034,11 @@ export async function manualReactivationOverride(params: {
   const now = new Date().toISOString()
 
   if (params.action === 'unsubscribe') {
-    await supabase
-      .from('ops_customers')
-      .update({ email_opt_out: true })
-      .eq('id', params.customerId)
+    await unsubscribeEmailMarketing(supabase, {
+      customerId: params.customerId,
+      source: 'admin',
+    })
+    return
   }
 
   const update =
@@ -1017,15 +1059,9 @@ export async function manualReactivationOverride(params: {
             updated_at: now,
           }
         : {
-            status:
-              params.action === 'unsubscribe'
-                ? 'suppressed_unsubscribed'
-                : 'suppressed_manual',
+            status: 'suppressed_manual',
             next_send_at: null,
-            stop_reason:
-              params.action === 'unsubscribe'
-                ? 'manual_unsubscribe'
-                : 'manual_suppression',
+            stop_reason: 'manual_suppression',
             manual_suppressed_at: now,
             manual_suppressed_by: params.userId || null,
             manual_suppression_reason: params.reason || null,
@@ -1055,9 +1091,7 @@ export async function manualReactivationOverride(params: {
         ? 'resumed'
         : params.action === 'pause'
           ? 'paused'
-          : params.action === 'unsubscribe'
-            ? 'unsubscribed'
-            : 'suppressed',
+          : 'suppressed',
     status: 'logged',
     metadata: { reason: params.reason || null, action: params.action },
   })

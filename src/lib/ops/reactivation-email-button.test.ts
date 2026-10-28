@@ -7,13 +7,16 @@
  * through the generic ops wrapper, which has none. This pins the button to the
  * copy that promises it, so neither can drift again.
  */
-import { describe, it, expect } from 'vitest'
+import { afterAll, describe, it, expect, vi } from 'vitest'
 import {
   buildReactivationEmailHtml,
   clickedTooSoonAfterSend,
   isLikelyLinkScanner,
   reactivationBookingUrl,
 } from '@/lib/ops/reactivation-campaign'
+
+vi.stubEnv('DRIP_HMAC_SECRET', 'unit-test-unsubscribe-key')
+afterAll(() => vi.unstubAllEnvs())
 
 // Verbatim body from a real send (template local_trust_owner_led).
 const BODY = [

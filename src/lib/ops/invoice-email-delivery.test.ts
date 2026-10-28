@@ -235,6 +235,14 @@ beforeEach(() => {
 })
 
 describe('invoice due date and check instructions', () => {
+  it('keeps a necessary invoice eligible after a marketing-only opt-out', async () => {
+    const db = database()
+    db.tables.email_marketing_suppressions = [{ email: db.customer.email }]
+    expect(await emailInvoiceOnJobCompletion(db.client, params)).toBe('sent')
+    expect(mocks.send).toHaveBeenCalledTimes(1)
+    expect(db.customer.email_opt_out).toBe(false)
+  })
+
   it('uses calendar days for Net 45 through month/year boundaries', () => {
     expect(invoiceDueDate('2026-10-15', 45)).toBe('2026-11-29')
     expect(invoiceDueDate('2026-12-15', 45)).toBe('2027-01-29')
