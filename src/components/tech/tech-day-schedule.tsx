@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { DollarSign, MapPin } from 'lucide-react'
+import { CalendarDays, DollarSign, MapPin } from 'lucide-react'
+import type { TechCalendarEvent } from '@/lib/tech/calendar-events'
 import type { TechAppointment } from '@/lib/tech/appointments'
 import {
   getTechAppointmentPlacement,
@@ -94,10 +95,33 @@ function JobContent({ appointment }: { appointment: TechAppointment }) {
   )
 }
 
+function EventContent({ event }: { event: TechCalendarEvent }) {
+  return (
+    <>
+      <h2 className="flex items-start gap-1 font-semibold">
+        <CalendarDays className="mt-0.5 h-3 w-3 shrink-0" />
+        <span className="break-words">{event.title}</span>
+      </h2>
+      <p className="mt-0.5 text-[11px] font-medium text-slate-700">
+        {event.isAllDay
+          ? 'All day'
+          : `${formatTime(event.startTime)} - ${formatTime(event.endTime)}`}
+      </p>
+      {event.description ? (
+        <p className="mt-1 text-xs whitespace-pre-wrap text-slate-800">
+          {event.description}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 export function TechDaySchedule({
   appointments,
+  events = [],
 }: {
   appointments: TechAppointment[]
+  events?: TechCalendarEvent[]
 }) {
   const unscheduled = appointments.filter(
     (appointment) =>
@@ -107,8 +131,24 @@ export function TechDaySchedule({
       ) === null,
   )
 
+  const eventPlacement = (event: TechCalendarEvent) =>
+    event.isAllDay || event.endTime <= '07:00:00'
+      ? null
+      : getTechAppointmentPlacement(event.startTime, event.endTime)
+
   return (
     <div className="space-y-3">
+      {events
+        .filter((event) => !eventPlacement(event))
+        .map((event) => (
+          <article
+            key={event.id}
+            aria-label={event.title}
+            className="rounded-2xl border border-violet-400 bg-violet-100 p-3 text-slate-900 shadow-sm"
+          >
+            <EventContent event={event} />
+          </article>
+        ))}
       {unscheduled.map((appointment) => (
         <Link
           key={appointment.id}
@@ -149,6 +189,32 @@ export function TechDaySchedule({
                 style={{ height: TECH_DAY_HOUR_HEIGHT }}
               />
             ))}
+            {events.map((event) => {
+              const placement = eventPlacement(event)
+              if (!placement) return null
+              return (
+                <article
+                  key={event.id}
+                  aria-label={event.title}
+                  className="absolute right-2 left-2 overflow-auto rounded-2xl border border-violet-400 bg-violet-100 p-2 text-xs text-slate-900 shadow-sm"
+                  style={{
+                    top: placement.top + 5,
+                    height: Math.max(placement.height - 10, 52),
+                    right: appointments.some(
+                      (appointment) =>
+                        appointment.startTime &&
+                        appointment.endTime &&
+                        appointment.startTime < event.endTime &&
+                        appointment.endTime > event.startTime,
+                    )
+                      ? '50%'
+                      : undefined,
+                  }}
+                >
+                  <EventContent event={event} />
+                </article>
+              )
+            })}
             {appointments.map((appointment) => {
               const placement = getTechAppointmentPlacement(
                 appointment.startTime,
@@ -164,6 +230,16 @@ export function TechDaySchedule({
                   style={{
                     top: placement.top + 5,
                     height: Math.max(placement.height - 10, 52),
+                    left: events.some(
+                      (event) =>
+                        eventPlacement(event) &&
+                        appointment.startTime &&
+                        appointment.endTime &&
+                        appointment.startTime < event.endTime &&
+                        appointment.endTime > event.startTime,
+                    )
+                      ? '50%'
+                      : undefined,
                   }}
                 >
                   <JobContent appointment={appointment} />

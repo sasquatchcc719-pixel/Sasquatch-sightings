@@ -11,6 +11,7 @@ import {
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { getAssignedTechAppointments } from '@/lib/tech/appointments'
+import { getTechCalendarEvents } from '@/lib/tech/calendar-events'
 import { TechDaySchedule } from '@/components/tech/tech-day-schedule'
 import { getMountainDateKey, shiftDateKey } from '@/lib/tech/day-schedule'
 import { getSemiMonthlyPayPeriod } from '@/lib/ops/timesheet-pay'
@@ -65,8 +66,9 @@ export default async function TechHomePage({
   const growthStartsOn = bonusStaff?.invoice_growth_bonus_starts_on
   const growthActive = usesInvoiceGrowthBonus(today, growthStartsOn)
   const payPeriod = getSemiMonthlyPayPeriod(today)
-  const [appointments, bonusSummary] = await Promise.all([
+  const [appointments, events, bonusSummary] = await Promise.all([
     getAssignedTechAppointments(supabase, staffUserId, dateKey),
+    getTechCalendarEvents(supabase, staffUserId, access.id, dateKey),
     access.staff?.id && bonusRate > 0
       ? loadAddOnBonuses(supabase, {
           startDate: payPeriod.startDate,
@@ -209,16 +211,17 @@ export default async function TechHomePage({
         <ChevronRight className="h-5 w-5 shrink-0 text-amber-200" />
       </Link>
 
-      {appointments.length === 0 ? (
+      {appointments.length === 0 && events.length === 0 ? (
         <section className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center">
           <Clock className="mx-auto mb-3 h-8 w-8 text-slate-500" />
-          <h2 className="font-semibold">No assigned jobs today</h2>
+          <h2 className="font-semibold">No jobs or events scheduled</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Assigned jobs will show up here once dispatch puts them on your day.
+            Assigned jobs and calendar events will show up here once dispatch
+            puts them on your day.
           </p>
         </section>
       ) : (
-        <TechDaySchedule appointments={appointments} />
+        <TechDaySchedule appointments={appointments} events={events} />
       )}
     </div>
   )
