@@ -310,3 +310,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Preserve the caller press-1/press-2 spam gate during phone-routing repairs. Repeat an unanswered menu once, then send no/invalid input to voicemail without ringing staff; monitor actual forwarding only after a valid caller selection.
 
 - Prioritize internal gaps for proactive returning-customer outreach, while allowing customer-requested alternate times after full-duration live availability checks; TF35 qualifies at $300 service subtotal before discount, excluding travel/fees/tax and minimum-charge jobs.
+
+- Technician schedule verification previews must include the selected day’s saved jobs and calendar events together; never show an event-only preview as the complete schedule.
