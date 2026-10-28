@@ -76,3 +76,14 @@ The MCP server identity remains `sasquatch-sightings-read`, and the endpoint rem
 Local implementation is not a live grant. The review migration creates saved-draft, preview/idempotency, and audit tables and expands the token hook to emit only scopes already present in the owner’s revocable database grant. It does not add those scopes to Charles’s row. Production application, scope grants, deployment, and customer-action smoke tests each require separate approval.
 
 Pricing/catalog administration, business-hours/security administration, destructive record deletion, charges, refunds, payment recording, bulk campaigns, hiring/Ranger, and arbitrary HTTP/SQL/shell/code/environment/token access remain outside this rollout. Ordinary operational actions are not declared permanently forbidden: they remain either implemented locally behind scoped confirmation or accurately listed as a remaining service extraction.
+
+## Commercial account workspace — release 1.8.0
+
+The ten commercial tools listed in `HARRY-COMMERCIAL-WORKSPACE.md` extend the
+existing connector with account research, conversation evidence, dated next
+actions, customer/site matching and dedicated measuring previews. Mode is
+`workspace_and_preview_only`: outgoing Outreach email and real measuring
+creation remain off. No commercial confirm, send, recovery, booking, invoice or
+customer-creation action is exposed. Ordinary appointment/estimate/contact tools
+must not substitute for this workflow. Owner grants are unchanged. Deployment
+and connector metadata refresh must be verified separately from source tests.

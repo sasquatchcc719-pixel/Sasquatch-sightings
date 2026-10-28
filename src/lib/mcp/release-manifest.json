@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.7.4",
+  "version": "1.8.0",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -40,6 +40,16 @@
     "preview_gap_outreach",
     "execute_gap_outreach",
     "stop_gap_outreach",
-    "set_unscheduled_follow_up"
+    "set_unscheduled_follow_up",
+    "get_commercial_playbook",
+    "list_commercial_accounts",
+    "search_commercial_prospects",
+    "get_commercial_account",
+    "get_commercial_account_history",
+    "create_commercial_account",
+    "update_commercial_account",
+    "match_commercial_customer",
+    "get_commercial_measurement_slots",
+    "preview_commercial_measurement"
   ]
 }

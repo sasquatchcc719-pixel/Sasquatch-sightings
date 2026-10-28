@@ -12,6 +12,7 @@ export async function GET() {
         'OAuth-authorized owner access. Reads use business:read; drafts and business actions use separate live grants. A matching direct owner instruction counts as authorization after exact preview and revalidation.',
       limitations: [
         'All dates without offsets use America/Denver.',
+        'Commercial Outreach uses current DOTS Harry in workspace_and_preview_only mode: internal account work and measuring previews only; no outgoing email or real measuring creation. Never substitute ordinary booking/contact tools.',
         'Availability assumes a 120-minute appointment and is not a booking.',
         'List responses default to 50 records and allow at most 100.',
         'Customer contact and record changes use an expiring exact preview, idempotency, record-version checks, and audit. ChatGPT may still show one native approval control for write tools.',

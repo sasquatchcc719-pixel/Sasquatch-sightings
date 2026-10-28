@@ -1,5 +1,9 @@
 import { unscheduledFollowUpSchema } from '@/lib/ops/unscheduled-follow-up'
 import { z } from 'zod'
+import {
+  commercialWorkspaceStatusSchema,
+  commercialWorkspaceControlsSchema,
+} from './commercial-schemas'
 
 const nullableString = z.string().nullable()
 const nullableNumber = z.number().finite().nullable()
@@ -310,6 +314,9 @@ export const capabilityCatalogOutputSchema = z
   .object({
     generated_at: z.string(),
     server: z.object({ name: z.string(), version: z.string() }).strict(),
+    commercial_workspace: commercialWorkspaceStatusSchema
+      .extend({ controls: commercialWorkspaceControlsSchema })
+      .optional(),
     operating_policy: z
       .object({
         objective: z.string(),
