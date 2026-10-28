@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { matchesWebhookSecret } from '@/lib/webhook-auth'
 
 /**
  * Zapier webhook: fetch recent sightings (last 24h).
  * Uses admin client (no user session in server route). Returns limited columns to reduce PII exposure.
- * Optional: set WEBHOOK_SIGHTINGS_SECRET and send in header x-webhook-secret or query ?secret= to restrict access.
+ * Requires WEBHOOK_SIGHTINGS_SECRET in the x-webhook-secret header.
  */
 export async function GET(req: NextRequest) {
   try {
     const secret = process.env.WEBHOOK_SIGHTINGS_SECRET
-    if (secret) {
-      const headerSecret = req.headers.get('x-webhook-secret')
-      const querySecret = req.nextUrl.searchParams.get('secret')
-      if (headerSecret !== secret && querySecret !== secret) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    if (!secret)
+      return NextResponse.json(
+        { error: 'Webhook not configured' },
+        { status: 503 },
+      )
+    if (!matchesWebhookSecret(secret, req.headers.get('x-webhook-secret'))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const supabase = createAdminClient()
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
         count: sightings?.length || 0,
         sightings: sightings || [],
       },
-      { status: 200 },
+      { status: 200, headers: { 'Cache-Control': 'private, no-store' } },
     )
   } catch (error) {
     console.error('Webhook Error:', error)

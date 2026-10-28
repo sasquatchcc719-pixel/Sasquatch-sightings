@@ -76,7 +76,7 @@ export async function getUserWithRole(): Promise<{
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
+  if (!user || user.is_anonymous) {
     return { user: null, role: null, partner: null, staff: null, client: null }
   }
 
@@ -111,7 +111,7 @@ export async function getUserWithRole(): Promise<{
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (partner) {
+  if (partner && (partner.role === 'partner' || partner.role === 'admin')) {
     return {
       user: { id: user.id, email: user.email || '' },
       role: partner.role as UserRole,
@@ -175,7 +175,7 @@ export async function requireAuth(): Promise<{ id: string; email: string }> {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
+  if (!user || user.is_anonymous) {
     throw new Error('Not authenticated')
   }
 

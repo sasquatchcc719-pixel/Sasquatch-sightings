@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient, createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 import { isAnalystFeatureEnabled } from '@/lib/harry/features'
 
@@ -17,7 +17,7 @@ export async function GET() {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: targets, error } = await supabase
       .from('market_intel_targets')

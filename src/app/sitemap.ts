@@ -5,14 +5,14 @@
  */
 
 import { MetadataRoute } from 'next'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { isUnknownCity } from '@/lib/geocode'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://sightings.sasquatchcarpet.com'
 
   // Create Supabase client
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Fetch all published jobs
   const { data: jobs } = await supabase

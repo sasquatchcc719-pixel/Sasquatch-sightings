@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { createSquarePosContext } from '@/lib/payments/square-pos-verification'
 import {
   buildSquarePosUrl,
   detectMobilePlatform,
@@ -11,21 +12,26 @@ import {
  *
  * The existing tech charge route cannot be reused: it requires a chargeable
  * invoice, and a restoration deposit is collected days before any invoice
- * exists. The amount is therefore carried in the state and recorded against the
- * visit when Square returns.
+ * exists. A signed state and unique provider note bind the verified payment
+ * to the visit when Square returns.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ appointmentId: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const { appointmentId } = await params
     const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
 
     const amountCents = Math.round(Number(body.amount_cents))
-    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
       return NextResponse.json(
         { error: 'amount_cents must be positive' },
         { status: 400 },
@@ -35,16 +41,20 @@ export async function POST(
     const kind = body.kind === 'payment' ? 'payment' : 'deposit'
 
     const applicationId = process.env.SQUARE_APPLICATION_ID
-    if (!applicationId) {
+    if (
+      !applicationId ||
+      !process.env.SQUARE_ACCESS_TOKEN ||
+      !process.env.SQUARE_LOCATION_ID
+    ) {
       return NextResponse.json(
-        { error: 'Square is not fully configured (missing Application ID).' },
+        { error: 'Square payment verification is not fully configured.' },
         { status: 503 },
       )
     }
 
     const { data: appointment } = await supabase
       .from('ops_appointments')
-      .select('id, restoration_project_id')
+      .select('id, restoration_project_id, assigned_staff_user_id')
       .eq('id', appointmentId)
       .maybeSingle()
     if (!appointment?.restoration_project_id) {
@@ -54,30 +64,38 @@ export async function POST(
       )
     }
 
+    if (
+      access.role === 'tech' &&
+      appointment.assigned_staff_user_id !== access.staff?.id
+    ) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+
     const origin = request.nextUrl.origin
     const returnTo =
       typeof body.returnTo === 'string' &&
       body.returnTo.startsWith('/') &&
-      !body.returnTo.startsWith('//')
+      !body.returnTo.startsWith('//') &&
+      !body.returnTo.includes('\\')
         ? body.returnTo
         : `/admin/operations/restoration/${appointment.restoration_project_id}`
 
+    const context = createSquarePosContext({
+      purpose: 'restoration',
+      appointmentId,
+      amountCents,
+      kind,
+      returnTo,
+      actorId: access.id,
+    })
     const url = buildSquarePosUrl({
       platform: detectMobilePlatform(request.headers.get('user-agent')),
       amountCents,
       applicationId,
       callbackUrl: `${origin}/api/admin/ops/restoration/deposit-return`,
-      note:
-        kind === 'payment'
-          ? 'Water mitigation final payment'
-          : 'Water mitigation deposit',
-      // Round-tripped by Square untouched, so the return handler knows what to record.
-      state: JSON.stringify({
-        a: appointmentId,
-        c: amountCents,
-        r: returnTo,
-        k: kind,
-      }),
+      locationId: process.env.SQUARE_LOCATION_ID,
+      note: context.note,
+      state: context.state,
     })
 
     return NextResponse.json({ url })

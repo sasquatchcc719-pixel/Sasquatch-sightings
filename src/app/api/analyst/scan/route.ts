@@ -228,6 +228,10 @@ interface CompetitorAnalysis {
 
 // GET - Check scan status or get last scan results
 export async function GET() {
+  const { user, role } = await getUserWithRole()
+  if (!user || (role !== 'admin' && role !== 'owner')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   if (!isAnalystFeatureEnabled()) {
     return NextResponse.json(
       { error: 'Analyst is currently disabled' },

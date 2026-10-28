@@ -1,7 +1,7 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { isUnknownCity } from '@/lib/geocode'
 import { buildJobUrl } from '@/lib/google-indexing'
 import { areaPagesForJob, servicePageUrl } from '@/lib/public-areas'
@@ -16,7 +16,7 @@ interface PageProps {
 }
 
 async function getJob(slug: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data: job, error } = await supabase
     .from('jobs')
@@ -66,7 +66,7 @@ function getServiceSlug(job: { service: unknown }): string | null {
 /** Other recent published jobs in the same city (for internal links). */
 async function getRelatedJobs(city: string | null, excludeId: string) {
   if (!city || isUnknownCity(city)) return []
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('jobs')
     .select('id, slug, city, published_at, service:services(name)')

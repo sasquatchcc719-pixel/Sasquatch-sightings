@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { MapPin, Trophy } from 'lucide-react'
@@ -13,7 +13,7 @@ interface PageProps {
 }
 
 async function getSighting(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data: sighting, error } = await supabase
     .from('sightings')

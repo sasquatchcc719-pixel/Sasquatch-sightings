@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 import {
   isAnalystFeatureEnabled,
@@ -20,7 +20,7 @@ export async function GET() {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('harry_conversations')
@@ -54,7 +54,7 @@ export async function DELETE() {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     await supabase
       .from('harry_conversations')

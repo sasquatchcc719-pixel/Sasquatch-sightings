@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
@@ -24,6 +25,12 @@ function getBaseUrl(): string {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
+    const signedParams = Object.fromEntries(
+      [...formData.entries()].map(([key, value]) => [key, String(value)]),
+    )
+    if (!validateTwilioInboundRequest({ request, form: signedParams })) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
     const callerPhone = formData.get('From') as string
 
     if (await isBlacklisted(callerPhone, { throwOnError: true })) {

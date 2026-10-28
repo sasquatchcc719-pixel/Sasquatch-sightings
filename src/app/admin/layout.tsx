@@ -39,6 +39,10 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     redirect('/partners')
   }
 
+  if (!role || !['admin', 'owner', 'dispatcher', 'marketing'].includes(role)) {
+    redirect('/protected')
+  }
+
   console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   return (

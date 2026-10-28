@@ -1,7 +1,7 @@
 /**
  * Public stats API for external readers (e.g. Gemini hiring trigger check).
  * Returns utilization rate, average weekly revenue, and consecutive weeks goal met.
- * No authentication — data is read-only and limited to these three figures.
+ * Requires the configured external-reader secret.
  */
 
 import { NextResponse } from 'next/server'
@@ -20,12 +20,15 @@ const DEFAULT_SETTINGS = {
 
 export async function GET(request: Request) {
   try {
-    const secret = process.env.STATS_PUBLIC_SECRET
-    if (secret) {
-      const headerSecret = request.headers.get('x-stats-secret')
-      if (headerSecret !== secret) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    const secret = process.env.STATS_PUBLIC_SECRET?.trim()
+    if (!secret) {
+      return NextResponse.json(
+        { error: 'Stats reader is not configured' },
+        { status: 503 },
+      )
+    }
+    if (request.headers.get('x-stats-secret') !== secret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const supabase = createAdminClient()

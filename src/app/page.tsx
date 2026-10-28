@@ -1,4 +1,4 @@
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { loadHistoricalJobPins } from '@/lib/public-job-coverage.server'
 import { MapView } from '@/components/public/MapView'
 import { ContactSection } from '@/components/public/ContactSection'
@@ -10,7 +10,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 async function getPublishedJobs() {
   noStore()
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: jobs, error } = await supabase
       .from('jobs')
@@ -46,7 +46,7 @@ async function getPublishedJobs() {
 async function getSightings() {
   noStore()
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: sightings, error } = await supabase
       .from('sightings')
@@ -66,7 +66,13 @@ async function getSightings() {
       return []
     }
 
-    return sightings || []
+    return (sightings || []).map((sighting) => ({
+      id: sighting.id,
+      image_url: sighting.image_url,
+      gps_lat: sighting.gps_lat,
+      gps_lng: sighting.gps_lng,
+      created_at: sighting.created_at,
+    }))
   } catch (err) {
     console.error('Failed to fetch sightings:', err)
     return []
@@ -80,14 +86,15 @@ export default async function Home() {
     console.error('Failed to build historical job coverage:', error)
     return []
   })
-  const publicJobs = jobs.map(
-    ({
-      gps_lat: _gpsLat,
-      gps_lng: _gpsLng,
-      ops_invoice_id: _invoiceId,
-      ...job
-    }) => job,
-  )
+  const publicJobs = jobs.map((job) => ({
+    id: job.id,
+    slug: job.slug,
+    city: job.city,
+    image_url: job.image_url,
+    gps_fuzzy_lat: job.gps_fuzzy_lat,
+    gps_fuzzy_lng: job.gps_fuzzy_lng,
+    service: job.service?.map((service) => ({ name: service.name })),
+  }))
 
   return (
     <div className="flex flex-col">

@@ -1,80 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { parseSquarePosReturn } from '@/lib/payments/square-pos'
+import {
+  verifySquarePosContext,
+  verifySquarePosPayment,
+} from '@/lib/payments/square-pos-verification'
 
-/**
- * Where Square Point of Sale sends the user back after taking a deposit.
- *
- * Records the payment against the visit. The deposit has no invoice yet — the
- * project's invoice is not built until the job closes days later, and
- * closeRestorationProject attaches it then.
- */
+/** The redirect is untrusted: only signed launch context and provider-verified
+ * card payments can credit a restoration visit. No charge is made here. */
 export async function GET(request: NextRequest) {
-  const result = parseSquarePosReturn(request.nextUrl.searchParams)
-
-  let appointmentId = ''
-  let amountCents = 0
-  let returnPath = ''
-  let kind: 'deposit' | 'payment' = 'deposit'
-  if (result?.state) {
-    try {
-      const parsed = JSON.parse(result.state) as {
-        a?: string
-        c?: number
-        r?: string
-        k?: string
-      }
-      if (typeof parsed.a === 'string') appointmentId = parsed.a
-      if (typeof parsed.c === 'number') amountCents = parsed.c
-      if (typeof parsed.r === 'string') returnPath = parsed.r
-      if (parsed.k === 'payment') kind = 'payment'
-    } catch {
-      // A malformed state means we cannot safely record anything.
-    }
-  }
-
-  const safeReturn =
-    returnPath.startsWith('/') && !returnPath.startsWith('//')
-      ? returnPath
-      : '/admin/operations'
-  const destination = new URL(safeReturn, request.nextUrl.origin)
-
-  if (!result || result.status === 'error') {
-    const canceled =
-      result?.status === 'error' && /cancel/i.test(result.errorCode || '')
-    destination.searchParams.set('deposit', canceled ? 'canceled' : 'error')
-    return NextResponse.redirect(destination)
-  }
-
-  if (!appointmentId || amountCents <= 0) {
-    destination.searchParams.set('deposit', 'error')
-    return NextResponse.redirect(destination)
-  }
-
+  const fallback = new URL('/admin/operations', request.nextUrl.origin)
+  let destination = fallback
   try {
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
+    const result = parseSquarePosReturn(request.nextUrl.searchParams)
+    const context = verifySquarePosContext(result?.state || '')
+    if (context.purpose !== 'restoration' || context.actorId !== access.id)
+      throw new Error('Not authorized')
+    const returnUrl = new URL(context.returnTo, request.nextUrl.origin)
+    if (
+      !context.returnTo.startsWith('/') ||
+      context.returnTo.includes('\\') ||
+      returnUrl.origin !== request.nextUrl.origin
+    )
+      throw new Error('Invalid payment return.')
+    destination = returnUrl
+    if (!result || result.status === 'error') {
+      const canceled =
+        result?.status === 'error' && /cancel/i.test(result.errorCode || '')
+      destination.searchParams.set('deposit', canceled ? 'canceled' : 'error')
+      return NextResponse.redirect(destination)
+    }
+    if (!result.transactionId)
+      throw new Error('Square payment is not available yet.')
     const supabase = createAdminClient()
-
-    // Square can deliver the same return more than once; the unique index on
-    // square_payment_id makes a repeat a no-op rather than a double credit.
+    const { data: appointment, error: appointmentError } = await supabase
+      .from('ops_appointments')
+      .select('id, restoration_project_id, assigned_staff_user_id')
+      .eq('id', context.appointmentId)
+      .maybeSingle()
+    if (
+      appointmentError ||
+      !appointment?.restoration_project_id ||
+      (access.role === 'tech' &&
+        appointment.assigned_staff_user_id !== access.staff?.id)
+    )
+      throw new Error('Not authorized')
+    const payment = await verifySquarePosPayment(result.transactionId, context)
     const { error } = await supabase.from('ops_payments').insert({
-      appointment_id: appointmentId,
-      kind,
+      appointment_id: context.appointmentId,
+      kind: context.kind,
       method: 'square_tap',
-      amount_cents: amountCents,
-      square_payment_id: result.transactionId,
-      paid_at: new Date().toISOString(),
+      amount_cents: payment.amountCents,
+      square_payment_id: payment.paymentId,
+      square_order_id: payment.orderId,
+      paid_at: payment.paidAt,
+      recorded_by_user_id: access.id,
       note:
-        kind === 'payment'
+        context.kind === 'payment'
           ? 'Water mitigation final payment (Square POS)'
           : 'Water mitigation deposit (Square POS)',
     })
-
-    if (error && !String(error.message).includes('duplicate key')) throw error
+    if (error) {
+      if (error.code !== '23505') throw error
+      const { data: saved, error: savedError } = await supabase
+        .from('ops_payments')
+        .select('appointment_id, kind, amount_cents')
+        .eq('square_payment_id', payment.paymentId)
+        .maybeSingle()
+      if (
+        savedError ||
+        saved?.appointment_id !== context.appointmentId ||
+        saved.kind !== context.kind ||
+        Number(saved.amount_cents) !== payment.amountCents
+      )
+        throw new Error('Payment is already recorded elsewhere.')
+    }
     destination.searchParams.set('deposit', 'paid')
-  } catch (e) {
-    console.error('[restoration/deposit-return]', e)
+  } catch {
     destination.searchParams.set('deposit', 'error')
   }
-
   return NextResponse.redirect(destination)
 }

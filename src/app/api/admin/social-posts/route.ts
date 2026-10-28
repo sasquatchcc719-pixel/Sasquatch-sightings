@@ -4,16 +4,13 @@
  */
 
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
+    const { user, role } = await getUserWithRole()
+    if (!user || !['admin', 'owner', 'marketing'].includes(role || '')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

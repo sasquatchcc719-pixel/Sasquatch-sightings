@@ -1,6 +1,6 @@
 /**
  * Jobs Feed API Route Handler
- * Public endpoint for Zapier integration — returns the next unposted job
+ * Authenticated endpoint for Zapier integration — returns the next unposted job
  * and marks it as posted so it never appears again.
  *
  * Rules:
@@ -38,8 +38,22 @@ const POST_TYPES = [
   'STANDARD',
 ]
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const secret = process.env.JOBS_FEED_SECRET?.trim()
+    if (!secret) {
+      return NextResponse.json(
+        { error: 'Jobs feed is not configured' },
+        { status: 503 },
+      )
+    }
+    if (
+      request.headers.get('x-feed-secret') !== secret &&
+      request.headers.get('authorization') !== `Bearer ${secret}`
+    ) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = createAdminClient()
 
     // Check how many jobs we've already posted this week

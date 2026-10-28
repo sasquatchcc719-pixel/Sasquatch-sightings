@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/supabase/server'
+import { createClient, createAdminClient } from '@/supabase/server'
+import { z } from 'zod'
+
+const referralDecision = z
+  .object({ referral_id: z.uuid(), action: z.enum(['accept', 'decline']) })
+  .strict()
+const decisionReceipt = z.object({
+  success: z.literal(true),
+  referral_id: z.uuid(),
+  status: z.enum(['accepted', 'completed', 'declined']),
+  replayed: z.boolean(),
+  client_name: z.string().optional(),
+  client_phone: z.string().optional(),
+  client_email: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+})
 
 // Get partner's outbound referrals (work sent TO them)
 export async function GET() {
@@ -47,121 +62,88 @@ export async function GET() {
   }
 }
 
-// Partner accepts or declines a referral
+// Identity is verified with the session; only the server can record a decision
+// and apply the saved fee through one atomic, retry-safe transaction.
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient()
-
-    // Get current user
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser()
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get partner
-    const { data: partner } = await supabase
-      .from('partners')
-      .select('id, referral_balance_owed')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!partner) {
-      return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
-    }
-
-    const body = await request.json()
-    const { referral_id, action } = body // action: 'accept' or 'decline'
-
-    if (!referral_id || !action) {
+    const submitted = referralDecision.safeParse(
+      await request.json().catch(() => null),
+    )
+    if (!submitted.success) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'A referral ID and accept or decline action are required.' },
         { status: 400 },
       )
     }
 
-    // Verify the referral belongs to this partner
-    const { data: referral } = await supabase
-      .from('outbound_referrals')
-      .select('*')
-      .eq('id', referral_id)
-      .eq('partner_id', partner.id)
-      .single()
-
-    if (!referral) {
-      return NextResponse.json({ error: 'Referral not found' }, { status: 404 })
-    }
-
-    if (referral.status !== 'pending') {
+    const admin = createAdminClient()
+    const { data, error } = await admin.rpc(
+      'review_partner_outbound_referral',
+      {
+        p_user_id: user.id,
+        p_referral_id: submitted.data.referral_id,
+        p_action: submitted.data.action,
+      },
+    )
+    if (error) {
+      console.error('Partner referral decision failed:', error)
       return NextResponse.json(
-        { error: 'Referral already processed' },
-        { status: 400 },
+        { error: 'Failed to process referral. Retry the same decision.' },
+        { status: 500 },
       )
     }
-
-    if (action === 'accept') {
-      // Update referral status
-      const { error: updateError } = await supabase
-        .from('outbound_referrals')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-          viewed_at: referral.viewed_at || new Date().toISOString(),
-        })
-        .eq('id', referral_id)
-
-      if (updateError) {
-        console.error('Error accepting referral:', updateError)
-        return NextResponse.json(
-          { error: updateError.message },
-          { status: 500 },
-        )
-      }
-
-      // Add referral fee to partner's balance owed (if any)
-      if (referral.referral_fee && referral.referral_fee > 0) {
-        await supabase
-          .from('partners')
-          .update({
-            referral_balance_owed:
-              (partner.referral_balance_owed || 0) + referral.referral_fee,
-          })
-          .eq('id', partner.id)
-      }
-
-      return NextResponse.json({
-        success: true,
-        client_name: referral.client_name,
-        client_phone: referral.client_phone,
-        client_email: referral.client_email,
-        notes: referral.notes,
-      })
-    } else if (action === 'decline') {
-      const { error: updateError } = await supabase
-        .from('outbound_referrals')
-        .update({
-          status: 'declined',
-          viewed_at: referral.viewed_at || new Date().toISOString(),
-        })
-        .eq('id', referral_id)
-
-      if (updateError) {
-        console.error('Error declining referral:', updateError)
-        return NextResponse.json(
-          { error: updateError.message },
-          { status: 500 },
-        )
-      }
-
-      return NextResponse.json({ success: true })
+    if (data?.success === false) {
+      const status =
+        data.code === 'PARTNER_NOT_FOUND'
+          ? 403
+          : data.code === 'REFERRAL_NOT_FOUND'
+            ? 404
+            : data.code === 'DECISION_CONFLICT'
+              ? 409
+              : 400
+      return NextResponse.json(
+        {
+          error:
+            status === 409
+              ? 'Referral already has a different decision.'
+              : 'Referral is not available.',
+        },
+        { status },
+      )
     }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    const receipt = decisionReceipt.safeParse(data)
+    if (
+      !receipt.success ||
+      receipt.data.referral_id !== submitted.data.referral_id ||
+      (submitted.data.action === 'accept' &&
+        (receipt.data.status === 'declined' ||
+          !receipt.data.client_name ||
+          !receipt.data.client_phone)) ||
+      (submitted.data.action === 'decline' &&
+        receipt.data.status !== 'declined')
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Could not verify the saved decision. Retry the same decision.',
+        },
+        { status: 500 },
+      )
+    }
+    return NextResponse.json(receipt.data)
   } catch (error) {
-    console.error('API error:', error)
+    console.error('Partner referral decision error:', error)
     return NextResponse.json(
-      { error: 'Failed to process referral' },
+      { error: 'Failed to process referral. Retry the same decision.' },
       { status: 500 },
     )
   }

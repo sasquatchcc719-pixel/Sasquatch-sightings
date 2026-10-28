@@ -6,11 +6,17 @@ const {
   getCallRoutingConfigMock,
   isBlacklistedMock,
   sendOneSignalNotificationMock,
+  validateTwilioMock,
 } = vi.hoisted(() => ({
   createAdminClientMock: vi.fn(),
+  validateTwilioMock: vi.fn(),
   getCallRoutingConfigMock: vi.fn(),
   isBlacklistedMock: vi.fn(),
   sendOneSignalNotificationMock: vi.fn(),
+}))
+
+vi.mock('@/lib/twilio/inbound-auth', () => ({
+  validateTwilioInboundRequest: validateTwilioMock,
 }))
 
 vi.mock('@/lib/twilio/call-routing-config', () => ({
@@ -63,6 +69,7 @@ function twilioRequest(): NextRequest {
 describe('POST /api/twilio/call-router', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    validateTwilioMock.mockReturnValue(true)
     getCallRoutingConfigMock.mockResolvedValue(routingConfig)
     isBlacklistedMock.mockResolvedValue(false)
     sendOneSignalNotificationMock.mockResolvedValue(undefined)
@@ -75,6 +82,14 @@ describe('POST /api/twilio/call-router', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('rejects forged requests before logs, notifications or settings access', async () => {
+    validateTwilioMock.mockReturnValue(false)
+    expect((await POST(twilioRequest())).status).toBe(403)
+    expect(createAdminClientMock).not.toHaveBeenCalled()
+    expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
+    expect(sendOneSignalNotificationMock).not.toHaveBeenCalled()
   })
 
   it('dials the primary phone before the open-line failover', async () => {

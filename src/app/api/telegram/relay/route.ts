@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { matchesWebhookSecret } from '@/lib/webhook-auth'
 import {
   handleCustomerMediaCallback,
   postToTopic,
@@ -59,8 +60,10 @@ type TelegramUpdate = {
 
 function verifySecret(request: NextRequest): boolean {
   const expected = process.env.TELEGRAM_RELAY_SECRET_TOKEN
-  if (!expected) return true // not configured → allow (dev)
-  return request.headers.get('x-telegram-bot-api-secret-token') === expected
+  return matchesWebhookSecret(
+    expected,
+    request.headers.get('x-telegram-bot-api-secret-token'),
+  )
 }
 
 function isServiceMessage(msg: TgMessage): boolean {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
 import { writeCallLog } from '@/lib/twilio/call-history'
@@ -9,15 +9,17 @@ import {
   wasForwardedCallHandled,
 } from '@/lib/twilio/call-outcome'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
 export async function POST(request: NextRequest) {
   try {
     // Parse form data from Twilio
     const formData = await request.formData()
+    const signedParams = Object.fromEntries(
+      [...formData.entries()].map(([key, value]) => [key, String(value)]),
+    )
+    if (!validateTwilioInboundRequest({ request, form: signedParams })) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+    const supabase = createAdminClient()
     const callerPhone = formData.get('From') as string
     const callSid = formData.get('CallSid') as string
     const callStatus = formData.get('CallStatus') as string
@@ -273,6 +275,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function buildVoicemailResponse(): Promise<NextResponse> {
+  const supabase = createAdminClient()
   // Fetch phone settings from database for voicemail
   let voicemailMessage =
     "Thanks for calling Sasquatch Carpet Cleaning. You've either reached us after business hours or we're currently assisting other customers. You can book immediately at sasquatch carpet dot com and add any questions to the notes. Or leave a message after the beep and we'll get back to you as soon as possible."

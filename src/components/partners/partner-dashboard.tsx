@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -209,7 +208,6 @@ export function PartnerDashboard({
           client_name: clientName,
           client_phone: clientPhone,
           notes: notes || null,
-          booked_via_link: false,
         }),
       })
       const data = await res.json()
@@ -242,6 +240,7 @@ export function PartnerDashboard({
 
     setIsSubmitting(true)
     setSubmitError(null)
+    setSubmitSuccess(false)
 
     try {
       const res = await fetch('/api/partners/referrals', {
@@ -251,13 +250,13 @@ export function PartnerDashboard({
           client_name: clientName,
           client_phone: clientPhone,
           notes: notes || null,
-          booked_via_link: true,
         }),
       })
       const data = await res.json()
 
-      if (!res.ok) throw new Error(data.error || 'Failed to create booking')
+      if (!res.ok) throw new Error(data.error || 'Failed to submit referral')
 
+      setSubmitSuccess(true)
       window.open('/book', '_blank')
       setClientName('')
       setClientPhone('')
@@ -268,7 +267,7 @@ export function PartnerDashboard({
       setSubmitError(
         error instanceof Error
           ? error.message
-          : 'Failed to create booking. Please try again.',
+          : 'Failed to submit referral. Please try again.',
       )
     } finally {
       setIsSubmitting(false)
@@ -547,7 +546,7 @@ export function PartnerDashboard({
             </CardTitle>
             <CardDescription>
               Send us a lead and earn ${partner.backlink_verified ? '25' : '20'}{' '}
-              when they book!
+              after their booking is verified.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -594,7 +593,8 @@ export function PartnerDashboard({
 
               {submitSuccess && (
                 <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-600">
-                  Referral submitted successfully!
+                  Referral saved as pending. Credit is added after booking is
+                  verified.
                 </div>
               )}
 
@@ -614,7 +614,7 @@ export function PartnerDashboard({
                   className="flex-1"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Book for Client
+                  Submit & Open Booking
                 </Button>
               </div>
             </form>

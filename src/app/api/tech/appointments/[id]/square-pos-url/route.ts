@@ -6,6 +6,7 @@ import {
   detectMobilePlatform,
 } from '@/lib/payments/square-pos'
 import { createAdminClient } from '@/supabase/server'
+import { createSquarePosContext } from '@/lib/payments/square-pos-verification'
 
 /**
  * Build a Square Point of Sale deep link for this job's invoice total, so the
@@ -41,9 +42,13 @@ export async function POST(
     }
 
     const applicationId = process.env.SQUARE_APPLICATION_ID
-    if (!applicationId) {
+    if (
+      !applicationId ||
+      !process.env.SQUARE_ACCESS_TOKEN ||
+      !process.env.SQUARE_LOCATION_ID
+    ) {
       return NextResponse.json(
-        { error: 'Square is not fully configured (missing Application ID).' },
+        { error: 'Square payment verification is not fully configured.' },
         { status: 503 },
       )
     }
@@ -56,7 +61,8 @@ export async function POST(
     const returnTo =
       typeof body.returnTo === 'string' &&
       body.returnTo.startsWith('/') &&
-      !body.returnTo.startsWith('//')
+      !body.returnTo.startsWith('//') &&
+      !body.returnTo.includes('\\')
         ? body.returnTo
         : `/tech/jobs/${id}`
 
@@ -68,7 +74,16 @@ export async function POST(
     // (appointment id + where to return the tech) rides in Square's `state`
     // field, which Square round-trips back to us untouched.
     const callbackUrl = `${origin}/api/tech/square-pos-return`
-    const state = JSON.stringify({ a: id, r: returnTo })
+    const context = createSquarePosContext({
+      purpose: 'invoice',
+      invoiceId: invoice.invoiceId,
+      invoiceNumber: invoice.invoiceNumber,
+      appointmentId: id,
+      amountCents: cents,
+      kind: 'payment',
+      actorId: access.id,
+      returnTo,
+    })
     const platform = detectMobilePlatform(request.headers.get('user-agent'))
 
     const url = buildSquarePosUrl({
@@ -77,10 +92,8 @@ export async function POST(
       callbackUrl,
       applicationId,
       locationId: process.env.SQUARE_LOCATION_ID,
-      note: invoice.invoiceNumber
-        ? `Invoice #${invoice.invoiceNumber}`
-        : `Job ${id}`,
-      state,
+      note: context.note,
+      state: context.state,
     })
 
     return NextResponse.json({ url, platform, amount: invoice.total })

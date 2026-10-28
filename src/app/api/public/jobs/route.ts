@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { isUnknownCity } from '@/lib/geocode'
 import { PUBLIC_AREAS, isInArea } from '@/lib/public-areas'
 
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const area = searchParams.get('area')?.toLowerCase()
     const limit = Math.min(parseInt(searchParams.get('limit') || '6'), 100)
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // Base query for published jobs
     let query = supabase

@@ -2,66 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { getChargeableInvoice } from '@/lib/tech/appointments'
 import { parseSquarePosReturn } from '@/lib/payments/square-pos'
+import {
+  verifySquarePosContext,
+  verifySquarePosPayment,
+} from '@/lib/payments/square-pos-verification'
 import { createAdminClient } from '@/supabase/server'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
-/**
- * Square Point of Sale switches back here after a tap-to-pay transaction.
- *
- * This is a SINGLE FIXED callback path on purpose: Square matches the
- * callback_url against the EXACT URL registered in the Developer Console — no
- * wildcards, no dynamic path segments, and no extra query string. So the
- * appointment id and the return path are carried in Square's `state` field
- * (JSON `{ a: appointmentId, r: returnPath }`), which Square round-trips back
- * to us untouched. Register exactly this URL (no id, no query) in the Console:
- *   https://<origin>/api/tech/square-pos-return
- *
- * On success we mark the invoice paid (method 'square') — equivalent to the
- * tech tapping "Mark Square Paid", but automatic — then redirect to the job.
- * The Square webhook (when configured) is the authoritative financial record;
- * this gives the tech instant in-app confirmation.
- */
+/** Fixed Square callback URL. State proves the original staff-authorized launch;
+ * server-side order/payment reads prove collection before any paid status changes. */
 export async function GET(request: NextRequest) {
-  const result = parseSquarePosReturn(request.nextUrl.searchParams)
-
-  // Square round-trips our `state` value: JSON `{ a: appointmentId, r: path }`.
-  // Decode it for the appointment id and the page to return the tech to. Fall
-  // back to legacy query params (`appt`, `return_to`) for any in-flight charge
-  // started before this change.
-  let stateAppt = ''
-  let stateReturn = ''
-  if (result?.state) {
-    try {
-      const parsed = JSON.parse(result.state) as { a?: string; r?: string }
-      if (typeof parsed.a === 'string') stateAppt = parsed.a
-      if (typeof parsed.r === 'string') stateReturn = parsed.r
-    } catch {
-      // Pre-JSON state was the bare appointment id.
-      stateAppt = result.state
-    }
-  }
-
-  const id = stateAppt || request.nextUrl.searchParams.get('appt') || ''
-
-  // Return to the page the charge was started from (admin invoice or tech job);
-  // only same-origin relative paths are honored.
-  const rawReturn = stateReturn || request.nextUrl.searchParams.get('return_to')
-  const returnPath =
-    rawReturn && rawReturn.startsWith('/') && !rawReturn.startsWith('//')
-      ? rawReturn
-      : id
-        ? `/tech/jobs/${id}`
-        : '/tech'
-  const jobUrl = new URL(returnPath, request.nextUrl.origin)
-
-  // Customer canceled or Square errored — don't mark paid; tell the tech.
-  if (!result || result.status === 'error') {
-    const code = result?.status === 'error' ? result.errorCode || '' : ''
-    const canceled = /cancel/i.test(code)
-    jobUrl.searchParams.set('payment', canceled ? 'canceled' : 'error')
-    return NextResponse.redirect(jobUrl)
-  }
-
+  let jobUrl = new URL('/tech', request.nextUrl.origin)
   try {
     const access = await requireAnyRole([
       'admin',
@@ -69,45 +20,87 @@ export async function GET(request: NextRequest) {
       'dispatcher',
       'tech',
     ])
-    const supabase = createAdminClient()
-    const invoice = id
-      ? await getChargeableInvoice(supabase, {
-          role: access.role,
-          userId: access.staff?.id ?? access.id,
-          appointmentId: id,
-        })
-      : null
-
-    if (invoice) {
-      const nowIso = new Date().toISOString()
-      const { error: invoiceUpdateError } = await supabase
-        .from('ops_invoices')
-        .update({
-          status: 'paid',
-          payment_status: 'paid',
-          payment_method: 'square',
-          updated_at: nowIso,
-        })
-        .eq('id', invoice.invoiceId)
-      if (invoiceUpdateError) throw invoiceUpdateError
-
-      const { error: appointmentUpdateError } = await supabase
-        .from('ops_appointments')
-        .update({ payment_status: 'paid', updated_at: nowIso })
-        .eq('id', id)
-      if (appointmentUpdateError) throw appointmentUpdateError
-      await ensureInvoiceQuickBooksSyncJob(supabase, invoice.invoiceId)
-      console.log(
-        `[square-pos-return] Marked invoice ${invoice.invoiceId} paid (txn ${result.transactionId ?? 'n/a'})`,
+    const result = parseSquarePosReturn(request.nextUrl.searchParams)
+    const context = verifySquarePosContext(result?.state || '')
+    if (context.purpose !== 'invoice' || context.actorId !== access.id)
+      throw new Error('Not authorized')
+    const returnUrl = new URL(context.returnTo, request.nextUrl.origin)
+    if (
+      !context.returnTo.startsWith('/') ||
+      context.returnTo.includes('\\') ||
+      returnUrl.origin !== request.nextUrl.origin
+    )
+      throw new Error('Invalid payment return.')
+    jobUrl = returnUrl
+    if (!result || result.status === 'error') {
+      const code = result?.status === 'error' ? result.errorCode || '' : ''
+      jobUrl.searchParams.set(
+        'payment',
+        /cancel/i.test(code) ? 'canceled' : 'error',
       )
+      return NextResponse.redirect(jobUrl)
     }
+    if (!result.transactionId)
+      throw new Error('Square payment is not available yet.')
+    const supabase = createAdminClient()
+    const invoice = await getChargeableInvoice(supabase, {
+      role: access.role,
+      userId: access.staff?.id ?? access.id,
+      appointmentId: context.appointmentId,
+    })
+    if (
+      !invoice ||
+      invoice.invoiceId !== context.invoiceId ||
+      Math.round(invoice.total * 100) !== context.amountCents
+    )
+      throw new Error('Invoice changed after the payment was started.')
+    const payment = await verifySquarePosPayment(result.transactionId, context)
+    const { data: current, error: currentError } = await supabase
+      .from('ops_invoices')
+      .select('square_payment_id')
+      .eq('id', invoice.invoiceId)
+      .maybeSingle()
+    if (
+      currentError ||
+      !current ||
+      (current.square_payment_id &&
+        current.square_payment_id !== payment.paymentId)
+    )
+      throw new Error('Invoice already has another payment.')
+    const nowIso = new Date().toISOString()
+    const update = supabase
+      .from('ops_invoices')
+      .update({
+        status: 'paid',
+        payment_status: 'paid',
+        payment_method: 'square',
+        square_payment_id: payment.paymentId,
+        square_order_id: payment.orderId,
+        square_paid_cents: payment.amountCents,
+        square_paid_at: payment.paidAt,
+        updated_at: nowIso,
+      })
+      .eq('id', invoice.invoiceId)
+      .eq('total', invoice.total)
+    const guarded = current.square_payment_id
+      ? update.eq('square_payment_id', payment.paymentId)
+      : update.is('square_payment_id', null)
+    const { data: saved, error: invoiceError } = await guarded
+      .select('id')
+      .maybeSingle()
+    if (invoiceError || !saved)
+      throw new Error('Invoice changed during payment verification.')
+    const { error: appointmentError } = await supabase
+      .from('ops_appointments')
+      .update({ payment_status: 'paid', updated_at: nowIso })
+      .eq('id', context.appointmentId)
+    if (appointmentError) throw appointmentError
+    await ensureInvoiceQuickBooksSyncJob(supabase, invoice.invoiceId)
     jobUrl.searchParams.set('payment', 'success')
-  } catch (error) {
-    // Not authorized / lookup failed — the webhook backstop will still
-    // reconcile the real payment. Send the tech back with a soft notice.
-    console.error('[square-pos-return][GET]', error)
-    jobUrl.searchParams.set('payment', 'received')
+  } catch {
+    // Collection may have completed even when verification is temporarily unavailable.
+    // Do not claim success or encourage a second charge.
+    jobUrl.searchParams.set('payment', 'verification_pending')
   }
-
   return NextResponse.redirect(jobUrl)
 }

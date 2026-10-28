@@ -1350,6 +1350,13 @@ export function InvoiceDetail({
             : 'Card payment received. Refresh in a moment to confirm.',
       })
       router.refresh()
+    } else if (payment === 'verification_pending') {
+      setPaymentLinkFeedback({
+        type: 'square',
+        ok: false,
+        message: 'Payment verification is pending. Check the Square receipt before taking another payment.',
+      })
+      router.refresh()
     } else if (payment === 'canceled') {
       setPaymentLinkFeedback({
         type: 'square',

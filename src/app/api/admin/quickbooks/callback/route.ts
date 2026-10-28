@@ -3,14 +3,30 @@ import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
 import { exchangeCodeForTokens, saveQBTokens } from '@/lib/quickbooks-auth'
 import { createAdminClient } from '@/supabase/server'
 import { resumeQuickBooksAuthorizationJobs } from '@/lib/ops/quickbooks-sync-jobs'
+import {
+  verifyQBState,
+  QB_STATE_COOKIE,
+  QB_STATE_COOKIE_PATH,
+} from '@/lib/quickbooks-oauth-state'
 
 export async function GET(request: NextRequest) {
+  function finish(parameter: string, value: string) {
+    const destination = new URL('/admin/operations', request.url)
+    destination.searchParams.set(parameter, value)
+    const response = NextResponse.redirect(destination)
+    response.cookies.set(QB_STATE_COOKIE, '', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 0,
+      path: QB_STATE_COOKIE_PATH,
+    })
+    return response
+  }
   try {
     const { user, role } = await getUserWithRole()
     if (!user || !hasRoleAccess(role, ['admin', 'owner'])) {
-      return NextResponse.redirect(
-        new URL('/admin/operations?qb_error=unauthorized', request.url),
-      )
+      return finish('qb_error', 'unauthorized')
     }
 
     const { searchParams } = new URL(request.url)
@@ -18,21 +34,24 @@ export async function GET(request: NextRequest) {
     const realmId = searchParams.get('realmId')
     const error = searchParams.get('error')
 
+    if (
+      !verifyQBState(
+        request.cookies.get(QB_STATE_COOKIE)?.value,
+        searchParams.get('state'),
+        user.id,
+      )
+    ) {
+      return finish('qb_error', 'invalid_state')
+    }
+
     if (error) {
       console.error('[quickbooks/callback] QB returned error:', error)
-      return NextResponse.redirect(
-        new URL(`/admin/operations?qb_error=${error}`, request.url),
-      )
+      return finish('qb_error', error)
     }
 
     if (!code || !realmId) {
-      return NextResponse.redirect(
-        new URL('/admin/operations?qb_error=missing_params', request.url),
-      )
+      return finish('qb_error', 'missing_params')
     }
-
-    // Note: state cookie check skipped — Intuit redirects drop the cookie in production.
-    // This endpoint is admin-only and HTTPS-only so CSRF risk is minimal.
 
     const tokens = await exchangeCodeForTokens(code)
     await saveQBTokens({
@@ -47,16 +66,12 @@ export async function GET(request: NextRequest) {
     // blocked by that authorization failure; leave real invoice errors alone.
     await resumeQuickBooksAuthorizationJobs(createAdminClient(), true)
 
-    return NextResponse.redirect(
-      new URL('/admin/operations?qb_connected=1', request.url),
-    )
+    return finish('qb_connected', '1')
   } catch (err) {
     console.error(
       '[quickbooks/callback] Token exchange or save failed:',
       err instanceof Error ? err.message : err,
     )
-    return NextResponse.redirect(
-      new URL('/admin/operations?qb_error=token_exchange_failed', request.url),
-    )
+    return finish('qb_error', 'token_exchange_failed')
   }
 }

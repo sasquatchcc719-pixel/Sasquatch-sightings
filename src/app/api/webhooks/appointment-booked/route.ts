@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { matchesWebhookSecret } from '@/lib/webhook-auth'
 
 type AppointmentLineItem = {
   name_snapshot: string | null
@@ -75,8 +76,23 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function POST(request: NextRequest) {
+  const secret = process.env.APPOINTMENT_WEBHOOK_SECRET
+  if (!secret)
+    return NextResponse.json(
+      { error: 'Webhook not configured' },
+      { status: 503 },
+    )
+  if (!matchesWebhookSecret(secret, request.headers.get('x-webhook-secret'))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
-    const payload = await request.json()
+    const payload = await request.json().catch(() => null)
+    if (!payload || !['INSERT', 'UPDATE', 'DELETE'].includes(payload.type)) {
+      return NextResponse.json(
+        { error: 'Invalid webhook payload' },
+        { status: 400 },
+      )
+    }
 
     // Webhook payload from Supabase includes type and record
     const { type, record } = payload
@@ -85,7 +101,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: true })
     }
 
-    const appointmentId = record.id
+    const appointmentId = record?.id
+    if (
+      typeof appointmentId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        appointmentId,
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid appointment ID' },
+        { status: 400 },
+      )
+    }
     const supabase = createAdminClient()
 
     const fetchAppointment = () =>

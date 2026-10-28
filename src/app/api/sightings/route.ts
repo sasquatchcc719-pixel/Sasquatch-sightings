@@ -5,7 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
+import {
+  signSightingSubmission,
+  SIGHTING_SUBMISSION_COOKIE,
+  SIGHTING_SUBMISSION_MAX_AGE,
+} from '@/lib/sighting-submission'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateSightingSEOFilename } from '@/lib/seo-filename'
 import { sendOneSignalNotification } from '@/lib/onesignal'
@@ -45,9 +50,28 @@ export async function POST(request: NextRequest) {
     )
 
     // Validate required fields (image is now optional)
-    if (!fullName || !phoneNumber || !email) {
+    if (
+      typeof fullName !== 'string' ||
+      !fullName.trim() ||
+      fullName.length > 200 ||
+      typeof phoneNumber !== 'string' ||
+      !/^[+()\d\s.-]{7,32}$/.test(phoneNumber) ||
+      typeof email !== 'string' ||
+      email.length > 320 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      [zipCode, locationText, gpsLat, gpsLng, partnerId].some(
+        (value) =>
+          value !== null && (typeof value !== 'string' || value.length > 500),
+      ) ||
+      (partnerId &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          partnerId,
+        )) ||
+      (imageFile &&
+        (typeof imageFile === 'string' || imageFile.size > 10 * 1024 * 1024))
+    ) {
       return NextResponse.json(
-        { error: 'Full name, phone number, and email are required' },
+        { error: 'Provide valid contact information and an image under 10 MB' },
         { status: 400 },
       )
     }
@@ -56,12 +80,17 @@ export async function POST(request: NextRequest) {
     let lat: number | null = null
     let lng: number | null = null
 
-    if (gpsLat && gpsLng) {
-      lat = parseFloat(gpsLat)
-      lng = parseFloat(gpsLng)
+    if (gpsLat || gpsLng) {
+      lat = gpsLat ? Number(gpsLat) : NaN
+      lng = gpsLng ? Number(gpsLng) : NaN
 
       // Validate coordinates if provided
-      if (isNaN(lat) || isNaN(lng)) {
+      if (
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 ||
+        Math.abs(lng) > 180
+      ) {
         return NextResponse.json(
           { error: 'Invalid GPS coordinates' },
           { status: 400 },
@@ -69,8 +98,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create Supabase client (no auth required for public submissions)
-    const supabase = await createClient()
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { error: 'Submission verification is not configured' },
+        { status: 503 },
+      )
+    }
+
+    // Validated public intake writes only the server-owned submission fields.
+    const supabase = createAdminClient()
 
     // Reverse geocode GPS coordinates to get city and state (for SEO filename)
     let city: string | null = null
@@ -184,7 +220,7 @@ export async function POST(request: NextRequest) {
         contest_eligible: contestEligible,
         coupon_redeemed: false,
       })
-      .select()
+      .select('id')
       .single()
 
     if (insertError) {
@@ -353,15 +389,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Return success with coupon
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
         message: 'Sighting logged successfully',
-        data: sighting,
+        data: { id: sighting.id },
         couponCode: 'SCC20',
       },
       { status: 201 },
     )
+    response.cookies.set(
+      SIGHTING_SUBMISSION_COOKIE,
+      signSightingSubmission(sighting.id),
+      {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/api/sightings',
+        maxAge: SIGHTING_SUBMISSION_MAX_AGE,
+      },
+    )
+    return response
   } catch (error) {
     console.error('Error logging sighting:', error)
     return NextResponse.json(

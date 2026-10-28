@@ -1,30 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import twilio from 'twilio'
+import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 
 const twilioPhone = process.env.TWILIO_PHONE_NUMBER || '+17192498791'
 
 export async function POST(request: NextRequest) {
   try {
-    const authToken = process.env.TWILIO_AUTH_TOKEN
-    if (authToken) {
-      const signature = request.headers.get('x-twilio-signature') || ''
-      const url = request.url
-      const body = await request.clone().formData()
-      const params: Record<string, string> = {}
-      body.forEach((value, key) => {
-        params[key] = value.toString()
-      })
-
-      const valid = twilio.validateRequest(authToken, signature, url, params)
-      if (!valid) {
-        console.warn(
-          '[voice-twiml] Invalid Twilio signature — rejecting request',
-        )
-        return new NextResponse('Forbidden', { status: 403 })
-      }
-    }
-
     const formData = await request.formData()
+    const signedParams = Object.fromEntries(
+      [...formData.entries()].map(([key, value]) => [key, String(value)]),
+    )
+    if (!validateTwilioInboundRequest({ request, form: signedParams })) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
     const rawTo = formData.get('To') as string
 
     if (!rawTo) {
@@ -49,6 +36,10 @@ export async function POST(request: NextRequest) {
       digits.startsWith('1')
     ) {
       to = `+${digits}`
+    }
+
+    if (!/^\+[1-9]\d{7,14}$/.test(to)) {
+      return new NextResponse('Invalid phone number', { status: 400 })
     }
 
     console.log(
