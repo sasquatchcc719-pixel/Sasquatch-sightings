@@ -165,13 +165,23 @@ export const commercialMeasurementPreviewInput = z
       .strict(),
   })
   .strict()
+export const commercialMeasurementConfirmInput = z
+  .object({
+    account_id: id,
+    operation_id: id,
+    confirmed: z.literal(true),
+  })
+  .strict()
+export const commercialMeasurementRecoveryInput = z
+  .object({ account_id: id, operation_id: id })
+  .strict()
 
 // Detailed business records are untrusted evidence. The bridge validates and
 // bounds their response size and rejects credentials before exposing them here.
 export const commercialWorkspaceControlsSchema = z
   .object({
     emailSendingDisabled: z.boolean(),
-    bookingEnabled: z.literal(false),
+    bookingEnabled: z.boolean(),
     mode: z.enum([
       'workspace_and_preview_only',
       'controlled_email_pilot',

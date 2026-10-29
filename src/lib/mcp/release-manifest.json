@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -55,6 +55,8 @@
     "update_commercial_account",
     "match_commercial_customer",
     "get_commercial_measurement_slots",
-    "preview_commercial_measurement"
+    "preview_commercial_measurement",
+    "confirm_commercial_measurement",
+    "recover_commercial_measurement"
   ]
 }

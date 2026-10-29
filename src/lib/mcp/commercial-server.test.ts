@@ -78,29 +78,33 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.10.1')
+    expect(MCP_SERVER_VERSION).toBe('1.10.2')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
-    expect(mocks.tools.size).toBe(54)
+    expect(mocks.tools.size).toBe(56)
     const commercial = [...mocks.tools.keys()].filter((name) =>
       name.includes('commercial'),
     )
-    expect(commercial).toHaveLength(14)
+    expect(commercial).toHaveLength(16)
     expect(
       commercial.some((name) =>
         /send|confirm|recover|book/.test(name.replace('playbook', '')),
       ),
-    ).toBe(false)
+    ).toBe(true)
     expect(
       mocks.tools.get('create_commercial_account')!.annotations.readOnlyHint,
     ).toBe(false)
     expect(
       mocks.tools.get('preview_commercial_measurement')!.annotations
         .readOnlyHint,
-    ).toBe(true)
+    ).toBe(false)
+    expect(
+      mocks.tools.get('confirm_commercial_measurement')!.annotations
+        .readOnlyHint,
+    ).toBe(false)
     expect(MCP_SERVER_INSTRUCTIONS).toContain(
       'retired SMS Harry engine stays retired',
     )
-    expect(MCP_SERVER_INSTRUCTIONS).toContain('never use ordinary appointment')
+    expect(MCP_SERVER_INSTRUCTIONS).toContain('Never use ordinary appointment')
   })
   it.each([
     ['get_commercial_playbook', 'get_playbook', {}],
@@ -173,6 +177,16 @@ describe('commercial MCP workspace registration', () => {
         },
       },
     ],
+    [
+      'confirm_commercial_measurement',
+      'confirm_measurement',
+      { account_id: id, operation_id: id, confirmed: true },
+    ],
+    [
+      'recover_commercial_measurement',
+      'recover_measurement',
+      { account_id: id, operation_id: id },
+    ],
   ])(
     'routes %s only through the fixed action and verified OAuth actor',
     async (name, action, input) => {
@@ -195,7 +209,7 @@ describe('commercial MCP workspace registration', () => {
       })
     },
   )
-  it('requires business:write for both account mutations without upgrading any grants', async () => {
+  it('requires business:write for account and measuring mutations without upgrading grants', async () => {
     await expect(
       call(
         'create_commercial_account',
@@ -205,6 +219,13 @@ describe('commercial MCP workspace registration', () => {
     ).rejects.toThrow('business:write')
     await expect(
       call('update_commercial_account', {}, extra(['business:read'])),
+    ).rejects.toThrow('business:write')
+    await expect(
+      call(
+        'confirm_commercial_measurement',
+        { account_id: id, operation_id: id, confirmed: true },
+        extra(['business:read']),
+      ),
     ).rejects.toThrow('business:write')
     expect(mocks.request).not.toHaveBeenCalled()
     await call('get_commercial_playbook', {}, extra(['business:read']))
@@ -266,11 +287,12 @@ describe('commercial MCP workspace registration', () => {
       expect(mocks.request).not.toHaveBeenCalled()
     },
   )
-  it('refuses an upstream response claiming sending or booking is enabled', async () => {
+  it('accepts the verified live booking control', async () => {
     mocks.request.mockResolvedValue({
+      result: {},
       controls: { ...controls, bookingEnabled: true },
     })
-    await expect(call('get_commercial_playbook', {})).rejects.toThrow()
+    await expect(call('get_commercial_playbook', {})).resolves.toBeDefined()
   })
   it('keeps old tools discoverable and capability catalog usable when upstream is unavailable', async () => {
     mocks.request.mockRejectedValue(

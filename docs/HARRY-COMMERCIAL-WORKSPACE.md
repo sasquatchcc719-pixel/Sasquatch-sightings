@@ -5,14 +5,16 @@ Harry uses the existing Sasquatch Sightings OAuth connector at
 agent; it does not reactivate the retired Harry SMS engine or create another
 inbox, subscription or agent. Existing OAuth identities and grants stay intact.
 
-Release 1.10.1 preserves the previous tools and adds Harry's retained workday
-status and escalation queue alongside the commercial workspace:
+Release 1.10.2 preserves the previous tools and adds durable commercial
+measuring confirmation and recovery alongside Harry's retained workday status,
+escalation queue and commercial workspace:
 `get_commercial_playbook`, `list_commercial_accounts`,
 `get_commercial_workday_status`, `list_commercial_escalations`,
 `search_commercial_prospects`, `get_commercial_account`,
 `get_commercial_account_history`, `create_commercial_account`,
 `update_commercial_account`, `match_commercial_customer`,
-`get_commercial_measurement_slots`, and `preview_commercial_measurement`.
+`get_commercial_measurement_slots`, `preview_commercial_measurement`,
+`confirm_commercial_measurement`, and `recover_commercial_measurement`.
 
 The scheduled workday prepares Harry's queue independently of delivery. It checks the sales queue, prepares a
 bounded number of source-backed drafts, maintains account next actions, records
@@ -20,10 +22,11 @@ exceptions and saves a short report. The connector exposes that report and only
 the unresolved exceptions that need owner attention. The upstream controls
 report `workspace_and_preview_only`, `controlled_email_pilot`, or
 `autonomous_email`; the latter two reflect Outreach's independently capped
-delivery worker. `bookingEnabled` remains false in every mode. Only account creation
-and updates save internal research, assignments, permitted stages and dated next
-actions. Those two tools require `business:write`; reads and measuring previews
-require `business:read`. Source/account UUIDs, optimistic versions, bounded
+delivery worker. `bookingEnabled` reports the independent production booking
+gate. Account creation, updates, durable measuring preview/confirmation and
+recovery save state; confirmation creates only the reviewed measuring visit.
+Those actions require `business:write` except preview; other reads require
+`business:read`. Source/account UUIDs, optimistic versions, bounded
 pagination and caller request UUIDs preserve identity and retry safety.
 
 Read the approved commercial playbook first. Restaurants remain eligible at
@@ -35,10 +38,11 @@ walkthroughs, proposals or sales.
 For a measuring visit, inspect the account and matching Sightings customer/site,
 read slots for the exact duration, then preview the exact identity, date, time,
 staff and work description. A preview creates no appointment, invoice, email,
-SMS or staff notification. No commercial confirm, recovery, booking or direct
-send tool is exposed through Sightings; delivery runs only through Outreach's
-retained worker and controls. Never use ordinary service appointment, estimate
-or contact tools as a fallback.
+SMS or staff notification. Confirmation revalidates the same durable operation,
+account version, site, staff, exact time and live calendar. Recovery reuses the
+same operation key after an interrupted response and cannot create a duplicate.
+Email delivery runs only through Outreach's retained worker and controls. Never
+use ordinary service appointment, estimate or contact tools as a fallback.
 
 The authenticated capability catalog reports whether the upstream workspace is
 configured and verified, its allowed actions and the last verification time.

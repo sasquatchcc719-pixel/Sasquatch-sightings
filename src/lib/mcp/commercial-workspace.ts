@@ -21,9 +21,16 @@ const ACTIONS = new Set([
   'match_sightings',
   'measurement_slots',
   'preview_measurement',
+  'confirm_measurement',
+  'recover_measurement',
   'status',
 ])
-const WRITES = new Set(['create_account', 'update_account'])
+const WRITES = new Set([
+  'create_account',
+  'update_account',
+  'confirm_measurement',
+  'recover_measurement',
+])
 
 export class CommercialWorkspaceError extends Error {
   constructor(
@@ -77,7 +84,7 @@ function verifyControls(value: unknown) {
   if (
     Object.keys(controls).length !== 3 ||
     typeof controls.emailSendingDisabled !== 'boolean' ||
-    controls.bookingEnabled !== false
+    typeof controls.bookingEnabled !== 'boolean'
   )
     return false
   return controls.emailSendingDisabled
@@ -229,7 +236,7 @@ export async function getCommercialWorkspaceStatus(
   lastSeen: string | null
   controls: {
     emailSendingDisabled: boolean
-    bookingEnabled: false
+    bookingEnabled: boolean
     mode:
       | 'workspace_and_preview_only'
       | 'controlled_email_pilot'
@@ -243,7 +250,7 @@ export async function getCommercialWorkspaceStatus(
     lastSeen: null,
     controls: {
       emailSendingDisabled: true,
-      bookingEnabled: false as const,
+      bookingEnabled: false,
       mode: 'workspace_and_preview_only' as const,
     },
   }
@@ -284,7 +291,7 @@ export async function getCommercialWorkspaceStatus(
       lastSeen: result.lastSeenAt,
       controls: response.controls as {
         emailSendingDisabled: boolean
-        bookingEnabled: false
+        bookingEnabled: boolean
         mode:
           | 'workspace_and_preview_only'
           | 'controlled_email_pilot'
