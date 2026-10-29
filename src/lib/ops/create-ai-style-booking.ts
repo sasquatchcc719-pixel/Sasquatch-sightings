@@ -24,6 +24,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { resolveLocationPartner } from '@/lib/server/location-partner-attribution'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 import { isBlacklisted } from '@/lib/blacklist'
@@ -341,6 +342,24 @@ export async function createAiStyleBooking(
     return { ok: false, error: resolvedLeadSource.error }
   }
 
+  const attributedPartner =
+    resolvedLeadSource.source.source_key === 'nfc_partner'
+      ? await resolveLocationPartner(
+          supabase,
+          resolvedLeadSource.source.lead_source_detail,
+        )
+      : null
+  if (
+    resolvedLeadSource.source.source_key === 'nfc_partner' &&
+    !attributedPartner
+  ) {
+    return {
+      ok: false,
+      error:
+        'Use the exact plaque location name or coupon code for this NFC lead.',
+    }
+  }
+
   if (
     bookingChannel === 'retell_rabecca' &&
     normalizedLeadSource.toLowerCase() === REBECCA_RETELL_CHANNEL_LEAD_SOURCE
@@ -655,6 +674,7 @@ export async function createAiStyleBooking(
       booking_channel: bookingChannel,
       source: sourceLabel,
       ...leadSourceUpdatePayload(resolvedLeadSource.source),
+      partner_id: attributedPartner?.id ?? null,
       kind: 'service',
       assigned_staff_user_id: resolvedStaffUserId,
     })

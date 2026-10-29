@@ -178,22 +178,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const normalizedLeadSource = await normalizeLeadSourceForWrite({
-      supabase,
-      sourceKey: leadSourceKey,
-      legacyValue: leadSource,
-      detail: leadSourceDetail,
-      requireActive: true,
-      requirePublic: true,
-    })
-
-    if (!normalizedLeadSource.ok) {
-      return NextResponse.json(
-        { error: normalizedLeadSource.error },
-        { status: 400, headers: CORS },
-      )
-    }
-
     const lineItems: Array<{
       service_catalog_item_id?: string
       name_snapshot: string
@@ -437,22 +421,56 @@ export async function POST(request: NextRequest) {
     // A booking belongs to a partner location when the landing page passed
     // partner_id, or when the promo code IS a partner's coupon (MILA20 etc).
     let partnerId: string | null = null
+    let partnerDetail: string | null = null
     const requestedPartnerId = String(body.appointment?.partner_id || '').trim()
     if (/^[0-9a-f-]{36}$/i.test(requestedPartnerId)) {
       const { data: partnerRow } = await supabase
         .from('partners')
-        .select('id')
+        .select('id, location_name, company_name')
         .eq('id', requestedPartnerId)
+        .eq('partner_type', 'location')
         .maybeSingle()
       partnerId = partnerRow?.id ?? null
+      partnerDetail =
+        partnerRow?.location_name ?? partnerRow?.company_name ?? null
     }
     if (!partnerId && appliedPromoCode) {
       const { data: couponPartner } = await supabase
         .from('partners')
-        .select('id')
+        .select('id, location_name, company_name')
+        .eq('partner_type', 'location')
         .ilike('coupon_code', appliedPromoCode)
         .maybeSingle()
       partnerId = couponPartner?.id ?? null
+      partnerDetail =
+        couponPartner?.location_name ?? couponPartner?.company_name ?? null
+    }
+
+    let attributedTapId: string | null = null
+    const requestedTapId = String(body.appointment?.tap_id || '').trim()
+    if (partnerId && /^[0-9a-f-]{36}$/i.test(requestedTapId)) {
+      const { data: tapRow } = await supabase
+        .from('nfc_card_taps')
+        .select('id, partner_id')
+        .eq('id', requestedTapId)
+        .maybeSingle()
+      if (tapRow?.partner_id === partnerId) attributedTapId = tapRow.id
+    }
+
+    const normalizedLeadSource = await normalizeLeadSourceForWrite({
+      supabase,
+      sourceKey: partnerId ? 'nfc_partner' : leadSourceKey,
+      legacyValue: partnerId ? null : leadSource,
+      detail: partnerId ? partnerDetail : leadSourceDetail,
+      requireActive: true,
+      requirePublic: true,
+    })
+
+    if (!normalizedLeadSource.ok) {
+      return NextResponse.json(
+        { error: normalizedLeadSource.error },
+        { status: 400, headers: CORS },
+      )
     }
 
     // --- Find or create customer ---
@@ -701,6 +719,24 @@ export async function POST(request: NextRequest) {
 
     if (appointmentError) throw appointmentError
     tomorrowFillAppointmentCreated = true
+    if (attributedTapId) {
+      const { error: tapAttributionError } = await supabase
+        .from('nfc_card_taps')
+        .update({
+          appointment_id: appointment.id,
+          converted: true,
+          converted_at: new Date().toISOString(),
+          conversion_type: 'booking',
+        })
+        .eq('id', attributedTapId)
+        .eq('partner_id', partnerId)
+      if (tapAttributionError) {
+        console.error(
+          '[public/appointments] tap attribution failed:',
+          tapAttributionError,
+        )
+      }
+    }
     await cancelReactivationForCustomer(customerId, 'booked_job')
 
     // --- Create invoice ---

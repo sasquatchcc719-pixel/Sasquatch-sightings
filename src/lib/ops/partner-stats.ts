@@ -33,6 +33,7 @@ export async function loadPartnerLiveStats(
       .from('nfc_card_taps')
       .select('partner_id, conversion_type, tapped_at')
       .not('partner_id', 'is', null)
+      .neq('tap_type', 'redirect_duplicate')
       .limit(50000),
     supabase
       .from('ops_appointments')

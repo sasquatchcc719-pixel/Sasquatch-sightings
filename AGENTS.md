@@ -196,6 +196,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 - For Outreach rebuilds, ship and verify the live sales queue, drafts, reply monitoring, and follow-up loop before producing more planning or research material.
 - Treat partner plaques and commercial prospect cards as separate marketing channels; never combine their assignment, tracking, or reporting.
+- Partner plaque reporting must preserve the exact scan-to-appointment link, deduplicate redirect page views, and carry the location partner through online, staff, and agent-created bookings.
 
 - For append-only evidence tables, revoke Supabase’s default service_role privileges before granting SELECT/INSERT; verify UPDATE and DELETE are denied.
 

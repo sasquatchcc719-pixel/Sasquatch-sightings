@@ -31,6 +31,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { resolveLocationPartner } from '@/lib/server/location-partner-attribution'
 import {
   computePromoDiscountAmount,
   computeTieredDiscountAmount,
@@ -93,6 +94,7 @@ export async function POST(request: NextRequest) {
       lead_source_key: string | null
       lead_source_detail: string | null
       original_lead_source: string | null
+      partner_id: string | null
     } | null = null
     let warrantyDurationMinutes = 0
 
@@ -141,7 +143,7 @@ export async function POST(request: NextRequest) {
       const { data: originalJob, error: originalJobError } = await supabase
         .from('ops_appointments')
         .select(
-          'id, service_address_id, lead_source, lead_source_key, lead_source_detail, original_lead_source',
+          'id, service_address_id, lead_source, lead_source_key, lead_source_detail, original_lead_source, partner_id',
         )
         .eq('id', concern.appointment_id)
         .eq('customer_id', concern.customer_id)
@@ -600,6 +602,7 @@ export async function POST(request: NextRequest) {
     }
 
     let leadSourcePayload: Record<string, string | null>
+    let attributedPartnerId: string | null = null
     if (originalWarrantyJob) {
       leadSourcePayload = {
         lead_source: originalWarrantyJob.lead_source,
@@ -607,6 +610,7 @@ export async function POST(request: NextRequest) {
         lead_source_detail: originalWarrantyJob.lead_source_detail,
         original_lead_source: originalWarrantyJob.original_lead_source,
       }
+      attributedPartnerId = originalWarrantyJob.partner_id
     } else {
       const normalizedLeadSource = await normalizeLeadSourceForWrite({
         supabase,
@@ -624,6 +628,22 @@ export async function POST(request: NextRequest) {
         )
       }
       leadSourcePayload = leadSourceUpdatePayload(normalizedLeadSource.source)
+      if (normalizedLeadSource.source.source_key === 'nfc_partner') {
+        const matchedPartner = await resolveLocationPartner(
+          supabase,
+          normalizedLeadSource.source.lead_source_detail,
+        )
+        if (!matchedPartner) {
+          return NextResponse.json(
+            {
+              error:
+                'Choose an exact plaque location name or coupon code for this NFC lead.',
+            },
+            { status: 400 },
+          )
+        }
+        attributedPartnerId = matchedPartner.id
+      }
     }
 
     const syncStatus = getQuickBooksSyncStatus()
@@ -642,6 +662,7 @@ export async function POST(request: NextRequest) {
         booking_channel: body.appointment?.booking_channel || 'admin',
         source: body.appointment?.source || 'internal',
         ...leadSourcePayload,
+        partner_id: attributedPartnerId,
         status: 'booked',
         payment_status: isNoChargeWarranty ? 'waived' : 'unpaid',
         kind: appointmentKind,

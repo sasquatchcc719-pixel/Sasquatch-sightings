@@ -60,6 +60,8 @@ export interface NfcBookingWidgetProps {
   appearance?: 'forest'
   couponCode: string
   cardId: string | null
+  /** Exact NFC tap session, used to link a successful booking to its scan. */
+  tapId?: string | null
   onTrackClick?: (buttonType: string) => void
   /** Where this booking came from, for stats — e.g. a partner location name.
    *  Falls back to the NFC card id, then a generic label. */
@@ -741,6 +743,7 @@ export function NfcBookingWidget({
   couponCode,
   partnerId,
   cardId,
+  tapId,
   onTrackClick,
   leadSourceDetail,
   initialCustomer,
@@ -1057,6 +1060,7 @@ export function NfcBookingWidget({
         lead_source_key: leadSourceKey || 'nfc_partner',
         lead_source_detail: leadSourceDetail || cardId || 'NFC card',
         partner_id: partnerId || undefined,
+        tap_id: tapId || undefined,
       },
       line_items: lineItems,
       percentage_discount:

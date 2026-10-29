@@ -29,11 +29,18 @@ vi.mock('@/components/nfc/NfcBookingWidget', () => ({
   NfcBookingWidget: ({
     couponCode,
     cardId,
+    tapId,
   }: {
     couponCode: string
     cardId: string | null
+    tapId?: string | null
   }) => (
-    <div data-testid="estimator" data-coupon={couponCode} data-card={cardId} />
+    <div
+      data-testid="estimator"
+      data-coupon={couponCode}
+      data-card={cardId}
+      data-tap={tapId}
+    />
   ),
 }))
 vi.mock('@/components/nfc/recent-jobs-carousel', () => ({
@@ -199,6 +206,10 @@ describe('mobile NFC card', () => {
       'data-card',
       'existing-card',
     )
+    expect(screen.getByTestId('estimator')).toHaveAttribute(
+      'data-tap',
+      'tap-test',
+    )
     expect(
       screen.getByRole('button', { name: /Water damage emergency/ }),
     ).toBeVisible()
@@ -223,10 +234,17 @@ describe('mobile NFC card', () => {
     'preserves %s partner-card redirects',
     async (placardType, destination) => {
       navigation.params = new URLSearchParams('partner=vendor-card')
-      vi.mocked(fetch).mockResolvedValue(response({ placardType }))
+      vi.mocked(fetch).mockResolvedValue(
+        response({
+          placardType,
+          tapId: '00000000-0000-0000-0000-000000000001',
+        }),
+      )
       render(<TapLandingPage />)
       await waitFor(() =>
-        expect(navigation.router.replace).toHaveBeenCalledWith(destination),
+        expect(navigation.router.replace).toHaveBeenCalledWith(
+          `${destination}?tap=00000000-0000-0000-0000-000000000001`,
+        ),
       )
     },
   )

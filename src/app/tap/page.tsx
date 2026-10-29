@@ -100,10 +100,13 @@ export default function TapLandingPage() {
 
         // Handle redirection based on placard type
         if (partnerId) {
+          const tapQuery = data.tapId
+            ? `?tap=${encodeURIComponent(data.tapId)}`
+            : ''
           if (data.placardType === 'contest') {
-            router.replace(`/location/${partnerId}/contest`)
+            router.replace(`/location/${partnerId}/contest${tapQuery}`)
           } else {
-            router.replace(`/location/${partnerId}`)
+            router.replace(`/location/${partnerId}${tapQuery}`)
           }
         }
       } catch (error) {
@@ -336,6 +339,7 @@ export default function TapLandingPage() {
                 appearance="forest"
                 couponCode={couponCode}
                 cardId={cardId}
+                tapId={tapId}
                 onTrackClick={trackButtonClick}
               />
             </section>

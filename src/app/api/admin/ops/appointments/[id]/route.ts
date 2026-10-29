@@ -28,6 +28,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { resolveLocationPartner } from '@/lib/server/location-partner-attribution'
 import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
 import {
   getTechStatusTransitionError,
@@ -511,6 +512,28 @@ export async function PATCH(
       )
     }
 
+    let nextPartnerId = current.partner_id || null
+    if (normalizedLeadSource?.ok) {
+      if (normalizedLeadSource.source.source_key === 'nfc_partner') {
+        const matchedPartner = await resolveLocationPartner(
+          supabase,
+          normalizedLeadSource.source.lead_source_detail,
+        )
+        if (!matchedPartner) {
+          return NextResponse.json(
+            {
+              error:
+                'Choose an exact plaque location name or coupon code for this NFC lead.',
+            },
+            { status: 400 },
+          )
+        }
+        nextPartnerId = matchedPartner.id
+      } else {
+        nextPartnerId = null
+      }
+    }
+
     const nowIso = new Date().toISOString()
     const firstOnMyWayAt =
       (current as { on_my_way_at?: string | null }).on_my_way_at ?? null
@@ -610,6 +633,7 @@ export async function PATCH(
             lead_source_detail: current.lead_source_detail,
             original_lead_source: current.original_lead_source,
           }),
+      partner_id: nextPartnerId,
       assigned_staff_user_id:
         body.assigned_staff_user_id !== undefined
           ? body.assigned_staff_user_id || null

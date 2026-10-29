@@ -33,6 +33,7 @@ interface PartnerLandingLayoutProps {
   partnerStats: PartnerStats | null
   onPartnerStatsChange: (stats: PartnerStats | null) => void
   onTrackClick: (buttonType: string) => void
+  tapId?: string | null
   onLoginRequest: (pin: string) => Promise<void>
   loginError?: string
   isLoggingIn?: boolean
@@ -47,6 +48,7 @@ export function PartnerLandingLayout({
   partnerStats,
   onPartnerStatsChange,
   onTrackClick,
+  tapId,
   onLoginRequest,
   loginError = '',
   isLoggingIn = false,
@@ -93,7 +95,9 @@ END:VCARD`
   const handleShare = async () => {
     onTrackClick('share')
 
-    const shareUrl = window.location.href
+    const shareUrlObject = new URL(window.location.href)
+    shareUrlObject.searchParams.delete('tap')
+    const shareUrl = shareUrlObject.toString()
     const shareText =
       '🦶 Get $20 OFF carpet cleaning from Sasquatch! Professional service in Colorado Springs area. Text them to get started:'
 
@@ -464,6 +468,7 @@ END:VCARD`
             <NfcBookingWidget
               couponCode={displayCouponCode}
               cardId={null}
+              tapId={tapId}
               onTrackClick={onTrackClick}
               partnerId={partner?.id ?? undefined}
               leadSourceDetail={

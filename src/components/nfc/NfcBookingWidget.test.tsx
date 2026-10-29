@@ -64,6 +64,7 @@ async function reachDetails() {
       appearance="forest"
       couponCode="SCC20"
       cardId="existing-card"
+      tapId="tap-test"
       onTrackClick={track}
     />,
   )
@@ -119,6 +120,7 @@ describe('forest estimator', () => {
         appointment_date: '2026-09-08',
         start_time: '10:00',
         lead_source_detail: 'existing-card',
+        tap_id: 'tap-test',
       },
       line_items: [
         { service_catalog_item_id: 'room', quantity: 2, unit_price: 90 },

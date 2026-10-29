@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import {
   PartnerLandingLayout,
   PartnerInfo,
@@ -11,7 +11,9 @@ import { PushOptInBanner } from '@/components/push-opt-in-banner'
 
 export default function LocationPartnerPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const partnerId = params.partnerId as string
+  const inheritedTapId = searchParams.get('tap')
   const [tapId, setTapId] = useState<string | null>(null)
   const [partner, setPartner] = useState<PartnerInfo | null>(null)
 
@@ -122,9 +124,13 @@ export default function LocationPartnerPage() {
 
     if (partnerId) {
       void loadPartnerInfo()
-      void trackTap()
+      if (/^[0-9a-f-]{36}$/i.test(inheritedTapId || '')) {
+        setTapId(inheritedTapId)
+      } else {
+        void trackTap()
+      }
     }
-  }, [partnerId])
+  }, [inheritedTapId, partnerId])
 
   // Track button clicks
   const trackButtonClick = async (buttonType: string) => {
@@ -152,6 +158,7 @@ export default function LocationPartnerPage() {
         partnerStats={partnerStats}
         onPartnerStatsChange={setPartnerStats}
         onTrackClick={trackButtonClick}
+        tapId={tapId}
         onLoginRequest={handleLoginRequest}
         loginError={loginError}
         isLoggingIn={isLoggingIn}

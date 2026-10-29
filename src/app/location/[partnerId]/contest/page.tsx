@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -74,7 +74,9 @@ type FormResolver = import('react-hook-form').Resolver<SightingFormData>
 
 export default function VendorContestPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const partnerId = params.partnerId as string
+  const inheritedTapId = searchParams.get('tap')
 
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [gpsCoordinates, setGpsCoordinates] = useState<GpsCoordinates | null>(
@@ -116,14 +118,13 @@ export default function VendorContestPage() {
     async function trackPageView() {
       if (!partnerId) return
       try {
-        const response = await fetch('/api/tap/track', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            partnerId,
-            action: 'page_view', // Reusing page_view action to fetch partner info/increment stats
-          }),
-        })
+        const response = /^[0-9a-f-]{36}$/i.test(inheritedTapId || '')
+          ? await fetch(`/api/location-partner/info?id=${partnerId}`)
+          : await fetch('/api/tap/track', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ partnerId, action: 'page_view' }),
+            })
         const data = await response.json()
         if (data.partnerName) {
           setPartnerName(data.partnerName)
@@ -133,7 +134,7 @@ export default function VendorContestPage() {
       }
     }
     trackPageView()
-  }, [partnerId])
+  }, [inheritedTapId, partnerId])
 
   const imageFiles = watch('image')
 
