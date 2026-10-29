@@ -202,8 +202,14 @@ export async function commercialWorkspaceRequest(
       throw new CommercialWorkspaceError(
         response.status === 409
           ? 'The account changed. Read it again before making another update.'
-          : 'The commercial workspace could not complete this request.',
-        response.status === 409 ? 'STALE_ACCOUNT' : 'UPSTREAM_UNAVAILABLE',
+          : response.status === 404
+            ? 'The commercial measuring visit request was not found.'
+            : 'The commercial workspace could not complete this request.',
+        response.status === 409
+          ? 'STALE_ACCOUNT'
+          : response.status === 404
+            ? 'NOT_FOUND'
+            : 'UPSTREAM_UNAVAILABLE',
       )
     }
     const result = await boundedResponse(response)

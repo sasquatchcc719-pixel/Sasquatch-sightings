@@ -243,6 +243,22 @@ describe('fixed commercial workspace adapter', () => {
     ).rejects.toMatchObject({ code: 'STALE_ACCOUNT' })
   })
 
+  it('identifies a missing durable measuring operation without leaking response text', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ error: secret }, { status: 404 }),
+    )
+    await expect(
+      commercialWorkspaceRequest(actor, {
+        action: 'confirm_measurement',
+        operation_id: actor.subject,
+        confirmed: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'The commercial measuring visit request was not found.',
+    })
+  })
+
   it.each(['timeout', 'invalid-json', 'redirect'])(
     'sanitizes %s failures',
     async (kind) => {
