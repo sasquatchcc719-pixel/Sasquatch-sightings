@@ -71,6 +71,14 @@ beforeEach(() => {
 })
 
 describe('appointment queue provider callbacks', () => {
+  it('does not start voicemail when REST dequeues the caller for forwarding', async () => {
+    expect(
+      await (
+        await POST(request('result', { QueueResult: 'redirected' }))
+      ).text(),
+    ).toBe('<?xml version="1.0" encoding="UTF-8"?><Response></Response>')
+    expect(m.write).not.toHaveBeenCalled()
+  })
   it('returns hold music immediately and dispatches after the response', async () => {
     const response = await POST(request('wait', { QueueTime: '0' }))
     expect(await response.text()).toContain('appointment-hold.mp3')

@@ -51,13 +51,13 @@ describe('receiving phone acceptance', () => {
     db.mockReturnValue({ from: vi.fn(() => q) })
   })
   afterEach(() => vi.unstubAllEnvs())
-  it('privately prompts the receiver and keeps caller on ringing', async () => {
+  it('connects on answer without a receiver keypress', async () => {
     const xml = await (await POST(request())).text()
-    expect(xml).toContain('Press 1 to accept.')
-    expect(xml).toContain('actionOnEmptyResult="true"')
-    expect(update).not.toHaveBeenCalled()
+    expect(xml).toBe('<Response></Response>')
+    expect(xml).not.toContain('<Gather')
+    expect(update).toHaveBeenCalled()
   })
-  it('records human acceptance before bridging', async () => {
+  it('records the answered forwarding leg before bridging', async () => {
     const xml = await (await POST(request('1', true))).text()
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -65,14 +65,14 @@ describe('receiving phone acceptance', () => {
         forwarding_accepted_at: expect.any(String),
       }),
     )
-    expect(xml).toContain('Connecting.')
+    expect(xml).toBe('<Response></Response>')
     expect(xml).not.toContain('<Hangup')
   })
-  it('disconnects the answering machine after no accepted digit', async () => {
+  it('does not require digits even on a legacy attempt callback', async () => {
     expect(await (await POST(request('', true))).text()).toBe(
-      '<Response><Hangup/></Response>',
+      '<Response></Response>',
     )
-    expect(update).not.toHaveBeenCalled()
+    expect(update).toHaveBeenCalled()
   })
   it('rejects a forged acceptance', async () => {
     expect((await POST(request('1', true, false))).status).toBe(403)
@@ -82,10 +82,10 @@ describe('receiving phone acceptance', () => {
     expect((await POST(request('1', true, true, false))).status).toBe(403)
     expect(update).not.toHaveBeenCalled()
   })
-  it('still bridges an accepted human if the database is unavailable', async () => {
+  it('still bridges an answered call if the database is unavailable', async () => {
     select.mockResolvedValue({ data: null, error: new Error('DB unavailable') })
-    expect(await (await POST(request('1', true))).text()).toContain(
-      'Connecting.',
+    expect(await (await POST(request('1', true))).text()).toBe(
+      '<Response></Response>',
     )
   })
 })

@@ -320,3 +320,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Prioritize internal gaps for proactive returning-customer outreach, while allowing customer-requested alternate times after full-duration live availability checks; TF35 qualifies at $300 service subtotal before discount, excluding travel/fees/tax and minimum-charge jobs.
 
 - Technician schedule verification previews must include the selected day’s saved jobs and calendar events together; never show an event-only preview as the complete schedule.
+
+- Forward staff calls with the original inbound caller number and connect on answer without a receiver press-1 prompt. Keep the caller spam menu and FIFO appointment queue; dequeue the original inbound leg rather than creating a business-number worker call.

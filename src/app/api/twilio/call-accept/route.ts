@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import { createAdminClient } from '@/supabase/server'
-import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 
 export async function POST(request: NextRequest) {
   const form = Object.fromEntries(
@@ -19,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Bind acceptance to the signed child call; never trust a caller-supplied SID.
   if (form.ParentCallSid && form.ParentCallSid !== parent)
     return new NextResponse('Invalid parent', { status: 403 })
-  if (form.Digits === '1' && !form.ParentCallSid) {
+  if (!form.ParentCallSid) {
     const child = await twilio(
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN,
@@ -33,30 +32,20 @@ export async function POST(request: NextRequest) {
     new NextResponse(`<Response>${body}</Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     })
-  if (form.Digits === '1') {
-    // A database outage must not disconnect a human who accepted the call.
-    // The signed Dial action's DialBridged flag is the independent fallback.
-    try {
-      const { error } = await createAdminClient()
-        .from('call_logs')
-        .update({
-          forwarding_required: true,
-          forwarding_accepted_at: new Date().toISOString(),
-        })
-        .eq('call_sid', parent)
-        .select('call_sid')
-      if (error)
-        console.error('[Call Accept] Could not save acceptance:', error)
-    } catch (error) {
-      console.error('[Call Accept] Could not save acceptance:', error)
-    }
-    return xml('<Say>Connecting.</Say>')
+  // A database outage must not disconnect an answered forwarded call.
+  // The signed Dial action's DialBridged flag is the independent fallback.
+  try {
+    const { error } = await createAdminClient()
+      .from('call_logs')
+      .update({
+        forwarding_required: true,
+        forwarding_accepted_at: new Date().toISOString(),
+      })
+      .eq('call_sid', parent)
+      .select('call_sid')
+    if (error) console.error('[Call Accept] Could not save acceptance:', error)
+  } catch (error) {
+    console.error('[Call Accept] Could not save acceptance:', error)
   }
-  if (request.nextUrl.searchParams.get('attempt') === '1')
-    return xml('<Hangup/>')
-  const action = new URL(request.url)
-  action.searchParams.set('attempt', '1')
-  return xml(
-    `<Gather action="${escapeTwiml(action.toString())}" method="POST" numDigits="1" timeout="5" actionOnEmptyResult="true"><Say>Sasquatch customer call. Press 1 to accept.</Say></Gather><Hangup/>`,
-  )
+  return xml('')
 }

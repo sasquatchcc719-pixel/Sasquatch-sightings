@@ -53,6 +53,9 @@ export async function POST(request: NextRequest) {
       return xml('<Say>Connecting.</Say>')
     }
     if (event === 'result') {
+      // The REST dequeue now continues at appointment-forward. This callback
+      // only reports departure; it must not start voicemail over that call.
+      if (form.QueueResult === 'redirected') return xml('')
       if (['bridged', 'redirected-from-bridged'].includes(form.QueueResult)) {
         const { data, error } = await db
           .from('call_logs')

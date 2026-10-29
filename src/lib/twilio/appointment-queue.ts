@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import twilio, { type Twilio } from 'twilio'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/supabase/server'
-import { getCallRoutingConfig } from './call-routing-config'
 import { escapeTwiml } from './forward-twiml'
 
 export const APPOINTMENT_QUEUE = 'sasquatch-appointments'
@@ -97,35 +96,46 @@ export async function dispatchAppointmentCall(
   const state = await getQueueDispatch(db)
   const queue = await client.queues(state.queue_sid).fetch()
   if (!queue.currentSize) return
+  const resume = async (callSid: string, token: string) => {
+    // Dequeue this exact inbound call. Repeating an uncertain update cannot
+    // dequeue another caller or create a second outbound call.
+    await client
+      .queues(state.queue_sid)
+      .members(callSid)
+      .update({
+        url: `${queueBaseUrl()}/api/twilio/appointment-forward?token=${token}`,
+        method: 'POST',
+      })
+  }
   if (state.worker_sid && state.token) {
     const worker = await client.calls(state.worker_sid).fetch()
-    if (!TERMINAL.has(worker.status)) return
+    if (!TERMINAL.has(worker.status)) {
+      // Recover a failed/uncertain dequeue while retaining the same caller.
+      try {
+        await client.queues(state.queue_sid).members(state.worker_sid).fetch()
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) return
+        throw error
+      }
+      await resume(state.worker_sid, state.token)
+      return
+    }
     await releaseQueueDispatch(db, state.token, state.worker_sid)
   }
   const token = randomUUID()
   const claim = await db.rpc('claim_appointment_dispatch', { p_token: token })
   if (claim.error) throw claim.error
   if (!claim.data) return
-  const config = await getCallRoutingConfig()
-  const base = queueBaseUrl()
-  // Never auto-retry creation: a network timeout can hide a successful dial.
-  // Keep the pending claim for 90s; a late webhook binds/fences its attempt.
-  const worker = await client.calls.create({
-    to: config.primaryForwardNumber,
-    from: process.env.TWILIO_PHONE_NUMBER!,
-    timeout: 20,
-    url: `${base}/api/twilio/appointment-agent?token=${token}`,
-    method: 'POST',
-    statusCallback: `${base}/api/twilio/appointment-agent?token=${token}&event=status`,
-    statusCallbackMethod: 'POST',
-    statusCallbackEvent: ['completed'],
-  })
-  if (!(await bindQueueWorker(db, token, worker.sid))) {
-    // A delayed creation response must not resurrect an expired attempt.
-    const live = await client.calls(worker.sid).fetch()
-    if (!TERMINAL.has(live.status))
-      await client.calls(worker.sid).update({ status: 'completed' })
-  }
+  const member = await client.queues(state.queue_sid).members('Front').fetch()
+  const callerSid = /^CA[0-9a-f]{32}$/i.test(member.callSid)
+    ? member.callSid
+    : member.uri.match(/Members\/(CA[0-9a-f]{32})\.json$/i)?.[1] || ''
+  if (!/^CA[0-9a-f]{32}$/i.test(callerSid))
+    throw new Error('Invalid queued caller')
+  if (!(await bindQueueWorker(db, token, callerSid))) return
+  // Forward from the original inbound leg: REST-created calls must use our
+  // business caller ID, whereas inbound Dial preserves the customer's number.
+  await resume(callerSid, token)
 }
 
 export function queueWaitAudio(base: string, elapsed: number) {

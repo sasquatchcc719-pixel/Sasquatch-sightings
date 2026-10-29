@@ -4,9 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Twilio } from 'twilio'
 import { dispatchAppointmentCall, queueWaitAudio } from './appointment-queue'
 
-const mocks = vi.hoisted(() => ({ config: vi.fn() }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: vi.fn() }))
-vi.mock('./call-routing-config', () => ({ getCallRoutingConfig: mocks.config }))
 const queueSid = `QU${'1'.repeat(32)}`
 const workerSid = `CA${'2'.repeat(32)}`
 
@@ -59,60 +57,84 @@ function fixture({ size = 2, status = 'ringing', occupied = false } = {}) {
     { create },
   )
   const fetchQueue = vi.fn(async () => ({ currentSize: size }))
+  const fetchMember = vi.fn(async (sid: string) => {
+    if (sid !== 'Front' && occupied)
+      throw Object.assign(new Error('Not queued'), { status: 404 })
+    return { callSid: workerSid }
+  })
+  const dequeue = vi.fn(async () => ({}))
+  const members = vi.fn((sid: string) => ({
+    fetch: () => fetchMember(sid),
+    update: dequeue,
+  }))
   const client = {
-    queues: vi.fn(() => ({ fetch: fetchQueue })),
+    queues: vi.fn(() => ({ fetch: fetchQueue, members })),
     calls,
   } as unknown as Twilio
-  return { state, db, client, create, rpc, fetchWorker, updateWorker }
+  return {
+    state,
+    db,
+    client,
+    create,
+    rpc,
+    fetchWorker,
+    updateWorker,
+    dequeue,
+    members,
+    fetchMember,
+  }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.config.mockResolvedValue({ primaryForwardNumber: '+17195550100' })
   vi.stubEnv('TWILIO_PHONE_NUMBER', '+17195550101')
 })
 
 describe('appointment queue dispatch', () => {
-  it('admits just one outbound call across ten simultaneous queue polls', async () => {
+  it('dequeues only the oldest caller across ten simultaneous queue polls', async () => {
     const f = fixture()
     await Promise.all(
       Array.from({ length: 10 }, () => dispatchAppointmentCall(f.db, f.client)),
     )
-    expect(f.create).toHaveBeenCalledOnce()
-    expect(f.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: '+17195550100',
-        from: '+17195550101',
-        timeout: 20,
-        statusCallbackEvent: ['completed'],
-      }),
-    )
+    expect(f.dequeue).toHaveBeenCalledOnce()
+    expect(f.members).toHaveBeenCalledWith('Front')
+    expect(f.members).toHaveBeenCalledWith(workerSid)
+    expect(f.dequeue).toHaveBeenCalledWith({
+      url: expect.stringContaining('/api/twilio/appointment-forward?token='),
+      method: 'POST',
+    })
+    expect(f.state.worker_sid).toBe(workerSid)
+    expect(f.create).not.toHaveBeenCalled()
   })
   it('keeps a long active conversation from starting another dial', async () => {
     const f = fixture({ occupied: true, status: 'in-progress' })
     await dispatchAppointmentCall(f.db, f.client)
-    expect(f.create).not.toHaveBeenCalled()
+    expect(f.dequeue).not.toHaveBeenCalled()
     expect(f.rpc).not.toHaveBeenCalled()
   })
   it('recovers a lost completed callback and rings the next waiting caller', async () => {
     const f = fixture({ occupied: true, status: 'completed' })
     await dispatchAppointmentCall(f.db, f.client)
-    expect(f.create).toHaveBeenCalledOnce()
+    expect(f.dequeue).toHaveBeenCalledOnce()
   })
   it('does not ring an empty queue', async () => {
     const f = fixture({ size: 0 })
     await dispatchAppointmentCall(f.db, f.client)
     expect(f.create).not.toHaveBeenCalled()
   })
-  it('retains an uncertain creation claim so the next poll cannot duplicate it', async () => {
+  it('retries an uncertain dequeue only for the same caller and claim', async () => {
     const f = fixture()
-    f.create.mockRejectedValueOnce(new Error('Network timeout'))
+    f.dequeue.mockRejectedValueOnce(new Error('Network timeout'))
     await expect(dispatchAppointmentCall(f.db, f.client)).rejects.toThrow(
       'Network timeout',
     )
+    const token = f.state.token
     await dispatchAppointmentCall(f.db, f.client)
-    expect(f.create).toHaveBeenCalledOnce()
-    expect(f.state.token).toBeTruthy()
+    expect(f.dequeue).toHaveBeenCalledTimes(2)
+    expect(f.dequeue.mock.calls[0]).toEqual(f.dequeue.mock.calls[1])
+    expect(f.state.token).toBe(token)
+    expect(f.members).toHaveBeenLastCalledWith(workerSid)
+    expect(f.create).not.toHaveBeenCalled()
   })
   it('does not release a busy dispatcher when provider status is unavailable', async () => {
     const f = fixture({ occupied: true })
