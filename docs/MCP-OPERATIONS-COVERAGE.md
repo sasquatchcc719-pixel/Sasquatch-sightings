@@ -77,7 +77,7 @@ Local implementation is not a live grant. The review migration creates saved-dra
 
 Pricing/catalog administration, business-hours/security administration, destructive record deletion, charges, refunds, payment recording, bulk campaigns, hiring/Ranger, and arbitrary HTTP/SQL/shell/code/environment/token access remain outside this rollout. Ordinary operational actions are not declared permanently forbidden: they remain either implemented locally behind scoped confirmation or accurately listed as a remaining service extraction.
 
-## Commercial account workspace — release 1.10.2
+## Commercial account workspace — release 1.10.3
 
 The commercial tools listed in `HARRY-COMMERCIAL-WORKSPACE.md` extend the
 existing connector with account research, conversation evidence, dated next
@@ -87,5 +87,8 @@ autonomous. Dedicated commercial measuring preview, confirmation and recovery
 use a durable idempotent operation and expose no invoice, email or SMS effect.
 No direct commercial send, invoice or customer-creation action is exposed.
 Ordinary appointment/estimate/contact tools
-must not substitute for this workflow. Owner grants are unchanged. Deployment
+must not substitute for this workflow. A stale-metadata client may pass the
+durable commercial operation ID to `execute_appointment_create`; the server
+routes that ID through the same dedicated confirmation/recovery workflow and
+does not create an invoice or customer notification. Owner grants are unchanged. Deployment
 and connector metadata refresh must be verified separately from source tests.

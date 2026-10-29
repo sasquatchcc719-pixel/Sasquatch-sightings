@@ -5,7 +5,7 @@ Harry uses the existing Sasquatch Sightings OAuth connector at
 agent; it does not reactivate the retired Harry SMS engine or create another
 inbox, subscription or agent. Existing OAuth identities and grants stay intact.
 
-Release 1.10.2 preserves the previous tools and adds durable commercial
+Release 1.10.3 preserves the previous tools and adds durable commercial
 measuring confirmation and recovery alongside Harry's retained workday status,
 escalation queue and commercial workspace:
 `get_commercial_playbook`, `list_commercial_accounts`,
@@ -43,6 +43,12 @@ account version, site, staff, exact time and live calendar. Recovery reuses the
 same operation key after an interrupted response and cannot create a duplicate.
 Email delivery runs only through Outreach's retained worker and controls. Never
 use ordinary service appointment, estimate or contact tools as a fallback.
+Clients whose session still caches the older tool names can pass the exact
+operation ID returned by `preview_commercial_measurement` to
+`execute_appointment_create`. The server recognizes that durable operation and
+routes it through the same zero-quote commercial confirmation/recovery path;
+retrying the same ID returns the saved result and cannot create a duplicate.
+`preview_appointment_create` is never used for this compatibility path.
 
 The authenticated capability catalog reports whether the upstream workspace is
 configured and verified, its allowed actions and the last verification time.

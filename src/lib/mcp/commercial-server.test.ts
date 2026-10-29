@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   >(),
   request: vi.fn(),
   status: vi.fn(),
+  executePreparedAction: vi.fn(),
 }))
 vi.mock('@modelcontextprotocol/server', () => ({
   McpServer: class {
@@ -30,6 +31,10 @@ vi.mock('@modelcontextprotocol/server', () => ({
 vi.mock('./commercial-workspace', () => ({
   commercialWorkspaceRequest: mocks.request,
   getCommercialWorkspaceStatus: mocks.status,
+}))
+vi.mock('./business-operations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./business-operations')>()),
+  executePreparedAction: mocks.executePreparedAction,
 }))
 import { createSasquatchMcpServer, MCP_SERVER_INSTRUCTIONS } from './server'
 import { MCP_TOOL_NAMES, MCP_SERVER_VERSION } from './release'
@@ -62,6 +67,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.tools.clear()
   mocks.request.mockResolvedValue({ controls, result: { account: { id } } })
+  mocks.executePreparedAction.mockRejectedValue(
+    new Error('Confirmation not found'),
+  )
   mocks.status.mockResolvedValue({
     configured: false,
     verified: false,
@@ -78,7 +86,7 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.10.2')
+    expect(MCP_SERVER_VERSION).toBe('1.10.3')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
     expect(mocks.tools.size).toBe(56)
     const commercial = [...mocks.tools.keys()].filter((name) =>
@@ -104,7 +112,9 @@ describe('commercial MCP workspace registration', () => {
     expect(MCP_SERVER_INSTRUCTIONS).toContain(
       'retired SMS Harry engine stays retired',
     )
-    expect(MCP_SERVER_INSTRUCTIONS).toContain('Never use ordinary appointment')
+    expect(MCP_SERVER_INSTRUCTIONS).toContain(
+      'Never use preview_appointment_create',
+    )
   })
   it.each([
     ['get_commercial_playbook', 'get_playbook', {}],
@@ -236,6 +246,34 @@ describe('commercial MCP workspace registration', () => {
       'OAuth',
     )
     expect(mocks.request).not.toHaveBeenCalled()
+  })
+  it('routes a durable commercial operation through the existing executor when client metadata is stale', async () => {
+    mocks.request.mockResolvedValue({
+      controls: { ...controls, bookingEnabled: true },
+      result: { operation: { id, state: 'confirmed' } },
+    })
+
+    const result = await call('execute_appointment_create', {
+      confirmation_id: id,
+      confirmed: true,
+    })
+
+    expect(mocks.request).toHaveBeenCalledWith(
+      {
+        subject: id,
+        label: 'Fixture Owner',
+        scopes: ['business:read', 'business:write'],
+        clientId: 'existing-oauth-client',
+      },
+      { action: 'confirm_measurement', operation_id: id, confirmed: true },
+    )
+    expect(result.structuredContent).toEqual({
+      result: {
+        workflow: 'commercial_measurement',
+        controls: { ...controls, bookingEnabled: true },
+        operation: { id, state: 'confirmed' },
+      },
+    })
   })
   it.each([
     ['search_commercial_prospects', { source: 'lead', field: 'name', q: 'x' }],
