@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -44,6 +44,8 @@
     "record_unscheduled_email",
     "get_commercial_playbook",
     "get_commercial_email_agent_status",
+    "get_commercial_workday_status",
+    "list_commercial_escalations",
     "list_commercial_email_work",
     "list_commercial_accounts",
     "search_commercial_prospects",

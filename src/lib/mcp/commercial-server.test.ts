@@ -77,13 +77,13 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.9.0')
+    expect(MCP_SERVER_VERSION).toBe('1.10.0')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
-    expect(mocks.tools.size).toBe(52)
+    expect(mocks.tools.size).toBe(54)
     const commercial = [...mocks.tools.keys()].filter((name) =>
       name.includes('commercial'),
     )
-    expect(commercial).toHaveLength(12)
+    expect(commercial).toHaveLength(14)
     expect(
       commercial.some((name) =>
         /send|confirm|recover|book/.test(name.replace('playbook', '')),
@@ -104,6 +104,8 @@ describe('commercial MCP workspace registration', () => {
   it.each([
     ['get_commercial_playbook', 'get_playbook', {}],
     ['get_commercial_email_agent_status', 'email_agent_status', {}],
+    ['get_commercial_workday_status', 'workday_status', {}],
+    ['list_commercial_escalations', 'list_escalations', { limit: 10 }],
     [
       'list_commercial_email_work',
       'list_email_work',

@@ -69,6 +69,8 @@ describe('fixed commercial workspace adapter', () => {
   it.each([
     'get_playbook',
     'email_agent_status',
+    'workday_status',
+    'list_escalations',
     'list_email_work',
     'list_accounts',
     'search_sources',

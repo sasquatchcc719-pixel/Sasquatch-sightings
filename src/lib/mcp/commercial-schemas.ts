@@ -17,10 +17,20 @@ const duration = z.number().int().min(15).max(180)
 
 export const commercialPlaybookInput = z.object({}).strict()
 export const commercialEmailAgentStatusInput = z.object({}).strict()
+export const commercialEscalationsInput = z
+  .object({ limit: z.number().int().min(1).max(50).default(25) })
+  .strict()
 export const commercialEmailWorkInput = z
   .object({
     filter: z
-      .enum(['open', 'draft_ready', 'inbound', 'reactivation', 'prospect', 'all'])
+      .enum([
+        'open',
+        'draft_ready',
+        'inbound',
+        'reactivation',
+        'prospect',
+        'all',
+      ])
       .default('open'),
     before: timestamp.optional(),
     limit: z.number().int().min(1).max(50).default(25),

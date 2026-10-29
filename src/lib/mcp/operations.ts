@@ -111,6 +111,8 @@ export function getCapabilityCatalog(
         tools: [
           'get_commercial_playbook',
           'get_commercial_email_agent_status',
+          'get_commercial_workday_status',
+          'list_commercial_escalations',
           'list_commercial_email_work',
           'list_commercial_accounts',
           'search_commercial_prospects',

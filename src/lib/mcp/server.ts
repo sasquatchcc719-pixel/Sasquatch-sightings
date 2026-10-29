@@ -1,6 +1,7 @@
 import {
   commercialPlaybookInput,
   commercialEmailAgentStatusInput,
+  commercialEscalationsInput,
   commercialEmailWorkInput,
   commercialAccountListInput,
   commercialProspectSearchInput,
@@ -1285,6 +1286,20 @@ const toolDefinitions: ToolDefinition[] = [
         'email_agent_status',
         commercialEmailAgentStatusInput,
         'Read the autonomous commercial email work-loop settings and queue counts. Draft generation may run automatically, but outgoing email and real appointments remain locked. No message is sent.',
+      ],
+      [
+        'get_commercial_workday_status',
+        'Get Harry commercial workday status',
+        'workday_status',
+        commercialEmailAgentStatusInput,
+        'Read Harry’s latest retained workday report, queue totals and safety locks. The scheduled shadow loop may research, draft and update account next actions, but sends no message and creates no appointment.',
+      ],
+      [
+        'list_commercial_escalations',
+        'List commercial sales escalations',
+        'list_escalations',
+        commercialEscalationsInput,
+        'Read unresolved exceptions that require owner attention, such as an incoming reply Harry could not resolve or a repeated draft failure. Ordinary research gaps stay in Harry’s queue. No message or appointment is created.',
       ],
       [
         'list_commercial_email_work',

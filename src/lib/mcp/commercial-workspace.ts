@@ -9,6 +9,8 @@ const RESPONSE_LIMIT = 2 * 1024 * 1024
 const ACTIONS = new Set([
   'get_playbook',
   'email_agent_status',
+  'workday_status',
+  'list_escalations',
   'list_email_work',
   'list_accounts',
   'search_sources',

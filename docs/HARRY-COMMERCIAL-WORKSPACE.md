@@ -5,14 +5,20 @@ Harry uses the existing Sasquatch Sightings OAuth connector at
 agent; it does not reactivate the retired Harry SMS engine or create another
 inbox, subscription or agent. Existing OAuth identities and grants stay intact.
 
-Release 1.8.0 preserves the previous 39 tools and adds ten:
+Release 1.10.0 preserves the previous tools and adds Harry's retained workday
+status and escalation queue alongside the commercial workspace:
 `get_commercial_playbook`, `list_commercial_accounts`,
+`get_commercial_workday_status`, `list_commercial_escalations`,
 `search_commercial_prospects`, `get_commercial_account`,
 `get_commercial_account_history`, `create_commercial_account`,
 `update_commercial_account`, `match_commercial_customer`,
 `get_commercial_measurement_slots`, and `preview_commercial_measurement`.
 
-The mode is `workspace_and_preview_only`. Responses require
+The scheduled workday runs in shadow mode. It checks the sales queue, prepares a
+bounded number of source-backed drafts, maintains account next actions, records
+exceptions and saves a short report. The connector exposes that report and only
+the unresolved exceptions that need owner attention. The workspace mode is
+`workspace_and_preview_only`. Responses require
 `emailSendingDisabled:true` and `bookingEnabled:false`. Only account creation
 and updates save internal research, assignments, permitted stages and dated next
 actions. Those two tools require `business:write`; reads and measuring previews
