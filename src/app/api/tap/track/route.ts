@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  engagementForButton,
+  shouldUpgradeEngagement,
+} from '@/lib/nfc-engagement'
 import { createAdminClient } from '@/supabase/server'
 
 // Get location from Vercel geo headers (instant, no external API call)
@@ -131,28 +135,8 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Track potential conversions. These are marked "pending" for manual
-      // confirmation — credits are NOT auto-awarded.
-      //
-      // The button names below must match what the pages actually fire.
-      // They drifted apart: /tap and the partner landing page emit
-      // booking_widget_open / booking_widget_submit / text / text_us, none of
-      // which were listed here, so real engagement (including 6 completed
-      // booking submissions) was recorded as a click but never as a
-      // conversion. Keep this list in sync with the trackButtonClick calls in
-      // src/app/tap/page.tsx, src/components/partners/PartnerLandingLayout.tsx
-      // and src/components/nfc/NfcBookingWidget.tsx.
-      const CONVERSION_BUTTONS: Record<string, string> = {
-        booking_widget_submit: 'booking',
-        booking_widget_open: 'booking_started',
-        booking_page: 'booking',
-        form_submit: 'form',
-        text_chat: 'text_chat',
-        text: 'text_chat',
-        text_us: 'text_chat',
-        call: 'call',
-      }
-      if (CONVERSION_BUTTONS[buttonType]) {
+      const nextType = engagementForButton(buttonType)
+      if (nextType) {
         // Get the tap with partner info
         const { data: tapData } = await supabase
           .from('nfc_card_taps')
@@ -160,27 +144,13 @@ export async function POST(request: NextRequest) {
           .eq('id', tapId)
           .single()
 
-        // Mark as pending conversion (not confirmed yet)
-        // conversion_type indicates how they engaged
-        // converted = false means pending, true = confirmed by admin
-        // Never downgrade a stronger signal: a completed booking submit
-        // must not be overwritten by a later 'call' or widget re-open.
-        const RANK: Record<string, number> = {
-          booking: 4,
-          form: 3,
-          text_chat: 2,
-          call: 1,
-          booking_started: 0,
-        }
-        const nextType = CONVERSION_BUTTONS[buttonType]
         const { data: existing } = await supabase
           .from('nfc_card_taps')
           .select('conversion_type')
           .eq('id', tapId)
           .single()
 
-        const currentRank = RANK[existing?.conversion_type ?? ''] ?? -1
-        if ((RANK[nextType] ?? -1) > currentRank) {
+        if (shouldUpgradeEngagement(existing?.conversion_type, nextType)) {
           await supabase
             .from('nfc_card_taps')
             .update({ conversion_type: nextType })

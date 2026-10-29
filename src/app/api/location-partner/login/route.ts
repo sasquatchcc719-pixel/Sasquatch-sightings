@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { matchesWebhookSecret } from '@/lib/webhook-auth'
+import { buildThirtyDayTapHistory } from '@/lib/nfc-tap-history'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/supabase/server'
 
@@ -115,10 +116,10 @@ async function getTapHistory(supabase: SupabaseClient, partnerId: string) {
 
   const { data: taps, error } = await supabase
     .from('nfc_card_taps')
-    .select('created_at')
+    .select('tapped_at')
     .eq('partner_id', partnerId)
-    .gte('created_at', thirtyDaysAgo.toISOString())
-    .order('created_at', { ascending: true })
+    .gte('tapped_at', thirtyDaysAgo.toISOString())
+    .order('tapped_at', { ascending: true })
     .limit(10000)
 
   if (error) {
@@ -126,33 +127,5 @@ async function getTapHistory(supabase: SupabaseClient, partnerId: string) {
     return []
   }
 
-  // Aggregate by date
-  const historyMap = new Map<string, number>()
-
-  // Initialize last 30 days with 0
-  for (let i = 0; i < 30; i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const dateStr = d.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    })
-    historyMap.set(dateStr, 0)
-  }
-
-  // Count actual taps
-  taps?.forEach((tap) => {
-    const dateStr = new Date(tap.created_at).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    })
-    if (historyMap.has(dateStr)) {
-      historyMap.set(dateStr, (historyMap.get(dateStr) || 0) + 1)
-    }
-  })
-
-  // Convert to array and reverse to show oldest to newest
-  return Array.from(historyMap.entries())
-    .map(([date, count]) => ({ date, count }))
-    .reverse()
+  return buildThirtyDayTapHistory((taps || []).map((tap) => tap.tapped_at))
 }

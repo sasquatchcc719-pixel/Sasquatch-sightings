@@ -44,6 +44,9 @@ interface LocationPartner {
   credit_balance: number
   total_taps: number
   total_conversions: number
+  engaged_taps: number
+  completed_bookings: number
+  attributed_revenue: number
   google_review_url: string | null
   coupon_code: string | null
   last_sasquatch_tap_at: string | null
@@ -531,6 +534,26 @@ export default function LocationPartnersPage() {
     })
   }
 
+  const plaquePartners = partners.filter(
+    (partner) => partner.location_type?.toLowerCase() !== 'door_hanger',
+  )
+  const plaqueTaps = plaquePartners.reduce(
+    (sum, partner) => sum + (partner.total_taps || 0),
+    0,
+  )
+  const plaqueEngagements = plaquePartners.reduce(
+    (sum, partner) => sum + (partner.engaged_taps || 0),
+    0,
+  )
+  const plaqueJobs = plaquePartners.reduce(
+    (sum, partner) => sum + (partner.total_conversions || 0),
+    0,
+  )
+  const plaqueRevenue = plaquePartners.reduce(
+    (sum, partner) => sum + (partner.attributed_revenue || 0),
+    0,
+  )
+
   if (isLoading) {
     return (
       <div className="p-8">
@@ -920,56 +943,60 @@ export default function LocationPartnersPage() {
             )}
 
             {/* Stats Overview */}
-            <div className="mb-6 grid grid-cols-2 gap-3 sm:mb-8 sm:gap-4 md:grid-cols-4">
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:mb-8 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
               <Card className="p-4 sm:p-6">
                 <div className="text-xl font-bold sm:text-2xl">
-                  {partners.length}
+                  {plaquePartners.length}
                 </div>
                 <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-                  Active Locations
+                  Plaque Locations
                 </div>
               </Card>
               <Card className="p-4 sm:p-6">
                 <div className="text-xl font-bold sm:text-2xl">
-                  {partners.reduce((sum, p) => sum + (p.total_taps || 0), 0)}
+                  {plaqueTaps}
                 </div>
                 <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-                  Total Taps
+                  Plaque Taps
+                </div>
+              </Card>
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold text-blue-600 sm:text-2xl">
+                  {plaqueEngagements}
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Engaged Visitors
                 </div>
               </Card>
               <Card className="p-4 sm:p-6">
                 <div className="text-xl font-bold sm:text-2xl">
-                  {partners.reduce(
-                    (sum, p) => sum + (p.total_conversions || 0),
-                    0,
-                  )}
+                  {plaqueJobs}
                 </div>
                 <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-                  Bookings
+                  Attributed Jobs
                 </div>
               </Card>
               <Card className="p-4 sm:p-6">
                 <div className="text-xl font-bold text-green-600 sm:text-2xl">
-                  {partners.length > 0
-                    ? (
-                        (partners.reduce(
-                          (sum, p) => sum + (p.total_conversions || 0),
-                          0,
-                        ) /
-                          Math.max(
-                            partners.reduce(
-                              (sum, p) => sum + (p.total_taps || 0),
-                              0,
-                            ),
-                            1,
-                          )) *
-                        100
-                      ).toFixed(1)
+                  {plaqueRevenue.toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    maximumFractionDigits: 0,
+                  })}
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Attributed Revenue
+                </div>
+              </Card>
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold text-green-600 sm:text-2xl">
+                  {plaqueTaps > 0
+                    ? ((plaqueJobs / plaqueTaps) * 100).toFixed(1)
                     : 0}
                   %
                 </div>
                 <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-                  Conv. Rate
+                  Tap-to-Job Rate
                 </div>
               </Card>
             </div>
@@ -1002,6 +1029,12 @@ export default function LocationPartnersPage() {
                           <p className="mt-1 text-xs tracking-wide text-gray-500 uppercase">
                             {partner.location_type}
                           </p>
+                        )}
+                        {partner.location_type?.toLowerCase() ===
+                          'door_hanger' && (
+                          <Badge variant="outline" className="mt-2">
+                            Separate door-hanger campaign
+                          </Badge>
                         )}
                       </div>
 
@@ -1109,7 +1142,7 @@ export default function LocationPartnersPage() {
                     </div>
 
                     {/* Stats Grid */}
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-6">
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-8">
                       <div
                         className={`cursor-pointer rounded-lg p-3 transition-colors sm:p-4 ${
                           expandedPartnerId === partner.id
@@ -1131,11 +1164,34 @@ export default function LocationPartnersPage() {
                         </div>
                       </div>
 
+                      <div className="rounded-lg bg-sky-50 p-3 sm:p-4 dark:bg-sky-900/20">
+                        <div className="text-lg font-bold text-sky-600 sm:text-2xl">
+                          {partner.engaged_taps || 0}
+                        </div>
+                        <div className="text-xs text-sky-600/80">Engaged</div>
+                      </div>
+
                       <div className="rounded-lg bg-green-50 p-3 sm:p-4 dark:bg-green-900/20">
                         <div className="text-lg font-bold text-green-600 sm:text-2xl">
                           {partner.total_conversions || 0}
                         </div>
                         <div className="text-xs text-green-600/80">Jobs</div>
+                      </div>
+
+                      <div className="rounded-lg bg-emerald-50 p-3 sm:p-4 dark:bg-emerald-900/20">
+                        <div className="text-lg font-bold text-emerald-600 sm:text-2xl">
+                          {(partner.attributed_revenue || 0).toLocaleString(
+                            'en-US',
+                            {
+                              style: 'currency',
+                              currency: 'USD',
+                              maximumFractionDigits: 0,
+                            },
+                          )}
+                        </div>
+                        <div className="text-xs text-emerald-600/80">
+                          Revenue
+                        </div>
                       </div>
 
                       <div className="rounded-lg bg-purple-50 p-3 sm:p-4 dark:bg-purple-900/20">

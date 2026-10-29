@@ -195,6 +195,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 ## 11. Project Learnings
 
 - For Outreach rebuilds, ship and verify the live sales queue, drafts, reply monitoring, and follow-up loop before producing more planning or research material.
+- Treat partner plaques and commercial prospect cards as separate marketing channels; never combine their assignment, tracking, or reporting.
 
 - For append-only evidence tables, revoke Supabase’s default service_role privileges before granting SELECT/INSERT; verify UPDATE and DELETE are denied.
 

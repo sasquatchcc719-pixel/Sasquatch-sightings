@@ -151,6 +151,7 @@ export async function GET() {
         engaged_taps: stats?.engagedTaps ?? 0,
         completed_bookings: stats?.completedBookings ?? 0,
         attributed_revenue: Math.round((stats?.revenue ?? 0) * 100) / 100,
+        last_sasquatch_tap_at: stats?.lastTapAt ?? null,
       }
     })
 
