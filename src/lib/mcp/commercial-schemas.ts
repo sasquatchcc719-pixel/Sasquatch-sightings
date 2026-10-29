@@ -170,9 +170,23 @@ export const commercialMeasurementPreviewInput = z
 // bounds their response size and rejects credentials before exposing them here.
 export const commercialWorkspaceControlsSchema = z
   .object({
-    emailSendingDisabled: z.literal(true),
+    emailSendingDisabled: z.boolean(),
     bookingEnabled: z.literal(false),
-    mode: z.literal('workspace_and_preview_only'),
+    mode: z.enum([
+      'workspace_and_preview_only',
+      'controlled_email_pilot',
+      'autonomous_email',
+    ]),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.emailSendingDisabled !==
+      (value.mode === 'workspace_and_preview_only')
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Commercial workspace controls are inconsistent',
+      })
   })
   .strict()
 export const commercialWorkspaceOutputSchema = z

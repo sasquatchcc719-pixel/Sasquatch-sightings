@@ -74,12 +74,16 @@ function rejectsSensitiveKeys(value: unknown): boolean {
 function verifyControls(value: unknown) {
   if (!record(value) || !record(value.controls)) return false
   const controls = value.controls
-  return (
-    Object.keys(controls).length === 3 &&
-    controls.emailSendingDisabled === true &&
-    controls.bookingEnabled === false &&
-    controls.mode === 'workspace_and_preview_only'
+  if (
+    Object.keys(controls).length !== 3 ||
+    typeof controls.emailSendingDisabled !== 'boolean' ||
+    controls.bookingEnabled !== false
   )
+    return false
+  return controls.emailSendingDisabled
+    ? controls.mode === 'workspace_and_preview_only'
+    : controls.mode === 'controlled_email_pilot' ||
+        controls.mode === 'autonomous_email'
 }
 
 async function boundedResponse(response: Response): Promise<unknown> {
@@ -223,12 +227,25 @@ export async function getCommercialWorkspaceStatus(
   verified: boolean
   allowedCapabilities: string[]
   lastSeen: string | null
+  controls: {
+    emailSendingDisabled: boolean
+    bookingEnabled: false
+    mode:
+      | 'workspace_and_preview_only'
+      | 'controlled_email_pilot'
+      | 'autonomous_email'
+  }
 }> {
   const unavailable = {
     configured: Boolean(workspaceSecret()),
     verified: false,
     allowedCapabilities: [] as string[],
     lastSeen: null,
+    controls: {
+      emailSendingDisabled: true,
+      bookingEnabled: false as const,
+      mode: 'workspace_and_preview_only' as const,
+    },
   }
   if (!unavailable.configured) return unavailable
   try {
@@ -265,6 +282,14 @@ export async function getCommercialWorkspaceStatus(
           ]
         : [],
       lastSeen: result.lastSeenAt,
+      controls: response.controls as {
+        emailSendingDisabled: boolean
+        bookingEnabled: false
+        mode:
+          | 'workspace_and_preview_only'
+          | 'controlled_email_pilot'
+          | 'autonomous_email'
+      },
     }
   } catch {
     return unavailable

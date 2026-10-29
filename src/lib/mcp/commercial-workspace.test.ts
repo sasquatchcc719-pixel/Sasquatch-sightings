@@ -268,6 +268,7 @@ describe('commercial workspace capability status', () => {
       verified: false,
       allowedCapabilities: [],
       lastSeen: null,
+      controls,
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -280,6 +281,7 @@ describe('commercial workspace capability status', () => {
       verified: false,
       allowedCapabilities: [],
       lastSeen: null,
+      controls,
     })
   })
   it('maps the exact verified upstream wrapper while filtering unavailable actions', async () => {
@@ -310,9 +312,34 @@ describe('commercial workspace capability status', () => {
         'update_account',
       ],
       lastSeen: '2026-10-28T22:00:00.000Z',
+      controls,
     })
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       action: 'status',
+    })
+  })
+  it('accepts the consistent controlled email pilot controls', async () => {
+    const pilotControls = {
+      emailSendingDisabled: false,
+      bookingEnabled: false as const,
+      mode: 'controlled_email_pilot' as const,
+    }
+    fetchMock.mockResolvedValue(
+      Response.json({
+        controls: pilotControls,
+        result: {
+          connection: 'verified',
+          capabilities: ['get_account', 'email_agent_status'],
+          lastSeenAt: '2026-10-28T22:00:00.000Z',
+        },
+      }),
+    )
+    expect(await getCommercialWorkspaceStatus(actor)).toEqual({
+      configured: true,
+      verified: true,
+      allowedCapabilities: ['get_account', 'email_agent_status'],
+      lastSeen: '2026-10-28T22:00:00.000Z',
+      controls: pilotControls,
     })
   })
   it.each([
@@ -346,6 +373,7 @@ describe('commercial workspace capability status', () => {
         verified: false,
         allowedCapabilities: [],
         lastSeen: null,
+        controls,
       })
     },
   )

@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "tools": [
     "list_appointments",
     "get_appointment",

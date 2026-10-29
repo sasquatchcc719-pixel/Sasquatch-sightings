@@ -67,6 +67,7 @@ beforeEach(() => {
     verified: false,
     allowedCapabilities: [],
     lastSeen: null,
+    controls,
   })
   createSasquatchMcpServer()
 })
@@ -77,7 +78,7 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.10.0')
+    expect(MCP_SERVER_VERSION).toBe('1.10.1')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
     expect(mocks.tools.size).toBe(54)
     const commercial = [...mocks.tools.keys()].filter((name) =>
