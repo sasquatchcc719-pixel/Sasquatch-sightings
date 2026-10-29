@@ -7,6 +7,9 @@ const state = vi.hoisted(() => ({
   appointments: [] as any[],
   customerWrites: 0,
   travel: 0,
+  tap: null as any,
+  partner: null as any,
+  tapUpdates: [] as any[],
   db: vi.fn(),
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: state.db }))
@@ -63,6 +66,7 @@ vi.mock('@/lib/ops/tomorrow-fill', () => ({
   finalizeTomorrowFillBooking: vi.fn(),
 }))
 import { POST } from './route'
+import { normalizeLeadSourceForWrite } from '@/lib/server/lead-sources'
 function db() {
   return {
     rpc: () => Promise.resolve({ data: null, error: null }),
@@ -81,7 +85,8 @@ function db() {
         in() {
           return q
         },
-        update() {
+        update(value: any) {
+          if (table === 'nfc_card_taps') state.tapUpdates.push(value)
           return q
         },
         insert(v: any) {
@@ -110,9 +115,13 @@ function db() {
                     max_uses: null,
                     use_count: 0,
                   }
-                : table === 'staff_users'
-                  ? { display_name: 'Fixture tech' }
-                  : null,
+                : table === 'nfc_card_taps'
+                  ? state.tap
+                  : table === 'partners'
+                    ? state.partner
+                    : table === 'staff_users'
+                      ? { display_name: 'Fixture tech' }
+                      : null,
             error: null,
           }
         },
@@ -188,6 +197,9 @@ beforeEach(() => {
   state.appointments = []
   state.customerWrites = 0
   state.travel = 0
+  state.tap = null
+  state.partner = null
+  state.tapUpdates = []
   state.db.mockReturnValue(db())
   vi.stubEnv('BOOKING_API_SECRET', 'synthetic')
   vi.stubEnv('RESEND_API_KEY', '')
@@ -282,5 +294,94 @@ describe('public NEXTDOOR35 booking and stored invoice fixture', () => {
     )
     expect(r.status).toBe(400)
     expect(state.invoices).toHaveLength(0)
+  })
+})
+
+describe('public booking method attribution', () => {
+  const tapId = '11111111-1111-4111-8111-111111111111'
+  const partnerId = '22222222-2222-4222-8222-222222222222'
+  const book = (appointment: Record<string, unknown>) =>
+    POST(
+      req(300, {
+        promo_code: undefined,
+        appointment: {
+          appointment_date: '2030-01-10',
+          start_time: '10:00',
+          ...appointment,
+        },
+      }),
+    )
+  it('records and links an exact personal-card tap, including older card clients', async () => {
+    state.tap = { id: tapId, partner_id: null }
+    expect(
+      (await book({ tap_id: tapId, lead_source_key: 'nfc_partner' })).status,
+    ).toBe(200)
+    expect(state.appointments[0]).toMatchObject({
+      booking_channel: 'business_card',
+    })
+    expect(vi.mocked(normalizeLeadSourceForWrite)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sourceKey: 'business_card' }),
+    )
+    expect(state.tapUpdates).toEqual([
+      expect.objectContaining({
+        appointment_id: '90000000-0000-4000-8000-000000000001',
+        converted: true,
+        conversion_type: 'booking',
+      }),
+    ])
+  })
+  it('keeps the card-page method if scan tracking was unavailable', async () => {
+    expect(
+      (
+        await book({
+          booking_channel: 'business_card',
+          lead_source_key: 'business_card',
+        })
+      ).status,
+    ).toBe(200)
+    expect(state.appointments[0].booking_channel).toBe('business_card')
+  })
+  it('keeps a customer-reported card source separate from a regular website checkout', async () => {
+    expect((await book({ lead_source_key: 'business_card' })).status).toBe(200)
+    expect(state.appointments[0].booking_channel).toBe('website')
+    expect(vi.mocked(normalizeLeadSourceForWrite)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sourceKey: 'business_card' }),
+    )
+  })
+  it('preserves regular website and campaign sources', async () => {
+    expect((await book({ lead_source_key: 'nextdoor' })).status).toBe(200)
+    expect(state.appointments[0].booking_channel).toBe('website')
+  })
+  it('keeps partner placards separate from personal cards', async () => {
+    state.partner = { id: partnerId, location_name: 'Partner location' }
+    state.tap = { id: tapId, partner_id: partnerId }
+    expect(
+      (
+        await book({
+          partner_id: partnerId,
+          tap_id: tapId,
+          booking_channel: 'business_card',
+          lead_source_key: 'business_card',
+        })
+      ).status,
+    ).toBe(200)
+    expect(state.appointments[0]).toMatchObject({
+      booking_channel: 'website',
+      partner_id: partnerId,
+    })
+    expect(vi.mocked(normalizeLeadSourceForWrite)).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sourceKey: 'nfc_partner',
+        detail: 'Partner location',
+      }),
+    )
+  })
+  it('does not attribute another partner’s tap to a personal card', async () => {
+    state.tap = { id: tapId, partner_id: partnerId }
+    expect(
+      (await book({ tap_id: tapId, lead_source_key: 'google_search' })).status,
+    ).toBe(200)
+    expect(state.appointments[0].booking_channel).toBe('website')
+    expect(state.tapUpdates).toHaveLength(0)
   })
 })

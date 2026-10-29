@@ -18,6 +18,8 @@ describe('lead source normalization', () => {
     ['Door flyer', 'door_hanger'],
     ['Repeat customer', 'repeat_customer'],
     ['Word of mouth / Referral', 'referral'],
+    ['Business card', 'business_card'],
+    ['business_card', 'business_card'],
     ['NFC Card', 'nfc_partner'],
     ['Nail salon (Milano) / SCC20 card', 'nfc_partner'],
   ])('maps %s to %s', (value, expected) => {
@@ -53,6 +55,9 @@ describe('lead source normalization', () => {
     expect(options[0].key).toBe('google_search')
     expect(options.map((option) => option.key)).toContain('google_lsa')
     expect(options.map((option) => option.key)).toContain('door_hanger')
+    expect(
+      options.find((option) => option.key === 'business_card'),
+    ).toMatchObject({ label: 'Business card', requires_detail: false })
     expect(options.at(-1)?.key).toBe('other')
   })
 

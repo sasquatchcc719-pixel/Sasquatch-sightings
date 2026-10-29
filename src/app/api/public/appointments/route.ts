@@ -79,6 +79,7 @@ function formatBookingMethodForNotification(params: {
   source: string | null | undefined
   bookingChannel: string | null | undefined
 }): string {
+  if (params.bookingChannel === 'business_card') return 'Business Card'
   const source = String(params.source || '').trim()
   const channel = String(params.bookingChannel || '')
     .trim()
@@ -448,18 +449,32 @@ export async function POST(request: NextRequest) {
 
     let attributedTapId: string | null = null
     const requestedTapId = String(body.appointment?.tap_id || '').trim()
-    if (partnerId && /^[0-9a-f-]{36}$/i.test(requestedTapId)) {
+    if (/^[0-9a-f-]{36}$/i.test(requestedTapId)) {
       const { data: tapRow } = await supabase
         .from('nfc_card_taps')
         .select('id, partner_id')
         .eq('id', requestedTapId)
         .maybeSingle()
-      if (tapRow?.partner_id === partnerId) attributedTapId = tapRow.id
+      if (tapRow && tapRow.partner_id === partnerId) attributedTapId = tapRow.id
     }
+
+    // The public site and personal card page share checkout, but are distinct
+    // booking methods. An exact personal tap also recognizes older clients.
+    const isBusinessCardBooking =
+      !partnerId &&
+      ((Boolean(attributedTapId) &&
+        (!leadSourceKey ||
+          ['nfc_partner', 'business_card'].includes(leadSourceKey))) ||
+        (body.appointment?.booking_channel === 'business_card' &&
+          leadSourceKey === 'business_card'))
 
     const normalizedLeadSource = await normalizeLeadSourceForWrite({
       supabase,
-      sourceKey: partnerId ? 'nfc_partner' : leadSourceKey,
+      sourceKey: partnerId
+        ? 'nfc_partner'
+        : isBusinessCardBooking
+          ? 'business_card'
+          : leadSourceKey,
       legacyValue: partnerId ? null : leadSource,
       detail: partnerId ? partnerDetail : leadSourceDetail,
       requireActive: true,
@@ -704,7 +719,9 @@ export async function POST(request: NextRequest) {
         quoted_total: total,
         booking_channel: tomorrowFillReservation
           ? 'tomorrow_fill_sms'
-          : 'website',
+          : isBusinessCardBooking
+            ? 'business_card'
+            : 'website',
         source: 'website',
         ...leadSourceUpdatePayload(normalizedLeadSource.source),
         kind: 'service',
@@ -729,7 +746,6 @@ export async function POST(request: NextRequest) {
           conversion_type: 'booking',
         })
         .eq('id', attributedTapId)
-        .eq('partner_id', partnerId)
       if (tapAttributionError) {
         console.error(
           '[public/appointments] tap attribution failed:',
@@ -908,7 +924,11 @@ export async function POST(request: NextRequest) {
     })
     const notificationBookingMethod = formatBookingMethodForNotification({
       source: 'website',
-      bookingChannel: tomorrowFillReservation ? 'tomorrow_fill_sms' : 'website',
+      bookingChannel: tomorrowFillReservation
+        ? 'tomorrow_fill_sms'
+        : isBusinessCardBooking
+          ? 'business_card'
+          : 'website',
     })
     const reactivationTouch = await describeReactivationTouch({
       supabase,

@@ -338,6 +338,7 @@ export default function TapLandingPage() {
               <NfcBookingWidget
                 appearance="forest"
                 couponCode={couponCode}
+                bookingChannel="business_card"
                 cardId={cardId}
                 tapId={tapId}
                 onTrackClick={trackButtonClick}

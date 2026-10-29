@@ -59,6 +59,8 @@ export interface NfcBookingWidgetProps {
   /** Quiet companion to the cabin-style NFC landing page; other entry points keep their theme. */
   appearance?: 'forest'
   couponCode: string
+  /** Explicit entry point; shared reminder and campaign widgets stay website. */
+  bookingChannel?: 'website' | 'business_card'
   cardId: string | null
   /** Exact NFC tap session, used to link a successful booking to its scan. */
   tapId?: string | null
@@ -741,6 +743,7 @@ function MiniCalendar({
 export function NfcBookingWidget({
   appearance,
   couponCode,
+  bookingChannel = 'website',
   partnerId,
   cardId,
   tapId,
@@ -1057,7 +1060,13 @@ export function NfcBookingWidget({
       appointment: {
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
-        lead_source_key: leadSourceKey || 'nfc_partner',
+        booking_channel:
+          !partnerId && !leadSourceKey ? bookingChannel : 'website',
+        lead_source_key:
+          leadSourceKey ||
+          (!partnerId && bookingChannel === 'business_card'
+            ? 'business_card'
+            : 'nfc_partner'),
         lead_source_detail: leadSourceDetail || cardId || 'NFC card',
         partner_id: partnerId || undefined,
         tap_id: tapId || undefined,

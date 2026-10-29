@@ -6,7 +6,10 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NfcBookingWidget } from './NfcBookingWidget'
+import {
+  NfcBookingWidget,
+  type NfcBookingWidgetProps,
+} from './NfcBookingWidget'
 import styles from './booking-forest.module.css'
 
 const room = {
@@ -58,14 +61,16 @@ afterEach(() => {
   track.mockClear()
 })
 
-async function reachDetails() {
+async function reachDetails(props: Partial<NfcBookingWidgetProps> = {}) {
   render(
     <NfcBookingWidget
       appearance="forest"
       couponCode="SCC20"
+      bookingChannel="business_card"
       cardId="existing-card"
       tapId="tap-test"
       onTrackClick={track}
+      {...props}
     />,
   )
   fireEvent.click(
@@ -119,6 +124,8 @@ describe('forest estimator', () => {
       appointment: {
         appointment_date: '2026-09-08',
         start_time: '10:00',
+        booking_channel: 'business_card',
+        lead_source_key: 'business_card',
         lead_source_detail: 'existing-card',
         tap_id: 'tap-test',
       },
@@ -129,6 +136,29 @@ describe('forest estimator', () => {
     })
     expect(track).toHaveBeenCalledWith('booking_widget_submit')
   })
+
+  it.each([
+    [{ partnerId: 'partner-location' }, 'nfc_partner'],
+    [{ leadSourceKey: 'nextdoor' }, 'nextdoor'],
+    [{ bookingChannel: 'website' as const }, 'nfc_partner'],
+  ])(
+    'preserves partner and campaign attribution for %o',
+    async (props, sourceKey) => {
+      await reachDetails(props)
+      fillDetails()
+      fireEvent.click(screen.getByRole('button', { name: 'Review →' }))
+      await screen.findByText('$160.00')
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm Booking' }))
+      await screen.findByText("You're booked!")
+      const booking = vi
+        .mocked(fetch)
+        .mock.calls.find(([url]) => url === '/api/book')!
+      expect(JSON.parse(String(booking[1]?.body)).appointment).toMatchObject({
+        lead_source_key: sourceKey,
+        booking_channel: 'website',
+      })
+    },
+  )
 
   it('keeps validation and a failed booking recoverable', async () => {
     await reachDetails()

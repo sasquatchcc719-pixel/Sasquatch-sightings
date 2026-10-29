@@ -129,6 +129,36 @@ describe('resolveAttribution', () => {
 })
 
 describe('summarizeAttribution', () => {
+  it('reports business-card revenue separately from partner-location revenue', () => {
+    const result = summarizeAttribution(
+      [
+        row({
+          customer_id: 'card',
+          lead_source_key: 'business_card',
+          revenue: 250,
+        }),
+        row({
+          customer_id: 'partner',
+          lead_source_key: 'nfc_partner',
+          revenue: 400,
+        }),
+      ],
+      WINDOW,
+    )
+    expect(
+      result.sources.find(
+        (source) => source.lead_source_key === 'business_card',
+      ),
+    ).toMatchObject({
+      lead_source: 'Business card',
+      booking_count: 1,
+      total_revenue: 250,
+    })
+    expect(
+      result.sources.find((source) => source.lead_source_key === 'nfc_partner')
+        ?.total_revenue,
+    ).toBe(400)
+  })
   it('credits lifetime revenue to the acquisition channel', () => {
     const rows = [
       row({
