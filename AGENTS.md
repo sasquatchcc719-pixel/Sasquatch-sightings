@@ -194,6 +194,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ## 11. Project Learnings
 
+- For Outreach rebuilds, ship and verify the live sales queue, drafts, reply monitoring, and follow-up loop before producing more planning or research material.
+
 - For append-only evidence tables, revoke Supabase’s default service_role privileges before granting SELECT/INSERT; verify UPDATE and DELETE are denied.
 
 - Customer contact history must check Gmail as well as SMS; preserve original inbound and outbound email timestamps and provider IDs, and never imply the SMS conversation is the whole exchange.

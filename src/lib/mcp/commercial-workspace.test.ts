@@ -68,6 +68,8 @@ describe('fixed commercial workspace adapter', () => {
 
   it.each([
     'get_playbook',
+    'email_agent_status',
+    'list_email_work',
     'list_accounts',
     'search_sources',
     'get_account',
@@ -286,6 +288,7 @@ describe('commercial workspace capability status', () => {
           connection: 'verified',
           capabilities: [
             'get_account',
+            'email_agent_status',
             'get_account',
             'confirm',
             'send_email',
@@ -299,7 +302,11 @@ describe('commercial workspace capability status', () => {
     expect(status).toEqual({
       configured: true,
       verified: true,
-      allowedCapabilities: ['get_account', 'update_account'],
+      allowedCapabilities: [
+        'get_account',
+        'email_agent_status',
+        'update_account',
+      ],
       lastSeen: '2026-10-28T22:00:00.000Z',
     })
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({

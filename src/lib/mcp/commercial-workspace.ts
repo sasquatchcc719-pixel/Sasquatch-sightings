@@ -8,6 +8,8 @@ const REQUEST_LIMIT = 32 * 1024
 const RESPONSE_LIMIT = 2 * 1024 * 1024
 const ACTIONS = new Set([
   'get_playbook',
+  'email_agent_status',
+  'list_email_work',
   'list_accounts',
   'search_sources',
   'get_account',

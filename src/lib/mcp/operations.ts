@@ -101,6 +101,8 @@ export function getCapabilityCatalog(
         area: 'commercial_account_workspace',
         workflows: [
           'read approved sales playbook',
+          'monitor autonomous commercial email work',
+          'review prospect and dormant-customer drafts',
           'review commercial account and conversation evidence',
           'record research and dated next actions',
           'match customers and branches',
@@ -108,6 +110,8 @@ export function getCapabilityCatalog(
         ],
         tools: [
           'get_commercial_playbook',
+          'get_commercial_email_agent_status',
+          'list_commercial_email_work',
           'list_commercial_accounts',
           'search_commercial_prospects',
           'get_commercial_account',

@@ -76,14 +76,14 @@ const call = (
   context: unknown = extra(),
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
-  it('appends exactly ten workspace/preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.8.1')
+  it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
+    expect(MCP_SERVER_VERSION).toBe('1.9.0')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
-    expect(mocks.tools.size).toBe(50)
+    expect(mocks.tools.size).toBe(52)
     const commercial = [...mocks.tools.keys()].filter((name) =>
       name.includes('commercial'),
     )
-    expect(commercial).toHaveLength(10)
+    expect(commercial).toHaveLength(12)
     expect(
       commercial.some((name) =>
         /send|confirm|recover|book/.test(name.replace('playbook', '')),
@@ -103,6 +103,12 @@ describe('commercial MCP workspace registration', () => {
   })
   it.each([
     ['get_commercial_playbook', 'get_playbook', {}],
+    ['get_commercial_email_agent_status', 'email_agent_status', {}],
+    [
+      'list_commercial_email_work',
+      'list_email_work',
+      { filter: 'reactivation', limit: 10 },
+    ],
     ['list_commercial_accounts', 'list_accounts', { filter: 'due' }],
     [
       'search_commercial_prospects',

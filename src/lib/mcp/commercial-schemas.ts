@@ -16,6 +16,16 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
 const duration = z.number().int().min(15).max(180)
 
 export const commercialPlaybookInput = z.object({}).strict()
+export const commercialEmailAgentStatusInput = z.object({}).strict()
+export const commercialEmailWorkInput = z
+  .object({
+    filter: z
+      .enum(['open', 'draft_ready', 'inbound', 'reactivation', 'prospect', 'all'])
+      .default('open'),
+    before: timestamp.optional(),
+    limit: z.number().int().min(1).max(50).default(25),
+  })
+  .strict()
 export const commercialAccountListInput = z
   .object({
     filter: z.enum(['all', 'due', 'no_action']).default('all'),
