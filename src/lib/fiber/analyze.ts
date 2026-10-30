@@ -18,6 +18,7 @@ import {
   type BurnBucket,
 } from './stop-list'
 import { FIBER_FIELD_REFERENCE } from './reference'
+import { readTag, tagReadingIssue, type TagReading } from './read-tag'
 import type { FiberCheckResult, FiberConfidence, FiberVerdict } from './types'
 
 const MODEL = process.env.FIBER_CHECK_MODEL || 'gpt-5.5'
@@ -75,6 +76,7 @@ type AnalyzeInput = {
 
 type ModelOutput = {
   tag_text: string
+  label_reading?: TagReading | null
   tag_fiber?: string
   tag_confidence?: FiberConfidence
   restriction_basis?:
@@ -264,6 +266,10 @@ export async function analyzeFiber(
     contextLines.push(`Tech notes: ${input.techNotes.trim()}`)
   }
 
+  // Run known-tag reads alongside the cleaning analysis to avoid a second wait.
+  const pendingTagRead = input.hasTag
+    ? readTag(openai, MODEL, input.images)
+    : null
   const completion = await openai.chat.completions.create({
     model: MODEL,
     max_completion_tokens: 2200,
@@ -294,6 +300,12 @@ export async function analyzeFiber(
   if (!content) throw new Error('Fiber analysis returned no content')
 
   let parsed = JSON.parse(content) as ModelOutput
+  // The verifier sees only the photos, never this answer or the tech's guess.
+  const labelReading = pendingTagRead
+    ? await pendingTagRead
+    : parsed.tag_text?.trim()
+      ? await readTag(openai, MODEL, input.images)
+      : undefined
   let usedResearch = false
   let researchNotes: string | null = null
 
@@ -354,6 +366,7 @@ export async function analyzeFiber(
     researchNotes,
     researchQuery: query,
     hasTag: input.hasTag,
+    labelReading,
   })
 }
 
@@ -368,6 +381,7 @@ export function reconcile(
     researchNotes?: string | null
     researchQuery?: string | null
     hasTag?: boolean
+    labelReading?: TagReading | null
   },
 ): FiberAnalysis {
   const trail: string[] = []
@@ -387,7 +401,10 @@ export function reconcile(
         : 'No care tag — identified from the photo of the pile.',
   )
 
-  const hits = scanTagText(tagRead)
+  // Preserve care/backing restrictions found by either reading.
+  const hits = scanTagText(
+    [tagRead, input.labelReading?.tag_text].filter(Boolean).join('\n'),
+  )
   const faceHits = scanTagText(parsed.tag_fiber ?? '').filter(
     (hit) => hit.kind === 'fiber',
   )
@@ -561,6 +578,36 @@ export function reconcile(
     trail.push('A web lookup was attempted but returned nothing usable.')
   }
 
+  if (input.labelReading !== undefined) {
+    const issue = tagReadingIssue(parsed, input.labelReading, input.burnResult)
+    trail.push(
+      input.labelReading
+        ? `Independent image-only label reading: "${input.labelReading.tag_text}"; face content: "${input.labelReading.tag_fiber}" (${input.labelReading.tag_confidence}).`
+        : 'Independent label reading unavailable.',
+    )
+    if (issue) {
+      // Last: neither a burn bucket, web lookup nor keyword match may undo this hold.
+      verdict = 'do_not_wet_clean'
+      determinedBy = 'ai_vision'
+      fiber = 'Unconfirmed face fiber — retake the label photo'
+      confidence = 'low'
+      warnings = [
+        issue,
+        'Retake a sharp close-up of the entire fiber-content line and compare the result with the actual label.',
+      ]
+      recommendedMethod =
+        'Vacuum only until the face fiber is confirmed. Do not extract or encapsulate from conflicting or unreadable label evidence.'
+      nextTest =
+        'Retake a sharp close-up of the entire face-fiber content line.'
+      guidanceReplaced = true
+      trail.push(`Label verification hold: ${issue}`)
+    } else {
+      trail.push(
+        'Two independent photo readings agreed on the face-fiber content; the technician must still compare it with the actual label.',
+      )
+    }
+  }
+
   trail.push(
     `AI read of the photo: ${parsed.fiber || 'no call'} (confidence ${parsed.confidence}).`,
   )
@@ -590,7 +637,10 @@ export function reconcile(
         ? `${fiber || 'Fiber not confirmed'}. ${verdict === 'go' ? 'Suitable for controlled extraction after the normal pre-test.' : verdict === 'low_moisture' ? 'Use the restricted moisture protocol; see care and backing precautions.' : 'Do not wet clean; confirm the restriction before proceeding.'}`
         : parsed.summary,
     tagText: parsed.tag_text ?? '',
-    raw: parsed,
+    raw:
+      input.labelReading === undefined
+        ? parsed
+        : { ...parsed, label_reading: input.labelReading },
     trail,
     researchNotes: input.researchNotes ?? null,
   }

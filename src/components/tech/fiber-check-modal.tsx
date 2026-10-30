@@ -246,10 +246,28 @@ export function FiberCheckModal({
               ) : null}
               {result.determinedBy === 'stop_list' ? (
                 <p className="mt-1 text-xs tracking-wide text-slate-400 uppercase">
-                  Matched on the care tag — this verdict is not a judgment call
+                  Based on the tag photo — compare the fiber content with the
+                  actual label
                 </p>
               ) : null}
             </div>
+
+            {result.hasTag || hasTag === true || Boolean(result.tagText) ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setResult(null)
+                  setImages([])
+                  setBurnResult(null)
+                  setNotes('')
+                  setError(null)
+                  setHasTag(true)
+                }}
+              >
+                Retake tag photo
+              </Button>
+            ) : null}
 
             {result.warnings.length > 0 ? (
               <div className="space-y-2 rounded-xl border border-white/10 bg-slate-900/60 p-3">
