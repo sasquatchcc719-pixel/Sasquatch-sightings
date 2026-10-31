@@ -451,7 +451,7 @@ export async function executeScoutWebTool(
         )
         return JSON.stringify({
           minimum_job_total: MINIMUM_JOB_TOTAL,
-          pricing_policy: `Disclose the $${MINIMUM_JOB_TOTAL} on-site minimum with the FIRST quote. A lower catalog subtotal is not the visit price. Before asking for a day or contact details, offer adding services or paying the minimum and wait for explicit acceptance.`,
+          pricing_policy: `Disclose the $${MINIMUM_JOB_TOTAL} on-site minimum with the FIRST quote. A lower catalog subtotal is not the visit price. Before asking for a day or contact details, FIRST suggest 2–3 relevant additional services (carpeted rooms, stairs, or upholstery) to help reach the minimum. Look up prices before quoting a combined total. If they decline extra work, offer the minimum charge alone and wait for explicit acceptance.`,
           services: filtered.map((s) => ({
             id: s.id,
             name: s.name,
@@ -500,7 +500,7 @@ export async function executeScoutWebTool(
               slots: [],
               priced_service_total: pricedTotal,
               minimum_job_total: MINIMUM_JOB_TOTAL,
-              error: `The service subtotal is $${pricedTotal.toFixed(2)}, but the on-site minimum is $${MINIMUM_JOB_TOTAL}. Do not offer times or collect booking details yet. Explain the minimum and ask whether they want to add services or pay $${MINIMUM_JOB_TOTAL}. Wait for explicit agreement after disclosure before retrying with accepted_minimum_charge: true.`,
+              error: `The service subtotal is $${pricedTotal.toFixed(2)}, but the on-site minimum is $${MINIMUM_JOB_TOTAL}. Do not offer times or collect booking details yet. Explain the minimum and FIRST suggest 2–3 relevant additional services, such as carpeted rooms, stairs, or upholstery, to get more cleaning done toward the minimum. Look up prices before quoting the combined total. If they decline additional work, offer the $${MINIMUM_JOB_TOTAL} minimum charge alone. Wait for explicit agreement after disclosure before retrying with accepted_minimum_charge: true.`,
             })
           }
         } else {
@@ -656,7 +656,7 @@ export async function executeScoutWebTool(
         const preTotal = preServiceTotal + (serviceAreaCheck.travelCharge || 0)
         if (preTotal < MINIMUM_JOB_TOTAL && !acceptedMinimumCharge) {
           return JSON.stringify({
-            error: `Job total of $${preTotal.toFixed(2)} is below the $${MINIMUM_JOB_TOTAL} minimum. Ask if the customer wants to add more services or book at the $${MINIMUM_JOB_TOTAL} minimum. If they explicitly accept the minimum, call book_new_job again with accepted_minimum_charge: true.`,
+            error: `Job total of $${preTotal.toFixed(2)} is below the $${MINIMUM_JOB_TOTAL} minimum. FIRST suggest 2–3 relevant additional services to help reach the minimum, and use live catalog prices to show the combined total. If they decline extra work, offer the $${MINIMUM_JOB_TOTAL} minimum charge alone. If they explicitly accept the minimum, call book_new_job again with accepted_minimum_charge: true.`,
           })
         }
 

@@ -322,3 +322,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Technician schedule verification previews must include the selected day’s saved jobs and calendar events together; never show an event-only preview as the complete schedule.
 
 - Forward staff calls with the original inbound caller number and connect on answer without a receiver press-1 prompt. Keep the caller spam menu and FIFO appointment queue; dequeue the original inbound leg rather than creating a business-number worker call.
+
+- When Scout quotes below the $175 minimum, first suggest relevant additional cleaning and verify combined catalog pricing; offer the minimum charge alone after the customer declines extra work.
