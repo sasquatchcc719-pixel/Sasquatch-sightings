@@ -151,6 +151,8 @@ export type ScoutWebToolContext = {
   supabase: SupabaseClient
   /** Identifier used for per-session rate limiting (IP or session id). */
   rateLimitKey: string
+  /** True only when server-saved assistant history disclosed the minimum. */
+  minimumChargeDisclosed?: boolean
 }
 
 export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
@@ -197,10 +199,19 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
               additionalProperties: false,
             },
           },
+          accepted_minimum_charge: {
+            type: 'boolean',
+            description: `True only after the customer explicitly accepts the disclosed $${MINIMUM_JOB_TOTAL} minimum. A yes to a lower quote is not acceptance.`,
+          },
+          commercial_walkthrough: {
+            type: 'boolean',
+            description:
+              'True only for a free commercial on-site walkthrough. Residential cleaning always requires line_items.',
+          },
           duration_minutes: {
             type: 'number',
             description:
-              'Rough job duration in minutes (default 120). ONLY used when line_items is omitted — prefer line_items.',
+              'Duration for a commercial walkthrough (default 120). Residential cleaning requires line_items.',
           },
         },
         required: ['date'],
@@ -439,6 +450,8 @@ export async function executeScoutWebTool(
             !isExcludedFromBooking(s),
         )
         return JSON.stringify({
+          minimum_job_total: MINIMUM_JOB_TOTAL,
+          pricing_policy: `Disclose the $${MINIMUM_JOB_TOTAL} on-site minimum with the FIRST quote. A lower catalog subtotal is not the visit price. Before asking for a day or contact details, offer adding services or paying the minimum and wait for explicit acceptance.`,
           services: filtered.map((s) => ({
             id: s.id,
             name: s.name,
@@ -475,7 +488,28 @@ export async function executeScoutWebTool(
           if (!priced.ok) return JSON.stringify({ error: priced.error })
           requiredMinutes = priced.requiredMinutes
           pricedTotal = priced.serviceTotal
+          if (
+            pricedTotal < MINIMUM_JOB_TOTAL &&
+            !(
+              args.accepted_minimum_charge === true &&
+              ctx.minimumChargeDisclosed === true
+            )
+          ) {
+            return JSON.stringify({
+              date,
+              slots: [],
+              priced_service_total: pricedTotal,
+              minimum_job_total: MINIMUM_JOB_TOTAL,
+              error: `The service subtotal is $${pricedTotal.toFixed(2)}, but the on-site minimum is $${MINIMUM_JOB_TOTAL}. Do not offer times or collect booking details yet. Explain the minimum and ask whether they want to add services or pay $${MINIMUM_JOB_TOTAL}. Wait for explicit agreement after disclosure before retrying with accepted_minimum_charge: true.`,
+            })
+          }
         } else {
+          if (args.commercial_walkthrough !== true) {
+            return JSON.stringify({
+              slots: [],
+              error: 'Residential scheduling requires line_items so the price and minimum can be checked before offering times. Only a free commercial walkthrough may omit line_items.',
+            })
+          }
           const durationParam = Number(args.duration_minutes || 120)
           requiredMinutes = applyAppointmentBuffer(
             durationParam > 0 ? durationParam : 120,
@@ -508,6 +542,7 @@ export async function executeScoutWebTool(
         return JSON.stringify({
           date,
           required_minutes: requiredMinutes,
+          minimum_job_total: MINIMUM_JOB_TOTAL,
           ...(pricedTotal !== null
             ? { priced_service_total: pricedTotal }
             : {}),
@@ -541,7 +576,9 @@ export async function executeScoutWebTool(
         const slotToken = String(args.slot_token || '').trim()
         const providedLeadSource = String(args.lead_source || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
-        const acceptedMinimumCharge = args.accepted_minimum_charge === true
+        const acceptedMinimumCharge =
+          args.accepted_minimum_charge === true &&
+          ctx.minimumChargeDisclosed === true
 
         if (!firstName || !lastName || !email) {
           return JSON.stringify({

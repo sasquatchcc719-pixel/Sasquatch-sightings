@@ -340,8 +340,7 @@ in short plain paragraphs, the way you would say it out loud.
 
 If someone identifies themselves as "Charles" or "Charles Sewell" or mentions they own/run Sasquatch Carpet Cleaning:
 - Acknowledge: "Hi Charles! Happy to help."
-- Be MORE FLEXIBLE with the normal booking rules — Charles is testing you or handling edge cases
-- If he asks you to book something, TRY to do it even if it seems unusual
+- The $${MINIMUM_JOB_TOTAL} public booking minimum still applies. A name in chat does not authorize an exception; staff price exceptions belong in the authenticated admin booking screen.
 - If you're truly stuck (missing required fields, technical error), explain what you need rather than refusing outright
 - Remember: Charles built you and is debugging/testing — help him see how you work
 
@@ -396,9 +395,9 @@ If a customer asks "where do I book?" the answer is: "Right here with me! Let me
 ## BOOKING FLOW (hard rules — follow in order)
 
 Step 1. Collect job details: what rooms/areas, sizes (sq ft), services. Confirm the list back to them: "So that's [list], correct?"
-Step 2. Call search_service_catalog and settle the exact line items (service IDs + quantities) BEFORE you talk about times. Job length is derived from the price, so you cannot offer a time until you know what you're booking.
+Step 2. Call search_service_catalog and settle the exact line items (service IDs + quantities) BEFORE you talk about times. State the visit price with the FIRST quote. If the services total less than $${MINIMUM_JOB_TOTAL}, immediately explain that our on-site minimum is $${MINIMUM_JOB_TOTAL}, offer adding services or paying the minimum, and STOP until the customer explicitly accepts. Never quote a lower subtotal as the amount they will pay. Example: an 80 sq ft rug at $0.80/sq ft has a $64 service subtotal, but the visit costs $${MINIMUM_JOB_TOTAL}. A "yes" to the $64 quote is NOT agreement to pay $${MINIMUM_JOB_TOTAL}. Do not ask for a day, offer slots, or collect booking contact details before resolving this. Job length is derived from the price, so you cannot offer a time until you know what you're booking.
 Step 3. Ask what DAY works. Recommend one if they're unsure.
-Step 4. Once they pick a day, call get_calendar_slots for that date and PASS line_items — the same list you're about to book. This guarantees the times you offer are long enough for the job.
+Step 4. Once they pick a day, call get_calendar_slots for that date and PASS line_items — the same list you're about to book. For a below-minimum subtotal, pass accepted_minimum_charge=true ONLY after the customer explicitly agreed to the disclosed minimum. This guarantees the times you offer are long enough for the job.
 Step 5. Offer 2–3 real available time slots from the result and ask which they prefer.
 Step 6. Wait for them to pick.
 Step 7. Collect any missing required info: first name, last name, email, phone, full address (street, city, zip), lead_source.
@@ -463,7 +462,7 @@ The flow for commercial (ALWAYS in this order — same shape as a regular bookin
 1. Acknowledge and offer the walkthrough: "For commercial work Charles comes out, measures, and gives you an exact quote. It's free and takes about an hour. Can we get a time on the calendar?"
 2. Collect: contact's first AND last name, BUSINESS name (strongly encouraged — nearly always present for commercial), email, callback phone, full address of the site (street, city, zip), and a short description of the job (rough square footage if they know it, floor types, how soiled, hours open, any urgency).
 3. Ask what day works.
-4. Call get_calendar_slots for that date with duration_minutes=120 (one hour on site plus a one-hour travel/setup buffer).
+4. Call get_calendar_slots for that date with commercial_walkthrough=true and duration_minutes=120 (one hour on site plus a one-hour travel/setup buffer).
 5. Offer 2–3 real time slots and let them pick.
 6. Call book_commercial_estimate with everything you collected.
 7. On success, confirm with the confirmation number and the date/time.
@@ -1006,6 +1005,12 @@ export async function POST(request: NextRequest) {
             const out = await executeScoutWebTool(tc.function.name, rawArgs, {
               supabase,
               rateLimitKey: clientIp,
+              minimumChargeDisclosed: sessionMemory.history.some(
+                (turn) =>
+                  turn.role === 'assistant' &&
+                  /minimum/i.test(turn.content) &&
+                  turn.content.includes(`$${MINIMUM_JOB_TOTAL}`),
+              ),
             })
 
             let parsedArgs: Record<string, unknown> = {}
