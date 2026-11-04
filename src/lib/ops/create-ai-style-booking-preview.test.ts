@@ -176,6 +176,74 @@ describe('AI-style booking preview', () => {
     })
   })
 
+  it.each(['ai_agent', 'lsa_sms'] as const)(
+    'adds one server-calculated LSA fee for %s bookings',
+    async (bookingChannel) => {
+      mocks.getAgentPromoSettings.mockResolvedValueOnce({
+        enabled: false,
+        discount: 0,
+        minimum: 0,
+      })
+      mocks.normalizeLeadSourceForWrite.mockResolvedValueOnce({
+        ok: true,
+        source: {
+          lead_source: 'Google Local Services',
+          source_key: 'google_lsa',
+          lead_source_key: 'google_lsa',
+          lead_source_detail: null,
+          original_lead_source: null,
+        },
+      })
+      const result = await createAiStyleBooking({
+        supabase: {
+          from: (table: string) => new ReadQuery(table),
+        } as never,
+        customer: {
+          first_name: 'Test',
+          last_name: 'Customer',
+          email: 'test@example.com',
+          phone: '+17195550123',
+        },
+        address: {
+          street_1: '123 Main St',
+          city: 'Colorado Springs',
+          state: 'CO',
+          zip_code: '80903',
+        },
+        appointment_date: '2026-10-20',
+        start_time: '09:00',
+        line_items: [
+          {
+            service_id: '10000000-0000-4000-8000-000000000001',
+            quantity: 1,
+          },
+        ],
+        booking_mode: 'direct',
+        booking_channel: bookingChannel,
+        source_label: 'Dot MCP',
+        lead_source: 'google_lsa',
+        actor_label: 'MCP (Charles)',
+        admin_heading: 'MCP booking',
+        preview_only: true,
+      })
+
+      expect(result).toMatchObject({
+        ok: true,
+        subtotal: 340,
+        total: 340,
+        line_items: expect.arrayContaining([
+          expect.objectContaining({
+            service_catalog_item_id: null,
+            name_snapshot: 'Google LSA Lead Charge',
+            quantity: 1,
+            unit_price: 40,
+            line_total: 40,
+          }),
+        ]),
+      })
+    },
+  )
+
   it('rejects a specifically assigned technician who is not free', async () => {
     const client = {
       from(table: string) {

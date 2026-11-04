@@ -443,7 +443,10 @@ export async function createAiStyleBooking(
   )
   const travelCharge = serviceAreaCheck.travelCharge
   const googleLsaCharge =
-    bookingChannel === 'lsa_sms' ? GOOGLE_LSA_LEAD_RECOVERY_AMOUNT : 0
+    bookingChannel === 'lsa_sms' ||
+    resolvedLeadSource.source.source_key === 'google_lsa'
+      ? GOOGLE_LSA_LEAD_RECOVERY_AMOUNT
+      : 0
   const subtotalBeforeMinimum = serviceSubtotal + googleLsaCharge + travelCharge
   const minimumAdjustment =
     acceptedMinimumCharge && subtotalBeforeMinimum < MINIMUM_JOB_TOTAL
