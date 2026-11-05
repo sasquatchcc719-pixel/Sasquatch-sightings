@@ -7,7 +7,7 @@
  * auto-replies to a customer.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import twilio from 'twilio'
@@ -33,6 +33,7 @@ import { handleCleaningReminderPromptReply } from '@/lib/ops/cleaning-reminder-p
 import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import {
   claimInboundMessage,
+  deliverInboundMessageNow,
   markInboundMessageDuplicate,
   markInboundMessageFailed,
   markInboundMessagePersisted,
@@ -894,6 +895,18 @@ export async function POST(request: NextRequest) {
       hasMedia: inboundMedia.length > 0,
     })
     eventClaim = null
+
+    // Wake the existing subscriber immediately for LSA leads instead of waiting
+    // for the minute cron. Persist first; cron remains the failure fallback.
+    if (sourceType === 'lsa') {
+      after(async () => {
+        try {
+          await deliverInboundMessageNow({ supabase, messageSid: twilioSid })
+        } catch {
+          console.error('[mcp-events] LSA fast delivery deferred to cron')
+        }
+      })
+    }
 
     const conversationMetadata =
       (conversation.metadata as Record<string, unknown> | null) || {}

@@ -98,14 +98,19 @@ export async function markInboundMessageDuplicate(params: {
   if (error) throw error
 }
 
-export async function enqueuePersistedInboundEvents(supabase: SupabaseClient) {
-  const { data: ledger, error } = await supabase
+export async function enqueuePersistedInboundEvents(
+  supabase: SupabaseClient,
+  messageSid?: string,
+) {
+  let query = supabase
     .from('mcp_inbound_event_ledger')
     .select('message_sid, conversation_id, received_at, event_payload')
     .eq('status', 'persisted')
     .is('event_enqueued_at', null)
     .order('persisted_at', { ascending: true })
     .limit(50)
+  if (messageSid) query = query.eq('message_sid', messageSid)
+  const { data: ledger, error } = await query
   if (error) throw error
 
   let enqueued = 0
@@ -142,7 +147,10 @@ export async function enqueuePersistedInboundEvents(supabase: SupabaseClient) {
       }))
       const { error: deliveryError } = await supabase
         .from('mcp_event_deliveries')
-        .upsert(rows, { onConflict: 'subscription_id,event_id' })
+        .upsert(rows, {
+          onConflict: 'subscription_id,event_id',
+          ignoreDuplicates: true,
+        })
       if (deliveryError) throw deliveryError
       enqueued += rows.length
     }
@@ -159,9 +167,10 @@ export async function enqueuePersistedInboundEvents(supabase: SupabaseClient) {
 export async function deliverPendingMcpEvents(params: {
   supabase: SupabaseClient
   postWebhook?: typeof postVerifiedWebhook
+  messageSid?: string
 }) {
   const now = new Date().toISOString()
-  const { data: deliveries, error } = await params.supabase
+  let query = params.supabase
     .from('mcp_event_deliveries')
     .select(
       'id, event_id, event_name, occurred_at, payload, attempts, mcp_event_subscriptions!inner(id, owner_user_id, callback_url, callback_secret, previous_callback_secret, secret_rotated_at, status, expires_at)',
@@ -169,7 +178,10 @@ export async function deliverPendingMcpEvents(params: {
     .in('status', ['pending', 'failed'])
     .lte('next_attempt_at', now)
     .order('next_attempt_at', { ascending: true })
-    .limit(20)
+    .limit(params.messageSid ? 1 : 20)
+  if (params.messageSid)
+    query = query.eq('event_id', eventId(params.messageSid))
+  const { data: deliveries, error } = await query
   if (error) throw error
 
   let delivered = 0
@@ -238,6 +250,8 @@ export async function deliverPendingMcpEvents(params: {
       .update({ status: 'delivering', attempts: attempt, last_attempt_at: now })
       .eq('id', delivery.id)
       .in('status', ['pending', 'failed'])
+      .eq('attempts', Number(delivery.attempts || 0))
+      .lte('next_attempt_at', now)
       .select('id')
       .maybeSingle()
     if (!claimed) continue
@@ -331,4 +345,15 @@ export async function deliverPendingMcpEvents(params: {
     }
   }
   return delivered
+}
+
+// The same durable queue is also drained by cron if this best-effort fast path
+// cannot finish. Scope it to this message so a webhook never drains a backlog.
+export async function deliverInboundMessageNow(params: {
+  supabase: SupabaseClient
+  messageSid: string
+  postWebhook?: typeof postVerifiedWebhook
+}) {
+  await enqueuePersistedInboundEvents(params.supabase, params.messageSid)
+  return deliverPendingMcpEvents(params)
 }
