@@ -1,13 +1,34 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   appointmentArrivalNote,
   buildEmailHtml,
   dayBeforeTemplateKey,
   formatCustomerServiceSummary,
   getOpsTemplateKeysForEvent,
+  lifecycleEmailBcc,
   schedulingSmsRecipient,
   withSchedulingSmsOptOut,
 } from '@/lib/ops/communications'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
+describe('lifecycle email shop copies', () => {
+  it('omits the shop BCC from regular and urine-treatment completion emails', () => {
+    vi.stubEnv('OPS_EMAIL_BCC', 'shop@example.com')
+
+    expect(lifecycleEmailBcc('job_finished_email')).toBeUndefined()
+    expect(lifecycleEmailBcc('job_finished_email_urine')).toBeUndefined()
+  })
+
+  it('keeps the shop BCC on scheduling and rescheduling emails', () => {
+    vi.stubEnv('OPS_EMAIL_BCC', 'shop@example.com')
+
+    expect(lifecycleEmailBcc('job_scheduled_email')).toBe('shop@example.com')
+    expect(lifecycleEmailBcc('job_rescheduled_email')).toBe('shop@example.com')
+  })
+})
 
 describe('commercial scheduling text consent', () => {
   const customer = {

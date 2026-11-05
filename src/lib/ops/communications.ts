@@ -42,6 +42,19 @@ export type OpsLifecycleEvent =
   | 'job_finished'
   | 'job_rescheduled'
 
+export function lifecycleEmailBcc(
+  templateKey: OpsTemplateKey,
+): string | undefined {
+  if (
+    templateKey === 'job_finished_email' ||
+    templateKey === 'job_finished_email_urine'
+  ) {
+    return undefined
+  }
+
+  return process.env.OPS_EMAIL_BCC || undefined
+}
+
 type OpsTemplateRow = {
   template_key: OpsTemplateKey
   channel: 'sms' | 'email'
@@ -1039,7 +1052,7 @@ export async function sendOpsLifecycleCommunications(params: {
     }
 
     if (!resend || !customerEmail || customerEmailOptOut) continue
-    const bcc = process.env.OPS_EMAIL_BCC || undefined
+    const bcc = lifecycleEmailBcc(template.template_key)
     try {
       const emailResult = await resend.emails.send({
         from: fromEmail,
