@@ -114,6 +114,20 @@ describe('buildEmailHtml actions', () => {
     expect(html).toContain('https://example.com/estimate/1?schedule=1')
     expect(html).toContain('https://example.com/commercial/1?action=recurring')
   })
+
+  it('renders secondary instructions below the primary action', () => {
+    const html = buildEmailHtml('Your invoice is ready.', 'invoice', {
+      cta: {
+        label: 'Pay securely with Square',
+        url: 'https://example.com/pay/invoice',
+      },
+      afterCtaBody: 'Prefer to pay by check? Mail it to the address below.',
+    })
+
+    expect(html.indexOf('Pay securely with Square')).toBeLessThan(
+      html.indexOf('Prefer to pay by check?'),
+    )
+  })
 })
 
 describe('getOpsTemplateKeysForEvent', () => {

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   pdf: vi.fn(),
   blacklisted: vi.fn(),
+  emailHtml: vi.fn(),
 }))
 
 vi.mock('resend', () => ({
@@ -22,7 +23,7 @@ vi.mock('resend', () => ({
 vi.mock('@/lib/blacklist', () => ({ isBlacklisted: mocks.blacklisted }))
 vi.mock('@/lib/ops/pdf/generate', () => ({ generateInvoicePDF: mocks.pdf }))
 vi.mock('@/lib/ops/communications', () => ({
-  buildEmailHtml: (body: string) => `<html>${body}</html>`,
+  buildEmailHtml: mocks.emailHtml,
 }))
 
 type Row = Record<string, unknown>
@@ -227,9 +228,22 @@ beforeEach(() => {
     'OPS_EMAIL_FROM',
     'Sasquatch Carpet Cleaning <invoices@example.com>',
   )
-  vi.stubEnv('OPS_EMAIL_BCC', '')
+  vi.stubEnv('OPS_EMAIL_BCC', 'shop@example.com')
+  vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://sightings.example.com')
+  vi.stubEnv('PAYMENT_LINK_SIGNING_SECRET', 'test-payment-link-secret')
   mocks.pdf.mockResolvedValue(Buffer.from('%PDF synthetic attachment'))
   mocks.blacklisted.mockResolvedValue(false)
+  mocks.emailHtml.mockImplementation(
+    (
+      body: string,
+      _template: string,
+      options?: {
+        cta?: { label: string; url: string }
+        afterCtaBody?: string
+      },
+    ) =>
+      `<html>${body}<a href="${options?.cta?.url}">${options?.cta?.label}</a>${options?.afterCtaBody}</html>`,
+  )
   mocks.send.mockResolvedValue({ data: { id: 'provider-1' }, error: null })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -264,10 +278,16 @@ describe('invoice due date and check instructions', () => {
       serviceDate: '2026-10-15',
       total: 1049.94,
       dueDate: '2026-11-29',
+      paymentUrl: 'https://sightings.example.com/pay/signed-token',
     })
     expect(body).toContain('itemized invoice #18942 is attached')
     expect(body).toContain('Total due: $1049.94')
     expect(body).toContain('Payment due: 2026-11-29')
+    expect(body).toContain('Pay securely online with Square:')
+    expect(body).toContain('https://sightings.example.com/pay/signed-token')
+    expect(body.indexOf('Pay securely')).toBeLessThan(
+      body.indexOf('Prefer to pay by check?'),
+    )
     expect(body).toContain('checks payable to Sasquatch Carpet Cleaning')
     expect(body).toContain('PO Box 1651, Palmer Lake, CO 80133')
     expect(body).toContain('Include invoice #18942 on the memo line.')
@@ -279,6 +299,7 @@ describe('invoice due date and check instructions', () => {
         serviceDate: '2026-10-15',
         total: 50,
         dueDate: null,
+        paymentUrl: 'https://sightings.example.com/pay/signed-token',
       }),
     ).not.toContain('Payment due:')
   })
@@ -303,8 +324,16 @@ describe('close-out invoice email delivery', () => {
     const [payload, options] = mocks.send.mock.calls[0]
     expect(payload.to).toBe('billing@example.com')
     expect(payload.subject).toContain('Invoice #18942')
+    expect(payload.bcc).toBeUndefined()
+    expect(payload.text).toContain('Pay securely online with Square')
+    expect(payload.text).toContain('https://sightings.example.com/pay/')
     expect(payload.text).toContain('PO Box 1651, Palmer Lake, CO 80133')
     expect(payload.html).toContain('Payment due: 2026-11-29')
+    expect(payload.html).toContain('Pay securely with Square — $1049.94')
+    expect(payload.html).toContain('href="https://sightings.example.com/pay/')
+    expect(payload.html.indexOf('Pay securely with Square')).toBeLessThan(
+      payload.html.indexOf('Prefer to pay by check?'),
+    )
     expect(payload.attachments).toEqual([
       {
         filename: 'Invoice-18942.pdf',

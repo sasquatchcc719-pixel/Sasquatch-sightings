@@ -816,6 +816,8 @@ export function buildEmailHtml(
     cta?: { label: string; url: string } | null
     /** Optional second action for owner alerts that have two valid next steps. */
     secondaryCta?: { label: string; url: string } | null
+    /** Optional secondary instructions rendered below the action buttons. */
+    afterCtaBody?: string | null
   },
 ): string {
   // Normalize literal \n sequences (stored in some templates) to real newlines
@@ -827,6 +829,15 @@ export function buildEmailHtml(
     .filter(Boolean)
     .map(buildBlockHtml)
     .join('')
+  const afterCtaParagraphs = options?.afterCtaBody
+    ? options.afterCtaBody
+        .replace(/\\n/g, '\n')
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map(buildBlockHtml)
+        .join('')
+    : ''
 
   const accentColor = '#2d6a4f'
   const technicianCard = buildTechnicianCardHtml(
@@ -895,6 +906,7 @@ export function buildEmailHtml(
             ${technicianCard}
             ${paragraphs}
             ${ctaBlock}
+            ${afterCtaParagraphs}
           </td>
         </tr>
 

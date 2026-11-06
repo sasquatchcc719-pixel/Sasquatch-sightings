@@ -8,6 +8,10 @@ import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import {
+  buildPublicPaymentUrl,
+  createInvoicePaymentToken,
+} from '@/lib/payments/signed-payment-link'
+import {
   INVOICE_CHECK_PAYEE,
   INVOICE_MAILING_ADDRESS,
 } from '@/lib/ops/invoice-remittance'
@@ -19,7 +23,6 @@ const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000
 type EmailPayload = {
   from: string
   to: string
-  bcc?: string
   subject: string
   text: string
   html: string
@@ -48,6 +51,21 @@ export function invoiceDueDate(serviceDate: string, days: number | null) {
   if (!Number.isFinite(date.getTime())) throw new Error('Invalid service date')
   date.setUTCDate(date.getUTCDate() + days)
   return date.toISOString().slice(0, 10)
+}
+
+function publicSiteOrigin() {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    'https://sightings.sasquatchcarpet.com'
+  ).replace(/\/+$/, '')
+}
+
+function paymentLinkExpiresAt(dueDate: string | null): Date | undefined {
+  if (!dueDate) return undefined
+  const expiresAt = new Date(`${dueDate}T23:59:59.999Z`)
+  expiresAt.setUTCDate(expiresAt.getUTCDate() + 30)
+  return expiresAt
 }
 
 async function loadInvoice(supabase: SupabaseClient, appointmentId: string) {
@@ -126,20 +144,37 @@ async function loadInvoice(supabase: SupabaseClient, appointmentId: string) {
 
 type InvoiceContext = NonNullable<Awaited<ReturnType<typeof loadInvoice>>>
 
-export function buildCloseOutInvoiceBody(params: {
+type CloseOutInvoiceBodyParams = {
   customerName: string
   invoiceNumber: number
   serviceAddress: string
   serviceDate: string
   total: number
   dueDate: string | null
-}) {
+}
+
+function closeOutInvoiceSections(params: CloseOutInvoiceBodyParams) {
+  return {
+    intro: [
+      `Hello ${params.customerName},`,
+      `Thank you for choosing Sasquatch Carpet Cleaning. Your itemized invoice #${params.invoiceNumber} is attached.`,
+      `Service address: ${params.serviceAddress}\nService date: ${params.serviceDate}\nTotal due: $${params.total.toFixed(2)}${params.dueDate ? `\nPayment due: ${params.dueDate}` : ''}`,
+    ].join('\n\n'),
+    remittance: [
+      `Prefer to pay by check? Please make checks payable to ${INVOICE_CHECK_PAYEE} and mail to:\n${INVOICE_MAILING_ADDRESS}\nInclude invoice #${params.invoiceNumber} on the memo line.`,
+      'Questions about your invoice? Reply to this email or call (719) 249-8791. Thank you!',
+    ].join('\n\n'),
+  }
+}
+
+export function buildCloseOutInvoiceBody(
+  params: CloseOutInvoiceBodyParams & { paymentUrl: string },
+) {
+  const sections = closeOutInvoiceSections(params)
   return [
-    `Hello ${params.customerName},`,
-    `Thank you for choosing Sasquatch Carpet Cleaning. Your itemized invoice #${params.invoiceNumber} is attached.`,
-    `Service address: ${params.serviceAddress}\nService date: ${params.serviceDate}\nTotal due: $${params.total.toFixed(2)}${params.dueDate ? `\nPayment due: ${params.dueDate}` : ''}`,
-    `Please make checks payable to ${INVOICE_CHECK_PAYEE} and mail to:\n${INVOICE_MAILING_ADDRESS}\nInclude invoice #${params.invoiceNumber} on the memo line.`,
-    'Questions about your invoice? Reply to this email or call (719) 249-8791. Thank you!',
+    sections.intro,
+    `Pay securely online with Square:\n${params.paymentUrl}`,
+    sections.remittance,
   ].join('\n\n')
 }
 
@@ -165,6 +200,22 @@ async function preparePayload(context: InvoiceContext): Promise<EmailPayload> {
     appt.appointment_date,
     customer.quickbooks_payment_terms_days,
   )
+  const paymentUrl = buildPublicPaymentUrl(
+    publicSiteOrigin(),
+    createInvoicePaymentToken({
+      invoiceId: invoice.id,
+      provider: 'square',
+      expiresAt: paymentLinkExpiresAt(dueDate),
+    }),
+  )
+  const sections = closeOutInvoiceSections({
+    customerName,
+    serviceAddress,
+    dueDate,
+    invoiceNumber: invoice.invoice_number,
+    serviceDate: appt.appointment_date,
+    total: Number(invoice.total),
+  })
   const text = buildCloseOutInvoiceBody({
     customerName,
     serviceAddress,
@@ -172,6 +223,7 @@ async function preparePayload(context: InvoiceContext): Promise<EmailPayload> {
     invoiceNumber: invoice.invoice_number,
     serviceDate: appt.appointment_date,
     total: Number(invoice.total),
+    paymentUrl,
   })
   const pdf = await generateInvoicePDF({
     invoiceId: invoice.id,
@@ -195,10 +247,19 @@ async function preparePayload(context: InvoiceContext): Promise<EmailPayload> {
       process.env.OPS_EMAIL_FROM ||
       'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
     to: customer.email.trim(),
-    bcc: process.env.OPS_EMAIL_BCC || undefined,
     subject: `Invoice #${invoice.invoice_number} from Sasquatch Carpet Cleaning`,
     text,
-    html: buildEmailHtml(text, TEMPLATE),
+    html: buildEmailHtml(
+      `${sections.intro}\n\nPay securely online with Square.`,
+      TEMPLATE,
+      {
+        cta: {
+          label: `Pay securely with Square — $${Number(invoice.total).toFixed(2)}`,
+          url: paymentUrl,
+        },
+        afterCtaBody: sections.remittance,
+      },
+    ),
     attachments: [
       {
         filename: `Invoice-${invoice.invoice_number}.pdf`,
