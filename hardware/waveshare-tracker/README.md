@@ -66,6 +66,8 @@ A following outdoor battery-only test, with the phone hotspot off, delivered 261
 
 Under 0.3.2, a deliberate 10-second hold in the HTTPS worker produced a 10,860 ms upload while the maximum GPS observation gap remained 2 seconds. Points accumulated during the hold and were acknowledged by the following successful request. Normal repeat requests in that bench check took approximately 0.5–1.6 seconds, with DNS configured and no PPP reconnects. The build and all four host test programs passed. Upload-batch tests cover newest-first/oldest-backlog ordering, capacity limits, and a full-ring slot overwritten while its previous sample is in flight.
 
+The following battery-only outdoor check delivered 350 points across 362 seconds from one boot, with a maximum recorded GPS gap of 3 seconds (previous version: 22 seconds). Periodic cloud checks continued to show fresh contact past the earlier five-minute failure window. This verifies a short stationary/walking test; vehicle motion, marginal carrier coverage, and prolonged outages still need a drive test. GPS collection itself does not use cellular data. This firmware eventually uploads every queued observation, so changing batch frequency saves request overhead but does not reduce the number of recorded points transmitted.
+
 ## USB diagnostics
 
 `gpsDiagnostic` reports the parser result (0 invalid, 1 no fix, 2 fix), response length, and reply shape with every digit masked. This reveals truncated command replies without printing a location or GPS timestamp. It also reports the PPP DNS setting and whether the Sightings hostname resolves when Internet is available. `reconnectCellular` explicitly restarts the PPP session without changing settings or queued points.
