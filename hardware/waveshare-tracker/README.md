@@ -58,6 +58,8 @@ Bench verification on November 6, 2026: the SIM7670G with an activated Hologram 
 
 The subsequent outdoor test exposed truncated CMUX GPS replies and a stalled data session. Under 0.3.1, the on-board diagnostic returned a complete 93-byte GPS response that parsed as a fix; repeated GPS polling continued alongside cellular uploads with zero invalid replies during the bench check. Sightings received fresh GPS timestamps under the new version. An explicit PPP reconnect preserved nine queued points, resumed HTTP 200 uploads, and drained the queue; the local status log recorded the disconnect/reconnect sequence. This verifies the reconnect path, not a long-duration carrier-outage test.
 
+A following outdoor battery-only test, with the phone hotspot off, delivered 261 GPS points across six minutes from one boot. Uploads briefly stalled, then resumed without USB or user intervention. The largest interval between recorded GPS observations was 22 seconds. Battery operation and simultaneous GPS/cellular delivery are verified for this short test; uninterrupted low-latency tracking and long-duration carrier-outage behavior still need work. Cloud observations alone do not identify which modem/reconnect event caused the brief stall.
+
 ## USB diagnostics
 
 `gpsDiagnostic` reports the parser result (0 invalid, 1 no fix, 2 fix), response length, and reply shape with every digit masked. This reveals truncated command replies without printing a location or GPS timestamp. It also reports the PPP DNS setting and whether the Sightings hostname resolves when Internet is available. `reconnectCellular` explicitly restarts the PPP session without changing settings or queued points.
