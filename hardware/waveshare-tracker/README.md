@@ -1,6 +1,6 @@
 # Waveshare tracker prototype
 
-For **ESP32-S3-SIM7670G-4G V2.0**, ESP32-S3R8, 16 MB flash / 8 MB octal PSRAM. This first firmware uses **2.4 GHz Wi-Fi or a phone hotspot**, not the modem's cellular data. A SIM is not required for GPS. Battery power runs the firmware independently of the Mac. Outside Wi-Fi coverage, points are saved locally and uploaded after reconnection; live Sightings updates require Internet access.
+For **ESP32-S3-SIM7670G-4G V2.0**, ESP32-S3R8, 16 MB flash / 8 MB octal PSRAM. Firmware **0.3.0** adds **Hologram cellular data**, with the existing 2.4 GHz Wi-Fi/hotspot connection retained as backup. An activated data SIM and LTE antenna on MAIN are required for cellular service. A SIM is not required for GPS. Battery power runs the firmware independently of the Mac. Outside Internet coverage, points are saved locally and uploaded after reconnection.
 
 ## Build
 
@@ -38,7 +38,19 @@ Use a 2.4 GHz hotspot. On iPhone, enable Maximize Compatibility if needed. Reiss
 {"command":"status"}
 ```
 
-Status includes Wi-Fi connection, numeric `wifiStatus`, the last non-deliberate `lastWifiDisconnectReason` (0 means none observed this boot), GNSS validity, queue count, battery voltage, storage readiness, last HTTP status, and boot ID. It does not return the SSID, password, device token, or saved locations. A `telemetry` response with `lastHttpCode:200` means the server accepted the request; it does not establish a GPS fix unless `gpsFix:true` is also shown.
+Status includes Wi-Fi connection, numeric `wifiStatus`, the last non-deliberate `lastWifiDisconnectReason` (0 means none observed this boot), GNSS validity, queue count, battery voltage, storage readiness, last HTTP status, and boot ID. Cellular fields are `cellularStarted`, `cellularDialed`, `simReady`, `cellularConnected` (has an IP address), and `cellularSignal` (RSSI). `network` reports the selected available transport; `lastUploadNetwork` records the transport selected for the last HTTPS attempt. `lastTlsError` is the TLS library's raw diagnostic; consult it only after a negative HTTP result, since it can be nonzero after a successful request closes. Status does not return the SSID, password, device token, IMSI/ICCID, or saved locations. A `telemetry` response with `lastHttpCode:200` means the server accepted the request; it does not establish a GPS fix unless `gpsFix:true` is also shown.
+
+## Hologram cellular setup
+
+Activate the SIM in Hologram, completely disconnect power before inserting its nano-SIM, and attach the LTE antenna to MAIN. The APN is fixed to `hologram`; no username, password, or SIM PIN is configured. Hologram roaming registration is normal. Firmware 0.3.0 upgrades preserve the original NVS configuration blob and the existing FAT GPS queue; do not erase flash, initialize storage, or upload a merged full-flash image during an upgrade.
+
+The Arduino core's bundled `PPP`/`esp_modem` driver owns UART1 on GPIO17/18 after startup, using the SIM7600-compatible command set and UART CMUX supported by the SIM7670G. PPP carries Internet traffic while its separate CMUX AT channel continues GNSS polling. No other code may read/write that UART while PPP owns it. If driver initialization fails (for example, with no SIM), the raw UART is restored so GPS and Wi-Fi can continue. Cellular registration/dialing is retried every 15 seconds; unsuccessful or lost data sessions get 45 seconds before returning to command mode and retrying. Cellular is preferred when it has an IP; otherwise HTTPS uses Wi-Fi. Wi-Fi reconnection attempts pause while cellular has an IP. TLS certificate validation stays in the ESP32, not the modem's HTTP service.
+
+After an ESP-only restart, the modem may still be in CMUX. Startup closes the two virtual channels and the control multiplexer using the [Espressif disconnect frames](https://github.com/espressif/esp-protocols/blob/master/components/esp_modem/src/esp_modem_cmux.cpp) before retrying initialization. Cellular requests allow 10 seconds for connection/response and 15 seconds for TLS negotiation; Wi-Fi retains its previous timeouts.
+
+For a hardware acceptance test, leave Wi-Fi/hotspot unavailable, check `simReady:true`, `cellularConnected:true`, `lastUploadNetwork:"cellular"`, and an accepted HTTP 200, then confirm firmware/last contact in Sightings. GPS reception must be tested separately outdoors. Also test unplugged battery boot and data reconnection before installing in a vehicle. A compile alone does not prove modem or carrier compatibility. Monitor real cellular consumption before choosing production limits: frequent HTTPS connections incur overhead beyond the JSON payload.
+
+Bench verification on November 6, 2026: the SIM7670G with an activated Hologram SIM uploaded over cellular with Wi-Fi disconnected, drained the preserved GPS queue to zero, and delivered a fresh receiver timestamp/location to Sightings under firmware 0.3.0. A subsequent ESP-only reset reconnected and received HTTP 200 without a modem power cycle. The firmware build and GPS/CRC/modem-clock tests passed. This is not yet an outdoor battery-only drive test or a long-duration coverage/reconnection test.
 
 Firmware **0.1.1** adds an explicit USB Wi-Fi diagnostic:
 
@@ -53,7 +65,7 @@ This briefly pauses reconnection and scans 2.4 GHz for the configured network. I
 - Modem UART: ESP32 RX **GPIO17**, TX **GPIO18**, 115200 8N1, no hardware flow control.
 - Modem power enable: **GPIO21 HIGH** (V2). Keep the physical **4G DIP ON** for initial testing. Older generic FAQ references to GPIO33/22 do not match the V2 schematic.
 - Battery MAX17048 fuel gauge: I2C **SDA15/SCL16**, address `0x36`; voltage register `0x02`, 78.125 µV/LSB.
-- WS2812 status LED: GPIO38. Purple: needs configuration; blue: no Wi-Fi; yellow: waiting GPS; green: fresh GPS; red: storage unavailable or repeated upload failures.
+- WS2812 status LED: GPIO38. Purple: needs configuration; blue: no Internet connection; yellow: waiting GPS; green: fresh GPS; red: storage unavailable or repeated upload failures.
 - GNSS antenna goes to the connector labeled GNSS. Its bias comes from the board's 3.3 V rail; there is no extra ESP32 antenna power GPIO to set.
 - Keep CAM OFF when the camera is unused; enable CAM only with the ribbon seated and its latch closed. HUB is required for USB programming; it may be switched off for lower battery consumption after unplugging the Mac.
 
@@ -67,9 +79,9 @@ Each new GPS second has a random boot UUID plus increasing sequence number for s
 
 Uploads put the newest queued point first, followed by the oldest backlog, up to 32 per request. A successful `{ok:true}` HTTP 200 acknowledges those points; failures keep them queued. Duplicate retransmissions after power loss are expected and deduplicated by the server. While moving or draining backlog, the target interval is 2 seconds; stationary/no-fix heartbeat interval is 10 seconds. Network calls are synchronous and can delay GPS polling, especially during failed TLS or slow requests; sustained 1 Hz capture is not guaranteed by this prototype. Failed uploads back off up to 30 seconds. A disconnected hotspot still records GPS.
 
-HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1 CA; redirects are disabled. This trusts the current Let's Encrypt certificate chain for Sightings, not a pinned leaf certificate. A custom endpoint must use a chain trusted by that root, or the CA source must be deliberately updated. SNTP supplies time before TLS; GPS UTC is the fallback when SNTP is unavailable. No TLS verification bypass is used.
+HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1 CA; redirects are disabled. This trusts the current Let's Encrypt certificate chain for Sightings, not a pinned leaf certificate. A custom endpoint must use a chain trusted by that root, or the CA source must be deliberately updated. SNTP supplies time before TLS; GPS UTC and a validated cellular modem clock can bootstrap it when SNTP is unavailable. Modem-clock timezone offsets are parsed in quarter hours, and this clock is never used to invent GPS observation times. No TLS verification bypass is used.
 
-No modem cellular connection, temperature probes, OTA updates, ignition detection, or production battery low-voltage policy is implemented yet.
+Temperature probes, OTA updates, ignition detection, and a production battery low-voltage policy are not implemented yet. Cellular data is for tracking; it does not add cellular camera streaming.
 
 ## USB camera prototype (firmware 0.2.2)
 
@@ -97,6 +109,8 @@ USB requests use `{"command":"cameraSnapshot","preview":true}` for continuous ca
 ```sh
 c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/gps_parser_test.cpp -o /tmp/waveshare-parser-test
 /tmp/waveshare-parser-test
+c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/modem_clock_test.cpp -o /tmp/waveshare-modem-clock-test
+/tmp/waveshare-modem-clock-test
 ```
 
-This tests the actual GNSS parser and CRC implementation against valid coordinates/time, no-fix replies, bad directions, out-of-range minutes/latitude, invalid dates, missing speed/bearing, implausible speeds (sent as null so they cannot block the upload queue), and known CRC data. The Arduino build verifies platform integration. Flash queue durability, antenna reception, battery operation, and live server delivery require hardware tests; a successful compile does not prove them.
+This tests the actual GNSS parser and CRC implementation against valid coordinates/time, no-fix replies, bad directions, out-of-range minutes/latitude, invalid dates, missing speed/bearing, implausible speeds (sent as null so they cannot block the upload queue), and known CRC data. Modem-clock tests cover UTC conversion, signed quarter-hour offsets, leap dates, invalid values, and incomplete responses. The Arduino build verifies platform integration. Flash queue durability, antenna reception, battery operation, and live server delivery require hardware tests; a successful compile does not prove them.

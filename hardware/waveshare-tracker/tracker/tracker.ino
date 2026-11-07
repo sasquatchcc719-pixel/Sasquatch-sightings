@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
 #include <Preferences.h>
+#include <PPP.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_system.h>
@@ -12,6 +13,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include "gps_parser.h"
+#include "modem_clock.h"
 #include "camera_usb.h"
 #include "tls_root.h"
 
@@ -19,7 +21,8 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.2.2";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.0";
+constexpr char CELLULAR_APN[] = "hologram";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
 struct Record {
@@ -50,7 +53,17 @@ uint32_t lastConnectMs = 0, lastStatusMs = 0;
 uint8_t failures = 0, modemReadFailures = 0;
 std::atomic<int> lastWifiDisconnectReason{0};
 int lastHttpCode = 0;
+int lastTlsError = 0;
 float batteryV = NAN;
+bool cellularStarted = false, cellularDialed = false, simReady = false;
+uint32_t nextCellularMs = 5000, cellularDataAt = 0;
+int cellularSignal = -1;
+String lastUploadNetwork;
+const char *activeNetwork() {
+  if (cellularStarted && PPP.hasIP()) return "cellular";
+  return WiFi.status() == WL_CONNECTED ? "wifi" : "offline";
+}
+bool internetReady() { return strcmp(activeNetwork(), "offline") != 0; }
 
 void makeBootId() {
   uint8_t b[16]; esp_fill_random(b, sizeof(b));
@@ -119,6 +132,13 @@ void acknowledge(int slot) {
   } else storageReady = false;
 }
 String command(const char *text, uint32_t timeout = 1200) {
+  if (cellularStarted) {
+    if (strcmp(text, "AT") == 0) return PPP.sync() ? "\r\nOK\r\n" : "";
+    String response = PPP.cmd(text, timeout);
+    // PPP.cmd returns an empty string on failure; frame successful data replies
+    // for the existing GNSS parser. UART is owned exclusively by esp_modem.
+    return response.isEmpty() ? String() : "\r\n" + response + "\r\nOK\r\n";
+  }
   while (modem.available()) modem.read();
   modem.print(text); modem.print("\r\n");
   String response; response.reserve(512);
@@ -132,6 +152,62 @@ String command(const char *text, uint32_t timeout = 1200) {
     delay(1);
   }
   return response;
+}
+void connectCellular() {
+  if (!configured || int32_t(millis() - nextCellularMs) < 0) return;
+  nextCellularMs = millis() + 15000;
+  if (!cellularStarted) {
+    if (command("AT", 500).indexOf("OK") < 0) {
+      // The modem can remain in CMUX after an ESP-only reset. Close its old
+      // virtual channels and multiplexer before handing UART to PPP. Frames
+      // follow esp_modem CMux::send_disconnect (DLCI 1, 2, then control).
+      const uint8_t closeChannels[][6] = {
+        {0xf9, 0x07, 0x53, 0x01, 0x3f, 0xf9},
+        {0xf9, 0x0b, 0x53, 0x01, 0xb8, 0xf9}
+      };
+      for (const auto &frame : closeChannels) {
+        modem.write(frame, sizeof(frame)); modem.flush(); delay(150);
+      }
+      const uint8_t closeMux[] = {0xf9, 0x03, 0xef, 0x05, 0xc3, 0x01, 0xf2, 0xf9};
+      modem.write(closeMux, sizeof(closeMux)); modem.flush(); delay(300);
+    }
+    modem.end();
+    PPP.setApn(CELLULAR_APN);
+    PPP.setPins(MODEM_TX, MODEM_RX);
+    cellularStarted = PPP.begin(PPP_MODEM_SIM7600, 1, 115200);
+    if (!cellularStarted) {
+      PPP.end();
+      modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+      modemReady = false;
+      return;
+    }
+    command("ATE0");
+  }
+  simReady = command("AT+CPIN?").indexOf("READY") >= 0;
+  cellularSignal = PPP.RSSI();
+  if (PPP.hasIP() && time(nullptr) < 1704067200) {
+    int64_t epoch;
+    if (parseModemClock(command("AT+CCLK?").c_str(), epoch)) {
+      timeval clock = {time_t(epoch), 0}; settimeofday(&clock, nullptr);
+    }
+  }
+  if (PPP.hasIP()) { cellularDataAt = millis(); return; }
+  if (cellularDialed) {
+    // Give registration/IP negotiation time, then recover instead of staying
+    // indefinitely in a disconnected data session. GPS uses the CMUX AT channel.
+    if (millis() - cellularDataAt < 45000) return;
+    if (!PPP.mode(ESP_MODEM_MODE_COMMAND)) {
+      PPP.end();
+      cellularStarted = false;
+      modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+    }
+    cellularDialed = false;
+    modemReady = false;
+    return;
+  }
+  if (!simReady || !PPP.attached()) return;
+  cellularDialed = PPP.mode(ESP_MODEM_MODE_CMUX);
+  cellularDataAt = millis();
 }
 void pollGps() {
   if (!modemReady) {
@@ -178,11 +254,16 @@ void printStatus(const char *event = "status") {
   doc["configured"] = configured; doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
   doc["wifiStatus"] = int(WiFi.status());
   doc["lastWifiDisconnectReason"] = lastWifiDisconnectReason.load();
+  doc["cellularStarted"] = cellularStarted; doc["cellularDialed"] = cellularDialed;
+  doc["simReady"] = simReady; doc["cellularConnected"] = cellularStarted && PPP.hasIP();
+  doc["cellularSignal"] = cellularSignal;
+  doc["network"] = activeNetwork(); doc["lastUploadNetwork"] = lastUploadNetwork;
   doc["cameraReady"] = CameraUsb::ready;
   doc["modemReady"] = modemReady; doc["gpsFix"] = freshFix();
   doc["clockReady"] = time(nullptr) >= 1704067200;
   doc["storageReady"] = storageReady; doc["queued"] = queued;
   doc["discardedOldest"] = dropped; doc["lastHttpCode"] = lastHttpCode;
+  doc["lastTlsError"] = lastTlsError;
   if (std::isfinite(batteryV)) doc["batteryV"] = batteryV; else doc["batteryV"] = nullptr;
   serializeJson(doc, Serial); Serial.println();
 }
@@ -293,7 +374,7 @@ void formatUtc(int64_t epoch, char *buffer, size_t size) {
   strftime(buffer, size, "%Y-%m-%dT%H:%M:%SZ", &utc);
 }
 void postTelemetry() {
-  if (!configured || WiFi.status() != WL_CONNECTED || time(nullptr) < 1704067200) return;
+  if (!configured || !internetReady() || time(nullptr) < 1704067200) return;
   JsonDocument body;
   body["firmware"] = FIRMWARE; body["bootId"] = bootId; body["uptimeMs"] = millis();
   if (std::isfinite(batteryV)) body["batteryV"] = batteryV; else body["batteryV"] = nullptr;
@@ -324,8 +405,11 @@ void postTelemetry() {
     point["satellites"] = nullptr; // CGPSINFO does not include a satellite count.
   }
   String payload; serializeJson(body, payload);
-  NetworkClientSecure client; client.setCACert(TLS_ROOT_CA); client.setHandshakeTimeout(5);
-  HTTPClient http; http.setConnectTimeout(4000); http.setTimeout(5000);
+  lastUploadNetwork = activeNetwork();
+  if (lastUploadNetwork == "cellular") PPP.setDefault(); else WiFi.STA.setDefault();
+  const bool usingCellular = lastUploadNetwork == "cellular";
+  NetworkClientSecure client; client.setCACert(TLS_ROOT_CA); client.setHandshakeTimeout(usingCellular ? 15 : 5);
+  HTTPClient http; http.setConnectTimeout(usingCellular ? 10000 : 4000); http.setTimeout(usingCellular ? 10000 : 5000);
   // Redirects stay disabled so credentials never follow an unexpected destination.
   if (!http.begin(client, endpoint)) { lastHttpCode = -1; }
   else {
@@ -341,6 +425,7 @@ void postTelemetry() {
         failures = 0;
       } else lastHttpCode = -2;
     }
+    lastTlsError = client.lastError(nullptr, 0);
     http.end();
   }
   lastHeartbeatMs = millis();
@@ -381,17 +466,25 @@ void loop() {
   processSerial();
   uint32_t now = millis();
   if (now - lastPollMs >= (modemReady ? 1000u : 5000u)) { lastPollMs = now; pollGps(); }
-  if (configured && WiFi.status() != WL_CONNECTED && millis() - lastConnectMs >= 15000) connectWifi();
-  if (WiFi.status() == WL_CONNECTED && int32_t(millis() - nextPostMs) >= 0) { batteryV = readBattery(); postTelemetry(); }
+  connectCellular();
+  if (configured && !PPP.hasIP() && WiFi.status() != WL_CONNECTED && millis() - lastConnectMs >= 15000) connectWifi();
+  static bool hadInternet = false;
+  if (internetReady() && !hadInternet) {
+    if (PPP.hasIP()) PPP.setDefault(); else WiFi.STA.setDefault();
+    configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.google.com");
+    nextPostMs = 0;
+  }
+  hadInternet = internetReady();
+  if (internetReady() && int32_t(millis() - nextPostMs) >= 0) { batteryV = readBattery(); postTelemetry(); }
   if (millis() - lastStatusMs >= 10000) { lastStatusMs = millis(); printStatus(); }
-  // Low-brightness status: purple needs setup; blue waiting Wi-Fi; yellow waiting GPS;
+  // Low-brightness status: purple needs setup; blue waiting Internet; yellow waiting GPS;
   // green has a fresh fix; red signals persistent upload/storage failure.
   static uint32_t ledAt = 0;
   if (millis() - ledAt >= 1000) {
     ledAt = millis();
     if (!storageReady || failures >= 3) rgbLedWrite(STATUS_LED, 16, 0, 0);
     else if (!configured) rgbLedWrite(STATUS_LED, 8, 0, 8);
-    else if (WiFi.status() != WL_CONNECTED) rgbLedWrite(STATUS_LED, 0, 0, 16);
+    else if (!internetReady()) rgbLedWrite(STATUS_LED, 0, 0, 16);
     else if (!freshFix()) rgbLedWrite(STATUS_LED, 12, 8, 0);
     else rgbLedWrite(STATUS_LED, 0, 12, 0);
   }
