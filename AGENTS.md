@@ -324,3 +324,5 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Forward staff calls with the original inbound caller number and connect on answer without a receiver press-1 prompt. Keep the caller spam menu and FIFO appointment queue; dequeue the original inbound leg rather than creating a business-number worker call.
 
 - When Scout quotes below the $175 minimum, first suggest relevant additional cleaning and verify combined catalog pricing; offer the minimum charge alone after the customer declines extra work.
+
+- Serial flashing: wait for esptool to exit successfully and verify the flash hash before opening any serial monitor; concurrent port access can interrupt the transfer.

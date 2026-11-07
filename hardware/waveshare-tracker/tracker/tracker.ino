@@ -29,7 +29,8 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.2";
+#include "build_info.h"
+#include "ota.h"
 constexpr char CELLULAR_APN[] = "hologram";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
@@ -44,7 +45,8 @@ struct Record {
   uint32_t crc;
 };
 struct UploadRequest {
-  String endpoint, token, payload;
+  String endpoint, token, payload, otaReport, otaManifest;
+  bool checkOta = false, otaHealthy = false;
   UploadTicket tickets[BATCH_SIZE];
   size_t count = 0;
   bool cellular = false;
@@ -326,6 +328,8 @@ void printStatus(const char *event = "status") {
   JsonDocument doc;
   doc["event"] = event; doc["firmware"] = FIRMWARE; doc["bootId"] = bootId;
   doc["uptimeMs"] = millis(); doc["resetReason"] = int(esp_reset_reason());
+  doc["otaState"] = TrackerOta::status; doc["otaSequence"] = FIRMWARE_SEQUENCE;
+  doc["otaFailedSequence"] = TrackerOta::failedSequence; doc["otaPending"] = TrackerOta::pending;
   doc["uploaderReady"] = uploaderReady; doc["uploadInFlight"] = uploadInFlight;
   doc["lastUploadDurationMs"] = lastUploadDurationMs; doc["maxGpsFixGapSeconds"] = maxGpsFixGapSeconds;
   doc["cellularDnsReady"] = static_cast<uint32_t>(PPP.dnsIP()) != 0;
@@ -436,6 +440,11 @@ void processSerial() {
     if (action == "cameraSnapshot") { CameraUsb::snapshot(!(doc["preview"] | false)); continue; }
     if (action == "cameraStop") { CameraUsb::stop(); printStatus("camera_stopped"); continue; }
     if (action == "status") { printStatus(); continue; }
+    if (action == "otaVerify") {
+      JsonDocument manifest; manifest.set(doc["manifest"]);
+      JsonDocument result; result["event"] = "ota_verification"; result["valid"] = TrackerOta::validManifest(manifest);
+      serializeJson(result, Serial); Serial.println(); continue;
+    }
     if (action == "slowUploadTest") {
       nextUploadDelayMs = 10000; maxGpsFixGapSeconds = 0; nextPostMs = 0;
       printStatus("slow_upload_test_scheduled"); continue;
@@ -548,6 +557,10 @@ void uploadWorker(void *) {
       http.end();
     }
     if (request->code < 0) client.stop();
+    if (request->code == 200 && request->checkOta) {
+      client.stop();
+      request->otaManifest = TrackerOta::poll(request->token, request->otaReport, request->otaHealthy);
+    }
     request->durationMs = millis() - started;
     xQueueSend(uploadResults, &request, portMAX_DELAY);
   }
@@ -564,6 +577,10 @@ void collectUploadResults() {
         if (uploadTicketIsCurrent(request->tickets[i], orders, QUEUE_SIZE)) acknowledge(request->tickets[i].slot);
       if (storageReady) queueFile.flush();
       failures = 0;
+      if (request->checkOta) {
+        TrackerOta::controlHealthy = request->otaHealthy;
+        TrackerOta::offered = request->otaManifest;
+      }
     } else if (failures < 5) ++failures;
     if (request->cellular) {
       if (lastHttpCode < 0) ++cellularUploadFailures; else cellularUploadFailures = 0;
@@ -611,6 +628,8 @@ void postTelemetry() {
   if (lastUploadNetwork == "cellular") { PPP.setDefault(); maintainCellularDns(true); }
   else WiFi.STA.setDefault();
   request->cellular = lastUploadNetwork == "cellular";
+  request->checkOta = endpoint == DEFAULT_ENDPOINT && (!TrackerOta::lastCheck || millis() - TrackerOta::lastCheck >= 60000);
+  if (request->checkOta) { request->otaReport = TrackerOta::report(); TrackerOta::lastCheck = millis(); }
   request->generation = cellularGeneration; request->startedMs = millis();
   request->testDelayMs = nextUploadDelayMs;
   if (xQueueSend(uploadRequests, &request, 0) == pdTRUE) { uploadInFlight = true; nextUploadDelayMs = 0; }
@@ -633,6 +652,7 @@ void setup() {
     configured = !ssid.isEmpty() && validToken(token) && validEndpoint(endpoint);
   }
   initQueue();
+  TrackerOta::begin();
   uploadRequests = xQueueCreate(1, sizeof(UploadRequest *));
   uploadResults = xQueueCreate(1, sizeof(UploadRequest *));
   uploaderReady = uploadRequests && uploadResults && xTaskCreatePinnedToCore(uploadWorker, "trackerHTTPS", 16384, nullptr, 1, nullptr, 0) == pdPASS;
@@ -656,6 +676,14 @@ void loop() {
   collectUploadResults();
   if (cellularRestartPending && !uploadInFlight) restartCellular();
   processSerial();
+  bool moving = freshFix() && currentFix.speedMps > 0.5;
+  TrackerOta::health(configured && storageReady && uploaderReady && lastHttpCode == 200, moving);
+  if (!uploadInFlight && !TrackerOta::pending && !TrackerOta::offered.isEmpty() &&
+      internetReady() && int32_t(millis() - TrackerOta::retryAt) >= 0 && millis() - TrackerOta::parkedSince > 30000 && std::isfinite(batteryV) && batteryV >= 3.7) {
+    JsonDocument manifest;
+    if (!deserializeJson(manifest, TrackerOta::offered) && manifest["sequence"].as<uint32_t>() <= max(FIRMWARE_SEQUENCE, TrackerOta::failedSequence)) TrackerOta::offered = "";
+    else { if (queueFile) queueFile.flush(); CameraUsb::stop(); TrackerOta::install(token); }
+  }
   uint32_t now = millis();
   if (now - lastPollMs >= (modemReady ? 1000u : 5000u)) { lastPollMs = now; pollGps(); }
   connectCellular();

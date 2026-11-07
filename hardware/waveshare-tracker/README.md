@@ -4,7 +4,7 @@ For **ESP32-S3-SIM7670G-4G V2.0**, ESP32-S3R8, 16 MB flash / 8 MB octal PSRAM. F
 
 Firmware **0.3.1** fixes truncated GPS replies during CMUX operation and reconnects cellular after three consecutive transport failures, even if PPP still has an IP address. HTTP responses from a reachable server (including 4xx/5xx) do not trigger that transport reset.
 
-Firmware **0.3.2** moves HTTPS onto a dedicated task so DNS, TLS, response waits, and upload backoff do not block the GPS loop. The loop remains the sole owner of modem commands, flash, settings, and USB output. A one-request queue transfers an immutable payload/settings snapshot to the HTTPS worker; a result queue returns acknowledgements. Each acknowledgement checks the original slot/order identity, preserving a new sample if the ring slot was overwritten during an upload. Secure connections are reused when the server allows it, and closed after errors or transport/endpoint changes. Intentional PPP teardown waits for the active request to finish.
+Firmware **0.4.1** adds signed remote updates (see below). The tracking architecture introduced in **0.3.2** moves HTTPS onto a dedicated task so DNS, TLS, response waits, and upload backoff do not block the GPS loop. The loop remains the sole owner of modem commands, flash, settings, and USB output. A one-request queue transfers an immutable payload/settings snapshot to the HTTPS worker; a result queue returns acknowledgements. Each acknowledgement checks the original slot/order identity, preserving a new sample if the ring slot was overwritten during an upload. Secure connections are reused when the server allows it, and closed after errors or transport/endpoint changes. Intentional PPP teardown waits for the active request to finish.
 
 This core uses global DNS. A disconnected Wi-Fi interface was observed leaving DNS at `0.0.0.0` while cached Sightings addresses still worked; the public A records have a 300-second TTL, consistent with the recurring upload stalls. While PPP is active, Wi-Fi is suspended and missing DNS is repaired with 1.1.1.1 / 8.8.8.8; valid configured DNS is retained. Wi-Fi fallback is re-enabled when PPP loses its IP.
 
@@ -109,7 +109,7 @@ Uploads put the newest queued point first, followed by the oldest backlog, up to
 
 HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1 CA; redirects are disabled. This trusts the current Let's Encrypt certificate chain for Sightings, not a pinned leaf certificate. A custom endpoint must use a chain trusted by that root, or the CA source must be deliberately updated. SNTP supplies time before TLS; GPS UTC and a validated cellular modem clock can bootstrap it when SNTP is unavailable. Modem-clock timezone offsets are parsed in quarter hours, and this clock is never used to invent GPS observation times. No TLS verification bypass is used.
 
-Temperature probes, OTA updates, ignition detection, and a production battery low-voltage policy are not implemented yet. Cellular data is for tracking; it does not add cellular camera streaming.
+Temperature probes, ignition detection, and a production battery low-voltage policy are not implemented yet. Cellular data is for tracking; it does not add cellular camera streaming.
 
 ## USB camera prototype (firmware 0.2.2)
 
@@ -146,3 +146,35 @@ c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/upload_bat
 ```
 
 This tests the actual GNSS parser and CRC implementation against valid coordinates/time, no-fix replies, bad directions, out-of-range minutes/latitude, invalid dates, missing speed/bearing, implausible speeds (sent as null so they cannot block the upload queue), and known CRC data. Modem-clock tests cover UTC conversion, signed quarter-hour offsets, leap dates, invalid values, and incomplete responses. The Arduino build verifies platform integration. Flash queue durability, antenna reception, battery operation, and live server delivery require hardware tests; a successful compile does not prove them.
+
+
+## Signed remote firmware updates (0.4.x)
+
+For the initial prototype bootstrap, app0 was confirmed active before flashing. The USB bootstrap installs the rollback-capable Arduino 3.3.4 bootloader at `0x0` and firmware at `0x10000`. Keep the existing partition table, OTA data, NVS configuration, and FFat queue. The two existing 3 MB application slots alternate; never upload a merged flash image as an OTA artifact. For later USB recovery, inspect the currently selected OTA slot first instead of assuming app0 is active. This does not enable secure-boot eFuses.
+
+The HTTPS worker checks Sightings about once a minute after successful telemetry. Each enabled tracker authenticates with its existing bearer token and can retrieve only its explicitly assigned release. Images live in a private storage bucket and are proxied from the same trusted Sightings HTTPS origin; redirects are disabled. A device report cannot assign releases or update another device. Firmware metadata and storage are service-role-only; the no-policy RLS advisory is intentional for these two tables.
+
+The board verifies an ECDSA P-256 signature covering release ID, board, sequence, version, size, and SHA-256. It rejects wrong-board, oversized, tampered, old, and previously failed releases. The image hash is checked after downloading into the inactive slot, before selecting it for boot. Partial downloads leave the active slot selected. Download failures back off from 2 to 32 minutes. Downloading has a 15-second idle timeout and 10-minute overall limit. Flashing/restarting is a maintenance window: tracking pauses temporarily. Installation waits for at least 30 seconds without observed movement and a measured battery voltage of at least 3.7 V. This is a GPS-based guard, not an ignition sensor.
+
+Arduino's automatic early confirmation is overridden. A new image stays pending until at least 60 seconds of uptime, working storage/uploader, successful authenticated telemetry, and successful authenticated firmware-service contact. A restart/crash before confirmation causes bootloader fallback; a health failure lasting five minutes explicitly requests fallback. The fallback firmware is itself OTA-capable. The failed sequence is remembered to avoid a restart loop. Normal OTA restart also shuts down PPP cleanly so the modem can reconnect without a manual power cycle.
+
+Release procedure (run from the repository; Arduino CLI and pinned core/libraries above must be installed):
+
+```bash
+node hardware/waveshare-tracker/tools/firmware-release.mjs \
+  --version sasquatch-waveshare-v2/0.4.2 --sequence 4 \
+  --tracker "David's Box Truck" \
+  --key /absolute/private/path/ota-signing.pem \
+  --env /absolute/private/path/service.env
+```
+
+The publisher builds an isolated sketch snapshot with the requested version/sequence, signs its exact binary, uploads without overwriting artifacts, and assigns only the named enabled tracker. Use an unused monotonically increasing sequence (query `fleet_firmware_releases` first). `--build-only` builds and signs without publishing. `--rollback-test` deliberately restarts a pending candidate before confirmation; use only on a supervised test tracker. Never assign that test release to normal fleet devices.
+
+The offline private signing key is required for future updates: keep a protected backup outside Git. The compiled public key is in `tracker/ota_public_key.h`. The private key is never sent to Supabase/Vercel or embedded in firmware. The environment file requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; never use a browser-side publishing flow. Key rotation requires a release signed by the current key that trusts the replacement, or USB recovery if the signing key is lost. Hardware damage, corrupted boot/storage, or loss of all connectivity can still require physical access.
+
+USB `status` adds `otaState`, `otaSequence`, `otaFailedSequence`, and `otaPending`. `otaVerify` checks a supplied manifest without installing it. Download progress reports contain only byte counts. Server status is in `fleet_tracker_firmware`; never treat an assigned target as proof that it booted and was confirmed.
+
+
+Verification on November 6, 2026: the real device accepted a correctly signed manifest and rejected modified SHA-256, wrong-board, oversized, stale-sequence, and invalid-signature variants. The committed `tests/ota-device-test.py` repeated all six checks against the next signed release. Eighteen targeted TypeScript tests, the four GPS/modem/batch host test programs, TypeScript checking, targeted lint, and a full Next.js production build passed. Live unauthenticated manifest/image requests returned 401. Database checks confirmed RLS enabled and no anon/authenticated table privileges. The only advisor finding for the new tables was the intentional service-role-only/no-policy configuration.
+
+A signed sequence-2 test release was downloaded over cellular and selected for boot; its deliberate unconfirmed restart triggered automatic fallback to the OTA-capable sequence-1 bootstrap. The fallback reported `rolled_back`, persisted failed sequence 2, reconnected over cellular without a manual power cycle, and resumed fresh GPS uploads. Wi-Fi was disconnected throughout. USB supplied power and diagnostic output; firmware bytes arrived through the cellular connection. The active NVS settings and existing FFat queue were preserved.
