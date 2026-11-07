@@ -5,6 +5,8 @@
 #include <NetworkClientSecure.h>
 #include <Preferences.h>
 #include <PPP.h>
+#include <cxx_include/esp_modem_api.hpp>
+#include <esp_private/c_api_wrapper.hpp>
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_system.h>
@@ -14,6 +16,7 @@
 #include <time.h>
 #include "gps_parser.h"
 #include "modem_clock.h"
+#include "modem_reply.h"
 #include "camera_usb.h"
 #include "tls_root.h"
 
@@ -21,7 +24,7 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.0";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.1";
 constexpr char CELLULAR_APN[] = "hologram";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
@@ -59,6 +62,14 @@ bool cellularStarted = false, cellularDialed = false, simReady = false;
 uint32_t nextCellularMs = 5000, cellularDataAt = 0;
 int cellularSignal = -1;
 String lastUploadNetwork;
+ModemReply modemReply;
+std::atomic<int> modemReplyResult{int(ModemReply::Result::Pending)};
+uint8_t cellularUploadFailures = 0;
+uint32_t cellularReconnects = 0;
+bool diagnosticsEnabled = false;
+uint32_t diagnosticAt = 0, diagnosticsUntil = 0;
+GpsResult lastGpsResult = GpsResult::Invalid;
+uint32_t gpsFixReplies = 0, gpsEmptyReplies = 0, gpsInvalidReplies = 0;
 const char *activeNetwork() {
   if (cellularStarted && PPP.hasIP()) return "cellular";
   return WiFi.status() == WL_CONNECTED ? "wifi" : "offline";
@@ -133,11 +144,22 @@ void acknowledge(int slot) {
 }
 String command(const char *text, uint32_t timeout = 1200) {
   if (cellularStarted) {
-    if (strcmp(text, "AT") == 0) return PPP.sync() ? "\r\nOK\r\n" : "";
-    String response = PPP.cmd(text, timeout);
-    // PPP.cmd returns an empty string on failure; frame successful data replies
-    // for the existing GNSS parser. UART is owned exclusively by esp_modem.
-    return response.isEmpty() ? String() : "\r\n" + response + "\r\nOK\r\n";
+    modemReply = ModemReply{};
+    modemReplyResult.store(int(ModemReply::Result::Pending));
+    String request = String(text) + "\r";
+    // Core 3.3.4's line callback can discard CMUX fragments with no newline.
+    // The DTE raw callback receives every fragment and locks out other commands.
+    auto dte = PPP.handle()->dte;
+    dte->on_read([](uint8_t *data, size_t length) {
+      const auto result = modemReply.append(data, length);
+      modemReplyResult.store(int(result), std::memory_order_release);
+      return esp_modem::command_result::TIMEOUT; // Caller removes callback once complete.
+    });
+    dte->send(reinterpret_cast<uint8_t *>(request.begin()), request.length(), 0);
+    const uint32_t started = millis();
+    while (modemReplyResult.load(std::memory_order_acquire) == int(ModemReply::Result::Pending) && millis() - started < timeout) delay(1);
+    dte->on_read(nullptr);
+    return modemReplyResult.load() == int(ModemReply::Result::Ok) ? String(modemReply.data) : String();
   }
   while (modem.available()) modem.read();
   modem.print(text); modem.print("\r\n");
@@ -152,6 +174,13 @@ String command(const char *text, uint32_t timeout = 1200) {
     delay(1);
   }
   return response;
+}
+void restartCellular() {
+  if (cellularStarted) { PPP.mode(ESP_MODEM_MODE_COMMAND); PPP.end(); }
+  cellularStarted = false; cellularDialed = false; simReady = false;
+  modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  modemReady = false; cellularUploadFailures = 0; ++cellularReconnects;
+  nextCellularMs = millis() + 15000;
 }
 void connectCellular() {
   if (!configured || int32_t(millis() - nextCellularMs) < 0) return;
@@ -227,6 +256,10 @@ void pollGps() {
   String response = command("AT+CGPSINFO");
   GpsFix fix;
   GpsResult result = response.indexOf("\r\nOK\r\n") >= 0 ? parseGpsInfo(response.c_str(), fix) : GpsResult::Invalid;
+  lastGpsResult = result;
+  if (result == GpsResult::Fix) ++gpsFixReplies;
+  else if (result == GpsResult::NoFix) ++gpsEmptyReplies;
+  else ++gpsInvalidReplies;
   gpsFix = result == GpsResult::Fix;
   if (result == GpsResult::Invalid) {
     if (++modemReadFailures >= 3) { modemReady = false; modemReadFailures = 0; }
@@ -251,21 +284,39 @@ bool freshFix() { return gpsFix && millis() - lastFixMs < 5000; }
 void printStatus(const char *event = "status") {
   JsonDocument doc;
   doc["event"] = event; doc["firmware"] = FIRMWARE; doc["bootId"] = bootId;
+  doc["uptimeMs"] = millis(); doc["resetReason"] = int(esp_reset_reason());
   doc["configured"] = configured; doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
   doc["wifiStatus"] = int(WiFi.status());
   doc["lastWifiDisconnectReason"] = lastWifiDisconnectReason.load();
   doc["cellularStarted"] = cellularStarted; doc["cellularDialed"] = cellularDialed;
   doc["simReady"] = simReady; doc["cellularConnected"] = cellularStarted && PPP.hasIP();
   doc["cellularSignal"] = cellularSignal;
+  doc["cellularReconnects"] = cellularReconnects;
   doc["network"] = activeNetwork(); doc["lastUploadNetwork"] = lastUploadNetwork;
   doc["cameraReady"] = CameraUsb::ready;
   doc["modemReady"] = modemReady; doc["gpsFix"] = freshFix();
+  doc["gpsPollResult"] = int(lastGpsResult);
+  doc["gpsFixReplies"] = gpsFixReplies; doc["gpsEmptyReplies"] = gpsEmptyReplies; doc["gpsInvalidReplies"] = gpsInvalidReplies;
   doc["clockReady"] = time(nullptr) >= 1704067200;
   doc["storageReady"] = storageReady; doc["queued"] = queued;
   doc["discardedOldest"] = dropped; doc["lastHttpCode"] = lastHttpCode;
   doc["lastTlsError"] = lastTlsError;
   if (std::isfinite(batteryV)) doc["batteryV"] = batteryV; else doc["batteryV"] = nullptr;
   serializeJson(doc, Serial); Serial.println();
+  // Opt-in bench history survives USB reconnects and contains no locations/secrets.
+  if (diagnosticsEnabled && int32_t(millis() - diagnosticsUntil) >= 0) {
+    diagnosticsEnabled = false; preferences.putBool("diagnostics", false);
+  }
+  if (diagnosticsEnabled && storageReady && (!diagnosticAt || millis() - diagnosticAt >= 15000)) {
+    diagnosticAt = millis();
+    File log = FFat.open("/tracker-diagnostics.jsonl", "a");
+    if (log && log.size() >= 32768) {
+      log.close(); FFat.remove("/tracker-diagnostics-old.jsonl");
+      FFat.rename("/tracker-diagnostics.jsonl", "/tracker-diagnostics-old.jsonl");
+      log = FFat.open("/tracker-diagnostics.jsonl", "a");
+    }
+    if (log) { serializeJson(doc, log); log.println(); log.close(); }
+  }
 }
 void connectWifi() {
   if (!configured) return;
@@ -338,6 +389,39 @@ void processSerial() {
     if (action == "cameraSnapshot") { CameraUsb::snapshot(!(doc["preview"] | false)); continue; }
     if (action == "cameraStop") { CameraUsb::stop(); printStatus("camera_stopped"); continue; }
     if (action == "status") { printStatus(); continue; }
+    if (action == "reconnectCellular") { restartCellular(); printStatus("cellular_reconnecting"); continue; }
+    if (action == "diagnosticsStart" || action == "diagnosticsStop") {
+      diagnosticsEnabled = action == "diagnosticsStart";
+      diagnosticsUntil = millis() + 1800000;
+      preferences.putBool("diagnostics", diagnosticsEnabled); diagnosticAt = 0;
+      printStatus(diagnosticsEnabled ? "diagnostics_started" : "diagnostics_stopped"); continue;
+    }
+    if (action == "diagnosticsRead") {
+      for (const char *path : {"/tracker-diagnostics-old.jsonl", "/tracker-diagnostics.jsonl"}) {
+        File log = FFat.open(path, "r");
+        uint8_t buffer[256];
+        while (log && log.available()) { size_t size = log.read(buffer, sizeof(buffer)); if (!size) break; Serial.write(buffer, size); }
+        if (log) log.close();
+      }
+      Serial.println("{\"event\":\"diagnostics_end\"}"); continue;
+    }
+    if (action == "gpsDiagnostic") {
+      String response = command("AT+CGPSINFO", 5000);
+      GpsFix fix;
+      JsonDocument report;
+      report["event"] = "gps_diagnostic";
+      report["replyBytes"] = response.length();
+      report["parseResult"] = int(parseGpsInfo(response.c_str(), fix));
+      // Reveal framing/command mix-ups without exposing a location or timestamp.
+      for (size_t i = 0; i < response.length(); ++i)
+        if (response[i] >= '0' && response[i] <= '9') response.setCharAt(i, '#');
+      report["replyShape"] = response;
+      report["cellularDns"] = PPP.dnsIP().toString();
+      if (PPP.hasIP()) PPP.setDefault();
+      IPAddress resolved;
+      report["endpointResolved"] = internetReady() && Network.hostByName("sightings.sasquatchcarpet.com", resolved) == 1;
+      serializeJson(report, Serial); Serial.println(); continue;
+    }
     if (action == "scanNetwork") { scanConfiguredNetwork(); continue; }
     if (action == "initializeStorage") {
       if (storageReady) { Serial.println("{\"event\":\"error\",\"error\":\"storage_already_initialized\"}"); continue; }
@@ -425,10 +509,14 @@ void postTelemetry() {
         failures = 0;
       } else lastHttpCode = -2;
     }
-    lastTlsError = client.lastError(nullptr, 0);
+    lastTlsError = lastHttpCode < 0 ? client.lastError(nullptr, 0) : 0;
     http.end();
   }
   lastHeartbeatMs = millis();
+  if (usingCellular) {
+    if (lastHttpCode < 0) ++cellularUploadFailures; else cellularUploadFailures = 0;
+    if (cellularUploadFailures >= 3) restartCellular();
+  }
   if (lastHttpCode != 200) {
     if (failures < 5) ++failures;
     uint32_t backoff = min(uint32_t(30000), uint32_t(1000) << failures);
@@ -444,6 +532,8 @@ void setup() {
   modem.setRxBufferSize(2048); modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   Wire.begin(15, 16); Wire.setTimeOut(50);
   preferences.begin("sq-tracker", false);
+  diagnosticsEnabled = preferences.getBool("diagnostics", false);
+  diagnosticsUntil = millis() + 1800000;
   JsonDocument stored;
   if (!deserializeJson(stored, preferences.getString("config", ""))) {
     ssid = stored["ssid"] | ""; password = stored["password"] | "";

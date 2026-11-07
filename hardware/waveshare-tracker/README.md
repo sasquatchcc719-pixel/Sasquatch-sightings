@@ -2,6 +2,8 @@
 
 For **ESP32-S3-SIM7670G-4G V2.0**, ESP32-S3R8, 16 MB flash / 8 MB octal PSRAM. Firmware **0.3.0** adds **Hologram cellular data**, with the existing 2.4 GHz Wi-Fi/hotspot connection retained as backup. An activated data SIM and LTE antenna on MAIN are required for cellular service. A SIM is not required for GPS. Battery power runs the firmware independently of the Mac. Outside Internet coverage, points are saved locally and uploaded after reconnection.
 
+Firmware **0.3.1** fixes truncated GPS replies during CMUX operation and reconnects cellular after three consecutive transport failures, even if PPP still has an IP address. HTTP responses from a reachable server (including 4xx/5xx) do not trigger that transport reset.
+
 ## Build
 
 Install Arduino CLI, then the official Espressif Arduino core and JSON library:
@@ -46,11 +48,25 @@ Activate the SIM in Hologram, completely disconnect power before inserting its n
 
 The Arduino core's bundled `PPP`/`esp_modem` driver owns UART1 on GPIO17/18 after startup, using the SIM7600-compatible command set and UART CMUX supported by the SIM7670G. PPP carries Internet traffic while its separate CMUX AT channel continues GNSS polling. No other code may read/write that UART while PPP owns it. If driver initialization fails (for example, with no SIM), the raw UART is restored so GPS and Wi-Fi can continue. Cellular registration/dialing is retried every 15 seconds; unsuccessful or lost data sessions get 45 seconds before returning to command mode and retrying. Cellular is preferred when it has an IP; otherwise HTTPS uses Wi-Fi. Wi-Fi reconnection attempts pause while cellular has an IP. TLS certificate validation stays in the ESP32, not the modem's HTTP service.
 
+Core 3.3.4 is deliberately pinned: its generic AT string helper can discard parts of a CMUX reply, and its normal command callback is not invoked for fragments without a newline. The firmware uses the DTE raw read callback and primary AT terminal to collect every fragment into a bounded 1,024-byte response through a complete OK/error line. It obtains the DTE through the core's internal C API wrapper; recheck that integration before upgrading the core. Networking remains on the separate data terminal. Regression tests split GPS replies at every byte boundary, deliver them one byte at a time, and cover terminal/error lines and overflow.
+
 After an ESP-only restart, the modem may still be in CMUX. Startup closes the two virtual channels and the control multiplexer using the [Espressif disconnect frames](https://github.com/espressif/esp-protocols/blob/master/components/esp_modem/src/esp_modem_cmux.cpp) before retrying initialization. Cellular requests allow 10 seconds for connection/response and 15 seconds for TLS negotiation; Wi-Fi retains its previous timeouts.
 
 For a hardware acceptance test, leave Wi-Fi/hotspot unavailable, check `simReady:true`, `cellularConnected:true`, `lastUploadNetwork:"cellular"`, and an accepted HTTP 200, then confirm firmware/last contact in Sightings. GPS reception must be tested separately outdoors. Also test unplugged battery boot and data reconnection before installing in a vehicle. A compile alone does not prove modem or carrier compatibility. Monitor real cellular consumption before choosing production limits: frequent HTTPS connections incur overhead beyond the JSON payload.
 
 Bench verification on November 6, 2026: the SIM7670G with an activated Hologram SIM uploaded over cellular with Wi-Fi disconnected, drained the preserved GPS queue to zero, and delivered a fresh receiver timestamp/location to Sightings under firmware 0.3.0. A subsequent ESP-only reset reconnected and received HTTP 200 without a modem power cycle. The firmware build and GPS/CRC/modem-clock tests passed. This is not yet an outdoor battery-only drive test or a long-duration coverage/reconnection test.
+
+The subsequent outdoor test exposed truncated CMUX GPS replies and a stalled data session. Under 0.3.1, the on-board diagnostic returned a complete 93-byte GPS response that parsed as a fix; repeated GPS polling continued alongside cellular uploads with zero invalid replies during the bench check. Sightings received fresh GPS timestamps under the new version. An explicit PPP reconnect preserved nine queued points, resumed HTTP 200 uploads, and drained the queue; the local status log recorded the disconnect/reconnect sequence. This verifies the reconnect path, not a long-duration carrier-outage test.
+
+## USB diagnostics
+
+`gpsDiagnostic` reports the parser result (0 invalid, 1 no fix, 2 fix), response length, and reply shape with every digit masked. This reveals truncated command replies without printing a location or GPS timestamp. It also reports the PPP DNS setting and whether the Sightings hostname resolves when Internet is available. `reconnectCellular` explicitly restarts the PPP session without changing settings or queued points.
+
+Status includes `uptimeMs`, `resetReason` (ESP-IDF reset-reason enum), `cellularReconnects`, `gpsPollResult` (same parser enum), and counts of fix, empty, and invalid GPS replies. A stale `gpsFix:false` alone does not distinguish no satellite lock from a command/parse failure; use these counters.
+
+For an outdoor test without a nearby Mac, send `diagnosticsStart` over USB before disconnecting. It enables local status history, including across power cycles. Status snapshots are written at most once per 15 seconds, in two rotating files of approximately 32 KB each, separate from the GPS queue. The log contains the same non-location status fields printed over USB; no credentials or coordinates. On return, send `diagnosticsRead` and read newline-delimited JSON until `{"event":"diagnostics_end"}`. `diagnosticsStop` disables recording. Recording automatically disables after 30 minutes of uptime, so this bench feature is not a permanent high-frequency flash log. It never formats storage or deletes the GPS queue.
+
+All diagnostic commands use the normal JSON envelope, for example `{"command":"gpsDiagnostic"}`.
 
 Firmware **0.1.1** adds an explicit USB Wi-Fi diagnostic:
 
@@ -111,6 +127,8 @@ c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/gps_parser
 /tmp/waveshare-parser-test
 c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/modem_clock_test.cpp -o /tmp/waveshare-modem-clock-test
 /tmp/waveshare-modem-clock-test
+c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/modem_reply_test.cpp -o /tmp/waveshare-modem-reply-test
+/tmp/waveshare-modem-reply-test
 ```
 
 This tests the actual GNSS parser and CRC implementation against valid coordinates/time, no-fix replies, bad directions, out-of-range minutes/latitude, invalid dates, missing speed/bearing, implausible speeds (sent as null so they cannot block the upload queue), and known CRC data. Modem-clock tests cover UTC conversion, signed quarter-hour offsets, leap dates, invalid values, and incomplete responses. The Arduino build verifies platform integration. Flash queue durability, antenna reception, battery operation, and live server delivery require hardware tests; a successful compile does not prove them.
