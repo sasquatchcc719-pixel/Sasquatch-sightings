@@ -12,11 +12,16 @@
 #include <esp_system.h>
 #include <esp_wifi.h>
 #include <atomic>
+#include <new>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 #include <sys/time.h>
 #include <time.h>
 #include "gps_parser.h"
 #include "modem_clock.h"
 #include "modem_reply.h"
+#include "upload_batch.h"
 #include "camera_usb.h"
 #include "tls_root.h"
 
@@ -24,7 +29,7 @@
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
-constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.1";
+constexpr char FIRMWARE[] = "sasquatch-waveshare-v2/0.3.2";
 constexpr char CELLULAR_APN[] = "hologram";
 constexpr char DEFAULT_ENDPOINT[] = "https://sightings.sasquatchcarpet.com/api/devices/trackers/telemetry";
 
@@ -38,6 +43,20 @@ struct Record {
   float speedMps, bearing;
   uint32_t crc;
 };
+struct UploadRequest {
+  String endpoint, token, payload;
+  UploadTicket tickets[BATCH_SIZE];
+  size_t count = 0;
+  bool cellular = false;
+  uint32_t generation = 0, startedMs = 0, durationMs = 0, testDelayMs = 0;
+  int code = -1, tlsError = 0;
+};
+QueueHandle_t uploadRequests = nullptr, uploadResults = nullptr;
+bool uploaderReady = false, uploadInFlight = false, cellularRestartPending = false;
+bool wifiSuspendedForCellular = false;
+uint32_t cellularDnsRepairs = 0;
+uint32_t lastDnsCheckMs = 0, nextUploadDelayMs = 0;
+uint32_t cellularGeneration = 0, lastUploadDurationMs = 0, maxGpsFixGapSeconds = 0;
 Preferences preferences;
 HardwareSerial modem(1);
 File queueFile;
@@ -75,6 +94,18 @@ const char *activeNetwork() {
   return WiFi.status() == WL_CONNECTED ? "wifi" : "offline";
 }
 bool internetReady() { return strcmp(activeNetwork(), "offline") != 0; }
+void maintainCellularDns(bool force) {
+  if (!PPP.hasIP()) return;
+  if (!force && millis() - lastDnsCheckMs < 1000) return;
+  lastDnsCheckMs = millis();
+  // This core shares DNS globally across interfaces. A stopped/disconnected STA
+  // can clear it after PPP negotiation, leaving only cached hostnames usable.
+  if (static_cast<uint32_t>(PPP.dnsIP()) == 0) {
+    PPP.dnsIP(0, IPAddress(1, 1, 1, 1));
+    PPP.dnsIP(1, IPAddress(8, 8, 8, 8));
+    ++cellularDnsRepairs;
+  }
+}
 
 void makeBootId() {
   uint8_t b[16]; esp_fill_random(b, sizeof(b));
@@ -176,6 +207,8 @@ String command(const char *text, uint32_t timeout = 1200) {
   return response;
 }
 void restartCellular() {
+  if (uploadInFlight) { cellularRestartPending = true; return; }
+  cellularRestartPending = false; ++cellularGeneration;
   if (cellularStarted) { PPP.mode(ESP_MODEM_MODE_COMMAND); PPP.end(); }
   cellularStarted = false; cellularDialed = false; simReady = false;
   modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
@@ -184,6 +217,8 @@ void restartCellular() {
 }
 void connectCellular() {
   if (!configured || int32_t(millis() - nextCellularMs) < 0) return;
+  // Leave the network interface alive until the worker releases its socket.
+  if (uploadInFlight && !PPP.hasIP()) return;
   nextCellularMs = millis() + 15000;
   if (!cellularStarted) {
     if (command("AT", 500).indexOf("OK") < 0) {
@@ -203,6 +238,7 @@ void connectCellular() {
     modem.end();
     PPP.setApn(CELLULAR_APN);
     PPP.setPins(MODEM_TX, MODEM_RX);
+    ++cellularGeneration;
     cellularStarted = PPP.begin(PPP_MODEM_SIM7600, 1, 115200);
     if (!cellularStarted) {
       PPP.end();
@@ -225,6 +261,7 @@ void connectCellular() {
     // Give registration/IP negotiation time, then recover instead of staying
     // indefinitely in a disconnected data session. GPS uses the CMUX AT channel.
     if (millis() - cellularDataAt < 45000) return;
+    ++cellularGeneration;
     if (!PPP.mode(ESP_MODEM_MODE_COMMAND)) {
       PPP.end();
       cellularStarted = false;
@@ -271,7 +308,11 @@ void pollGps() {
     timeval now = {time_t(fix.epoch), 0}; settimeofday(&now, nullptr);
   }
   // A repeated response from the same GPS second must not create new movement.
-  if (fix.epoch != lastRecordedEpoch) { saveFix(fix); lastRecordedEpoch = fix.epoch; }
+  if (fix.epoch != lastRecordedEpoch) {
+    if (lastRecordedEpoch && fix.epoch > lastRecordedEpoch)
+      maxGpsFixGapSeconds = max(maxGpsFixGapSeconds, uint32_t(fix.epoch - lastRecordedEpoch));
+    saveFix(fix); lastRecordedEpoch = fix.epoch;
+  }
 }
 float readBattery() {
   Wire.beginTransmission(0x36); Wire.write(0x02);
@@ -285,6 +326,10 @@ void printStatus(const char *event = "status") {
   JsonDocument doc;
   doc["event"] = event; doc["firmware"] = FIRMWARE; doc["bootId"] = bootId;
   doc["uptimeMs"] = millis(); doc["resetReason"] = int(esp_reset_reason());
+  doc["uploaderReady"] = uploaderReady; doc["uploadInFlight"] = uploadInFlight;
+  doc["lastUploadDurationMs"] = lastUploadDurationMs; doc["maxGpsFixGapSeconds"] = maxGpsFixGapSeconds;
+  doc["cellularDnsReady"] = static_cast<uint32_t>(PPP.dnsIP()) != 0;
+  doc["cellularDnsRepairs"] = cellularDnsRepairs;
   doc["configured"] = configured; doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
   doc["wifiStatus"] = int(WiFi.status());
   doc["lastWifiDisconnectReason"] = lastWifiDisconnectReason.load();
@@ -320,6 +365,8 @@ void printStatus(const char *event = "status") {
 }
 void connectWifi() {
   if (!configured) return;
+  wifiSuspendedForCellular = false;
+  WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
   WiFi.disconnect();
   WiFi.begin(ssid.c_str(), password.c_str());
   lastConnectMs = millis();
@@ -389,6 +436,10 @@ void processSerial() {
     if (action == "cameraSnapshot") { CameraUsb::snapshot(!(doc["preview"] | false)); continue; }
     if (action == "cameraStop") { CameraUsb::stop(); printStatus("camera_stopped"); continue; }
     if (action == "status") { printStatus(); continue; }
+    if (action == "slowUploadTest") {
+      nextUploadDelayMs = 10000; maxGpsFixGapSeconds = 0; nextPostMs = 0;
+      printStatus("slow_upload_test_scheduled"); continue;
+    }
     if (action == "reconnectCellular") { restartCellular(); printStatus("cellular_reconnecting"); continue; }
     if (action == "diagnosticsStart" || action == "diagnosticsStop") {
       diagnosticsEnabled = action == "diagnosticsStart";
@@ -424,6 +475,7 @@ void processSerial() {
     }
     if (action == "scanNetwork") { scanConfiguredNetwork(); continue; }
     if (action == "initializeStorage") {
+      if (uploadInFlight) { Serial.println("{\"event\":\"error\",\"error\":\"upload_in_progress\"}"); continue; }
       if (storageReady) { Serial.println("{\"event\":\"error\",\"error\":\"storage_already_initialized\"}"); continue; }
       if (queueFile) queueFile.close();
       FFat.end();
@@ -457,29 +509,94 @@ void formatUtc(int64_t epoch, char *buffer, size_t size) {
   time_t seconds = time_t(epoch); tm utc; gmtime_r(&seconds, &utc);
   strftime(buffer, size, "%Y-%m-%dT%H:%M:%SZ", &utc);
 }
+void uploadWorker(void *) {
+  // This task owns HTTPS only. GPS, modem commands, flash, settings, and Serial
+  // remain exclusively on loop(); queues transfer ownership of each request.
+  NetworkClientSecure client;
+  client.setCACert(TLS_ROOT_CA);
+  HTTPClient http;
+  http.setReuse(true);
+  String previousEndpoint;
+  uint32_t previousGeneration = UINT32_MAX;
+  bool previousCellular = false;
+  for (;;) {
+    UploadRequest *request = nullptr;
+    if (xQueueReceive(uploadRequests, &request, portMAX_DELAY) != pdTRUE) continue;
+    const uint32_t started = millis();
+    if (request->testDelayMs) vTaskDelay(pdMS_TO_TICKS(request->testDelayMs));
+    if (request->endpoint != previousEndpoint || request->cellular != previousCellular || request->generation != previousGeneration) {
+      client.stop();
+      previousEndpoint = request->endpoint; previousCellular = request->cellular; previousGeneration = request->generation;
+    }
+    client.setHandshakeTimeout(request->cellular ? 15 : 5);
+    http.setConnectTimeout(request->cellular ? 10000 : 4000);
+    http.setTimeout(request->cellular ? 10000 : 5000);
+    // Redirects stay disabled, and certificate/hostname validation stays enabled.
+    if (http.begin(client, request->endpoint)) {
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("Authorization", "Bearer " + request->token);
+      request->code = http.POST(request->payload);
+      if (request->code > 0) {
+        const String response = http.getString(); // Consume the body before reusing TCP.
+        if (request->code == 200) {
+          JsonDocument result;
+          if (deserializeJson(result, response) || !result["ok"].is<bool>() || !result["ok"].as<bool>()) request->code = -2;
+        }
+      }
+      char errorText[1];
+      request->tlsError = request->code < 0 ? client.lastError(errorText, sizeof(errorText)) : 0;
+      http.end();
+    }
+    if (request->code < 0) client.stop();
+    request->durationMs = millis() - started;
+    xQueueSend(uploadResults, &request, portMAX_DELAY);
+  }
+}
+void collectUploadResults() {
+  if (!uploaderReady) return;
+  UploadRequest *request = nullptr;
+  while (xQueueReceive(uploadResults, &request, 0) == pdTRUE) {
+    uploadInFlight = false;
+    lastHttpCode = request->code; lastTlsError = request->tlsError;
+    lastUploadDurationMs = request->durationMs; lastHeartbeatMs = millis();
+    if (lastHttpCode == 200) {
+      for (size_t i = 0; i < request->count; ++i)
+        if (uploadTicketIsCurrent(request->tickets[i], orders, QUEUE_SIZE)) acknowledge(request->tickets[i].slot);
+      if (storageReady) queueFile.flush();
+      failures = 0;
+    } else if (failures < 5) ++failures;
+    if (request->cellular) {
+      if (lastHttpCode < 0) ++cellularUploadFailures; else cellularUploadFailures = 0;
+      if (cellularUploadFailures >= 3) restartCellular();
+    }
+    if (lastHttpCode != 200) {
+      uint32_t backoff = min(uint32_t(30000), uint32_t(1000) << failures);
+      nextPostMs = millis() + min(uint32_t(30000), backoff + esp_random() % 500);
+    } else {
+      const bool moving = freshFix() && currentFix.speedMps > 0.5;
+      const bool backlog = queued && request->count == BATCH_SIZE;
+      nextPostMs = request->startedMs + ((moving || backlog) ? 2000 : 10000);
+      // Respect the server's one-request/second limit after a slow request.
+      if (int32_t(nextPostMs - millis()) < 1100) nextPostMs = millis() + 1100;
+    }
+    delete request;
+    printStatus("telemetry");
+  }
+}
 void postTelemetry() {
-  if (!configured || !internetReady() || time(nullptr) < 1704067200) return;
+  if (!uploaderReady || uploadInFlight || !configured || !internetReady() || time(nullptr) < 1704067200) return;
+  UploadRequest *request = new (std::nothrow) UploadRequest;
+  if (!request) { nextPostMs = millis() + 2000; return; }
+  batteryV = readBattery();
   JsonDocument body;
   body["firmware"] = FIRMWARE; body["bootId"] = bootId; body["uptimeMs"] = millis();
   if (std::isfinite(batteryV)) body["batteryV"] = batteryV; else body["batteryV"] = nullptr;
   body["gpsFix"] = freshFix();
   JsonArray points = body["points"].to<JsonArray>();
-  int selected[BATCH_SIZE]; size_t selectedCount = 0;
-  if (latestSlot >= 0 && orders[latestSlot]) selected[selectedCount++] = latestSlot;
-  while (selectedCount < BATCH_SIZE) {
-    int oldest = -1;
-    for (size_t i = 0; i < QUEUE_SIZE; ++i) {
-      if (!orders[i]) continue;
-      bool used = false;
-      for (size_t j = 0; j < selectedCount; ++j) if (selected[j] == int(i)) { used = true; break; }
-      if (!used && (oldest < 0 || orders[i] < orders[oldest])) oldest = i;
-    }
-    if (oldest < 0) break;
-    selected[selectedCount++] = oldest;
-  }
-  for (size_t i = 0; i < selectedCount; ++i) {
+  request->count = selectUploadBatch(orders, QUEUE_SIZE, latestSlot, request->tickets, BATCH_SIZE);
+  for (size_t i = 0; i < request->count; ++i) {
     Record record;
-    if (!readRecord(selected[i], record)) { storageReady = false; return; }
+    if (!readRecord(request->tickets[i].slot, record)) { storageReady = false; delete request; return; }
     JsonObject point = points.add<JsonObject>();
     char recordedAt[25]; formatUtc(record.epoch, recordedAt, sizeof(recordedAt));
     point["bootId"] = String(record.bootId); point["seq"] = record.seq;
@@ -488,41 +605,16 @@ void postTelemetry() {
     if (std::isfinite(record.bearing)) point["bearing"] = record.bearing; else point["bearing"] = nullptr;
     point["satellites"] = nullptr; // CGPSINFO does not include a satellite count.
   }
-  String payload; serializeJson(body, payload);
+  serializeJson(body, request->payload);
+  request->endpoint = endpoint; request->token = token;
   lastUploadNetwork = activeNetwork();
-  if (lastUploadNetwork == "cellular") PPP.setDefault(); else WiFi.STA.setDefault();
-  const bool usingCellular = lastUploadNetwork == "cellular";
-  NetworkClientSecure client; client.setCACert(TLS_ROOT_CA); client.setHandshakeTimeout(usingCellular ? 15 : 5);
-  HTTPClient http; http.setConnectTimeout(usingCellular ? 10000 : 4000); http.setTimeout(usingCellular ? 10000 : 5000);
-  // Redirects stay disabled so credentials never follow an unexpected destination.
-  if (!http.begin(client, endpoint)) { lastHttpCode = -1; }
-  else {
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", "Bearer " + token);
-    lastHttpCode = http.POST(payload);
-    if (lastHttpCode == 200) {
-      JsonDocument result;
-      auto error = deserializeJson(result, http.getString());
-      if (!error && result["ok"].is<bool>() && result["ok"].as<bool>()) {
-        for (size_t i = 0; i < selectedCount; ++i) acknowledge(selected[i]);
-        if (storageReady) queueFile.flush();
-        failures = 0;
-      } else lastHttpCode = -2;
-    }
-    lastTlsError = lastHttpCode < 0 ? client.lastError(nullptr, 0) : 0;
-    http.end();
-  }
-  lastHeartbeatMs = millis();
-  if (usingCellular) {
-    if (lastHttpCode < 0) ++cellularUploadFailures; else cellularUploadFailures = 0;
-    if (cellularUploadFailures >= 3) restartCellular();
-  }
-  if (lastHttpCode != 200) {
-    if (failures < 5) ++failures;
-    uint32_t backoff = min(uint32_t(30000), uint32_t(1000) << failures);
-    nextPostMs = millis() + min(uint32_t(30000), backoff + esp_random() % 500);
-  } else nextPostMs = millis() + ((queued || (freshFix() && currentFix.speedMps > 0.5)) ? 2000 : 10000);
-  printStatus("telemetry");
+  if (lastUploadNetwork == "cellular") { PPP.setDefault(); maintainCellularDns(true); }
+  else WiFi.STA.setDefault();
+  request->cellular = lastUploadNetwork == "cellular";
+  request->generation = cellularGeneration; request->startedMs = millis();
+  request->testDelayMs = nextUploadDelayMs;
+  if (xQueueSend(uploadRequests, &request, 0) == pdTRUE) { uploadInFlight = true; nextUploadDelayMs = 0; }
+  else { delete request; nextPostMs = millis() + 1000; }
 }
 void setup() {
   Serial.setRxBufferSize(2048);
@@ -541,6 +633,14 @@ void setup() {
     configured = !ssid.isEmpty() && validToken(token) && validEndpoint(endpoint);
   }
   initQueue();
+  uploadRequests = xQueueCreate(1, sizeof(UploadRequest *));
+  uploadResults = xQueueCreate(1, sizeof(UploadRequest *));
+  uploaderReady = uploadRequests && uploadResults && xTaskCreatePinnedToCore(uploadWorker, "trackerHTTPS", 16384, nullptr, 1, nullptr, 0) == pdPASS;
+  if (!uploaderReady) {
+    if (uploadRequests) vQueueDelete(uploadRequests);
+    if (uploadResults) vQueueDelete(uploadResults);
+    uploadRequests = nullptr; uploadResults = nullptr;
+  }
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED &&
         info.wifi_sta_disconnected.reason != WIFI_REASON_ASSOC_LEAVE) {
@@ -553,10 +653,17 @@ void setup() {
   connectWifi(); batteryV = readBattery(); printStatus("boot");
 }
 void loop() {
+  collectUploadResults();
+  if (cellularRestartPending && !uploadInFlight) restartCellular();
   processSerial();
   uint32_t now = millis();
   if (now - lastPollMs >= (modemReady ? 1000u : 5000u)) { lastPollMs = now; pollGps(); }
   connectCellular();
+  if (PPP.hasIP() && !uploadInFlight && !wifiSuspendedForCellular) {
+    WiFi.setAutoReconnect(false); WiFi.mode(WIFI_OFF);
+    wifiSuspendedForCellular = true;
+  }
+  maintainCellularDns(false);
   if (configured && !PPP.hasIP() && WiFi.status() != WL_CONNECTED && millis() - lastConnectMs >= 15000) connectWifi();
   static bool hadInternet = false;
   if (internetReady() && !hadInternet) {
@@ -565,14 +672,14 @@ void loop() {
     nextPostMs = 0;
   }
   hadInternet = internetReady();
-  if (internetReady() && int32_t(millis() - nextPostMs) >= 0) { batteryV = readBattery(); postTelemetry(); }
+  if (internetReady() && int32_t(millis() - nextPostMs) >= 0) postTelemetry();
   if (millis() - lastStatusMs >= 10000) { lastStatusMs = millis(); printStatus(); }
   // Low-brightness status: purple needs setup; blue waiting Internet; yellow waiting GPS;
   // green has a fresh fix; red signals persistent upload/storage failure.
   static uint32_t ledAt = 0;
   if (millis() - ledAt >= 1000) {
     ledAt = millis();
-    if (!storageReady || failures >= 3) rgbLedWrite(STATUS_LED, 16, 0, 0);
+    if (!storageReady || !uploaderReady || failures >= 3) rgbLedWrite(STATUS_LED, 16, 0, 0);
     else if (!configured) rgbLedWrite(STATUS_LED, 8, 0, 8);
     else if (!internetReady()) rgbLedWrite(STATUS_LED, 0, 0, 16);
     else if (!freshFix()) rgbLedWrite(STATUS_LED, 12, 8, 0);

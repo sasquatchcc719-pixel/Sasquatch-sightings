@@ -4,6 +4,10 @@ For **ESP32-S3-SIM7670G-4G V2.0**, ESP32-S3R8, 16 MB flash / 8 MB octal PSRAM. F
 
 Firmware **0.3.1** fixes truncated GPS replies during CMUX operation and reconnects cellular after three consecutive transport failures, even if PPP still has an IP address. HTTP responses from a reachable server (including 4xx/5xx) do not trigger that transport reset.
 
+Firmware **0.3.2** moves HTTPS onto a dedicated task so DNS, TLS, response waits, and upload backoff do not block the GPS loop. The loop remains the sole owner of modem commands, flash, settings, and USB output. A one-request queue transfers an immutable payload/settings snapshot to the HTTPS worker; a result queue returns acknowledgements. Each acknowledgement checks the original slot/order identity, preserving a new sample if the ring slot was overwritten during an upload. Secure connections are reused when the server allows it, and closed after errors or transport/endpoint changes. Intentional PPP teardown waits for the active request to finish.
+
+This core uses global DNS. A disconnected Wi-Fi interface was observed leaving DNS at `0.0.0.0` while cached Sightings addresses still worked; the public A records have a 300-second TTL, consistent with the recurring upload stalls. While PPP is active, Wi-Fi is suspended and missing DNS is repaired with 1.1.1.1 / 8.8.8.8; valid configured DNS is retained. Wi-Fi fallback is re-enabled when PPP loses its IP.
+
 ## Build
 
 Install Arduino CLI, then the official Espressif Arduino core and JSON library:
@@ -60,11 +64,15 @@ The subsequent outdoor test exposed truncated CMUX GPS replies and a stalled dat
 
 A following outdoor battery-only test, with the phone hotspot off, delivered 261 GPS points across six minutes from one boot. Uploads briefly stalled, then resumed without USB or user intervention. The largest interval between recorded GPS observations was 22 seconds. Battery operation and simultaneous GPS/cellular delivery are verified for this short test; uninterrupted low-latency tracking and long-duration carrier-outage behavior still need work. Cloud observations alone do not identify which modem/reconnect event caused the brief stall.
 
+Under 0.3.2, a deliberate 10-second hold in the HTTPS worker produced a 10,860 ms upload while the maximum GPS observation gap remained 2 seconds. Points accumulated during the hold and were acknowledged by the following successful request. Normal repeat requests in that bench check took approximately 0.5–1.6 seconds, with DNS configured and no PPP reconnects. The build and all four host test programs passed. Upload-batch tests cover newest-first/oldest-backlog ordering, capacity limits, and a full-ring slot overwritten while its previous sample is in flight.
+
 ## USB diagnostics
 
 `gpsDiagnostic` reports the parser result (0 invalid, 1 no fix, 2 fix), response length, and reply shape with every digit masked. This reveals truncated command replies without printing a location or GPS timestamp. It also reports the PPP DNS setting and whether the Sightings hostname resolves when Internet is available. `reconnectCellular` explicitly restarts the PPP session without changing settings or queued points.
 
 Status includes `uptimeMs`, `resetReason` (ESP-IDF reset-reason enum), `cellularReconnects`, `gpsPollResult` (same parser enum), and counts of fix, empty, and invalid GPS replies. A stale `gpsFix:false` alone does not distinguish no satellite lock from a command/parse failure; use these counters.
+
+Version 0.3.2 adds `uploaderReady`, `uploadInFlight`, `lastUploadDurationMs`, `maxGpsFixGapSeconds`, `cellularDnsReady`, and `cellularDnsRepairs`. The GPS gap metric uses consecutive receiver timestamps, not an animated/interpolated map position. `slowUploadTest` resets that metric and holds the next upload task for 10 seconds as a one-shot bench test; GPS recording should continue throughout the hold. The hold is not persistent across reboot. Normal upload timing resumes afterward.
 
 For an outdoor test without a nearby Mac, send `diagnosticsStart` over USB before disconnecting. It enables local status history, including across power cycles. Status snapshots are written at most once per 15 seconds, in two rotating files of approximately 32 KB each, separate from the GPS queue. The log contains the same non-location status fields printed over USB; no credentials or coordinates. On return, send `diagnosticsRead` and read newline-delimited JSON until `{"event":"diagnostics_end"}`. `diagnosticsStop` disables recording. Recording automatically disables after 30 minutes of uptime, so this bench feature is not a permanent high-frequency flash log. It never formats storage or deletes the GPS queue.
 
@@ -95,7 +103,7 @@ The sketch enables GNSS with `AT+CGNSSPWR=1`, disables unsolicited NMEA output w
 
 Each new GPS second has a random boot UUID plus increasing sequence number for server deduplication. UTC comes from the GPS observation, not from upload time. A 5,000-slot file stores records with CRC32; pending points survive normal reboot. When full, it **discards the oldest point** to retain recent movement (roughly 83 minutes at 1 Hz). Damaged/incomplete records are ignored on boot. An abrupt power loss may lose the record being written. This is a prototype queue, not an automotive-certified black box.
 
-Uploads put the newest queued point first, followed by the oldest backlog, up to 32 per request. A successful `{ok:true}` HTTP 200 acknowledges those points; failures keep them queued. Duplicate retransmissions after power loss are expected and deduplicated by the server. While moving or draining backlog, the target interval is 2 seconds; stationary/no-fix heartbeat interval is 10 seconds. Network calls are synchronous and can delay GPS polling, especially during failed TLS or slow requests; sustained 1 Hz capture is not guaranteed by this prototype. Failed uploads back off up to 30 seconds. A disconnected hotspot still records GPS.
+Uploads put the newest queued point first, followed by the oldest backlog, up to 32 per request. A successful `{ok:true}` HTTP 200 acknowledges those points; failures keep them queued. Duplicate retransmissions after power loss are expected and deduplicated by the server. While moving or draining full batches, the target start-to-start interval is 2 seconds; stationary/no-fix heartbeat interval is 10 seconds. A minimum 1.1-second delay after a successful response respects the server's one-request/second limit when a request ran long. HTTPS runs in the background; its waits do not stop GPS recording. Initial modem setup, radio/multiplexer reconfiguration, an explicit USB camera capture/diagnostic, or loss of receiver fix can still interrupt sampling. Failed uploads back off up to 30 seconds. A disconnected hotspot still records GPS.
 
 HTTPS validates hostname, certificate chain, and validity using the ISRG Root X1 CA; redirects are disabled. This trusts the current Let's Encrypt certificate chain for Sightings, not a pinned leaf certificate. A custom endpoint must use a chain trusted by that root, or the CA source must be deliberately updated. SNTP supplies time before TLS; GPS UTC and a validated cellular modem clock can bootstrap it when SNTP is unavailable. Modem-clock timezone offsets are parsed in quarter hours, and this clock is never used to invent GPS observation times. No TLS verification bypass is used.
 
@@ -131,6 +139,8 @@ c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/modem_cloc
 /tmp/waveshare-modem-clock-test
 c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/modem_reply_test.cpp -o /tmp/waveshare-modem-reply-test
 /tmp/waveshare-modem-reply-test
+c++ -std=c++17 -Wall -Wextra -Werror hardware/waveshare-tracker/tests/upload_batch_test.cpp -o /tmp/waveshare-upload-batch-test
+/tmp/waveshare-upload-batch-test
 ```
 
 This tests the actual GNSS parser and CRC implementation against valid coordinates/time, no-fix replies, bad directions, out-of-range minutes/latitude, invalid dates, missing speed/bearing, implausible speeds (sent as null so they cannot block the upload queue), and known CRC data. Modem-clock tests cover UTC conversion, signed quarter-hour offsets, leap dates, invalid values, and incomplete responses. The Arduino build verifies platform integration. Flash queue durability, antenna reception, battery operation, and live server delivery require hardware tests; a successful compile does not prove them.
