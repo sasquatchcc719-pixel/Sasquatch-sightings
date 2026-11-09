@@ -53,7 +53,8 @@ reads. The loader performs selects only. There are no mutations, external sends,
 refresh jobs, or reservations. Evidence previews are bounded to three links per
 source/decision and twenty current-period reconciliation examples.
 
-Mocked tests cover source failures, pagination, Denver boundaries, zero invoices,
+Mocked tests cover singleton and array PostgREST relations, source failures,
+pagination, Denver boundaries, zero invoices,
 all exclusion classes, incomplete comparison cohorts, retained evidence IDs,
 priority ordering, role/OAuth authorization and UI states. Keep production-backed
 legacy integration suites excluded from unit checks. Live schema and read-only

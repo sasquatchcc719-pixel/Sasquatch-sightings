@@ -269,4 +269,81 @@ describe('business decision view', () => {
     expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
     await act(async () => resolve(response()))
   })
+  it('does not present zero-covered invoice cohorts as monetary zero', () => {
+    const uncovered = {
+      ...totals,
+      invoiced_value: 0,
+      invoice_covered_visits: 0,
+    }
+    render(
+      <DecisionSnapshotContent
+        data={{
+          ...decisionFixture,
+          performance: {
+            last_week: uncovered,
+            current: uncovered,
+            previous: uncovered,
+            invoiced_value_change: null,
+            invoiced_value_change_pct: null,
+          },
+          lead_sources: [
+            {
+              ...decisionFixture.lead_sources[0],
+              invoiced_value: 0,
+              previous_invoiced_value: 0,
+              invoice_covered_visits: 0,
+              previous_invoice_covered_visits: 0,
+            },
+          ],
+        }}
+      />,
+    )
+    expect(
+      screen.getAllByText(/Unavailable \(no invoice coverage\)/),
+    ).toHaveLength(5)
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+  })
+  it.each([
+    { completed: 1, covered: 1 },
+    { completed: 0, covered: 0 },
+  ])(
+    'preserves genuine zero with $completed visits and $covered invoices',
+    ({ completed, covered }) => {
+      const zero = {
+        ...totals,
+        completed_visits: completed,
+        invoice_covered_visits: covered,
+        invoiced_value: 0,
+      }
+      render(
+        <DecisionSnapshotContent
+          data={{
+            ...decisionFixture,
+            performance: {
+              last_week: zero,
+              current: zero,
+              previous: zero,
+              invoiced_value_change: null,
+              invoiced_value_change_pct: null,
+            },
+            lead_sources: [
+              {
+                ...decisionFixture.lead_sources[0],
+                completed_visits: completed,
+                invoice_covered_visits: covered,
+                invoiced_value: 0,
+                previous_completed_visits: completed,
+                previous_invoice_covered_visits: covered,
+                previous_invoiced_value: 0,
+              },
+            ],
+          }}
+        />,
+      )
+      expect(
+        screen.queryByText(/Unavailable \(no invoice coverage\)/),
+      ).not.toBeInTheDocument()
+      expect(screen.getAllByText('$0.00')).toHaveLength(2)
+    },
+  )
 })

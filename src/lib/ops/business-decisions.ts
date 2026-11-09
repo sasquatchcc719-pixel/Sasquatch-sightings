@@ -28,11 +28,11 @@ export type DecisionJob = {
   lead_source_key?: string | null
   customer: Related<{ is_internal: boolean; billing_mode?: string | null }>
   recurring?: Related<{ invoice_mode: string | null }>
-  batch_entries?: Array<{ id: string }>
+  batch_entries?: Related<{ id: string }>
   ops_appointment_line_items?: Parameters<
     typeof isWarrantyAppointment
   >[0]['ops_appointment_line_items']
-  invoices: Array<{
+  invoices: Related<{
     id: string
     total: number | string | null
     status: string
@@ -44,6 +44,9 @@ type QueueInput = Awaited<
 >['queues'][number]
 const one = <T>(v: Related<T> | undefined): T | null =>
   Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
+// PostgREST embeds one-to-one relations as objects and one-to-many as arrays.
+const many = <T>(v: Related<T> | undefined): T[] =>
+  Array.isArray(v) ? v : v ? [v] : []
 const round = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100
 const addDays = (day: string, n: number) =>
   new Date(Date.parse(`${day}T12:00:00Z`) + n * DAY).toISOString().slice(0, 10)
@@ -104,13 +107,13 @@ function excluded(job: DecisionJob): keyof DecisionTotals | null {
     job.batch_billing_customer_id ||
     one(job.customer)?.billing_mode === 'monthly_consolidated' ||
     one(job.recurring)?.invoice_mode === 'batch_monthly' ||
-    job.batch_entries?.length
+    many(job.batch_entries).length
   )
     return 'consolidated_billing_visits'
   return null
 }
 function invoiceEvidence(job: DecisionJob) {
-  const invoices = job.invoices ?? []
+  const invoices = many(job.invoices)
   if (!invoices.length)
     return { issue: 'missing_invoice' as const, invoice: null }
   if (invoices.length !== 1)
@@ -182,12 +185,13 @@ function jobLinks(job: DecisionJob) {
       url: `${ORIGIN}/admin/operations/appointments/${job.id}`,
     },
   ]
-  if (job.invoices?.length === 1)
+  const invoices = many(job.invoices)
+  if (invoices.length === 1)
     links.push({
       label: 'Invoice',
-      record_id: job.invoices[0].id,
+      record_id: invoices[0].id,
       entity: 'invoice',
-      url: `${ORIGIN}/admin/operations/invoices/${job.invoices[0].id}`,
+      url: `${ORIGIN}/admin/operations/invoices/${invoices[0].id}`,
     })
   return links
 }

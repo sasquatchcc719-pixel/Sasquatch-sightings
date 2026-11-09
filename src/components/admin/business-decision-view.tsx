@@ -10,6 +10,16 @@ import {
 
 const money = (value: number) =>
   value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+const invoiceValue = (value: number, completed: number, covered: number) =>
+  completed > 0 && covered === 0
+    ? 'Unavailable (no invoice coverage)'
+    : money(value)
+const totalValue = (totals: DecisionTotals) =>
+  invoiceValue(
+    totals.invoiced_value,
+    totals.completed_visits,
+    totals.invoice_covered_visits,
+  )
 const date = (value: string) =>
   new Date(`${value}T12:00:00Z`).toLocaleDateString('en-US', {
     month: 'short',
@@ -144,9 +154,7 @@ export function DecisionSnapshotContent({
             {period(data.periods.last_week)}
           </p>
           <p className="mt-4 text-3xl font-semibold tracking-tight text-white">
-            {performance
-              ? money(performance.last_week.invoiced_value)
-              : 'Unavailable'}
+            {performance ? totalValue(performance.last_week) : 'Unavailable'}
           </p>
           <p className="mt-1 text-sm text-slate-300">Per-visit invoice value</p>
           {performance && <Coverage totals={performance.last_week} />}
@@ -159,9 +167,7 @@ export function DecisionSnapshotContent({
             {period(data.periods.current)}
           </p>
           <p className="mt-4 text-3xl font-semibold tracking-tight text-white">
-            {performance
-              ? money(performance.current.invoiced_value)
-              : 'Unavailable'}
+            {performance ? totalValue(performance.current) : 'Unavailable'}
           </p>
           {performance && (
             <>
@@ -172,7 +178,7 @@ export function DecisionSnapshotContent({
               </p>
               <Coverage totals={performance.current} />
               <p className="mt-3 text-xs leading-5 text-slate-400">
-                Previous: {money(performance.previous.invoiced_value)} ·{' '}
+                Previous: {totalValue(performance.previous)} ·{' '}
                 {period(data.periods.previous)} ·{' '}
                 {performance.previous.invoice_covered_visits}/
                 {performance.previous.completed_visits} visits covered
@@ -233,7 +239,11 @@ export function DecisionSnapshotContent({
                   <p className="text-xs text-slate-400">Current 4 weeks</p>
                   <p className="mt-1 font-medium text-white">
                     {source.completed_visits} visits ·{' '}
-                    {money(source.invoiced_value)}
+                    {invoiceValue(
+                      source.invoiced_value,
+                      source.completed_visits,
+                      source.invoice_covered_visits,
+                    )}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
                     {source.invoice_covered_visits}/{source.completed_visits}{' '}
@@ -244,7 +254,11 @@ export function DecisionSnapshotContent({
                   <p className="text-xs text-slate-400">Previous 4 weeks</p>
                   <p className="mt-1 font-medium text-slate-300">
                     {source.previous_completed_visits} visits ·{' '}
-                    {money(source.previous_invoiced_value)}
+                    {invoiceValue(
+                      source.previous_invoiced_value,
+                      source.previous_completed_visits,
+                      source.previous_invoice_covered_visits,
+                    )}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
                     {source.previous_invoice_covered_visits}/

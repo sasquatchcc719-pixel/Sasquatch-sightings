@@ -11,6 +11,12 @@ import {
 } from './business-decisions'
 
 const now = new Date('2026-11-09T20:00:00Z')
+const finalInvoice = {
+  id: 'invoice-1',
+  total: 450,
+  status: 'paid',
+  payment_status: 'paid',
+}
 function job(overrides: Partial<DecisionJob> = {}): DecisionJob {
   return {
     id: 'job-1',
@@ -65,6 +71,23 @@ describe('business decision metric contract', () => {
       'not cash collected',
     )
   })
+  it('accepts actual PostgREST one-to-one invoice objects and keeps exact evidence', () => {
+    const result = build([job({ invoices: finalInvoice })])
+    expect(result.performance?.current).toMatchObject({
+      invoice_covered_visits: 1,
+      invoiced_value: 450,
+      missing_invoice_visits: 0,
+    })
+    expect(result.coverage.status).toBe('complete')
+    expect(result.reconciliation[0].links[1]).toMatchObject({
+      record_id: 'invoice-1',
+      entity: 'invoice',
+    })
+    expect(
+      build([job({ invoices: null })]).performance?.current
+        .missing_invoice_visits,
+    ).toBe(1)
+  })
   it('preserves valid fully discounted zero invoices', () => {
     const result = build([
       job({
@@ -90,7 +113,7 @@ describe('business decision metric contract', () => {
       }),
       job({
         id: 'many',
-        invoices: [job().invoices[0], { ...job().invoices[0], id: 'second' }],
+        invoices: [finalInvoice, { ...finalInvoice, id: 'second' }],
       }),
       job({
         id: 'void',
@@ -130,6 +153,7 @@ describe('business decision metric contract', () => {
         customer: { is_internal: false, billing_mode: 'monthly_consolidated' },
       }),
       job({ id: 'entry', batch_entries: [{ id: 'entry' }] }),
+      job({ id: 'entry-singleton', batch_entries: { id: 'entry-singleton' } }),
       job({ id: 'batch-marker', batch_billing_customer_id: 'monthly-account' }),
     ]
     expect(build(rows).performance?.current).toMatchObject({
@@ -138,7 +162,7 @@ describe('business decision metric contract', () => {
       internal_visits: 1,
       warranty_visits: 2,
       restoration_visits: 1,
-      consolidated_billing_visits: 4,
+      consolidated_billing_visits: 5,
     })
   })
   it('fails monetary and upcoming coverage closed when customer classification is missing', () => {
@@ -383,13 +407,16 @@ describe('read-only loader', () => {
     mocks.queues.mockRejectedValueOnce(new Error('offline'))
     const f = fixture([
       {
-        data: Array.from({ length: 500 }, (_, n) => job({ id: `j${n}` })),
+        data: Array.from({ length: 500 }, (_, n) =>
+          job({ id: `j${n}`, invoices: finalInvoice }),
+        ),
         error: null,
       },
       { data: [job({ id: 'last' })], error: null },
     ])
     const result = await loadBusinessDecisionSnapshot(f.db, now)
     expect(result.performance?.current.completed_visits).toBe(501)
+    expect(result.performance?.current.invoice_covered_visits).toBe(501)
     expect(f.reads.filter((r) => r[0] === 'range')).toEqual([
       ['range', [0, 499]],
       ['range', [500, 999]],
