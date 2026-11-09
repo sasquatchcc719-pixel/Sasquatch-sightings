@@ -104,6 +104,9 @@ For every task:
 - Use subagents (Claude Code: "use subagents to investigate X") for exploration tasks that would otherwise pollute the main context with dozens of file reads.
 - When committing, write descriptive commit messages (subject under 72 chars, body explains the why). No "update file" or "fix bug" commits. No "Co-Authored-By: Claude" attribution unless the project explicitly wants it.
 - **Commit and push to `main`.** Do not create or push to a feature branch unless Charles explicitly asks for one. Vercel only deploys `main` to Production — anything on another branch builds as a throwaway Preview and silently never ships. "Commit and push" means it goes live on `main`. A clarification during implementation does not end the task; finish the authorized change through production verification before reporting completion.
+- A request to finish or ship Sightings work includes releasing that tested work to Production. Do not stop to ask "May I deploy?" after the user already told you to finish. After pushing `main`, run `pnpm release:production -- --deploy`; it verifies the exact `origin/main` commit and uses a clean authenticated Vercel fallback if the Git-triggered deployment was missed.
+- GitHub and Vercel are cloud services; a sleeping, locked, or powered-off user computer is not a release blocker. Native-app access is unrelated to repository deployment.
+- Never report only that a release is "blocked." First run the release command. If it still fails, report the exact failed command, service response, missing credential or permission, and the single action required from Charles. Never trigger an extra paid scan merely to verify a deployment.
 - Never reuse a stale, long-lived branch as a place to land new work. If you somehow end up on one, move the new commits onto `main` rather than stacking them on months-old unmerged history.
 
 ---
