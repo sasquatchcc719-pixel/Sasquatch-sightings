@@ -85,6 +85,19 @@ async function waitForLiveAlias(commit, attempts = 5) {
   return status
 }
 
+async function waitForGitDeployment(commit, attempts = 7) {
+  let deployments = new Set()
+  for (
+    let attempt = 0;
+    deployments.size === 0 && attempt < attempts;
+    attempt += 1
+  ) {
+    deployments = deploymentUrlsFor(commit, 'BUILDING,QUEUED,READY')
+    if (deployments.size === 0 && attempt + 1 < attempts) await pause(10_000)
+  }
+  return deployments
+}
+
 function inspect(target, wait = false) {
   const args = ['inspect', target, '--json', '--no-color']
   if (wait) args.push('--wait', '--timeout', '10m')
@@ -135,10 +148,7 @@ if (!status.matches && !mayDeploy) {
 }
 
 if (!status.matches) {
-  const pendingGitDeployments = deploymentUrlsFor(
-    commit,
-    'BUILDING,QUEUED,READY',
-  )
+  const pendingGitDeployments = await waitForGitDeployment(commit)
   for (const deploymentUrl of pendingGitDeployments) {
     try {
       const deployment = inspect(deploymentUrl, true)
