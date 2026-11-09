@@ -1,3 +1,4 @@
+import { loadMonumentCore } from './monument-core'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { searchconsole_v1 } from 'googleapis'
 import { getSearchConsoleClient, GSC_WWW_PROPERTY } from '@/lib/gsc'
@@ -302,8 +303,14 @@ export async function loadSeoBriefing(
     () => maps(db, now),
     () => organic((options.searchConsole ?? getSearchConsoleClient)(), now),
     () => business(db),
+    () => loadMonumentCore(db, now),
   ]
-  const titles = ['Maps visibility', 'Organic search', 'Business outcomes']
+  const titles = [
+    'Maps visibility',
+    'Organic search',
+    'Business outcomes',
+    'Monument core · Maps',
+  ]
   const sections = await Promise.all(
     work.map(async (run, index) => {
       try {

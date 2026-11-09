@@ -141,6 +141,7 @@ describe('read-only SEO briefing', () => {
       'measured',
       'failed',
       'partial',
+      'unavailable',
     ])
     expect(r.changes).toHaveLength(1)
   })
