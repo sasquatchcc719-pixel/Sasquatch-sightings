@@ -539,7 +539,7 @@ export function ScanScheduleCard() {
                     {draft.keyword || '—'}&quot;
                   </>
                 )}
-                {' · '}last run:{' '}
+                {' · '}last scheduled attempt:{' '}
                 {s.last_run_at
                   ? new Date(s.last_run_at).toLocaleString()
                   : 'never'}

@@ -222,7 +222,7 @@ export async function runGridScan(
   async function flushProgress(force = false): Promise<void> {
     if (!force && scanned - lastProgressWrite < 8) return
     lastProgressWrite = scanned
-    await supabase
+    const { error } = await supabase
       .from('radar_grid_scans')
       .update({
         points_scanned: scanned,
@@ -230,6 +230,7 @@ export async function runGridScan(
         status: 'running',
       })
       .eq('id', scanId)
+    if (error) throw new Error(`Could not save scan progress: ${error.message}`)
   }
 
   async function worker(): Promise<void> {
@@ -243,24 +244,29 @@ export async function runGridScan(
                 await fetchAiSurfaceAtPoint(keyword, pt.lat, pt.lng, platform),
               )
         const myRank = findMyRank(places)
+        const { error: pointError } = await supabase
+          .from('radar_grid_points')
+          .insert({
+            scan_id: scanId,
+            row_idx: pt.row,
+            col_idx: pt.col,
+            lat: pt.lat,
+            lng: pt.lng,
+            my_rank: myRank,
+            top_places: places.slice(0, 3).map((p) => ({
+              position: p.position,
+              title: p.title,
+              reviews: p.reviews,
+              place_id: p.place_id,
+            })),
+          })
+        if (pointError)
+          throw new Error(`Could not save point: ${pointError.message}`)
+        // Coverage and rank statistics describe persisted evidence, not merely
+        // successful provider calls. Failed inserts must not look complete.
         ranks.push(myRank)
         scanned++
         if (myRank != null) ranked++
-
-        await supabase.from('radar_grid_points').insert({
-          scan_id: scanId,
-          row_idx: pt.row,
-          col_idx: pt.col,
-          lat: pt.lat,
-          lng: pt.lng,
-          my_rank: myRank,
-          top_places: places.slice(0, 3).map((p) => ({
-            position: p.position,
-            title: p.title,
-            reviews: p.reviews,
-            place_id: p.place_id,
-          })),
-        })
         await flushProgress()
       } catch (err) {
         // DataForSEO is pay-as-you-go, not monthly-capped like SerpApi was,
@@ -279,18 +285,26 @@ export async function runGridScan(
 
   const stats = computeStats(ranks)
 
-  await supabase
-    .from('radar_grid_scans')
-    .update({
-      points_scanned: scanned,
-      points_ranked: stats.ranked,
-      avg_rank: stats.avgRank,
-      visibility_pct: stats.visibilityPct,
-      status: scanned === points.length ? 'completed' : 'partial',
-      error: firstError ?? null,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', scan.id)
+  try {
+    const { error: finalError } = await supabase
+      .from('radar_grid_scans')
+      .update({
+        points_scanned: scanned,
+        points_ranked: stats.ranked,
+        avg_rank: stats.avgRank,
+        visibility_pct: stats.visibilityPct,
+        status:
+          scanned === points.length && !firstError ? 'completed' : 'partial',
+        error: firstError ?? null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', scan.id)
+    if (finalError) throw new Error(finalError.message)
+  } catch (err) {
+    const msg = `Could not finalize scan: ${err instanceof Error ? err.message : String(err)}`
+    firstError = firstError ? `${firstError}; ${msg}` : msg
+    console.error('[Radar Grid]', msg)
+  }
 
   return {
     scanId: scan.id,

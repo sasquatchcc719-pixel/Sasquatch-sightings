@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
+const providers = vi.hoisted(() => ({ maps: vi.fn(), ai: vi.fn() }))
+vi.mock('@/lib/dataforseo', () => ({ fetchMapsAtPoint: providers.maps }))
+vi.mock('@/lib/dataforseo-data', () => ({ fetchAiSurfaceAtPoint: providers.ai }))
 import {
+  runGridScan,
   buildGrid,
   buildAreaGrid,
   computeStats,
@@ -248,5 +253,130 @@ describe('DEFAULT_GRID', () => {
 
   it('costs 25 SerpApi calls per run', () => {
     expect(DEFAULT_GRID.size ** 2).toBe(25)
+  })
+})
+
+describe('runGridScan persisted completion', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    providers.maps.mockResolvedValue([place(2, 'Sasquatch Carpet Cleaning')])
+  })
+  function database(
+    options: {
+      pointFailure?: boolean
+      progressFailure?: boolean
+      finalFailure?: boolean
+      createFailure?: boolean
+    } = {},
+  ) {
+    const updates: Record<string, unknown>[] = []
+    let pointCalls = 0
+    const insertPoint = vi.fn(async () => ({
+      error:
+        options.pointFailure && ++pointCalls === 1
+          ? { message: 'point storage unavailable' }
+          : null,
+    }))
+    const from = vi.fn((table: string) =>
+      table === 'radar_grid_points'
+        ? { insert: insertPoint }
+        : {
+            insert: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: options.createFailure ? null : { id: 'scan-1' },
+                  error: options.createFailure
+                    ? { message: 'create denied' }
+                    : null,
+                }),
+              }),
+            }),
+            update: (value: Record<string, unknown>) => {
+              updates.push(value)
+              return {
+                eq: async () => ({
+                  error: (
+                    value.completed_at
+                      ? options.finalFailure
+                      : options.progressFailure
+                  )
+                    ? {
+                        message: value.completed_at
+                          ? 'final write unavailable'
+                          : 'progress unavailable',
+                      }
+                    : null,
+                }),
+              }
+            },
+          },
+    )
+    return { db: { from } as unknown as SupabaseClient, updates, insertPoint }
+  }
+  it('marks all successfully persisted points complete', async () => {
+    const { db, updates, insertPoint } = database()
+    const result = await runGridScan(db, { gridSize: 3 })
+    expect(result).toMatchObject({
+      scanId: 'scan-1',
+      pointsScanned: 9,
+      pointsRanked: 9,
+      avgRank: 2,
+    })
+    expect(result.error).toBeUndefined()
+    expect(updates.at(-1)).toMatchObject({
+      status: 'completed',
+      points_scanned: 9,
+      error: null,
+    })
+    expect(insertPoint).toHaveBeenCalledTimes(9)
+    expect(providers.maps).toHaveBeenCalledTimes(9)
+  })
+  it('excludes failed point inserts from coverage and rank statistics', async () => {
+    const { db, updates } = database({ pointFailure: true })
+    const result = await runGridScan(db, { gridSize: 3 })
+    expect(result).toMatchObject({ pointsScanned: 8, pointsRanked: 8 })
+    expect(result.error).toContain('Could not save point')
+    expect(updates.at(-1)).toMatchObject({
+      status: 'partial',
+      points_scanned: 8,
+      points_ranked: 8,
+    })
+    expect(providers.maps).toHaveBeenCalledTimes(9)
+  })
+  it('reports provider failures as partial without fabricating stored points', async () => {
+    providers.maps.mockRejectedValueOnce(new Error('provider unavailable'))
+    const { db, updates, insertPoint } = database()
+    const result = await runGridScan(db, { gridSize: 3 })
+    expect(result).toMatchObject({
+      pointsScanned: 8,
+      error: 'provider unavailable',
+    })
+    expect(updates.at(-1)?.status).toBe('partial')
+    expect(insertPoint).toHaveBeenCalledTimes(8)
+  })
+  it('surfaces failed progress persistence without discarding saved points', async () => {
+    const { db, updates } = database({ progressFailure: true })
+    const result = await runGridScan(db, { gridSize: 3 })
+    expect(result.pointsScanned).toBe(9)
+    expect(result.error).toContain('Could not save scan progress')
+    expect(updates.at(-1)?.status).toBe('partial')
+  })
+  it('surfaces final status persistence failure and does not repeat paid calls', async () => {
+    const { db } = database({ finalFailure: true })
+    const result = await runGridScan(db, { gridSize: 3 })
+    expect(result.error).toContain(
+      'Could not finalize scan: final write unavailable',
+    )
+    expect(result.pointsScanned).toBe(9)
+    expect(providers.maps).toHaveBeenCalledTimes(9)
+  })
+  it('does not call the provider if the scan record cannot be created', async () => {
+    const { db } = database({ createFailure: true })
+    expect(await runGridScan(db, { gridSize: 3 })).toMatchObject({
+      scanId: null,
+      pointsScanned: 0,
+      error: 'Could not create scan row: create denied',
+    })
+    expect(providers.maps).not.toHaveBeenCalled()
   })
 })

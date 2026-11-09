@@ -2,8 +2,8 @@
  * Settings-driven scan scheduling for both rank scanners.
  *
  * One daily cron calls `runDueScans`. Each row in scan_schedules says how
- * often its tool should run; anything due gets fired, and last_run_at moves
- * forward. Changing frequency is a settings edit, not a deploy — the reason
+ * often its tool should run; due attempts are claimed before paid calls, and
+ * last_run_at records the attempt start (not successful completion). Changing frequency is a settings edit, not a deploy — the reason
  * this exists is that the grid cron was hardcoded monthly in vercel.json and
  * Charles wanted weekly with a knob he could turn himself.
  *
@@ -29,11 +29,25 @@ export type ScanSchedule = {
   last_result: string | null
 }
 
-export function isDue(s: Pick<ScanSchedule, 'enabled' | 'frequency_days' | 'last_run_at'>, now = new Date()): boolean {
+export function isDue(
+  s: Pick<ScanSchedule, 'enabled' | 'frequency_days' | 'last_run_at'>,
+  now = new Date(),
+): boolean {
   if (!s.enabled) return false
   if (!s.last_run_at) return true
-  const next = new Date(s.last_run_at).getTime() + s.frequency_days * 86_400_000
-  return now.getTime() >= next
+  // Cron checks once per UTC day. Completion seconds must not push a weekly
+  // scan past the next day's 13:00 tick and turn seven days into eight.
+  const last = new Date(s.last_run_at).getTime()
+  if (
+    !Number.isFinite(last) ||
+    !Number.isInteger(s.frequency_days) ||
+    s.frequency_days < 1
+  )
+    return false
+  return (
+    Math.floor(now.getTime() / 86_400_000) >=
+    Math.floor(last / 86_400_000) + s.frequency_days
+  )
 }
 
 export type SchedulerResult = {
@@ -43,8 +57,15 @@ export type SchedulerResult = {
   errors: Record<string, string>
 }
 
-export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerResult> {
-  const out: SchedulerResult = { checked: 0, fired: [], skipped: [], errors: {} }
+export async function runDueScans(
+  supabase: SupabaseClient,
+): Promise<SchedulerResult> {
+  const out: SchedulerResult = {
+    checked: 0,
+    fired: [],
+    skipped: [],
+    errors: {},
+  }
 
   const { data: schedules, error } = await supabase
     .from('scan_schedules')
@@ -58,8 +79,39 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
       continue
     }
 
+    if (!['dataforseo_grid', 'local_falcon'].includes(s.tool)) {
+      out.errors[s.tool] = 'unknown tool'
+      continue
+    }
     let result = ''
+    let ownsAttempt = false
+    const attemptedAt = new Date().toISOString()
     try {
+      // Claim before any paid request. A timeout/partial/uncertain outcome must
+      // not generate an additional scan on tomorrow's cron or a concurrent tick.
+      let claim = supabase
+        .from('scan_schedules')
+        .update({
+          last_run_at: attemptedAt,
+          last_result: 'RUNNING: scheduled attempt',
+          updated_at: attemptedAt,
+        })
+        .eq('id', s.id)
+        .eq('enabled', true)
+      claim =
+        s.last_run_at === null
+          ? claim.is('last_run_at', null)
+          : claim.eq('last_run_at', s.last_run_at)
+      const { data: claimed, error: claimError } = await claim
+        .select('id')
+        .maybeSingle()
+      if (claimError) throw claimError
+      if (!claimed) {
+        out.skipped.push(s.tool)
+        continue
+      }
+
+      ownsAttempt = true
       if (s.tool === 'dataforseo_grid') {
         const preset = String(s.config.preset ?? 'service-area') as
           | 'service-area'
@@ -77,11 +129,13 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
           bufferMiles: Number.isFinite(buffer) ? buffer : 0,
           ...(Number.isFinite(centerLat) ? { centerLat } : {}),
           ...(Number.isFinite(centerLng) ? { centerLng } : {}),
-          ...(Number.isFinite(gridSize) && gridSize >= 3
-            ? { gridSize }
-            : {}),
+          ...(Number.isFinite(gridSize) && gridSize >= 3 ? { gridSize } : {}),
         })
-        result = `scan ${scan.scanId ?? '?'}: ${scan.pointsScanned ?? '?'} points`
+        if (scan.error || !scan.scanId)
+          throw new Error(
+            `Grid attempt incomplete: ${scan.error ?? 'no scan record'} (scan ${scan.scanId ?? '?'}, ${scan.pointsScanned} persisted points)`,
+          )
+        result = `scan ${scan.scanId}: ${scan.pointsScanned} persisted points`
       } else if (s.tool === 'local_falcon') {
         const gridSize = Number(s.config.grid_size ?? 13)
         // lat/lng are required even when place_id is supplied — verified
@@ -90,7 +144,9 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
         const lat = Number(s.config.lat)
         const lng = Number(s.config.lng)
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          throw new Error('config.lat / config.lng are required for local_falcon')
+          throw new Error(
+            'config.lat / config.lng are required for local_falcon',
+          )
         }
         const measurement =
           s.config.measurement === 'km' ? ('km' as const) : ('mi' as const)
@@ -117,27 +173,32 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
         continue
       }
 
-      out.fired.push(s.tool)
-      await supabase
+      const { error: saveError } = await supabase
         .from('scan_schedules')
         .update({
-          last_run_at: new Date().toISOString(),
           last_result: result.slice(0, 300),
           updated_at: new Date().toISOString(),
         })
         .eq('id', s.id)
+        .eq('last_run_at', attemptedAt)
+      if (saveError) throw saveError
+      out.fired.push(s.tool)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       out.errors[s.tool] = msg
-      // Record the failure but do NOT advance last_run_at — a failed scan
-      // should retry tomorrow, not silently wait a full cycle.
-      await supabase
+      // A failed/uncertain claimant must not overwrite another attempt.
+      if (!ownsAttempt) continue
+      // Preserve the attempt date: retries could incur duplicate paid scans.
+      const { error: failureSaveError } = await supabase
         .from('scan_schedules')
         .update({
           last_result: `ERROR: ${msg.slice(0, 280)}`,
           updated_at: new Date().toISOString(),
         })
         .eq('id', s.id)
+        .eq('last_run_at', attemptedAt)
+      if (failureSaveError)
+        out.errors[s.tool] += '; failed to persist failure status'
     }
   }
 

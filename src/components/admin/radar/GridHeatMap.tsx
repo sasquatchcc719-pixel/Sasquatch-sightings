@@ -183,6 +183,7 @@ export function GridHeatMap() {
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Scan failed')
         await load(json.scanId)
+        if (json.ok === false || json.error) throw new Error(json.error || 'Scan incomplete; do not retry without reviewing the saved attempt')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Scan failed')
       } finally {

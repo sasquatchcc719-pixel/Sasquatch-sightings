@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Keep scheduled scans and error reporting, without SEO Telegram notices.
-    return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({
+      ok: Object.keys(result.errors).length === 0,
+      ...result,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'scheduler failed'
     console.error('[cron/scan-scheduler]', error)

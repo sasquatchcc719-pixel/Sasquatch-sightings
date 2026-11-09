@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     if (result.error && !result.scanId) {
       return NextResponse.json({ error: result.error, ...result }, { status: 400 })
     }
-    return NextResponse.json({ ok: true, ...result, preset, config: DEFAULT_GRID })
+    return NextResponse.json({ ok: !result.error, ...result, preset, config: DEFAULT_GRID })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Grid scan failed'
     const status = /unauthor|forbidden|role/i.test(message) ? 403 : 500
