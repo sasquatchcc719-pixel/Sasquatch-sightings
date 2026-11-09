@@ -3,7 +3,7 @@
  * Inspects the key page set (marketing sitemap + newest job pages), snapshots
  * coverage to gsc_page_snapshots, diffs against the previous run, attempts
  * safe auto-remediation (resubmit sitemaps Google hasn't fetched in 7+ days),
- * and produces a Telegram digest for Charles.
+ * and produces a digest without automatic Telegram delivery.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -17,7 +17,6 @@ import {
   GSC_SIGHTINGS_PROPERTY,
   type GscInspection,
 } from '@/lib/gsc'
-import { sendTelegramNotification } from '@/lib/telegram'
 
 const MAX_INSPECTIONS = 80
 const INSPECT_CONCURRENCY = 4
@@ -76,8 +75,8 @@ export async function runGscWatch(
     targets?: Array<{ property: string; url: string }>
   } = {},
 ): Promise<GscWatchResult> {
-  const notifyOwner =
-    options.notifyOwner ?? ((text: string) => sendTelegramNotification(text))
+  // SEO Telegram delivery is retired. Explicit preview/test callbacks remain supported.
+  const notifyOwner = options.notifyOwner
   const sc = getSearchConsoleClient()
   const targets = options.targets ?? (await collectTargets())
 
@@ -202,9 +201,11 @@ export async function runGscWatch(
   ].filter((l): l is string => Boolean(l))
   const digest = lines.join('\n')
 
-  await notifyOwner(digest).catch((err) =>
-    console.error('[gsc-watch] owner notify failed:', err),
-  )
+  if (notifyOwner) {
+    await notifyOwner(digest).catch((err) =>
+      console.error('[gsc-watch] owner notify failed:', err),
+    )
+  }
 
   return {
     inspected: results.length,

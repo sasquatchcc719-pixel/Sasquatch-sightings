@@ -12,7 +12,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { runDueScans } from '@/lib/ops/scan-scheduler'
-import { sendTelegramNotification } from '@/lib/telegram'
 
 // A dense service-area grid is ~141 live calls at ~14s each, run 8-wide
 // (see radar-grid.ts) ≈ 4 minutes. 300s is the safe ceiling across Vercel
@@ -32,21 +31,7 @@ export async function GET(request: NextRequest) {
       console.error('[cron/scan-scheduler] errors', result.errors)
     }
 
-    // Telegram only when something happened — a daily "nothing due" ping
-    // would train Charles to ignore the channel.
-    if (result.fired.length || Object.keys(result.errors).length) {
-      const lines = [
-        '🛰️ Rank scans',
-        ...result.fired.map((t) => `✅ ${t} fired`),
-        ...Object.entries(result.errors).map(([t, e]) => `❌ ${t}: ${e.slice(0, 120)}`),
-      ]
-      try {
-        await sendTelegramNotification(lines.join('\n'))
-      } catch (err) {
-        console.error('[cron/scan-scheduler] telegram failed', err)
-      }
-    }
-
+    // Keep scheduled scans and error reporting, without SEO Telegram notices.
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'scheduler failed'

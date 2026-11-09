@@ -4,8 +4,8 @@
  * Pulls per-keyword/per-page search analytics, isolates keywords sitting just
  * off page 1 (positions ~8-20) with enough real search volume to matter, reads
  * the live content of each ranking page, and asks OpenAI what content gaps to
- * fill to push the page onto page 1. Delivers a Telegram digest to Charles as a
- * monthly reminder to review + a concrete edit list.
+ * fill to push the page onto page 1. Returns a digest and concrete edit list
+ * without automatic Telegram delivery.
  *
  * This NEVER edits the live site — it only recommends. Charles applies the
  * good suggestions by hand.
@@ -18,7 +18,6 @@ import {
   GSC_WWW_PROPERTY,
   type GscKeywordRow,
 } from '@/lib/gsc'
-import { sendTelegramNotification } from '@/lib/telegram'
 
 /** Window of search data to analyze (days). 28d ≈ one month of signal. */
 const WINDOW_DAYS = 28
@@ -220,9 +219,8 @@ export async function runGscOpportunities(
     skipNotify?: boolean
   } = {},
 ): Promise<GscOpportunityResult> {
-  const notifyOwner =
-    options.notifyOwner ??
-    ((text: string) => sendTelegramNotification(text, { disablePreview: true }))
+  // SEO Telegram delivery is retired. Explicit preview/test callbacks remain supported.
+  const notifyOwner = options.notifyOwner
 
   const sc = getSearchConsoleClient()
   const rows = await queryKeywordRows(
@@ -262,7 +260,7 @@ export async function runGscOpportunities(
   }))
   const digest = buildDigest(opportunities)
 
-  if (!options.skipNotify) {
+  if (notifyOwner && !options.skipNotify) {
     await notifyOwner(digest).catch((err) =>
       console.error('[gsc-opportunities] owner notify failed:', err),
     )

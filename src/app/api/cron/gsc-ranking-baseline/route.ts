@@ -8,7 +8,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { runGscRankingBaseline } from '@/lib/gsc-ranking-baseline'
-import { sendTelegramNotification } from '@/lib/telegram'
 
 export const maxDuration = 120
 
@@ -26,18 +25,7 @@ export async function GET(request: NextRequest) {
     const message =
       error instanceof Error ? error.message : 'GSC ranking baseline failed'
     console.error('[cron/gsc-ranking-baseline] Error:', error)
-    await sendTelegramNotification(
-      `🚨 GSC Ranking Baseline FAILED — no trend report this week.\n` +
-        `Error: ${message}\n` +
-        `Likely cause: expired Google OAuth token. Re-mint with ` +
-        `\`node scripts/gsc-auth.mjs url\` then update ` +
-        `GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN in Vercel.`,
-    ).catch((notifyErr) =>
-      console.error(
-        '[cron/gsc-ranking-baseline] failure-alert send failed:',
-        notifyErr,
-      ),
-    )
+    // SEO Telegram delivery is retired; preserve the logged error and HTTP status.
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

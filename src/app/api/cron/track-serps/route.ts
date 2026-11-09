@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { runRadarScan, buildRadarDailyReport } from '@/lib/radar-scan'
+import { runRadarScan } from '@/lib/radar-scan'
 import { syncGbpReviews } from '@/lib/gbp-reviews'
 import {
   formatReviewCountChange,
@@ -14,7 +14,6 @@ import {
 } from '@/lib/gbp-review-count'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
-import { deliverReportCard } from '@/lib/reports/telegram-report'
 
 export const maxDuration = 300
 
@@ -71,50 +70,17 @@ export async function GET(request: NextRequest) {
       console.error('[Radar Cron] GBP review sync failed:', reviewErr)
     }
 
-    // Never send a digest assembled from a partial scan. The non-2xx response
-    // below makes the incomplete cron run visible to monitoring.
-    let digestSent = false
-    let digestImageSent = false
-    let reportDeliveryError: string | null = null
-    try {
-      if (!result.success) {
-        throw new Error(result.error_detail || 'Radar scan was incomplete')
-      }
-      const report = await buildRadarDailyReport()
-      if (report) {
-        const delivery = await deliverReportCard({
-          supabase: createAdminClient(),
-          slug: 'radar-daily',
-          runKey: report.runKey,
-          card: report.card,
-          caption: report.caption,
-          text: report.text,
-        })
-        digestSent = delivery.textSent
-        digestImageSent = delivery.imageSent
-        if (!delivery.textSent || !delivery.imageSent) {
-          throw new Error(
-            `Radar report delivery incomplete: text=${delivery.textSent}, image=${delivery.imageSent}`,
-          )
-        }
-      }
-    } catch (digestErr) {
-      reportDeliveryError =
-        digestErr instanceof Error
-          ? digestErr.message
-          : 'Report delivery failed'
-      console.error('[Radar Cron] digest send failed:', digestErr)
-    }
-
+    // Owner retired SEO Telegram reports; collection and review alerts remain.
     return NextResponse.json(
       {
         ...result,
         review_sync: reviewSync,
-        digestSent,
-        digestImageSent,
-        reportDeliveryError,
+        digestSent: false,
+        digestImageSent: false,
+        reportDeliveryError: null,
+        seoTelegramEnabled: false,
       },
-      { status: result.success && !reportDeliveryError ? 200 : 502 },
+      { status: result.success ? 200 : 502 },
     )
   } catch (err) {
     console.error('[Radar Cron] Error:', err)

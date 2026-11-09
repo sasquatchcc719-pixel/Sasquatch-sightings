@@ -2,7 +2,7 @@
  * Thursday Google index check.
  *
  * Inspects up to 250 unique sitemap URLs, stores the results for trend
- * reporting, and sends Charles a plain-language Telegram summary. This monitor
+ * reporting, and returns a plain-language summary. This monitor
  * is deliberately read-only: it never asks Google to crawl or index a URL.
  */
 
@@ -15,7 +15,6 @@ import {
   GSC_SIGHTINGS_PROPERTY,
   type GscInspection,
 } from '@/lib/gsc'
-import { sendTelegramNotification } from '@/lib/telegram'
 
 /** Sitemaps in priority order — marketing money pages first, jobs last. */
 const SITEMAPS = [
@@ -117,9 +116,8 @@ export async function runGscIndexCheck(
     dryRun?: boolean
   } = {},
 ): Promise<IndexCheckResult> {
-  const notifyOwner =
-    options.notifyOwner ??
-    ((text: string) => sendTelegramNotification(text, { disablePreview: true }))
+  // SEO Telegram delivery is retired. Explicit preview/test callbacks remain supported.
+  const notifyOwner = options.notifyOwner
 
   const prior = await previousCoverage(supabase)
   const sc = getSearchConsoleClient()
@@ -198,7 +196,7 @@ export async function runGscIndexCheck(
   ].filter((line): line is string => line !== null)
   const digest = lines.join('\n')
 
-  if (!options.skipNotify) {
+  if (notifyOwner && !options.skipNotify) {
     await notifyOwner(digest).catch((err) =>
       console.error('[index-check] owner notify failed:', err),
     )
