@@ -306,7 +306,7 @@ export function GridHeatMap() {
       el.type = 'button'
       el.setAttribute(
         'aria-label',
-        `Rank ${p.my_rank ?? 'not in top 20'} at point ${p.row_idx + 1},${p.col_idx + 1}`,
+        `${p.my_rank == null ? 'No rank recorded' : `Rank ${p.my_rank}`} at point ${p.row_idx + 1},${p.col_idx + 1}`,
       )
       el.style.cssText = [
         `width:${size}px`,
@@ -339,7 +339,7 @@ export function GridHeatMap() {
     map.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 400 })
   }, [points, mapReady])
 
-  const visibility = scan?.visibility_pct ?? 0
+  const visibility = scan?.visibility_pct
   const arp = scan?.avg_rank
 
   return (
@@ -352,7 +352,7 @@ export function GridHeatMap() {
             <p className="text-xs text-white/50">
               {scan
                 ? `"${scan.keyword}" · ${scan.label ?? scan.preset} · ${scan.points_total} pts @ ${scan.spacing_miles} mi · ${new Date(scan.created_at).toLocaleDateString()}`
-                : 'No scans yet — set center / buffer, then run'}
+                : loading ? 'Loading saved scans…' : error ? 'Saved scans unavailable' : 'No saved scans'}
             </p>
           </div>
         </div>
@@ -554,7 +554,7 @@ export function GridHeatMap() {
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Top-3 visibility" value={`${visibility}%`} />
+        <Stat label="Top-3 visibility" value={visibility != null ? `${visibility}%` : '—'} />
         <Stat label="Avg rank" value={arp != null ? String(arp) : '—'} hint="where we appear" />
         <Stat
           label="Appeared at"
@@ -595,15 +595,20 @@ export function GridHeatMap() {
         <Legend color="#16a34a" label="1–3 · in the pack" />
         <Legend color="#ca8a04" label="4–10" />
         <Legend color="#dc2626" label="11–20" />
-        <Legend color="#4b5563" label="not in top 20" />
+        <Legend color="#4b5563" label="no rank recorded" />
       </div>
+
+      <p className="mt-2 text-xs text-white/50">
+        A missing rank is not proof of a position below 20. Historical records
+        may include an absent result or a provider error.
+      </p>
 
       {selected && (
         <div className="mt-4 rounded-lg border border-white/10 bg-slate-900/60 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold text-white">
-              Point {selected.row_idx + 1},{selected.col_idx + 1} — we rank{' '}
-              {selected.my_rank != null ? `#${selected.my_rank}` : 'nowhere'}
+              Point {selected.row_idx + 1},{selected.col_idx + 1} —{' '}
+              {selected.my_rank != null ? `rank #${selected.my_rank}` : 'no rank recorded'}
             </span>
             <span className="font-mono text-[11px] text-white/40">
               {selected.lat.toFixed(4)}, {selected.lng.toFixed(4)}

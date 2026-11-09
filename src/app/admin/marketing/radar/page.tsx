@@ -947,11 +947,10 @@ export default function RadarPage() {
               How to use Radar
             </h2>
             <p className="mb-3 rounded bg-amber-500/20 px-2 py-1.5 text-sm text-amber-200">
-              <strong>Required setup:</strong> In Vercel (Project → Settings →
-              Environment Variables), add{' '}
-              <code className="rounded bg-black/30 px-1">SERPAPI_API_KEY</code>{' '}
-              with your SerpApi key from serpapi.com. Without it, rankings will
-              stay empty and refresh will report an error.
+              <strong>Data sources:</strong> Town-level Maps checks use DataForSEO;
+              organic spot checks use SerpApi. Google Search Console supplies organic
+              search history. Rank grids have separate DataForSEO and Local
+              Falcon schedules; compare matching keywords, areas and dates.
             </p>
             <ol className="list-inside list-decimal space-y-1.5 text-sm text-white/80">
               <li>
