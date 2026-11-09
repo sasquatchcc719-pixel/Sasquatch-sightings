@@ -305,6 +305,8 @@ describe('business decision metric contract', () => {
           items: [
             {
               id: 'conversation-id',
+              updated_at: '2026-11-05T10:00:00Z',
+              customer_id: 'customer-id',
               phone: '+17195551234',
               app_url:
                 'https://sightings.sasquatchcarpet.com/admin/conversations',
@@ -324,6 +326,12 @@ describe('business decision metric contract', () => {
     expect(result.queues).toHaveLength(2)
     expect(result.coverage.missing).toEqual(['unanswered_messages: partial'])
     expect(result.decisions[0].evidence).toContain('At least 2')
+    expect(result.decisions[0].evidence).toContain(
+      'Most recent linked record: 2026-11-05',
+    )
+    expect(result.queues[1].label).toBe(
+      'Invoices needing payment-status review',
+    )
     expect(result.decisions[0].next_step).toContain(
       'Unread is not the same as unanswered',
     )
@@ -332,6 +340,8 @@ describe('business decision metric contract', () => {
     )
     expect(result.queues[0].links[0]).toMatchObject({
       record_id: 'conversation-id',
+      updated_at: '2026-11-05T10:00:00Z',
+      customer_id: 'customer-id',
       entity: 'conversation',
       url: 'https://sightings.sasquatchcarpet.com/admin/conversations?phone=%2B17195551234',
     })

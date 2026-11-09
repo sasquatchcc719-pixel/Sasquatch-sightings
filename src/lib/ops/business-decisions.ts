@@ -216,8 +216,8 @@ const QUEUES: Record<
     priority: 4,
   },
   unpaid_invoices: {
-    label: 'Collectible-status unpaid invoices',
-    next: 'Review payment evidence, due dates and billing arrangements before following up. This count does not mean these invoices are overdue.',
+    label: 'Invoices needing payment-status review',
+    next: 'Review payment evidence, due dates and billing arrangements before following up. This queue can include waived or zero-value records; its count does not mean these invoices are overdue.',
     priority: 5,
   },
   overdue_followups: {
@@ -384,6 +384,24 @@ export function buildBusinessDecisionSnapshot(input: {
                 ? `Invoice ${item.invoice_number}`
                 : `${QUEUES[q.name].label} ${String(item.id).slice(0, 8)}`,
             record_id: String(item.id),
+            ...(typeof item.customer_id === 'string'
+              ? { customer_id: item.customer_id }
+              : {}),
+            ...(typeof item.appointment_id === 'string'
+              ? { appointment_id: item.appointment_id }
+              : {}),
+            ...(typeof item.status === 'string' ? { status: item.status } : {}),
+            ...([item.updated_at, item.sent_at, item.created_at].some(
+              (value) => typeof value === 'string',
+            )
+              ? {
+                  updated_at: [
+                    item.updated_at,
+                    item.sent_at,
+                    item.created_at,
+                  ].find((value) => typeof value === 'string') as string,
+                }
+              : {}),
             entity: {
               unanswered_messages: 'conversation',
               missed_calls: 'call',
@@ -410,13 +428,24 @@ export function buildBusinessDecisionSnapshot(input: {
     )
     .sort((a, b) => QUEUES[a.name].priority - QUEUES[b.name].priority)
     .slice(0, 3)
-    .map((q) => ({
-      id: q.name,
-      title: `Review ${q.label.toLowerCase()}`,
-      evidence: `${q.status === 'partial' ? 'At least ' : ''}${q.count} records. ${q.window}`,
-      next_step: QUEUES[q.name].next,
-      links: q.links.slice(0, 3),
-    }))
+    .map((q) => {
+      const links = q.links.slice(0, 3)
+      const timestamps = links
+        .map((l) => Date.parse(l.updated_at ?? ''))
+        .filter(Number.isFinite)
+      const latest = timestamps.length
+        ? new Date(Math.max(...timestamps)).toLocaleDateString('en-CA', {
+            timeZone: 'America/Denver',
+          })
+        : null
+      return {
+        id: q.name,
+        title: `Review ${q.label.toLowerCase()}`,
+        evidence: `${q.status === 'partial' ? 'At least ' : ''}${q.count} records. ${q.window}${latest ? ` Most recent linked record: ${latest}.` : ''}`,
+        next_step: QUEUES[q.name].next,
+        links,
+      }
+    })
   const reconciliation: BusinessDecisionSnapshot['reconciliation'] = []
   for (const job of eligible.filter((j) =>
     within(j.appointment_date, periods.current),

@@ -7,6 +7,10 @@ const linkSchema = z
     url: z.string(),
     record_id: z.string().optional(),
     entity: z.string().optional(),
+    updated_at: z.string().optional(),
+    status: z.string().optional(),
+    customer_id: z.string().optional(),
+    appointment_id: z.string().optional(),
   })
   .strict()
 const totalsSchema = z
