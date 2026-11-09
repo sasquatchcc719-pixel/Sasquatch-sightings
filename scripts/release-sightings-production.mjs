@@ -51,7 +51,7 @@ function execute(command, args, options = {}) {
   return { stdout: result.stdout ?? '', output }
 }
 
-function deploymentUrlsFor(commit) {
+function deploymentUrlsFor(commit, statuses = 'READY') {
   const urls = new Set()
   for (const metadataKey of ['githubCommitSha', 'gitCommitSha']) {
     const { output } = execute('vercel', [
@@ -60,7 +60,7 @@ function deploymentUrlsFor(commit) {
       '--environment',
       'production',
       '--status',
-      'READY',
+      statuses,
       '--meta',
       `${metadataKey}=${commit}`,
       '--yes',
@@ -71,6 +71,18 @@ function deploymentUrlsFor(commit) {
     }
   }
   return urls
+}
+
+const pause = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+async function waitForLiveAlias(commit, attempts = 5) {
+  let status = deploymentIsLive(commit)
+  for (let attempt = 1; !status.matches && attempt < attempts; attempt += 1) {
+    await pause(2_000)
+    status = deploymentIsLive(commit)
+  }
+  return status
 }
 
 function inspect(target, wait = false) {
@@ -123,6 +135,30 @@ if (!status.matches && !mayDeploy) {
 }
 
 if (!status.matches) {
+  const pendingGitDeployments = deploymentUrlsFor(
+    commit,
+    'BUILDING,QUEUED,READY',
+  )
+  for (const deploymentUrl of pendingGitDeployments) {
+    try {
+      const deployment = inspect(deploymentUrl, true)
+      if (
+        deployment.readyState === 'READY' &&
+        deployment.target === 'production'
+      ) {
+        status = await waitForLiveAlias(commit)
+        if (status.matches) break
+      }
+    } catch (error) {
+      console.error(
+        `Git deployment ${deploymentUrl} did not become ready; using the clean fallback.`,
+        error,
+      )
+    }
+  }
+}
+
+if (!status.matches) {
   execute('vercel', ['whoami', '--no-color'])
   const worktree = mkdtempSync(join(tmpdir(), 'sightings-release-'))
   try {
@@ -168,7 +204,7 @@ if (!status.matches) {
       rmSync(worktree, { recursive: true, force: true })
     }
   }
-  status = deploymentIsLive(commit)
+  status = await waitForLiveAlias(commit)
   if (!status.matches) {
     throw new Error(
       `Deployment completed, but ${productionUrl} is not assigned to ${commit.slice(0, 8)}`,
