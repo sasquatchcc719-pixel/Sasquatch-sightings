@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { ChannelPnlView } from '@/components/admin/marketing/ChannelPnlView'
 
 export default function MarketingPage() {
@@ -10,6 +11,12 @@ export default function MarketingPage() {
           can see which ones are worth the money.
         </p>
       </div>
+      <Link
+        href="/admin/marketing/seo"
+        className="inline-block text-sm text-sky-300"
+      >
+        Open SEO briefing →
+      </Link>
       <ChannelPnlView />
     </div>
   )
