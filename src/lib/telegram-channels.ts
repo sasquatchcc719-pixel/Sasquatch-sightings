@@ -8,7 +8,7 @@ export const LEFTOVER_CHANNELS = [
   { id: 'radar', name: 'Radar Daily', when: 'Midnight' },
   { id: 'reviews', name: 'Reviews', when: '6:10am' },
   { id: 'coverage', name: 'Coverage', when: 'Mon 8:00am' },
-  { id: 'briefing', name: 'Briefing', when: 'Mon 9:30am' },
+  { id: 'briefing', name: 'Briefing', when: 'On demand' },
   { id: 'grid', name: 'Grid', when: 'When due' },
   { id: 'sweep', name: 'Index check', when: 'Thu 10:00am' },
   { id: 'opportunities', name: 'Close calls', when: '1st of month' },

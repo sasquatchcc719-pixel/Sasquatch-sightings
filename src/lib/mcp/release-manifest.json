@@ -1,6 +1,6 @@
 {
   "name": "sasquatch-sightings-read",
-  "version": "1.10.3",
+  "version": "1.11.0",
   "tools": [
     "list_appointments",
     "get_appointment",
@@ -14,6 +14,7 @@
     "get_business_configuration",
     "search_business_records",
     "get_operational_summary",
+    "get_business_decision_snapshot",
     "list_conversations",
     "get_conversation",
     "get_invoice",

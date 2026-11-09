@@ -341,6 +341,25 @@ export function getCapabilityCatalog(
         ],
       },
       {
+        area: 'business_decisions',
+        workflows: [
+          'review per-visit invoice performance',
+          'compare equal completed periods',
+          'inspect recorded lead sources',
+          'review bounded operational priorities',
+        ],
+        tools: ['get_business_decision_snapshot'],
+        access: 'available' as const,
+        scope: 'business:read',
+        side_effects: [],
+        approval: 'Existing OAuth owner read grant',
+        limitations: [
+          'Per-visit invoice totals exclude consolidated, restoration, warranty and internal work; coverage is explicit, not whole-company revenue.',
+          'Paid status is not period cash collection; recorded lead labels are not causal ROI. Booked work is not open capacity.',
+          'Queue items require history review before action. No messages, changes or reservations are made.',
+        ],
+      },
+      {
         area: 'operations_control_center',
         workflows: [
           'review attention queues',

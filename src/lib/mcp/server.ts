@@ -1,3 +1,5 @@
+import { loadBusinessDecisionSnapshot } from '@/lib/ops/business-decisions'
+import { businessDecisionSnapshotSchema } from '@/lib/ops/business-decision-schema'
 import {
   commercialPlaybookInput,
   commercialEmailAgentStatusInput,
@@ -770,6 +772,18 @@ const toolDefinitions: ToolDefinition[] = [
           input as z.infer<typeof operationalSummaryInput>,
         ),
       )
+    },
+  },
+  {
+    name: 'get_business_decision_snapshot',
+    title: 'Get business decision snapshot',
+    description:
+      'Read a concise decision snapshot: final per-visit invoice value for completed service dates, equal four-week comparisons, recorded lead-source performance, next-seven-day booked work, review queues, and invoice coverage exceptions. Every amount carries its definition and window. Excludes and counts consolidated billing, restoration, warranty and internal work; never calls quotes revenue, paid status cash received, or recorded sources causal ROI. Read-only: no contact, writes, refresh jobs or reservations.',
+    inputSchema: noInput,
+    outputSchema: businessDecisionSnapshotSchema,
+    async handler(_input, extra) {
+      authInfo(extra)
+      return toolResult(await loadBusinessDecisionSnapshot(createAdminClient()))
     },
   },
   {

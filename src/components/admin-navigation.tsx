@@ -214,11 +214,11 @@ export function AdminNavigation() {
       description: 'Google keywords we track in the weekly report',
     },
     {
-      name: 'Weekly Rollup',
+      name: 'Business Decisions',
       href: '/admin/marketing/rollup',
       icon: BarChart3,
       active: pathname === '/admin/marketing/rollup',
-      description: 'Spend, rank, demand, jobs, and revenue by town',
+      description: 'Decisions, invoiced work, and recorded lead sources',
     },
     {
       name: 'Google LSA',

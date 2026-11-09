@@ -123,10 +123,10 @@ const navSections: NavSection[] = [
         description: 'Local rank tracking',
       },
       {
-        name: 'Weekly Rollup',
+        name: 'Business Decisions',
         href: '/admin/marketing/rollup',
         icon: BarChart3,
-        description: 'Cost and return by town',
+        description: 'Decisions and invoiced work',
       },
       {
         name: 'Card Analytics',
