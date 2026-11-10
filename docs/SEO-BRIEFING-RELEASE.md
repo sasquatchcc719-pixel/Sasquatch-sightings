@@ -27,3 +27,13 @@ Targeted unit/API suites cover final periods, incomplete scans, unavailable sour
 ## Known first-release limitations
 
 Revision checking prevents lost updates but is not an immutable archive of previous edits. The latest 300 timeline entries are loaded for editing. Full baseline and evidence references are available in the editor; the briefing intentionally summarizes them. Live write testing must not manufacture production history.
+
+## Exact quote-to-booking evidence (November 2026)
+
+The business card now reads first-party `booking_funnel_events` directly for the latest completed Monday–Sunday week in America/Denver. It loads all steps of each quote session and joins only the recorded booked-event appointment ID to an existing service appointment with a verified non-internal customer. Pagination is ordered and read failures fail closed. Repeated events/sessions do not inflate distinct appointment counts. Missing, ambiguous, non-service, unknown-customer or temporally inconsistent links stay unresolved; internal/test evidence excludes the entire session.
+
+The displayed window is the quote cohort, not appointment service dates. Status is a current snapshot and includes later bookings; open, completed, cancelled and other are separate. Town uses the appointment's service-address town slug or city and only existing exact named-town/alias mappings, never the customer/billing address, ZIP, landing page or fuzzy matching. Unknown town/source remains explicit. Saved source labels stay separate from Google-referrer evidence; neither proves organic acquisition. No people count, conversion rate, paid revenue, all-business total or SEO impact is claimed.
+
+Read-only baseline for November 2–8: 13 quote sessions, 3 distinct linked service appointments, 2 open, 1 completed, 0 cancelled. Monument has 2 linked appointments (1 open and 1 completed); Castle Pines has 1 open. Saved sources are Nextdoor, repeat customer and Grok, one each. One linked appointment has a Google referrer; paid versus organic is unknown. Ten quote sessions have no recorded booking link. These are not proven lost leads. The reducer reproduces these counts from a privacy-minimized read of existing production evidence.
+
+No migration, tracking collection, customer communication, appointment/price/schedule change, scan or indexing action is included. The exact seven-pin Monument metric and broad-source labels are unchanged. Rollback is an application revert only; no business records need correction. Review subsequent completed quote cohorts and unresolved-link counts, not changes in session totals as proof of SEO results.

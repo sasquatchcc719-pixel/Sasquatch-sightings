@@ -29,6 +29,57 @@ export function SeoBriefingContent({ report }: { report: SeoBriefing }) {
           <p className="mt-2 text-sm leading-relaxed text-slate-400">
             {section.detail}
           </p>
+          {section.businessOutcomes && (
+            <div className="mt-3 space-y-3 text-sm text-slate-300">
+              <p className="text-xs text-slate-400">
+                Status as of{' '}
+                {section.measuredAt
+                  ? new Date(section.measuredAt).toLocaleString()
+                  : 'unknown'}
+                ; includes later bookings.
+              </p>
+              <p>
+                Linked appointments: {section.businessOutcomes.open} booked or
+                in progress · {section.businessOutcomes.completed} completed ·{' '}
+                {section.businessOutcomes.cancelled} cancelled ·{' '}
+                {section.businessOutcomes.other} other status.
+              </p>
+              <ul
+                className="space-y-1"
+                aria-label="Linked appointments by service town"
+              >
+                {section.businessOutcomes.byTown.map((town) => (
+                  <li key={town.town}>
+                    {town.town}: {town.appointments} linked ({town.open} open,{' '}
+                    {town.completed} completed, {town.cancelled} cancelled,{' '}
+                    {town.other} other).
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Saved booking sources:{' '}
+                {section.businessOutcomes.recordedSources
+                  .map((source) => `${source.label}: ${source.appointments}`)
+                  .join(' · ') || 'No verified linked appointments'}
+                . Recorded labels, not verified acquisition channels.
+              </p>
+              <p>
+                {section.businessOutcomes.googleReferrerAppointments} linked
+                appointments have a Google referrer in the same session. Organic
+                versus paid is unknown; a Google referrer does not override the
+                saved booking source.
+              </p>
+              <p className="text-slate-400">
+                {section.businessOutcomes.unlinkedQuoteSessions} quote sessions
+                have no recorded booking link;{' '}
+                {section.businessOutcomes.unresolvedQuoteSessions} have an
+                unresolved, ambiguous or ineligible link. These are not proven
+                lost leads. {section.businessOutcomes.excludedQuoteSessions}{' '}
+                internal/test sessions excluded. Territory is unknown for
+                unlinked sessions, even if they viewed a town page.
+              </p>
+            </div>
+          )}
           <details className="mt-3 text-xs text-slate-500">
             <summary className="cursor-pointer">
               Source and measurement date

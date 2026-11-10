@@ -1,4 +1,8 @@
 import { loadMonumentCore } from './monument-core'
+import {
+  loadBusinessOutcomes,
+  type BusinessOutcomes,
+} from './business-outcomes'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { searchconsole_v1 } from 'googleapis'
 import { getSearchConsoleClient, GSC_WWW_PROPERTY } from '@/lib/gsc'
@@ -17,6 +21,7 @@ export type BriefSection = {
   source: string
   measuredAt: string | null
   period: Period | null
+  businessOutcomes?: BusinessOutcomes
 }
 export type ChangeRow = {
   id: string
@@ -242,52 +247,6 @@ async function maps(db: SupabaseClient, now: Date): Promise<BriefSection> {
     period: null,
   }
 }
-async function business(db: SupabaseClient): Promise<BriefSection> {
-  const { data: newest, error } = await db
-    .from('marketing_weekly_rollup')
-    .select('week_start,week_end')
-    .order('week_start', { ascending: false })
-    .limit(1)
-  if (error) throw error
-  const week = newest?.[0]
-  if (!week)
-    return unavailable(
-      'Business outcomes',
-      'Existing marketing weekly rollup',
-      'No stored weekly business rollup available. No SEO revenue attribution is inferred.',
-    )
-  const { data: rows, error: rowsError } = await db
-    .from('marketing_weekly_rollup')
-    .select('quote_sessions,residential_jobs,commercial_jobs,built_at')
-    .eq('week_start', week.week_start)
-  if (rowsError) throw rowsError
-  if (
-    !rows?.length ||
-    rows.some(
-      (r) =>
-        r.quote_sessions == null ||
-        !Number.isFinite(Number(r.quote_sessions)) ||
-        Number(r.quote_sessions) < 0,
-    )
-  )
-    return unavailable(
-      'Business outcomes',
-      'marketing_weekly_rollup',
-      'Stored quote-session rows are missing or invalid. No zero or SEO impact is inferred.',
-    )
-  return {
-    title: 'Business outcomes',
-    state: 'partial',
-    summary:
-      (rows ?? []).reduce((sum, r) => sum + Number(r.quote_sessions ?? 0), 0) +
-      ' recorded quote sessions across the existing rollup.',
-    detail:
-      'This is a different reporting window and is not qualified SEO leads, new-customer revenue or proof of SEO impact. Attribution and business-source completeness still need verification; no revenue or weekly SEO gain is claimed.',
-    source: 'marketing_weekly_rollup · all recorded towns',
-    measuredAt: rows?.[0]?.built_at ?? null,
-    period: { start: week.week_start, end: week.week_end },
-  }
-}
 /** Read-only: existing stored Maps/business evidence and Google final analytics.
  * No scans, indexing submissions, sends or writes.
  */
@@ -302,7 +261,7 @@ export async function loadSeoBriefing(
   const work = [
     () => maps(db, now),
     () => organic((options.searchConsole ?? getSearchConsoleClient)(), now),
-    () => business(db),
+    () => loadBusinessOutcomes(db, now),
     () => loadMonumentCore(db, now),
   ]
   const titles = [

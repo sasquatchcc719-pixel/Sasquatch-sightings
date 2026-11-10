@@ -36,10 +36,7 @@ function database(
         ],
       },
     ],
-    marketing_weekly_rollup: [
-      { data: [{ week_start: '2026-10-29', week_end: '2026-11-04' }] },
-      { data: [{ quote_sessions: 3, built_at: '2026-11-05T00:00:00Z' }] },
-    ],
+    booking_funnel_events: [{ data: [] }],
     marketing_events: [
       {
         data: [
@@ -58,7 +55,17 @@ function database(
   }
   const from = vi.fn((table: string) => {
     const q: any = {}
-    for (const name of ['select', 'eq', 'in', 'order', 'limit'])
+    for (const name of [
+      'select',
+      'eq',
+      'in',
+      'order',
+      'limit',
+      'gte',
+      'lt',
+      'lte',
+      'range',
+    ])
       q[name] = vi.fn(() => q)
     q.then = (resolve: (value: unknown) => unknown) =>
       Promise.resolve(
@@ -112,6 +119,19 @@ describe('read-only SEO briefing', () => {
       startDate: '2026-10-19',
       endDate: '2026-10-25',
     })
+  })
+  it('does not publish failed booking evidence as zero', async () => {
+    const { db } = database({
+        booking_funnel_events: [
+          { data: null, error: { message: 'read failed' } },
+        ],
+      }),
+      { sc } = google()
+    const r = await loadSeoBriefing(db, { now, searchConsole: () => sc })
+    expect(r.sections[2].state).toBe('failed')
+    expect(r.sections[2].businessOutcomes).toBeUndefined()
+    expect(r.sections[2].summary).not.toContain('0')
+    expect(r.sections[0].state).toBe('measured')
   })
   it('does not call missing aggregate rows zero traffic', async () => {
     const { db } = database(),
