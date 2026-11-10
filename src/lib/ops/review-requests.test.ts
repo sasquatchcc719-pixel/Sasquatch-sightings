@@ -179,6 +179,7 @@ describe('review request pipeline against the real DB', () => {
     const result = await processDueReviewRequests(supabase, {
       sendSms: async (phone, message) => {
         sentMessages.push({ phone, message })
+        return { sid: `SM${crypto.randomUUID().replace(/-/g, '')}` }
       },
       notifyOwner: async (text) => {
         notices.push(text)

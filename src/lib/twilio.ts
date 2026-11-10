@@ -38,6 +38,7 @@ export type CustomerSmsMeta = {
   customerId?: string
   tomorrowFillRecipientId?: string
   gapOutreachRecipientId?: string
+  reviewRequestId?: string
 }
 
 /**
@@ -267,7 +268,9 @@ export async function sendCustomerSMSWithResult(
 
   const statusCallback = meta?.gapOutreachRecipientId
     ? `https://sightings.sasquatchcarpet.com/api/twilio/gap-status?recipient=${encodeURIComponent(meta.gapOutreachRecipientId)}`
-    : undefined
+    : meta?.reviewRequestId
+      ? `https://sightings.sasquatchcarpet.com/api/twilio/review-status?request=${encodeURIComponent(meta.reviewRequestId)}`
+      : undefined
   const result = await client.messages.create(
     useMessagingService
       ? {
@@ -304,6 +307,8 @@ export async function sendCustomerSMSWithResult(
     messageType,
     messageContent: normalizedMessage,
     twilioSid: result.sid,
+    // A SID confirms provider acceptance, not handset delivery.
+    status: meta?.reviewRequestId ? 'accepted' : undefined,
   })
 
   return {

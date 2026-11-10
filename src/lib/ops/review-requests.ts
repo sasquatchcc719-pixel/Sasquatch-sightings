@@ -5,14 +5,14 @@
  * completed appointments (any completion path — Telegram, admin UI, GPS),
  * queues one review-ask SMS per appointment, and sends due requests inside a
  * Mountain Time window. Guards: residential only, one ask per customer per
- * cooldown period, blacklist-checked at enqueue AND send time.
+ * cooldown period, blacklist/opt-out checked at enqueue AND send time.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sendCustomerSMSWithResult } from '@/lib/twilio'
+import { sendCustomerSMSWithResult, type CustomerSmsMeta } from '@/lib/twilio'
 import { isBlacklisted } from '@/lib/blacklist'
 import { sendTelegramNotification } from '@/lib/telegram'
-import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
 
@@ -36,6 +36,25 @@ type ReviewCustomer = {
   full_name: string | null
   business_name: string | null
   phone: string | null
+}
+
+/** Honor existing opt-outs by customer AND handset, including duplicate customers. */
+export async function isReviewSmsOptedOut(
+  supabase: SupabaseClient,
+  customerId: string | null,
+  phone: string,
+): Promise<boolean> {
+  const filters = [`phone_normalized.eq.${normalizeOpsPhone(phone)}`]
+  if (customerId) filters.push(`customer_id.eq.${customerId}`)
+  const { data, error } = await supabase
+    .from('sms_marketing_consents')
+    .select('customer_id')
+    .eq('status', 'opted_out')
+    .or(filters.join(','))
+    .limit(1)
+  // Do not contact anyone when their suppression state cannot be checked.
+  if (error) throw error
+  return Boolean(data?.length)
 }
 
 export async function suppressPostJobReviewRequest(
@@ -230,6 +249,10 @@ export async function enqueueReviewRequests(
       await insertSkip('blacklisted')
       continue
     }
+    if (await isReviewSmsOptedOut(supabase, customer.id, customer.phone)) {
+      await insertSkip('SMS opted out')
+      continue
+    }
     if (
       reviewerNames.some((author) => reviewerMatchesCustomer(author, customer))
     ) {
@@ -237,6 +260,7 @@ export async function enqueueReviewRequests(
       continue
     }
 
+    // Pending includes claimed, uncertain sends: retain their customer cooldown.
     // One ask per customer per cooldown window (counts pending + sent).
     const cooldownIso = new Date(
       Date.now() - COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
@@ -290,7 +314,11 @@ export async function enqueueReviewRequests(
 export async function processDueReviewRequests(
   supabase: SupabaseClient,
   options: {
-    sendSms?: (phone: string, message: string) => Promise<unknown>
+    sendSms?: (
+      phone: string,
+      message: string,
+      meta: CustomerSmsMeta,
+    ) => Promise<{ sid: string }>
     notifyOwner?: (text: string) => Promise<unknown>
     now?: Date
   } = {},
@@ -302,8 +330,15 @@ export async function processDueReviewRequests(
 
   const sendSms =
     options.sendSms ??
-    ((phone: string, message: string) =>
-      sendCustomerSMSWithResult(phone, message, undefined, 'review_request'))
+    ((phone: string, message: string, meta: CustomerSmsMeta) =>
+      sendCustomerSMSWithResult(
+        phone,
+        message,
+        undefined,
+        'review_request',
+        undefined,
+        meta,
+      ))
   const notifyOwner =
     options.notifyOwner ?? ((text: string) => sendTelegramNotification(text))
 
@@ -311,6 +346,7 @@ export async function processDueReviewRequests(
     .from('review_requests')
     .select('id, customer_id, phone')
     .eq('status', 'pending')
+    .is('send_claimed_at', null)
     .lte('scheduled_for', now.toISOString())
     .order('scheduled_for', { ascending: true })
     .limit(SEND_BATCH_LIMIT)
@@ -321,11 +357,12 @@ export async function processDueReviewRequests(
   let failed = 0
 
   for (const request of due) {
-    const { data: customer } = await supabase
+    const { data: customer, error: customerError } = await supabase
       .from('ops_customers')
       .select('id, first_name, full_name, business_name, phone')
       .eq('id', request.customer_id)
       .maybeSingle<ReviewCustomer>()
+    if (customerError) throw customerError
 
     const phone = customer?.phone || request.phone
     if (!phone) {
@@ -337,6 +374,7 @@ export async function processDueReviewRequests(
           updated_at: new Date().toISOString(),
         })
         .eq('id', request.id)
+        .eq('status', 'pending')
       continue
     }
 
@@ -350,6 +388,7 @@ export async function processDueReviewRequests(
           updated_at: new Date().toISOString(),
         })
         .eq('id', request.id)
+        .eq('status', 'pending')
       continue
     }
 
@@ -360,19 +399,56 @@ export async function processDueReviewRequests(
       },
     )
 
+    // Compare-and-set before the external side effect. Never reclaim an uncertain
+    // send automatically: a timeout/crash is not evidence that Twilio rejected it.
+    const { data: claimed, error: claimError } = await supabase
+      .from('review_requests')
+      .update({ send_claimed_at: new Date().toISOString(), phone, message })
+      .eq('id', request.id)
+      .eq('status', 'pending')
+      .is('send_claimed_at', null)
+      .select('id')
+      .maybeSingle()
+    if (claimError) throw claimError
+    if (!claimed) continue
+
+    let acceptedSid: string | null = null
     try {
-      await sendSms(phone, message)
-      await supabase
-        .from('review_requests')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          phone,
-          message,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', request.id)
+      // Recheck immediately before submission, including any opt-out since enqueue.
+      if (await isReviewSmsOptedOut(supabase, request.customer_id, phone)) {
+        const { error: skipError } = await supabase
+          .from('review_requests')
+          .update({
+            status: 'skipped',
+            skip_reason: 'SMS opted out at send time',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', request.id)
+          .eq('status', 'pending')
+        if (skipError) throw skipError
+        continue
+      }
+      const result = await sendSms(phone, message, {
+        customerId: request.customer_id ?? undefined,
+        reviewRequestId: request.id,
+      })
+      if (!/^SM[a-f0-9]{32}$/i.test(result?.sid || '')) {
+        throw new Error('Twilio did not return a valid message SID')
+      }
+      acceptedSid = result.sid
       sent += 1
+      const { data: recorded, error: recordError } = await supabase.rpc(
+        'record_review_request_delivery',
+        {
+          p_request: request.id,
+          p_sid: result.sid,
+          p_status: 'accepted',
+          p_is_callback: false,
+        },
+      )
+      if (recordError || !recorded) {
+        throw recordError || new Error('Review acceptance was not recorded')
+      }
 
       // Write the request into the customer's SMS thread so Harry knows he
       // asked — otherwise their reply ("just left one!") reads as a
@@ -381,7 +457,7 @@ export async function processDueReviewRequests(
 
       const label = customer?.full_name || customer?.first_name || phone
       notifyOwner(
-        `⭐ Review request sent to ${label} (${phone}) after their completed job.`,
+        `⭐ Review request accepted by SMS provider for ${label} (${phone}) after their completed job. Delivery is tracked separately.`,
       ).catch((err) =>
         console.error('[review-requests] owner notify failed:', err),
       )
@@ -394,11 +470,26 @@ export async function processDueReviewRequests(
       await supabase
         .from('review_requests')
         .update({
-          status: 'failed',
-          skip_reason: detail.slice(0, 500),
+          // Keep uncertain claims pending to retain the customer cooldown. The
+          // sender excludes claimed rows, so this never authorizes a retry.
+          status: acceptedSid ? 'sent' : 'pending',
+          ...(acceptedSid
+            ? {
+                twilio_sid: acceptedSid,
+                delivery_status: 'accepted',
+                sent_at: new Date().toISOString(),
+              }
+            : {}),
+          skip_reason:
+            `${acceptedSid ? 'Provider accepted; tracking needs reconciliation' : 'Send outcome unconfirmed; no automatic retry'}: ${detail}`.slice(
+              0,
+              500,
+            ),
           updated_at: new Date().toISOString(),
         })
         .eq('id', request.id)
+        .eq('status', 'pending')
+        .is('twilio_sid', null)
       failed += 1
     }
   }
