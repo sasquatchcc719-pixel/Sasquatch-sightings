@@ -249,7 +249,7 @@ describe('mobile NFC card', () => {
     },
   )
 
-  it('shares the existing card URL and its coupon through native phone sharing', async () => {
+  it('shares the card as a home-service shortcut through native phone sharing', async () => {
     const share = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { share })
     vi.mocked(fetch).mockImplementation(async () =>
@@ -261,8 +261,11 @@ describe('mobile NFC card', () => {
     await waitFor(() =>
       expect(share).toHaveBeenCalledWith(
         expect.objectContaining({
+          title: 'Sasquatch Home-Service Card',
           url: expect.stringContaining('preview=wood-sign'),
-          text: expect.stringContaining('LOCAL20'),
+          text: expect.stringMatching(
+            /price and book carpet, upholstery, rug and hard-surface cleaning.*water-damage help.*water testing and leak protection.*trusted local pros.*\$20 cleaning discount is built in/,
+          ),
         }),
       ),
     )

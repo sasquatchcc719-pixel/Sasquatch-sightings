@@ -154,13 +154,14 @@ export default function TapLandingPage() {
     const shareUrl = new URL(window.location.href)
     shareUrl.searchParams.set('preview', SHARE_PREVIEW_VERSION)
     const shareUrlString = shareUrl.toString()
-    const shareText = `🦶 Get $20 OFF carpet cleaning from Sasquatch! Use code ${couponCode} when booking. Colorado Springs area.`
+    const shareText =
+      '🦶 Your Sasquatch home-service shortcut: price and book carpet, upholstery, rug and hard-surface cleaning; get water-damage help; explore water testing and leak protection; and find trusted local pros. Plus, your $20 cleaning discount is built in.'
 
     // Check if native share is available (mobile)
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Sasquatch Carpet Cleaning - $20 OFF',
+          title: 'Sasquatch Home-Service Card',
           text: shareText,
           url: shareUrlString,
         })
