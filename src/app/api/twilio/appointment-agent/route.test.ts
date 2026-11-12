@@ -6,9 +6,11 @@ const m = vi.hoisted(() => ({
   auth: vi.fn(),
   admin: vi.fn(),
   bind: vi.fn(),
+  accept: vi.fn(),
+  complete: vi.fn(),
   state: vi.fn(),
   release: vi.fn(),
-  fetch: vi.fn(),
+  fetchMember: vi.fn(),
 }))
 vi.mock('@/lib/twilio/inbound-auth', () => ({
   validateTwilioInboundRequest: m.auth,
@@ -17,9 +19,13 @@ vi.mock('@/supabase/server', () => ({ createAdminClient: m.admin }))
 vi.mock('@/lib/twilio/appointment-queue', async (original) => ({
   ...(await original<typeof import('@/lib/twilio/appointment-queue')>()),
   bindQueueWorker: m.bind,
+  acceptQueueDispatch: m.accept,
+  completeAppointmentAttempt: m.complete,
   getQueueDispatch: m.state,
   releaseQueueDispatch: m.release,
-  queueClient: () => ({ queues: () => ({ fetch: m.fetch }) }),
+  queueClient: () => ({
+    queues: () => ({ members: () => ({ fetch: m.fetchMember }) }),
+  }),
 }))
 import { POST } from './route'
 const token = '11111111-1111-4111-8111-111111111111'
@@ -38,8 +44,13 @@ beforeEach(() => {
   m.auth.mockReturnValue(true)
   m.admin.mockReturnValue({})
   m.bind.mockResolvedValue(true)
-  m.state.mockResolvedValue({ queue_sid: `QU${'1'.repeat(32)}` })
-  m.fetch.mockResolvedValue({ currentSize: 2 })
+  m.accept.mockResolvedValue(true)
+  m.complete.mockResolvedValue(true)
+  m.state.mockResolvedValue({
+    queue_sid: `QU${'1'.repeat(32)}`,
+    caller_sid: `CA${'3'.repeat(32)}`,
+  })
+  m.fetchMember.mockResolvedValue({})
   m.release.mockResolvedValue(undefined)
 })
 
@@ -58,6 +69,7 @@ describe('appointment cell phone acceptance', () => {
     expect(xml).toContain('>sasquatch-appointments</Queue>')
     expect(xml).toContain('event=bridge&amp;token=')
     expect(xml).not.toContain('<Number')
+    expect(m.accept).toHaveBeenCalledWith(expect.anything(), token, workerSid)
   })
   it.each(['', '2'])(
     'hangs up carrier voicemail or invalid input %s',
@@ -73,13 +85,16 @@ describe('appointment cell phone acceptance', () => {
     expect(await (await POST(request({ Digits: '1' }))).text()).toContain(
       '<Hangup/>',
     )
-    expect(m.fetch).not.toHaveBeenCalled()
+    expect(m.fetchMember).not.toHaveBeenCalled()
   })
-  it('ends the phone attempt when everyone has left the queue', async () => {
-    m.fetch.mockResolvedValueOnce({ currentSize: 0 })
+  it('ends the phone attempt when its exact caller has left the queue', async () => {
+    m.fetchMember.mockRejectedValueOnce(
+      Object.assign(new Error('gone'), { status: 404 }),
+    )
     expect(await (await POST(request({ Digits: '1' }))).text()).toContain(
       '<Hangup/>',
     )
+    expect(m.release).toHaveBeenCalledWith(expect.anything(), token, workerSid)
   })
   it.each(['completed', 'busy', 'no-answer', 'failed', 'canceled'])(
     'releases its matching worker on terminal status %s',
@@ -87,7 +102,8 @@ describe('appointment cell phone acceptance', () => {
       expect(
         (await POST(request({ CallStatus }, '&event=status'))).status,
       ).toBe(204)
-      expect(m.release).toHaveBeenCalledWith(
+      expect(m.complete).toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         token,
         workerSid,
@@ -97,17 +113,17 @@ describe('appointment cell phone acceptance', () => {
   it('does not let an old completed callback release a newer attempt', async () => {
     m.bind.mockResolvedValueOnce(false)
     await POST(request({ CallStatus: 'completed' }, '&event=status'))
-    expect(m.release).not.toHaveBeenCalled()
+    expect(m.complete).not.toHaveBeenCalled()
   })
   it('does not release the slot while an answered conversation is active', async () => {
     await POST(request({ CallStatus: 'in-progress' }, '&event=status'))
-    expect(m.release).not.toHaveBeenCalled()
+    expect(m.complete).not.toHaveBeenCalled()
   })
   it('ends a completed conversation without reconnecting another caller to the same call', async () => {
     expect(await (await POST(request({}, '&event=done'))).text()).toContain(
       '<Hangup/>',
     )
-    expect(m.fetch).not.toHaveBeenCalled()
+    expect(m.fetchMember).not.toHaveBeenCalled()
   })
   it('rejects unsigned acceptances', async () => {
     m.auth.mockReturnValueOnce(false)

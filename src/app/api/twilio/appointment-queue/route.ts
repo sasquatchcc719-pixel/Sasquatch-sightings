@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       const state = await getQueueDispatch(db)
       if (
         state.queue_sid !== form.QueueSid ||
+        state.caller_sid !== form.CallSid ||
         !/^CA[0-9a-f]{32}$/i.test(form.DequeingCallSid || '') ||
         !(await bindQueueWorker(db, token, form.DequeingCallSid || ''))
       )
@@ -53,8 +54,8 @@ export async function POST(request: NextRequest) {
       return xml('<Say>Connecting.</Say>')
     }
     if (event === 'result') {
-      // The REST dequeue now continues at appointment-forward. This callback
-      // only reports departure; it must not start voicemail over that call.
+      // A REST redirect continues at its supplied URL. This callback only
+      // reports departure; it must not start a second voicemail flow.
       if (form.QueueResult === 'redirected') return xml('')
       if (['bridged', 'redirected-from-bridged'].includes(form.QueueResult)) {
         const { data, error } = await db

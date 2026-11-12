@@ -4,7 +4,9 @@ import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import {
   APPOINTMENT_QUEUE,
+  acceptQueueDispatch,
   bindQueueWorker,
+  completeAppointmentAttempt,
   getQueueDispatch,
   queueBaseUrl,
   queueClient,
@@ -38,7 +40,12 @@ export async function POST(request: NextRequest) {
       ) {
         // Bind first: a very fast terminal callback can beat calls.create's response.
         if (await bindQueueWorker(db, token, form.CallSid))
-          await releaseQueueDispatch(db, token, form.CallSid)
+          await completeAppointmentAttempt(
+            db,
+            queueClient(),
+            token,
+            form.CallSid,
+          )
       }
       return new NextResponse(null, { status: 204 })
     }
@@ -47,9 +54,22 @@ export async function POST(request: NextRequest) {
     if (!(await bindQueueWorker(db, token, form.CallSid)))
       return xml('<Hangup/>')
     const state = await getQueueDispatch(db)
-    const queue = await queueClient().queues(state.queue_sid).fetch()
-    if (!queue.currentSize) return xml('<Hangup/>')
+    if (!state.caller_sid) return xml('<Hangup/>')
+    try {
+      await queueClient()
+        .queues(state.queue_sid)
+        .members(state.caller_sid)
+        .fetch()
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) {
+        await releaseQueueDispatch(db, token, form.CallSid)
+        return xml('<Hangup/>')
+      }
+      throw error
+    }
     if (form.Digits === '1') {
+      if (!(await acceptQueueDispatch(db, token, form.CallSid)))
+        return xml('<Hangup/>')
       const bridge = `${queueBaseUrl()}/api/twilio/appointment-queue?event=bridge&token=${token}`
       const done = `${queueBaseUrl()}/api/twilio/appointment-agent?token=${token}&event=done`
       return xml(

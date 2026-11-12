@@ -50,7 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   m.auth.mockReturnValue(true)
   m.bind.mockResolvedValue(true)
-  m.state.mockResolvedValue({ queue_sid: queueSid })
+  m.state.mockResolvedValue({ queue_sid: queueSid, caller_sid: callSid })
   m.write.mockResolvedValue(undefined)
   m.dispatch.mockResolvedValue(undefined)
   maybeSingle.mockResolvedValue({
@@ -166,6 +166,20 @@ describe('appointment queue provider callbacks', () => {
       (
         await POST(
           request('bridge', { QueueSid: 'wrong', DequeingCallSid: workerSid }),
+        )
+      ).status,
+    ).toBe(403)
+    expect(m.bind).not.toHaveBeenCalled()
+  })
+  it('rejects a bridge callback for a different queued caller', async () => {
+    m.state.mockResolvedValueOnce({
+      queue_sid: queueSid,
+      caller_sid: `CA${'9'.repeat(32)}`,
+    })
+    expect(
+      (
+        await POST(
+          request('bridge', { QueueSid: queueSid, DequeingCallSid: workerSid }),
         )
       ).status,
     ).toBe(403)
