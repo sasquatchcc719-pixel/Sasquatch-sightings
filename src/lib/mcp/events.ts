@@ -6,6 +6,7 @@ import { postVerifiedWebhook } from './events-webhook'
 
 export const MCP_EVENTS_PROTOCOL_VERSION = '2026-07-28'
 export const INBOUND_MESSAGE_EVENT = 'conversation.message.received'
+export const MISSED_CALL_EVENT = 'call.missed'
 
 type JsonRpcRequest = {
   jsonrpc?: unknown
@@ -255,6 +256,33 @@ export async function handleMcpEventsRequest(params: {
             additionalProperties: false,
           },
         },
+        {
+          name: MISSED_CALL_EVENT,
+          description:
+            'A new inbound call ended without an accepted answer or voicemail. Future calls only, after subscription creation. Delayed briefly for recording callbacks; always reread the call and conversation, current owner instructions, email/SMS handling and suppression before authorized follow-up. This event does not itself grant contact permission.',
+          delivery: ['webhook'],
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
+          payloadSchema: {
+            type: 'object',
+            properties: {
+              call_sid: { type: 'string', pattern: '^CA[0-9a-fA-F]{32}$' },
+              conversation_id: { type: 'string', format: 'uuid' },
+              occurred_at: { type: 'string', format: 'date-time' },
+              finalized_at: { type: 'string', format: 'date-time' },
+            },
+            required: [
+              'call_sid',
+              'conversation_id',
+              'occurred_at',
+              'finalized_at',
+            ],
+            additionalProperties: false,
+          },
+        },
       ],
       nextCursor: null,
     })
@@ -264,7 +292,11 @@ export async function handleMcpEventsRequest(params: {
     request.params && typeof request.params === 'object'
       ? (request.params as Record<string, unknown>)
       : {}
-  if (requestParams.name !== INBOUND_MESSAGE_EVENT) {
+  if (
+    ![INBOUND_MESSAGE_EVENT, MISSED_CALL_EVENT].includes(
+      String(requestParams.name),
+    )
+  ) {
     diagnose({
       phase,
       outcome: 'rejected',
@@ -277,6 +309,10 @@ export async function handleMcpEventsRequest(params: {
 
   try {
     const args = parseArguments(requestParams.arguments)
+    if (requestParams.name === MISSED_CALL_EVENT && Object.keys(args).length) {
+      throw new Error('arguments_invalid')
+    }
+    const eventName = String(requestParams.name)
     const delivery = parseDelivery(
       requestParams.delivery,
       request.method === 'events/subscribe',
@@ -284,7 +320,7 @@ export async function handleMcpEventsRequest(params: {
     callbackHostValue = callbackHost(delivery.url)
     const id = subscriptionId({
       owner,
-      name: INBOUND_MESSAGE_EVENT,
+      name: eventName,
       arguments: args,
       callbackUrl: delivery.url,
     })
@@ -403,7 +439,7 @@ export async function handleMcpEventsRequest(params: {
       {
         id,
         owner_user_id: owner,
-        event_name: INBOUND_MESSAGE_EVENT,
+        event_name: eventName,
         arguments: args,
         arguments_hash: digest(canonicalJson(args)),
         callback_url: delivery.url,

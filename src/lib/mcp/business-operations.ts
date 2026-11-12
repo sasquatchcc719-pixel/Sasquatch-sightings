@@ -1,3 +1,4 @@
+import { missedCallSid, claimCallFollowUp, sendClaimedCallFollowUp } from '@/lib/twilio/call-follow-up-guard'
 import {
   projectUnscheduledFollowUp,
   saveUnscheduledFollowUp,
@@ -961,6 +962,9 @@ export async function previewConversationSend(
 ) {
   const supabase = client(supplied)
   requireScope(actor, 'customer:contact')
+  const callSid = missedCallSid(input.idempotency_key)
+  if (callSid && input.customer_id) throw new Error('Missed-call follow-up requires its call-context conversation')
+  if (callSid && input.media_ids.length) throw new Error('Missed-call follow-up supports text only')
   if (Boolean(input.customer_id) === Boolean(input.conversation_id))
     throw new Error('Choose exactly one conversation or verified customer')
   if (input.customer_id) {
@@ -1022,6 +1026,8 @@ export async function previewConversationSend(
     .maybeSingle()
   if (error) throw error
   if (!conversation) throw new Error('Conversation not found')
+  if (callSid && !await claimCallFollowUp(supabase, { phone: normalizeOpsPhone(conversation.phone_number), callSid, conversationId: conversation.id, previewOnly: true }))
+    throw new Error('Missed-call follow-up is not eligible or already handled')
   const { data: thread, error: threadError } = await supabase
     .from('telegram_relay_threads')
     .select('business_number')
@@ -1050,6 +1056,7 @@ export async function previewConversationSend(
       body: input.body.trim(),
       media_ids: input.media_ids,
       expected_updated_at: conversation.updated_at,
+      ...(callSid ? { missed_call_sid: callSid } : {}),
     },
     preview: {
       action: input.media_ids.length
@@ -1889,12 +1896,24 @@ async function executeConversationSend(
     throw new Error(
       'Unresolved first-contact attempt; reconcile provider outcome before another send',
     )
+  const unresolvedCall = await supabase
+    .from('call_follow_up_claims')
+    .select('call_sid')
+    .eq('phone', normalizeOpsPhone(conversation.phone_number))
+    .in('status', ['sending', 'unknown'])
+    .limit(1)
+    .maybeSingle()
+  if (unresolvedCall.error) throw unresolvedCall.error
+  if (unresolvedCall.data)
+    throw new Error(
+      'Unresolved call follow-up attempt; reconcile provider outcome before another send',
+    )
   if (conversation.updated_at !== payload.expected_updated_at) {
     throw new Error(
       'Conversation changed after preview; preview the reply again',
     )
   }
-  return sendConversationReply({
+  const send = () => sendConversationReply({
     supabase,
     conversationId: payload.conversation_id,
     message: payload.body,
@@ -1902,6 +1921,12 @@ async function executeConversationSend(
     sentBy: actor.label,
     telegramMirrorLabel: 'Harry',
   })
+  if (!payload.missed_call_sid) return send()
+  const claim = await claimCallFollowUp(supabase, {
+    phone: normalizeOpsPhone(conversation.phone_number), callSid: payload.missed_call_sid, conversationId: payload.conversation_id,
+  })
+  if (!claim) throw new Error('Missed-call follow-up is not eligible or already handled')
+  return sendClaimedCallFollowUp(supabase, claim, send)
 }
 
 function clockMinutes(value: string) {

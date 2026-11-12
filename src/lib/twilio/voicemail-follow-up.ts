@@ -1,3 +1,4 @@
+import { claimCallFollowUp, finishCallFollowUp, sendClaimedCallFollowUp } from '@/lib/twilio/call-follow-up-guard'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -87,45 +88,55 @@ export async function sendVoicemailHarryFollowUp({
 }): Promise<'sent' | 'skipped' | 'duplicate' | 'suppressed'> {
   if (process.env.VOICEMAIL_HARRY_SMS_ENABLED === 'false') return 'skipped'
 
-  const { data: claimedId, error: claimError } = await db.rpc(
-    'claim_voicemail_harry_follow_up',
-    {
-      p_recording_sid: recordingSid,
-      p_phone: phone,
-      p_transcript: transcript,
-    },
+  // Generation is read-only and can be slow. Never reserve a phone while it
+  // runs; revalidate current handling and suppression in the atomic claim.
+  if (!await claimCallFollowUp(db, { phone, recordingSid, previewOnly: true }))
+    return 'suppressed'
+  const reply = await generateVoicemailHarryReply(transcript)
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
+  const from = process.env.TWILIO_PHONE_NUMBER
+  if (reply && !messagingServiceSid && !from)
+    throw new Error('Twilio SMS sender is not configured')
+  const client = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN,
   )
-  if (claimError) throw claimError
-  if (!claimedId) return 'duplicate'
-  const logId = String(claimedId)
+  if (await isBlacklisted(phone, { throwOnError: true })) return 'suppressed'
 
+  const callClaim = await claimCallFollowUp(db, { phone, recordingSid })
+  if (!callClaim) return 'suppressed'
+
+  // Reserve the legacy recording log only after the shared eligibility check,
+  // so our own generating log cannot be mistaken for prior customer handling.
+  let logId: string | null = null
+  let providerStarted = false
+  let finalized = false
   try {
-    if (await isBlacklisted(phone, { throwOnError: true })) {
-      await updateLog(db, logId, { status: 'suppressed' })
-      return 'suppressed'
+    const { data: claimedId, error: claimError } = await db.rpc(
+      'claim_voicemail_harry_follow_up',
+      { p_recording_sid: recordingSid, p_phone: phone, p_transcript: transcript },
+    )
+    if (claimError) throw claimError
+    if (!claimedId) {
+      await finishCallFollowUp(db, callClaim, 'suppressed')
+      finalized = true
+      return 'duplicate'
     }
-
-    const reply = await generateVoicemailHarryReply(transcript)
+    logId = String(claimedId)
     if (!reply) {
+      await finishCallFollowUp(db, callClaim, 'skipped')
+      finalized = true
       await updateLog(db, logId, { status: 'skipped' })
       return 'skipped'
     }
 
-    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
-    const from = process.env.TWILIO_PHONE_NUMBER
-    if (!messagingServiceSid && !from)
-      throw new Error('Twilio SMS sender is not configured')
-
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN,
-    )
-    const sms = await client.messages.create({
+    providerStarted = true
+    const sms = await sendClaimedCallFollowUp(db, callClaim, () => client.messages.create({
       body: reply,
       to: phone,
       statusCallback: `${getBaseUrl()}/api/twilio/voicemail-sms-status`,
       ...(messagingServiceSid ? { messagingServiceSid } : { from }),
-    })
+    }))
     await updateLog(db, logId, {
       message_content: reply,
       status: 'accepted',
@@ -148,11 +159,15 @@ export async function sendVoicemailHarryFollowUp({
       )
     return 'sent'
   } catch (error) {
+    if (!providerStarted && !finalized) {
+      await finishCallFollowUp(db, callClaim, 'rejected')
+    }
     if (twilioErrorCode(error) === 21610) {
-      await updateLog(db, logId, { status: 'suppressed' })
+      if (logId) await updateLog(db, logId, { status: 'suppressed' })
       return 'suppressed'
     }
-    await updateLog(db, logId, { status: 'failed' })
+    // The call-scoped claim remains terminal or uncertain; never reopen on error.
+    if (logId) await updateLog(db, logId, { status: providerStarted ? 'unknown' : 'rejected' })
     throw error
   }
 }

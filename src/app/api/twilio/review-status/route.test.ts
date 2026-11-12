@@ -94,7 +94,7 @@ describe('review delivery callbacks', () => {
       p_error_code: '30003',
     })
   })
-  it.each([
+  it.each<Record<string, string>>([
     { MessageSid: 'bad' },
     { MessageStatus: 'invented' },
     { ErrorCode: 'unsafe text' },

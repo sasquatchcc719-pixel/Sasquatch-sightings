@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
 import { reconcileEndedCall } from '@/lib/twilio/call-history'
+import { enqueueMissedCallEvent } from '@/lib/mcp/missed-call-events'
 
 export const maxDuration = 60
 
@@ -34,11 +35,13 @@ export async function POST(request: NextRequest) {
   )
     return new NextResponse(null, { status: 204 })
   try {
-    await reconcileEndedCall(
-      createAdminClient(),
+    const db = createAdminClient()
+    const result = await reconcileEndedCall(
+      db,
       twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
       params.CallSid,
     )
+    if (result) await enqueueMissedCallEvent(db, result)
     return new NextResponse(null, { status: 204 })
   } catch (error) {
     console.error('[Call Status] Reconciliation failed:', error)

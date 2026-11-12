@@ -86,7 +86,7 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.11.1')
+    expect(MCP_SERVER_VERSION).toBe('1.12.0')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
     expect(mocks.tools.size).toBe(57)
     const commercial = [...mocks.tools.keys()].filter((name) =>

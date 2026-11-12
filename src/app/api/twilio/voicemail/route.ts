@@ -8,6 +8,7 @@ import {
   mergeVoicemailCallback,
   resolveVoicemailCaller,
   hasMeaningfulTranscription,
+  normalizeVoicemailPhone,
 } from '@/lib/twilio/voicemail'
 import { buildVoicemailEmail } from '@/lib/twilio/voicemail-email'
 import { sendVoicemailHarryFollowUp } from '@/lib/twilio/voicemail-follow-up'
@@ -53,11 +54,21 @@ export async function POST(request: NextRequest) {
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN,
     )
+    // Provider start time, not callback arrival, enforces the future-only cutoff
+    // even if an old recording callback is replayed without prior call history.
+    const providerCall = await twilioClient.calls(callSid).fetch()
+    if (
+      providerCall.direction !== 'inbound' ||
+      (params.From &&
+        normalizeVoicemailPhone(params.From) !==
+          normalizeVoicemailPhone(providerCall.from))
+    )
+      return new NextResponse('Voicemail caller mismatch', { status: 422 })
     const normalizedPhone = await resolveVoicemailCaller(
       supabase,
       twilioClient,
       callSid,
-      params.From || null,
+      providerCall.from || null,
     )
     if (!normalizedPhone)
       return new NextResponse('Could not identify voicemail caller', {
@@ -93,6 +104,7 @@ export async function POST(request: NextRequest) {
     await writeCallLog(supabase, {
       call_sid: callSid,
       caller_phone: normalizedPhone,
+      provider_started_at: providerCall.startTime?.toISOString() ?? null,
       outcome: hasRecording ? 'voicemail' : 'no-answer',
       ...(hasRecording && Number(mergedDuration) > 0
         ? { duration_seconds: Number(mergedDuration) }

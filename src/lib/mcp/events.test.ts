@@ -4,6 +4,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server'
 import {
   handleMcpEventsRequest,
   INBOUND_MESSAGE_EVENT,
+  MISSED_CALL_EVENT,
   MCP_EVENTS_PROTOCOL_VERSION,
 } from './events'
 
@@ -72,18 +73,43 @@ describe('MCP Events protocol extension', () => {
     })
   })
 
-  it('lists the one read-only inbound-message alert', async () => {
+  it('lists inbound-message and future missed-call alerts', async () => {
     const response = await handleMcpEventsRequest({
       request: { jsonrpc: '2.0', id: 2, method: 'events/list' },
       authorization,
       supabase: database().client,
     })
     const payload = await response.json()
-    expect(payload.result.events).toHaveLength(1)
+    expect(payload.result.events).toHaveLength(2)
+    expect(payload.result.events[1]).toMatchObject({
+      name: MISSED_CALL_EVENT,
+      delivery: ['webhook'],
+    })
     expect(payload.result.events[0]).toMatchObject({
       name: INBOUND_MESSAGE_EVENT,
       delivery: ['webhook'],
     })
+  })
+
+  it('subscribes to missed calls separately without altering the inbound SMS subscription', async () => {
+    const db = database()
+    const secret = `whsec_${Buffer.alloc(32, 7).toString('base64')}`
+    const request = subscribeRequest(secret)
+    request.params.name = MISSED_CALL_EVENT
+    const response = await handleMcpEventsRequest({
+      request,
+      authorization,
+      supabase: db.client,
+      postWebhook: vi.fn(async ({ body }) => ({
+        status: 200,
+        body: JSON.stringify({ challenge: JSON.parse(body).challenge }),
+      })) as never,
+    })
+    expect((await response.json()).result.id).toMatch(/^sub_/)
+    expect(db.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ event_name: MISSED_CALL_EVENT }),
+      { onConflict: 'id' },
+    )
   })
 
   it('verifies the callback challenge before persisting an owner-bound subscription', async () => {

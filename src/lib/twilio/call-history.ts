@@ -113,6 +113,7 @@ export async function writeCallLog(
     outcome: string
     forwarding_required?: boolean
     forwarding_accepted_at?: string | null
+    provider_started_at?: string | null
     queue_worker_sid?: string | null
     duration_seconds?: number | null
     raw_dial_status?: string | null
@@ -166,8 +167,18 @@ export async function reconcileEndedCall(
   await writeCallLog(db, {
     call_sid: callSid,
     caller_phone: parent.from,
+    provider_started_at: parent.startTime?.toISOString() ?? null,
     ...result,
   })
+  // Only the signed live callback uses this result to enqueue a missed-call
+  // event. Historical repair paths never enqueue events or customer contact.
+  return {
+    callSid,
+    phone: parent.from,
+    outcome: result.outcome,
+    startedAt: parent.startTime?.toISOString() ?? null,
+    endedAt: parent.endTime?.toISOString() ?? null,
+  }
 }
 
 // Fetch complete dated snapshots, including child legs, instead of guessing from

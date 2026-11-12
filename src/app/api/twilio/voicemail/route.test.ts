@@ -91,7 +91,11 @@ describe('voicemail recording callbacks', () => {
     })
     mocks.fetchCall
       .mockReset()
-      .mockResolvedValue({ direction: 'inbound', from: phone })
+      .mockResolvedValue({
+        direction: 'inbound',
+        from: phone,
+        startTime: new Date('2026-11-12T04:59:00Z'),
+      })
     mocks.writeCallLog.mockResolvedValue(undefined)
     mocks.sendHarryFollowUp.mockResolvedValue('sent')
     mocks.from.mockImplementation((table: string) => {
@@ -157,7 +161,7 @@ describe('voicemail recording callbacks', () => {
 
   it('saves a recording-only callback without emailing the owner', async () => {
     expect((await POST(request())).status).toBe(200)
-    expect(mocks.fetchCall).not.toHaveBeenCalled()
+    expect(mocks.fetchCall).toHaveBeenCalledOnce()
     expect(mocks.send).not.toHaveBeenCalled()
     expect(mocks.sendHarryFollowUp).not.toHaveBeenCalled()
     expect(savedMessages[0].metadata).toMatchObject({

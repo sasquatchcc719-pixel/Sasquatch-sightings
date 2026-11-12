@@ -27,8 +27,8 @@ const phone = '+17195550123'
 
 function makeDb(claimedId: string | null = 'log-1') {
   const updates: Record<string, unknown>[] = []
-  const rpc = vi.fn(async (name: string) => ({
-    data: name === 'claim_voicemail_harry_follow_up' ? claimedId : true,
+  const rpc = vi.fn(async (name: string, _args?: any): Promise<{ data: any; error: Error | null }> => ({
+    data: name === 'claim_call_follow_up' ? { eligible: true, call_sid: `CA${'4'.repeat(32)}`, token: 'claim-token' } : name === 'claim_voicemail_harry_follow_up' ? claimedId : true,
     error: null,
   }))
   const eq = vi.fn(async () => ({ error: null }))
@@ -110,7 +110,6 @@ describe('voicemail Harry follow-up', () => {
         transcript: 'Please call me.',
       }),
     ).resolves.toBe('duplicate')
-    expect(mocks.generateText).not.toHaveBeenCalled()
     expect(mocks.createMessage).not.toHaveBeenCalled()
   })
 
@@ -142,4 +141,40 @@ describe('voicemail Harry follow-up', () => {
     ).resolves.toBe('suppressed')
     expect(updates).toContainEqual({ status: 'suppressed' })
   })
+
+  it('rechecks handling after generation and never sends when eligibility changed', async () => {
+    const { db, rpc } = makeDb()
+    rpc.mockImplementation(async (name: string, args?: any) => ({
+      data: name === 'claim_call_follow_up'
+        ? { eligible: Boolean(args.p_preview_only), call_sid: `CA${'4'.repeat(32)}`, token: 'claim-token' }
+        : true,
+      error: null,
+    }))
+    await expect(sendVoicemailHarryFollowUp({ db: db as never, recordingSid, phone, transcript: 'Please call me.' })).resolves.toBe('suppressed')
+    expect(mocks.generateText).toHaveBeenCalledTimes(1)
+    expect(mocks.createMessage).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalledWith('claim_voicemail_harry_follow_up', expect.anything())
+    expect(rpc.mock.invocationCallOrder[1]).toBeGreaterThan(mocks.generateText.mock.invocationCallOrder[0])
+  })
+
+  it('leaves no durable send claim when generation fails', async () => {
+    const { db, rpc } = makeDb()
+    mocks.generateText.mockRejectedValue(new Error('model unavailable'))
+    await expect(sendVoicemailHarryFollowUp({ db: db as never, recordingSid, phone, transcript: 'Please call me.' })).rejects.toThrow('model unavailable')
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('claim_call_follow_up', expect.objectContaining({ p_preview_only: true }))
+    expect(mocks.createMessage).not.toHaveBeenCalled()
+  })
+
+  it('rejects a known pre-provider legacy-log failure instead of poisoning the phone', async () => {
+    const { db, rpc } = makeDb()
+    rpc.mockImplementation(async (name: string) => ({
+      data: name === 'claim_call_follow_up' ? { eligible: true, call_sid: `CA${'4'.repeat(32)}`, token: 'claim-token' } : true,
+      error: name === 'claim_voicemail_harry_follow_up' ? new Error('log unavailable') : null,
+    }))
+    await expect(sendVoicemailHarryFollowUp({ db: db as never, recordingSid, phone, transcript: 'Please call me.' })).rejects.toThrow('log unavailable')
+    expect(mocks.createMessage).not.toHaveBeenCalled()
+    expect(rpc).toHaveBeenCalledWith('finish_call_follow_up', expect.objectContaining({ p_status: 'rejected' }))
+  })
+
 })

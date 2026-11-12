@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Webhook } from 'standardwebhooks'
-import { INBOUND_MESSAGE_EVENT } from './events'
+import { INBOUND_MESSAGE_EVENT, MISSED_CALL_EVENT } from './events'
+import { missedCallStillEligible } from './missed-call-events'
 import { postVerifiedWebhook } from './events-webhook'
 import { MCP_BUSINESS_SCOPE } from './constants'
 
@@ -199,6 +200,22 @@ export async function deliverPendingMcpEvents(params: {
         .from('mcp_event_deliveries')
         .update({ status: 'discarded', last_error: 'subscription_inactive' })
         .eq('id', delivery.id)
+      continue
+    }
+
+    if (
+      delivery.event_name === MISSED_CALL_EVENT &&
+      !(await missedCallStillEligible(
+        params.supabase,
+        String(delivery.payload?.call_sid ?? ''),
+        delivery.occurred_at,
+      ))
+    ) {
+      const { error: discardError } = await params.supabase
+        .from('mcp_event_deliveries')
+        .update({ status: 'discarded', last_error: 'call_no_longer_missed' })
+        .eq('id', delivery.id)
+      if (discardError) throw discardError
       continue
     }
 
