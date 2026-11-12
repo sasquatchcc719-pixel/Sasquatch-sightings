@@ -48,7 +48,7 @@ try {
  create function is_phone_blacklisted(text) returns boolean language sql as $$ select exists(select 1 from blacklist where right(gap_outreach_phone(phone),10)=right(gap_outreach_phone($1),10)) $$;
  grant select,insert,update on all tables in schema public to service_role;
  `)
- for (const file of ['20261112045648_missed_call_events.sql','20261112045735_call_follow_up_guard.sql','20261112053000_missed_call_email_bridge.sql'])
+ for (const file of ['20261112045648_missed_call_events.sql','20261112045735_call_follow_up_guard.sql','20261112052834_missed_call_email_bridge.sql'])
   sql(readFileSync(new URL(`../../supabase/migrations/${file}`,import.meta.url),'utf8'))
  const reset = () => sql(`
  truncate missed_call_email_notifications,call_follow_up_claims,call_logs,conversations,mcp_event_subscriptions,mcp_event_deliveries,sms_logs,sms_marketing_consents,ops_sms_consent_events,mcp_first_message_attempts,ops_customer_email_history,ops_email_log,ops_customers,blacklist;
