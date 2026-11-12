@@ -1,4 +1,8 @@
-import { missedCallSid, claimCallFollowUp, sendClaimedCallFollowUp } from '@/lib/twilio/call-follow-up-guard'
+import {
+  missedCallSid,
+  claimCallFollowUp,
+  sendClaimedCallFollowUp,
+} from '@/lib/twilio/call-follow-up-guard'
 import {
   projectUnscheduledFollowUp,
   saveUnscheduledFollowUp,
@@ -963,8 +967,12 @@ export async function previewConversationSend(
   const supabase = client(supplied)
   requireScope(actor, 'customer:contact')
   const callSid = missedCallSid(input.idempotency_key)
-  if (callSid && input.customer_id) throw new Error('Missed-call follow-up requires its call-context conversation')
-  if (callSid && input.media_ids.length) throw new Error('Missed-call follow-up supports text only')
+  if (callSid && input.customer_id)
+    throw new Error(
+      'Missed-call follow-up requires its call-context conversation',
+    )
+  if (callSid && input.media_ids.length)
+    throw new Error('Missed-call follow-up supports text only')
   if (Boolean(input.customer_id) === Boolean(input.conversation_id))
     throw new Error('Choose exactly one conversation or verified customer')
   if (input.customer_id) {
@@ -1026,8 +1034,50 @@ export async function previewConversationSend(
     .maybeSingle()
   if (error) throw error
   if (!conversation) throw new Error('Conversation not found')
-  if (callSid && !await claimCallFollowUp(supabase, { phone: normalizeOpsPhone(conversation.phone_number), callSid, conversationId: conversation.id, previewOnly: true }))
-    throw new Error('Missed-call follow-up is not eligible or already handled')
+  let followUpEvidence: Record<string, unknown> | null = null
+  if (callSid) {
+    if (
+      !(await claimCallFollowUp(supabase, {
+        phone: normalizeOpsPhone(conversation.phone_number),
+        callSid,
+        conversationId: conversation.id,
+        previewOnly: true,
+      }))
+    )
+      throw new Error(
+        'Missed-call follow-up is not eligible or already handled',
+      )
+    const { data: notice, error: noticeError } = await supabase
+      .from('missed_call_email_notifications')
+      .select(
+        'call_sid,conversation_id,occurred_at,finalized_at,sender,recipient,subject,status,provider_id,accepted_at',
+      )
+      .eq('call_sid', callSid)
+      .eq('conversation_id', conversation.id)
+      .eq('status', 'accepted')
+      .maybeSingle()
+    if (noticeError) throw noticeError
+    followUpEvidence = notice
+      ? {
+          source: 'authenticated_owner_email_bridge',
+          call_sid: notice.call_sid,
+          conversation_id: notice.conversation_id,
+          provider_started_at: notice.occurred_at,
+          finalized_at: notice.finalized_at,
+          sender: notice.sender,
+          recipient: notice.recipient,
+          subject: notice.subject,
+          provider_notice_id: notice.provider_id,
+          accepted_at: notice.accepted_at,
+          verified_live_record: true,
+        }
+      : {
+          source: 'native_mcp_event',
+          call_sid: callSid,
+          conversation_id: conversation.id,
+          verified_live_record: true,
+        }
+  }
   const { data: thread, error: threadError } = await supabase
     .from('telegram_relay_threads')
     .select('business_number')
@@ -1067,6 +1117,9 @@ export async function previewConversationSend(
       from: thread?.business_number || 'configured Sightings messaging sender',
       body: input.body.trim(),
       attachments: media || [],
+      ...(followUpEvidence
+        ? { missed_call_follow_up_evidence: followUpEvidence }
+        : {}),
       effects: [
         'Contacts this customer immediately through Twilio.',
         'Uses the original business number when Sightings has retained it.',
@@ -1913,19 +1966,23 @@ async function executeConversationSend(
       'Conversation changed after preview; preview the reply again',
     )
   }
-  const send = () => sendConversationReply({
-    supabase,
-    conversationId: payload.conversation_id,
-    message: payload.body,
-    mediaIds: payload.media_ids,
-    sentBy: actor.label,
-    telegramMirrorLabel: 'Harry',
-  })
+  const send = () =>
+    sendConversationReply({
+      supabase,
+      conversationId: payload.conversation_id,
+      message: payload.body,
+      mediaIds: payload.media_ids,
+      sentBy: actor.label,
+      telegramMirrorLabel: 'Harry',
+    })
   if (!payload.missed_call_sid) return send()
   const claim = await claimCallFollowUp(supabase, {
-    phone: normalizeOpsPhone(conversation.phone_number), callSid: payload.missed_call_sid, conversationId: payload.conversation_id,
+    phone: normalizeOpsPhone(conversation.phone_number),
+    callSid: payload.missed_call_sid,
+    conversationId: payload.conversation_id,
   })
-  if (!claim) throw new Error('Missed-call follow-up is not eligible or already handled')
+  if (!claim)
+    throw new Error('Missed-call follow-up is not eligible or already handled')
   return sendClaimedCallFollowUp(supabase, claim, send)
 }
 

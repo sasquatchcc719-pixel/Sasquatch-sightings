@@ -3,6 +3,7 @@ import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
 import { reconcileEndedCall } from '@/lib/twilio/call-history'
 import { enqueueMissedCallEvent } from '@/lib/mcp/missed-call-events'
+import { enqueueMissedCallEmailBridge } from '@/lib/mcp/missed-call-email-bridge'
 
 export const maxDuration = 60
 
@@ -41,7 +42,20 @@ export async function POST(request: NextRequest) {
       twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
       params.CallSid,
     )
-    if (result) await enqueueMissedCallEvent(db, result)
+    if (result) {
+      try {
+        await Promise.all([
+          enqueueMissedCallEvent(db, result),
+          enqueueMissedCallEmailBridge(db, result),
+        ])
+      } catch (enqueueError) {
+        console.error(
+          `[Call Status] Missed-call wake-up enqueue failed for ${params.CallSid}; Twilio may retry this signed callback. No history scan will backfill it.`,
+          enqueueError,
+        )
+        throw enqueueError
+      }
+    }
     return new NextResponse(null, { status: 204 })
   } catch (error) {
     console.error('[Call Status] Reconciliation failed:', error)

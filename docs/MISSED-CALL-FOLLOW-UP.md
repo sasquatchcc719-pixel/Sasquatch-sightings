@@ -2,12 +2,25 @@
 
 ## Activation
 
-1. Apply the two missed-call migrations and deploy the matching application build. The migration records an immutable activation time; it does not scan or contact existing calls.
+1. Apply the three missed-call migrations and deploy the matching application build. The migrations record immutable activation times; they do not scan or contact existing calls.
 2. Refresh the connected Sightings MCP event catalog if it still exposes only `conversation.message.received`.
 3. Create a **separate** `call.missed` subscription with empty params and the owner-authorized prompt. Keep existing Gmail and inbound-SMS subscriptions unchanged.
 4. Verify its active subscription record and creation time. No old-call replay or customer test text is part of activation.
 
 Deployment alone is not activation. Subscription creation alone is not proof of customer delivery.
+
+## Authenticated owner-email bridge
+
+Until the connected plugin exposes `call.missed`, the signed live terminal callback also creates one future-only owner-email notice after the same voicemail-settling delay. This is an independent wake-up path, not a fabricated inbound SMS or a substitute MCP event.
+
+- Verified sender: `Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>`
+- Owner recipient: `sasquatchcc719@gmail.com`
+- Exact subject prefix: `Sasquatch missed call:`
+- Provider idempotency key: `missed-call-owner-notice-v1/<CallSid>`
+
+The email contains only the real CallSid, original provider start time, finalized time, and real conversation ID. It contains no claimed customer message. The separately filtered Gmail watch must match the authenticated sender, recipient, and subject prefix, then use the email only as a hint. Before any customer action, Harry must match `list_calls`, read the live conversation, and prepare the canonical `missed-call:<CallSid>:v1` preview. The preview returns persisted `missed_call_follow_up_evidence`; a copied or spoofed email body cannot create that evidence.
+
+The one-minute worker waits at least 90 seconds for voicemail callbacks, so normal submission is roughly 90–150 seconds after finalization. Email delivery is not guaranteed: if the signed callback cannot durably enqueue, the endpoint returns HTTP 500 and logs the exact CallSid so Twilio may retry, but the application never scans or backfills historical calls. Provider timeouts and ambiguous/missing provider IDs become terminal `unknown` outcomes and are never retried blindly.
 
 ## Event and reply contract
 

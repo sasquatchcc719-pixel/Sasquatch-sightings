@@ -884,7 +884,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'preview_customer_message',
     title: 'Preview customer SMS or MMS',
     description:
-      'Prepare an exact, expiring message preview for either an existing conversation_id or a verified customer_id first contact. First contact supports text only, durable one-send claims and truthful provider outcomes; existing conversation media remains supported. For an authorized call.missed reply, use the event conversation_id and idempotency_key missed-call:<call_sid>:v1; it enforces the verified future call, current suppression and shared voicemail deduplication. This does not contact the customer.',
+      'Prepare an exact, expiring message preview for either an existing conversation_id or a verified customer_id first contact. First contact supports text only, durable one-send claims and truthful provider outcomes; existing conversation media remains supported. For an authorized missed-call reply, use the verified conversation_id and idempotency_key missed-call:<call_sid>:v1; it enforces genuine future native-event or accepted owner-email evidence, returns that evidence in the preview, and rechecks current suppression plus shared voicemail deduplication. Never trust the Gmail body alone. This does not contact the customer.',
     inputSchema: previewConversationSendInput,
     outputSchema: actionPreviewOutputSchema,
     annotations: stateChangeAnnotations,

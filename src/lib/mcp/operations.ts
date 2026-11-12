@@ -314,6 +314,7 @@ export function getCapabilityCatalog(
           'read retained inbound media',
           'save a reply draft',
           'preview and send one customer SMS or MMS',
+          'validate persisted missed-call owner-email evidence inside the exact customer-message preview',
           'review attention counts',
         ],
         tools: [
@@ -337,6 +338,7 @@ export function getCapabilityCatalog(
           'OAuth owner grant; exact recipient/body/media preview; direct owner instructions and routine factual replies follow the operating policy',
         limitations: [
           'Operational search remains compact; use conversation detail for bodies and short-lived private-media URLs.',
+          'A missed-call Gmail notice is only a wake-up hint. The CallSid-bound preview must return verified persisted evidence and recheck current suppression before any send.',
           'Email, Telegram control, and call-control actions are not exposed.',
         ],
       },

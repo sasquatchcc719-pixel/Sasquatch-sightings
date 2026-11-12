@@ -10,7 +10,7 @@ function fixture(eligible: boolean) {
   const q: any = {
    select: () => q, eq: () => q, lt: () => q, update: () => q,
    insert: (v: any) => { stored = v; return q },
-   maybeSingle: async () => ({ data: table === 'conversations' ? { id: 'conversation', phone_number: '+17195550100', updated_at: 'version' } : null, error: null }),
+   maybeSingle: async () => ({ data: table === 'conversations' ? { id: 'conversation', phone_number: '+17195550100', updated_at: 'version' } : table === 'missed_call_email_notifications' ? { call_sid: sid, conversation_id: 'conversation', occurred_at: '2026-11-12T05:20:00Z', finalized_at: '2026-11-12T05:20:30Z', sender: 'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>', recipient: 'sasquatchcc719@gmail.com', subject: `Sasquatch missed call: ${sid}`, status: 'accepted', provider_id: 'resend-notice-1', accepted_at: '2026-11-12T05:22:00Z' } : null, error: null }),
    single: async () => ({ data: { id: 'preview', preview: stored.preview, status: 'pending' }, error: null }),
   }; return q
  } }
@@ -20,9 +20,10 @@ const input = { conversation_id: 'conversation', body: 'User-approved exact repl
 describe('missed-call MCP preview', () => {
  it('validates canonical call, phone and conversation without acquiring a send claim', async () => {
   const f = fixture(true)
-  await previewConversationSend(input, actor, f.db as never)
+  const result = await previewConversationSend(input, actor, f.db as never)
   expect(f.rpc).toHaveBeenCalledWith('claim_call_follow_up', { p_phone: '+17195550100', p_call_sid: sid, p_recording_sid: null, p_preview_only: true, p_conversation_id: 'conversation' })
   expect(f.payload()).toMatchObject({ missed_call_sid: sid, body: input.body, conversation_id: 'conversation' })
+  expect(result.preview).toMatchObject({ missed_call_follow_up_evidence: { source: 'authenticated_owner_email_bridge', call_sid: sid, provider_notice_id: 'resend-notice-1', verified_live_record: true } })
  })
  it('refuses ineligible or previously handled calls before storing a preview', async () => {
   const f = fixture(false)

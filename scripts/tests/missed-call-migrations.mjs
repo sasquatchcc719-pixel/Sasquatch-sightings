@@ -35,6 +35,8 @@ try {
  create table call_logs(id uuid default gen_random_uuid(),call_sid text unique not null,caller_phone text,direction text default 'inbound',outcome text default 'inbound',duration_seconds integer,recording_url text,transcription text,raw_dial_status text,created_at timestamptz default now(),updated_at timestamptz default now(),forwarding_required boolean default false,forwarding_accepted_at timestamptz,queue_worker_sid text);
  create table ops_customers(id uuid primary key default gen_random_uuid(),phone text);
  create table conversations(id uuid primary key default gen_random_uuid(),phone_number text,source text,status text,messages jsonb default '[]',ops_customer_id uuid,metadata jsonb default '{}',ai_enabled boolean default true,updated_at timestamptz default now());
+ create table ops_customer_email_history(id uuid primary key default gen_random_uuid(),customer_id uuid,direction text,occurred_at timestamptz);
+ create table ops_email_log(id uuid primary key default gen_random_uuid(),customer_id uuid,status text,sent_at timestamptz);
  create table mcp_event_subscriptions(id text primary key,event_name text constraint mcp_event_subscriptions_event_name_check check(event_name='conversation.message.received'),status text,created_at timestamptz,expires_at timestamptz);
  create table mcp_event_deliveries(id text primary key,subscription_id text,event_name text constraint mcp_event_deliveries_event_name_check check(event_name='conversation.message.received'),payload jsonb,status text,occurred_at timestamptz);
  create table sms_marketing_consents(phone_normalized text,status text);
@@ -46,11 +48,12 @@ try {
  create function is_phone_blacklisted(text) returns boolean language sql as $$ select exists(select 1 from blacklist where right(gap_outreach_phone(phone),10)=right(gap_outreach_phone($1),10)) $$;
  grant select,insert,update on all tables in schema public to service_role;
  `)
- for (const file of ['20261112045648_missed_call_events.sql','20261112045735_call_follow_up_guard.sql'])
+ for (const file of ['20261112045648_missed_call_events.sql','20261112045735_call_follow_up_guard.sql','20261112053000_missed_call_email_bridge.sql'])
   sql(readFileSync(new URL(`../../supabase/migrations/${file}`,import.meta.url),'utf8'))
  const reset = () => sql(`
- truncate call_follow_up_claims,call_logs,conversations,mcp_event_subscriptions,mcp_event_deliveries,sms_logs,sms_marketing_consents,ops_sms_consent_events,mcp_first_message_attempts,blacklist;
+ truncate missed_call_email_notifications,call_follow_up_claims,call_logs,conversations,mcp_event_subscriptions,mcp_event_deliveries,sms_logs,sms_marketing_consents,ops_sms_consent_events,mcp_first_message_attempts,ops_customer_email_history,ops_email_log,ops_customers,blacklist;
  update call_follow_up_settings set activated_at=now()-interval '1 hour';
+ update missed_call_bridge_settings set activated_at=now()-interval '1 hour';
  insert into conversations(id,phone_number) values('${convo}','${phone}');
  insert into call_logs(call_sid,caller_phone,outcome,provider_started_at) values('${sid}','${phone}','no-answer',now()-interval '1 minute');
  insert into mcp_event_subscriptions values('sub','call.missed','active',now()-interval '30 minutes',null);
@@ -59,6 +62,8 @@ try {
  await check('both migrations install and RPC access is service-role only', () => {
   assert.equal(sql("select has_function_privilege('anon','claim_call_follow_up(text,text,text,boolean,uuid)','execute');"),'f')
   assert.equal(sql("select has_function_privilege('service_role','claim_call_follow_up(text,text,text,boolean,uuid)','execute');"),'t')
+  assert.equal(sql("select has_function_privilege('anon','claim_missed_call_email_notification(text)','execute');"),'f')
+  assert.equal(sql("select has_function_privilege('service_role','claim_missed_call_email_notification(text)','execute');"),'t')
  })
  reset()
  await check('fresh preview is eligible and does not consume claim', () => {
@@ -77,6 +82,25 @@ try {
   assert.match(id,/^[0-9a-f-]{36}$/)
   assert.equal(sql(`select messages from conversations where id='${id}';`),'[]')
   assert.equal(sql(`select ensure_missed_call_conversation('${sid}');`),id)
+ })
+ reset()
+ await check('bridge cutoff and accepted evidence are future-only and genuine', () => {
+  assert.equal(sql(`select ensure_missed_call_bridge_conversation('${sid}');`),convo)
+  sql(`delete from mcp_event_deliveries; delete from mcp_event_subscriptions;
+   insert into missed_call_email_notifications(call_sid,conversation_id,occurred_at,finalized_at,available_at,sender,recipient,subject,body_text,status,provider_id,accepted_at)
+   values('${sid}','${convo}',now()-interval '1 minute',now()-interval '30 seconds',now()-interval '1 second','Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>','sasquatchcc719@gmail.com','Sasquatch missed call: ${sid}','verified','accepted','resend-1',now());`)
+  assert.equal(claim(sid,true).eligible,true)
+  sql(`update missed_call_bridge_settings set activated_at=now();`)
+  assert.equal(claim(sid,true).eligible,false)
+ })
+ reset()
+ await check('bridge provider uncertainty is terminal', () => {
+  sql(`insert into missed_call_email_notifications(call_sid,conversation_id,occurred_at,finalized_at,available_at,sender,recipient,subject,body_text)
+   values('${sid}','${convo}',now()-interval '1 minute',now()-interval '30 seconds',now()-interval '1 second','Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>','sasquatchcc719@gmail.com','Sasquatch missed call: ${sid}','verified');`)
+  const notice=JSON.parse(sql(`select claim_missed_call_email_notification('${sid}');`))
+  assert.equal(notice.eligible,true)
+  sql(`select finish_missed_call_email_notification('${sid}','${notice.token}','unknown',null,'socket reset');`)
+  assert.equal(JSON.parse(sql(`select claim_missed_call_email_notification('${sid}');`)).eligible,false)
  })
  for (const [label,mutation] of [
   ['historical provider start',"update call_logs set provider_started_at=now()-interval '2 hours'"],
@@ -107,6 +131,14 @@ try {
  await check('incoming voicemail logs do not suppress outgoing follow-up', () => {
   sql(`insert into sms_logs(recipient_phone,sent_at,status,message_type) values('${phone}',now(),'received','voicemail_received');`)
   assert.equal(claim(sid,true).eligible,true)
+ })
+ reset()
+ await check('recording-mapped email handling and ambiguous identity fail closed', () => {
+  const customer=sql(`insert into ops_customers(phone) values('${phone}') returning id;`)
+  sql(`update call_logs set outcome='voicemail',recording_url='recording'; update conversations set ops_customer_id='${customer}',messages=jsonb_build_array(jsonb_build_object('role','user','metadata',jsonb_build_object('call_sid','${sid}','recording_sid','${recording}'))); insert into ops_customer_email_history(customer_id,direction,occurred_at) values('${customer}','outbound',now());`)
+  assert.equal(JSON.parse(sql(`select claim_call_follow_up('${phone}',null,'${recording}');`)).eligible,false)
+  reset(); sql(`insert into ops_customers(phone) values('${phone}'),('${phone}');`)
+  assert.equal(claim(sid,true).reason,'customer_identity_ambiguous')
  })
  reset()
  await check('canonical key is durable; accepted claim cannot repeat', () => {
