@@ -95,13 +95,28 @@ describe('POST /api/twilio/ivr-menu', () => {
     expect(twiml).toContain('>admin_charles</Client>')
   })
 
-  it('queues scheduling calls after hours too', async () => {
+  it('sends scheduling selections to voicemail after hours', async () => {
     const response = await POST(twilioRequest('2', { context: 'after-hours' }))
     const twiml = await response.text()
 
-    expect(twiml).toContain('<Enqueue')
-    expect(twiml).not.toContain('/api/twilio/call-after-hours')
+    expect(twiml).not.toContain('<Enqueue')
+    expect(twiml).toContain('/api/twilio/call-after-hours')
+    expect(update).toHaveBeenCalledWith({
+      caller_screening_status: 'voicemail',
+    })
   })
+  it.each(['', '9'])(
+    'sends after-hours non-emergency selection %s straight to voicemail',
+    async (digits) => {
+      const xml = await (
+        await POST(twilioRequest(digits, { context: 'after-hours' }))
+      ).text()
+      expect(xml).toContain('/api/twilio/call-after-hours')
+      expect(xml).not.toContain('<Gather')
+      expect(xml).not.toContain('<Dial')
+      expect(push).not.toHaveBeenCalled()
+    },
+  )
   it.each(['', '9'])(
     'repeats the menu once for no/invalid selection %s without ringing',
     async (digits) => {

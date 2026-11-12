@@ -42,12 +42,12 @@ export async function POST(request: NextRequest) {
 
     let twimlResponse
 
-    const validSelection = digits === '1' || digits === '2'
+    const validSelection = digits === '1' || (!isAfterHours && digits === '2')
     const status = validSelection
       ? 'passed'
-      : attempt === 0
-        ? 'pending'
-        : 'voicemail'
+      : isAfterHours || attempt === 1
+        ? 'voicemail'
+        : 'pending'
     try {
       const { error } = await createAdminClient()
         .from('call_logs')
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
           mode: 'water-damage',
           secondary: true,
         })
-    } else if (attempt === 0) {
+    } else if (!isAfterHours && attempt === 0) {
       twimlResponse = buildCallerMenu({
         baseUrl,
         afterHours: isAfterHours,
