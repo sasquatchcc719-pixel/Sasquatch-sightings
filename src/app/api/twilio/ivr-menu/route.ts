@@ -42,10 +42,10 @@ export async function POST(request: NextRequest) {
 
     let twimlResponse
 
-    const validSelection = digits === '2' || (digits === '1' && !isAfterHours)
+    const validSelection = digits === '1' || digits === '2'
     const status = validSelection
       ? 'passed'
-      : !isAfterHours && attempt === 0
+      : attempt === 0
         ? 'pending'
         : 'voicemail'
     try {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       }).catch((error) =>
         console.error('[IVR Menu] Push notification failed:', error),
       )
-      if (digits === '1') {
+      if (digits === '2') {
         const { error } = await createAdminClient()
           .from('call_logs')
           .update({ appointment_queued_at: new Date().toISOString() })
@@ -84,10 +84,15 @@ export async function POST(request: NextRequest) {
           callerPhone,
           callSid,
           baseUrl,
-          mode: digits === '2' ? 'water-damage' : 'schedule',
+          mode: 'water-damage',
+          secondary: true,
         })
-    } else if (!isAfterHours && attempt === 0) {
-      twimlResponse = buildCallerMenu({ baseUrl, attempt: 1 })
+    } else if (attempt === 0) {
+      twimlResponse = buildCallerMenu({
+        baseUrl,
+        afterHours: isAfterHours,
+        attempt: 1,
+      })
     } else {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${afterHoursUrl}</Redirect></Response>`
     }

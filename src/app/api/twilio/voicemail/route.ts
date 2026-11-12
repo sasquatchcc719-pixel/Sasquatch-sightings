@@ -8,11 +8,11 @@ import {
   mergeVoicemailCallback,
   resolveVoicemailCaller,
   hasMeaningfulTranscription,
-  type VoicemailMessage as ConversationMessage,
 } from '@/lib/twilio/voicemail'
 import { buildVoicemailEmail } from '@/lib/twilio/voicemail-email'
+import { sendVoicemailHarryFollowUp } from '@/lib/twilio/voicemail-follow-up'
 
-/** Twilio may run 120s+; default Vercel timeout would kill the SMS send. */
+/** Allow time for transcript email plus Harry's tailored follow-up generation. */
 export const maxDuration = 300
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -22,9 +22,6 @@ const voicemailFromEmail =
 const voicemailNotifyEmail =
   process.env.OWNER_ALERT_EMAIL || 'sasquatchcc719@gmail.com'
 
-const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 120000
-const RECENT_REPLY_SUPPRESSION_MS = 15 * 60 * 1000
-
 function getBaseUrl(): string {
   const url = (
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -32,55 +29,6 @@ function getBaseUrl(): string {
     'sightings.sasquatchcarpet.com'
   ).trim()
   return url.startsWith('http') ? url : `https://${url}`
-}
-
-function getLatestVoicemailTranscription(
-  messages: ConversationMessage[],
-): string | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i]
-    if (message?.role !== 'user') continue
-    const fromMetadata = message?.metadata?.transcription
-    if (
-      message?.metadata?.type === 'voicemail' &&
-      hasMeaningfulTranscription(fromMetadata ?? null)
-    ) {
-      return String(fromMetadata).trim()
-    }
-  }
-  return null
-}
-
-function buildVoicemailAutoReply(latestTranscript: string | null): string {
-  // Keep replies concise and natural; never quote transcript text back.
-  const base =
-    'Hi! This is Sasquatch Carpet Cleaning. Thanks for your voicemail.'
-
-  if (!latestTranscript) {
-    return `${base} I can help by text, or Charles can call you back shortly.`
-  }
-
-  const normalized = latestTranscript.toLowerCase()
-  const mentionsFutureWork =
-    normalized.includes('downstairs') ||
-    normalized.includes('few weeks') ||
-    normalized.includes('next month') ||
-    normalized.includes('later this month')
-  const mentionsPositiveFeedback =
-    normalized.includes('pleased') ||
-    normalized.includes('loved') ||
-    normalized.includes('great') ||
-    normalized.includes('thank')
-
-  if (mentionsFutureWork) {
-    return `${base} No rush at all. When you're ready to schedule, just reply here and we'll get you booked.`
-  }
-
-  if (mentionsPositiveFeedback) {
-    return `${base} We really appreciate the kind feedback. If you'd like, Charles can call you back, or we can handle everything right here by text.`
-  }
-
-  return `${base} I can help by text, or Charles can call you back shortly.`
 }
 
 export async function POST(request: NextRequest) {
@@ -133,8 +81,6 @@ export async function POST(request: NextRequest) {
       completed: params.RecordingStatus === 'completed',
     }
     const merged = await mergeVoicemailCallback(supabase, callback)
-    const conversationId = merged.conversation_id
-    const messages = merged.messages
     const metadata = merged.voicemail.metadata!
     const mergedAudioUrl = metadata.recording_url
     const mergedDuration = metadata.duration
@@ -159,10 +105,8 @@ export async function POST(request: NextRequest) {
 
     // Wait for the transcript and send one complete, duplicate-safe email.
     const transcriptEmailText = metadata.transcription_email_text
-    if (
-      hasMeaningfulTranscription(transcriptEmailText) &&
-      !metadata.transcription_email_id
-    ) {
+    let transcriptEmailId = metadata.transcription_email_id
+    if (hasMeaningfulTranscription(transcriptEmailText) && !transcriptEmailId) {
       const { data: delivery, error: deliveryError } = await resend.emails.send(
         {
           from: voicemailFromEmail,
@@ -181,103 +125,22 @@ export async function POST(request: NextRequest) {
             'Email provider did not accept the voicemail transcription',
         )
       await mergeVoicemailCallback(supabase, callback, true, delivery.id)
+      transcriptEmailId = delivery.id
       console.log(
         '[Voicemail] Transcription notification accepted:',
         delivery.id,
       )
     }
 
-    // Context-aware voicemail reply:
-    // Wait briefly for transcription callback data, then send a reply that references
-    // what the caller said. We skip if transcription isn't meaningful.
-    try {
-      // Deterministic voicemail follow-up text (no LLM). Shares the
-      // MISSED_CALL_AUTO_SMS_ENABLED switch; off by default. Replies land in
-      // the Telegram relay where Charles answers.
-      const canRunVoicemailAutoReply =
-        process.env.MISSED_CALL_AUTO_SMS_ENABLED === 'true'
-
-      if (canRunVoicemailAutoReply && conversationId) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, VOICEMAIL_CONTEXT_REPLY_DELAY_MS),
-        )
-
-        const { data: refreshedConvo } = await supabase
-          .from('conversations')
-          .select('messages')
-          .eq('id', conversationId)
-          .single()
-
-        const latestMessages = (refreshedConvo?.messages ||
-          messages ||
-          []) as ConversationMessage[]
-        const now = Date.now()
-        const hasRecentVoicemailReply = latestMessages.some((message) => {
-          if (message?.role !== 'assistant') return false
-          const ts = Date.parse(String(message?.timestamp || ''))
-          if (!Number.isFinite(ts)) return false
-          return now - ts < RECENT_REPLY_SUPPRESSION_MS
-        })
-
-        // Also suppress if call-after-hours already sent a missed-call SMS
-        const hasRecentMissedCallSms = latestMessages.some((message) => {
-          if (message?.role !== 'assistant') return false
-          const ts = Date.parse(String(message?.timestamp || ''))
-          if (!Number.isFinite(ts)) return false
-          return now - ts < 5 * 60 * 1000 // within last 5 minutes
-        })
-
-        if (!hasRecentVoicemailReply && !hasRecentMissedCallSms) {
-          const latestTranscript =
-            getLatestVoicemailTranscription(latestMessages) ||
-            (hasMeaningfulTranscription(transcriptionText)
-              ? String(transcriptionText).trim()
-              : null)
-
-          const voicemailReply = buildVoicemailAutoReply(latestTranscript)
-
-          const twilioClient = twilio(
-            process.env.TWILIO_ACCOUNT_SID,
-            process.env.TWILIO_AUTH_TOKEN,
-          )
-
-          const sms = await twilioClient.messages.create({
-            body: voicemailReply,
-            to: normalizedPhone,
-            from: process.env.TWILIO_PHONE_NUMBER,
-          })
-
-          const nextMessages = [...latestMessages]
-          nextMessages.push({
-            role: 'assistant',
-            content: voicemailReply,
-            timestamp: new Date().toISOString(),
-            twilio_sid: sms.sid,
-          })
-
-          await supabase
-            .from('conversations')
-            .update({
-              messages: nextMessages,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conversationId)
-
-          await supabase.from('sms_logs').insert({
-            recipient_phone: normalizedPhone,
-            message_type: 'ai_dispatcher',
-            message_content: voicemailReply,
-            status: 'sent',
-            twilio_sid: sms.sid,
-            sent_at: new Date().toISOString(),
-          })
-        }
-      }
-    } catch (fallbackSmsError) {
-      console.error(
-        '[Voicemail] Failed after-hours SMS fallback:',
-        fallbackSmsError,
-      )
+    // Email is the durable owner notification. Only after it is accepted does
+    // Harry read the same transcript and send one duplicate-safe customer SMS.
+    if (transcriptEmailId && hasMeaningfulTranscription(transcriptEmailText)) {
+      await sendVoicemailHarryFollowUp({
+        db: supabase,
+        recordingSid,
+        phone: normalizedPhone,
+        transcript: transcriptEmailText,
+      })
     }
 
     // Log to sms_logs for tracking (using it as general message log)

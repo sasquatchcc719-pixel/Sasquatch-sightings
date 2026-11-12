@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   writeCallLog: vi.fn(),
   rpc: vi.fn(),
   from: vi.fn(),
+  sendHarryFollowUp: vi.fn(),
 }))
 vi.mock('resend', () => ({
   Resend: vi.fn(() => ({ emails: { send: mocks.send } })),
@@ -35,6 +36,9 @@ vi.mock('@/supabase/server', () => ({
 }))
 vi.mock('@/lib/twilio/call-history', () => ({
   writeCallLog: mocks.writeCallLog,
+}))
+vi.mock('@/lib/twilio/voicemail-follow-up', () => ({
+  sendVoicemailHarryFollowUp: mocks.sendHarryFollowUp,
 }))
 import { POST } from './route'
 
@@ -89,6 +93,7 @@ describe('voicemail recording callbacks', () => {
       .mockReset()
       .mockResolvedValue({ direction: 'inbound', from: phone })
     mocks.writeCallLog.mockResolvedValue(undefined)
+    mocks.sendHarryFollowUp.mockResolvedValue('sent')
     mocks.from.mockImplementation((table: string) => {
       if (table === 'call_logs')
         return {
@@ -154,6 +159,7 @@ describe('voicemail recording callbacks', () => {
     expect((await POST(request())).status).toBe(200)
     expect(mocks.fetchCall).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()
+    expect(mocks.sendHarryFollowUp).not.toHaveBeenCalled()
     expect(savedMessages[0].metadata).toMatchObject({
       recording_url: `${audio}.mp3`,
       email_sent: false,
@@ -221,6 +227,12 @@ describe('voicemail recording callbacks', () => {
       email_sent: true,
       transcription_email_id: 'transcript-email-1',
     })
+    expect(mocks.sendHarryFollowUp).toHaveBeenCalledWith({
+      db: expect.anything(),
+      recordingSid,
+      phone,
+      transcript: 'Please call me about cleaning.',
+    })
   })
 
   it('sends one complete formatted email when the first callback already has a transcript', async () => {
@@ -267,6 +279,7 @@ describe('voicemail recording callbacks', () => {
     async (TranscriptionText) => {
       await POST(request({ TranscriptionText }))
       expect(mocks.send).not.toHaveBeenCalled()
+      expect(mocks.sendHarryFollowUp).not.toHaveBeenCalled()
       expect(savedMessages[0].metadata?.transcription_email_id).toBeNull()
     },
   )
@@ -357,5 +370,6 @@ describe('voicemail recording callbacks', () => {
     expect(mocks.from).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()
+    expect(mocks.sendHarryFollowUp).not.toHaveBeenCalled()
   })
 })

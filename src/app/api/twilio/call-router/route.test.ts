@@ -141,7 +141,7 @@ describe('POST /api/twilio/call-router', () => {
     expect(sendOneSignalNotificationMock).not.toHaveBeenCalled()
   })
 
-  it('offers the water-damage option before voicemail after hours', async () => {
+  it('offers water damage and scheduling after hours', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-06T16:00:00Z'))
     getCallRoutingConfigMock.mockResolvedValue({
@@ -153,9 +153,9 @@ describe('POST /api/twilio/call-router', () => {
     const twiml = await response.text()
 
     expect(twiml).toContain(
-      'If you have active water damage, a burst pipe, or flooding, press 2 now.',
+      'For active water damage, a burst pipe, or flooding, press 1.',
     )
-    expect(twiml).not.toContain('press 1')
+    expect(twiml).toContain('To book or change an appointment, press 2.')
     expect(twiml).toContain('/api/twilio/ivr-menu?context=after-hours')
     expect(twiml).toContain('actionOnEmptyResult="true"')
     expect(twiml).not.toContain('<Dial')

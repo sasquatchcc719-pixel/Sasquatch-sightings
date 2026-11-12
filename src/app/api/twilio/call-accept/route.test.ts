@@ -51,11 +51,13 @@ describe('receiving phone acceptance', () => {
     db.mockReturnValue({ from: vi.fn(() => q) })
   })
   afterEach(() => vi.unstubAllEnvs())
-  it('connects on answer without a receiver keypress', async () => {
+  it('asks the receiving phone to press one before connecting', async () => {
     const xml = await (await POST(request())).text()
-    expect(xml).toBe('<Response></Response>')
-    expect(xml).not.toContain('<Gather')
-    expect(update).toHaveBeenCalled()
+    expect(xml).toContain('<Gather')
+    expect(xml).toContain('Sasquatch customer call. Press 1 to accept.')
+    expect(xml).toContain('attempt=1')
+    expect(xml).toContain('<Hangup/>')
+    expect(update).not.toHaveBeenCalled()
   })
   it('records the answered forwarding leg before bridging', async () => {
     const xml = await (await POST(request('1', true))).text()
@@ -65,14 +67,13 @@ describe('receiving phone acceptance', () => {
         forwarding_accepted_at: expect.any(String),
       }),
     )
-    expect(xml).toBe('<Response></Response>')
-    expect(xml).not.toContain('<Hangup')
+    expect(xml).toBe('<Response><Say>Connecting.</Say></Response>')
   })
-  it('does not require digits even on a legacy attempt callback', async () => {
+  it('hangs up when the receiving phone does not accept', async () => {
     expect(await (await POST(request('', true))).text()).toBe(
-      '<Response></Response>',
+      '<Response><Hangup/></Response>',
     )
-    expect(update).toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
   })
   it('rejects a forged acceptance', async () => {
     expect((await POST(request('1', true, false))).status).toBe(403)
@@ -85,7 +86,7 @@ describe('receiving phone acceptance', () => {
   it('still bridges an answered call if the database is unavailable', async () => {
     select.mockResolvedValue({ data: null, error: new Error('DB unavailable') })
     expect(await (await POST(request('1', true))).text()).toBe(
-      '<Response></Response>',
+      '<Response><Say>Connecting.</Say></Response>',
     )
   })
 })

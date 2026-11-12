@@ -70,7 +70,7 @@ describe('POST /api/twilio/ivr-menu', () => {
   })
 
   it('puts scheduling callers into the appointment queue with hold music', async () => {
-    const response = await POST(twilioRequest('1'))
+    const response = await POST(twilioRequest('2'))
     const twiml = await response.text()
 
     expect(twiml).toContain('<Enqueue')
@@ -82,24 +82,25 @@ describe('POST /api/twilio/ivr-menu', () => {
     })
   })
 
-  it('dials the primary water-damage phone before the secondary-stage softphone', async () => {
-    const response = await POST(twilioRequest('2', { context: 'after-hours' }))
-    const twiml = await response.text()
-
-    expect(twiml).toMatch(/<Number[^>]*>\+17206447577<\/Number>/)
-    expect(twiml).not.toContain('<Number>\+17197498807</Number>')
-    expect(twiml).toContain(
-      '/api/twilio/dial-failover?screened=1&amp;mode=water-damage',
-    )
-    expect(twiml).not.toContain('<Client>admin_charles</Client>')
-  })
-
-  it('does not route scheduling calls from the after-hours menu', async () => {
+  it('dials Charles directly for water damage at any hour', async () => {
     const response = await POST(twilioRequest('1', { context: 'after-hours' }))
     const twiml = await response.text()
 
-    expect(twiml).toContain('/api/twilio/call-after-hours')
-    expect(twiml).not.toContain('<Dial')
+    expect(twiml).toMatch(/<Number[^>]*>\+17197498807<\/Number>/)
+    expect(twiml).not.toContain('>+17206447577</Number>')
+    expect(twiml).toContain(
+      '/api/twilio/dial-failover?screened=1&amp;mode=water-damage',
+    )
+    expect(twiml).toContain('stage=secondary')
+    expect(twiml).toContain('>admin_charles</Client>')
+  })
+
+  it('queues scheduling calls after hours too', async () => {
+    const response = await POST(twilioRequest('2', { context: 'after-hours' }))
+    const twiml = await response.text()
+
+    expect(twiml).toContain('<Enqueue')
+    expect(twiml).not.toContain('/api/twilio/call-after-hours')
   })
   it.each(['', '9'])(
     'repeats the menu once for no/invalid selection %s without ringing',
@@ -135,7 +136,7 @@ describe('POST /api/twilio/ivr-menu', () => {
       const xml = await (
         await POST(twilioRequest(digits, { attempt: '1' }))
       ).text()
-      expect(xml).toContain(digits === '1' ? '<Enqueue' : '<Dial')
+      expect(xml).toContain(digits === '2' ? '<Enqueue' : '<Dial')
       expect(update).toHaveBeenCalledWith({ caller_screening_status: 'passed' })
       expect(push).toHaveBeenCalledOnce()
     },
