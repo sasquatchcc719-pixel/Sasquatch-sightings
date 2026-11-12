@@ -120,10 +120,15 @@ function reportScannedAt(r: Record<string, unknown>): string {
   return ts ? new Date(ts * 1000).toISOString() : new Date().toISOString()
 }
 
-function extractOsolv(insights: unknown): number | null {
+export function extractOsolv(insights: unknown): number | null {
   const i = asRecord(insights)
   const osolv = asRecord(i.osolv)
-  return lfNum(osolv.yours ?? i.osolv)
+  const top = lfNum(osolv.top)
+  const yours = lfNum(osolv.yours)
+  if (top !== null && yours !== null) {
+    return Math.round(Math.max(0, top - yours) * 100) / 100
+  }
+  return lfNum(i.osolv)
 }
 
 /**

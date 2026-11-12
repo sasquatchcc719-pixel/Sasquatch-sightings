@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import {
+  extractOsolv,
   lfInt,
   lfNum,
   normalizeCompetitors,
   reportKeysToImport,
 } from './local-falcon-sync'
+
+describe('extractOsolv', () => {
+  it('stores the opportunity gap instead of repeating the business SoLV', () => {
+    expect(extractOsolv({ osolv: { top: 55.56, yours: 35.8 } })).toBe(19.76)
+  })
+
+  it('preserves legacy numeric opportunity values', () => {
+    expect(extractOsolv({ osolv: '18.37' })).toBe(18.37)
+  })
+})
 
 describe('lfNum / lfInt', () => {
   it('turns empty and nullish strings into null, not 0', () => {

@@ -540,6 +540,10 @@ export function LocalFalconMap() {
     scan?.found_in != null && scan?.points_total
       ? Math.round((scan.found_in / scan.points_total) * 100)
       : null
+  const leaderGapPoints =
+    scan?.osolv != null && scan?.points_total
+      ? Math.round((scan.osolv / 100) * scan.points_total)
+      : null
 
   const trendChart = useMemo(() => {
     const t = trends[0]
@@ -785,9 +789,15 @@ export function LocalFalconMap() {
                   }
                 />
                 <Stat
-                  label="oSoLV"
+                  label="Leader gap"
                   value={scan.osolv == null ? '—' : `${n(scan.osolv)}%`}
-                  sub="vs top"
+                  sub={
+                    leaderGapPoints == null
+                      ? undefined
+                      : leaderGapPoints === 0
+                        ? 'market leader'
+                        : `${leaderGapPoints} top-3 points behind`
+                  }
                 />
                 <Stat
                   label="Competitors"
