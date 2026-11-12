@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   tap: null as any,
   partner: null as any,
   tapUpdates: [] as any[],
+  emailSends: [] as any[],
+  promo: null as any,
   db: vi.fn(),
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: state.db }))
@@ -30,6 +32,12 @@ vi.mock('@/lib/ops/customers', () => ({
     state.customerWrites++
     return { id: 'customer', quickbooks_customer_id: null }
   },
+}))
+vi.mock('@/lib/ops/booking-alert-context', () => ({
+  getBookingAlertHistory: vi.fn().mockResolvedValue({
+    customerHistory: 'New customer — no prior appointments',
+    recentSmsTouch: null,
+  }),
 }))
 vi.mock('@/lib/ops/addresses', () => ({
   resolveServiceAddress: vi.fn().mockResolvedValue({ id: 'address' }),
@@ -56,6 +64,16 @@ vi.mock('@/lib/ops/quickbooks-sync-jobs', () => ({
 vi.mock('@/lib/quickbooks', () => ({ buildQuickBooksCustomerPayload: vi.fn() }))
 vi.mock('@/lib/twilio', () => ({ sendAdminSMS: vi.fn() }))
 vi.mock('@/lib/onesignal', () => ({ sendOneSignalNotification: vi.fn() }))
+vi.mock('resend', () => ({
+  Resend: class {
+    emails = {
+      send: async (message: any) => {
+        state.emailSends.push(message)
+        return { data: { id: 'email-fixture' }, error: null }
+      },
+    }
+  },
+}))
 vi.mock('@/lib/ops/customer-photo-upload-token', () => ({
   createCustomerPhotoUploadToken: vi.fn().mockReturnValue('synthetic'),
 }))
@@ -107,7 +125,7 @@ function db() {
           return {
             data:
               table === 'promo_codes'
-                ? {
+                ? state.promo || {
                     id: 'promo',
                     discount_type: 'tiered',
                     discount_amount: 0,
@@ -200,6 +218,8 @@ beforeEach(() => {
   state.tap = null
   state.partner = null
   state.tapUpdates = []
+  state.emailSends = []
+  state.promo = null
   state.db.mockReturnValue(db())
   vi.stubEnv('BOOKING_API_SECRET', 'synthetic')
   vi.stubEnv('RESEND_API_KEY', '')
@@ -253,6 +273,49 @@ describe('public NEXTDOOR35 booking and stored invoice fixture', () => {
       discount_amount: 35,
       total: 290,
     })
+  })
+  it('shows coupon, stacked discount, customer history and outreach context in the owner email', async () => {
+    state.promo = {
+      id: 'promo',
+      discount_type: 'fixed',
+      discount_amount: 35,
+      expires_at: null,
+      max_uses: null,
+      use_count: 0,
+    }
+    vi.stubEnv('ADMIN_EMAIL', 'owner@example.test')
+    vi.stubEnv('RESEND_API_KEY', 'fixture-key')
+    const r = await POST(
+      req(200, {
+        promo_code: 'THANKS35',
+        percentage_discount: { scope: 'rug_cleaning' },
+        line_items: [
+          {
+            service_catalog_item_id: 'service',
+            name_snapshot: 'Area rug',
+            category: 'Rug Cleaning',
+            pricing_unit: 'each',
+            quantity: 2,
+            unit_price: 100,
+          },
+        ],
+      }),
+    )
+    expect(r.status).toBe(200)
+    expect(state.emailSends).toHaveLength(1)
+    expect(state.emailSends[0].subject).toContain('THANKS35')
+    expect(state.emailSends[0].html).toContain(
+      'New customer — no prior appointments',
+    )
+    expect(state.emailSends[0].html).toContain(
+      'No tracked reactivation email or promotional text',
+    )
+    expect(state.emailSends[0].html).toContain('THANKS35 (−$35.00)')
+    expect(state.emailSends[0].html).toContain(
+      'Multi-rug discount (10%) — −$20.00',
+    )
+    expect(state.emailSends[0].html).toContain('−$55.00')
+    expect(state.emailSends[0].html).toContain('<strong>$145.00</strong>')
   })
   it('rejects stacking percentage, other discount, credits or private token before writes', async () => {
     for (const extra of [

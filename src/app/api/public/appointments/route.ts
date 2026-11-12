@@ -30,6 +30,7 @@ import {
   computeTieredDiscountAmount,
 } from '@/lib/promo-discount'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
+import { getBookingAlertHistory } from '@/lib/ops/booking-alert-context'
 import {
   cancelReactivationForCustomer,
   describeReactivationTouch,
@@ -500,6 +501,11 @@ export async function POST(request: NextRequest) {
     })
     const customerId = resolvedCustomer.id
     const quickbooksCustomerId = resolvedCustomer.quickbooks_customer_id
+    const bookingAlertHistory = await getBookingAlertHistory({
+      supabase,
+      customerId,
+      phone,
+    })
 
     // --- Find or create service address ---
     const resolved = await resolveServiceAddress(supabase, customerId, {
@@ -935,6 +941,20 @@ export async function POST(request: NextRequest) {
       customerId,
       reactivationClickId: appointment.reactivation_click_id ?? null,
     })
+    const trackedSmsTouch = tomorrowFillReservation
+      ? 'YES: booked from a tracked Tomorrow Fill text link'
+      : bookingAlertHistory.recentSmsTouch
+    const trackedOutreach = [reactivationTouch, trackedSmsTouch]
+      .filter((value): value is string => Boolean(value))
+      .join(' · ')
+    const trackedOutreachSummary =
+      trackedOutreach || 'No tracked reactivation email or promotional text'
+    const couponSummary = appliedPromoCode
+      ? discountAmount > 0
+        ? `${appliedPromoCode} (−$${discountAmount.toFixed(2)})`
+        : `${appliedPromoCode} (no discount applied)`
+      : 'None'
+    const totalDiscountAmount = discountAmount + percentageDiscountAmount
     const adminMsg = [
       adminHeading,
       `${fullName} — $${total.toFixed(2)}`,
@@ -972,22 +992,27 @@ export async function POST(request: NextRequest) {
         await resend.emails.send({
           from: fromEmail,
           to: adminEmail,
-          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}${reactivationTouch?.startsWith('YES') ? ' · from reactivation email' : ''}`,
+          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}${appliedPromoCode ? ` · ${appliedPromoCode}` : ''}${reactivationTouch?.startsWith('YES') ? ' · from reactivation email' : ''}`,
           html: `
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
   <h2 style="color:${appointmentStatus === 'pending_approval' ? '#f59e0b' : '#16a34a'};margin:0 0 16px;">New Job Booked${statusLabel}</h2>
   ${serviceAreaCheck.travelCharge > 0 ? `<p style="color:#f59e0b;font-weight:600;margin:0 0 12px;">Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee applied</p>` : ''}
   <table style="font-size:14px;line-height:1.6;">
     <tr><td style="color:#6b7280;padding-right:12px;">Customer</td><td><strong>${fullName}</strong></td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Customer history</td><td><strong>${escapeHtml(bookingAlertHistory.customerHistory)}</strong></td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Phone</td><td>${phone}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Email</td><td>${email}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Address</td><td>${street1}, ${city}, ${state} ${zipCode}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Date</td><td>${appointmentDate} at ${startTime.slice(0, 5)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Lead source</td><td>${escapeHtml(notificationLeadSource)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Booking method</td><td>${escapeHtml(notificationBookingMethod)}</td></tr>
-    ${reactivationTouch ? `<tr><td style="color:#6b7280;padding-right:12px;">Reactivation</td><td><strong>${escapeHtml(reactivationTouch)}</strong></td></tr>` : ''}
+    <tr><td style="color:#6b7280;padding-right:12px;">Tracked outreach</td><td><strong>${escapeHtml(trackedOutreachSummary)}</strong></td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Technician schedule</td><td>${escapeHtml(technicianSchedule)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Services</td><td>${serviceNames}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Subtotal</td><td>$${subtotal.toFixed(2)}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Coupon</td><td><strong>${escapeHtml(couponSummary)}</strong></td></tr>
+    ${percentageDiscountAmount > 0 ? `<tr><td style="color:#6b7280;padding-right:12px;">Other discount</td><td>${escapeHtml(requestedPercentageDiscount?.label || 'Automatic discount')} (${Number(requestedPercentageDiscount?.percent || 0).toFixed(0)}%) — −$${percentageDiscountAmount.toFixed(2)}</td></tr>` : ''}
+    ${totalDiscountAmount > 0 ? `<tr><td style="color:#6b7280;padding-right:12px;">Total discounts</td><td>−$${totalDiscountAmount.toFixed(2)}</td></tr>` : ''}
     <tr><td style="color:#6b7280;padding-right:12px;">Total</td><td><strong>$${total.toFixed(2)}</strong></td></tr>
   </table>
   <a href="https://sightings.sasquatchcarpet.com/admin/operations" style="display:inline-block;margin-top:20px;padding:10px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">View in Sightings</a>
