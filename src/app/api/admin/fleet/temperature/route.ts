@@ -49,24 +49,36 @@ export async function GET(request: NextRequest) {
   const range = TEMPERATURE_HISTORY_RANGES.find(
     (range) => String(range.days) === days,
   )
-  const spread = request.nextUrl.searchParams.get('view') === 'spread'
-  const history =
-    data && range
-      ? await db.rpc(
-          spread
+  const spreadOnly = request.nextUrl.searchParams.get('view') === 'spread'
+  const params =
+    data && range ? { p_tracker_id: data.id, p_days: range.days } : null
+  const [history, comparison] = params
+    ? await Promise.all([
+        db.rpc(
+          spreadOnly
             ? 'fleet_temperature_spread'
             : 'fleet_temperature_history_summary',
-          {
-            p_tracker_id: data.id,
-            p_days: range.days,
-          },
-        )
-      : null
+          params,
+        ),
+        spreadOnly ? null : db.rpc('fleet_temperature_spread', params),
+      ])
+    : [null, null]
   if (history?.error)
     return NextResponse.json(
       { error: 'Unable to load temperature history' },
       { status: 503 },
     )
+
+  const pairedReadings: {
+    minute_at: string
+    outdoor_f: number
+    spread_f: number
+  }[] = comparison?.data ?? []
+  const pairedByTime = new Map(
+    pairedReadings.map((reading) => [reading.minute_at, reading]),
+  )
+  const readings: { minute_at: string; temperature_f: number }[] =
+    history?.data ?? []
 
   return NextResponse.json(
     {
@@ -77,7 +89,17 @@ export async function GET(request: NextRequest) {
       receivedAt: data?.probe_received_at ?? null,
       lowF: data?.temperature_low_f ?? null,
       highF: data?.temperature_high_f ?? null,
-      history: history?.data ?? [],
+      history: spreadOnly
+        ? readings
+        : readings.map((reading) => {
+            const pair = pairedByTime.get(reading.minute_at)
+            return {
+              ...reading,
+              outdoor_f: pair?.outdoor_f ?? null,
+              spread_f: pair?.spread_f ?? null,
+            }
+          }),
+      outdoorHistoryUnavailable: Boolean(comparison?.error),
     },
     { headers: { 'Cache-Control': 'no-store' } },
   )

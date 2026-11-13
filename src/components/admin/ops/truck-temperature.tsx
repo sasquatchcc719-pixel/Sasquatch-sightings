@@ -30,20 +30,18 @@ type HistoryReading = {
   temperature_f: number
   low_f?: number
   high_f?: number
-  spread_f?: number
+  outdoor_f?: number | null
+  spread_f?: number | null
 }
-type TemperatureData = TruckTemperature & { history: HistoryReading[] }
+type TemperatureData = TruckTemperature & {
+  history: HistoryReading[]
+  outdoorHistoryUnavailable?: boolean
+}
 
-async function readTemperature(
-  days?: number,
-  spread = false,
-): Promise<TemperatureData> {
-  const response = await fetch(
-    days ? `${endpoint}?days=${days}${spread ? '&view=spread' : ''}` : endpoint,
-    {
-      cache: 'no-store',
-    },
-  )
+async function readTemperature(days?: number): Promise<TemperatureData> {
+  const response = await fetch(days ? `${endpoint}?days=${days}` : endpoint, {
+    cache: 'no-store',
+  })
   if (response.status === 401) throw new Error('Unauthorized')
   if (!response.ok) throw new Error('Temperature unavailable')
   return response.json()
@@ -178,12 +176,11 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
   const [range, setRange] = useState<
     (typeof TEMPERATURE_HISTORY_RANGES)[number]
   >(TEMPERATURE_HISTORY_RANGES[0])
-  const [spread, setSpread] = useState(false)
   const { days, bucketMinutes, interval } = range
-  const showExtremes = days >= 30 && !spread
+  const showExtremes = days >= 30
   const query = useQuery({
-    queryKey: ['truck-temperature', days, spread],
-    queryFn: () => readTemperature(days, spread),
+    queryKey: ['truck-temperature', days],
+    queryFn: () => readTemperature(days),
     refetchInterval: 60_000,
   })
   const data = query.data
@@ -198,10 +195,11 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
   const points = history.flatMap((reading, index) => {
     const time = Date.parse(reading.minute_at)
     const previous = index > 0 ? Date.parse(history[index - 1].minute_at) : time
-    const value = spread ? reading.spread_f : reading.temperature_f
     const point = {
       time,
-      temperature: value == null ? null : Number(value.toFixed(1)),
+      temperature: reading.temperature_f,
+      outdoor: reading.outdoor_f ?? null,
+      spread: reading.spread_f ?? null,
       extremes:
         reading.low_f == null || reading.high_f == null
           ? null
@@ -212,7 +210,13 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
     }
     return time - previous > bucketMs
       ? [
-          { time: previous + bucketMs, temperature: null, extremes: null },
+          {
+            time: previous + bucketMs,
+            temperature: null,
+            outdoor: null,
+            spread: null,
+            extremes: null,
+          },
           point,
         ]
       : [point]
@@ -236,19 +240,25 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
           ))}
         </div>
       </div>
-      <div className="mt-2 flex gap-1" aria-label="Chart measurement">
-        {[false, true].map((showSpread) => (
-          <button
-            key={String(showSpread)}
-            type="button"
-            onClick={() => setSpread(showSpread)}
-            aria-pressed={spread === showSpread}
-            className={`rounded-md px-2.5 py-1.5 text-xs ${spread === showSpread ? 'bg-cyan-900 text-white' : 'text-slate-300'}`}
-          >
-            {showSpread ? 'Spread' : 'Truck temperature'}
-          </button>
-        ))}
-      </div>
+      <ul
+        aria-label="Temperature chart legend"
+        className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-200"
+      >
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="w-4 border-t-2 border-[#5eead4]"
+          />
+          Truck temperature
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="w-4 border-t-2 border-dashed border-[#a5b4fc]"
+          />
+          Outdoor temperature (NWS)
+        </li>
+      </ul>
       <div className="mt-2 h-56 rounded-xl border border-white/10 bg-slate-900/70 pt-3">
         {points.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -281,42 +291,56 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
                 tick={{ fill: '#cbd5e1', fontSize: 11 }}
               />
               <Tooltip
-                labelFormatter={(value) =>
-                  `${formatTime(Number(value), true)} MT`
-                }
-                formatter={(value) =>
-                  Array.isArray(value)
-                    ? [`${value[0]}–${value[1]}°F`, 'Low to high']
-                    : [`${value}°F`, spread ? 'Truck minus outdoor' : 'Average']
-                }
-                contentStyle={{
-                  background: '#0f172a',
-                  borderColor: '#475569',
-                  color: '#f8fafc',
+                content={({ active, payload }) => {
+                  const point = payload?.[0]?.payload as
+                    | (typeof points)[number]
+                    | undefined
+                  if (!active || point?.temperature == null) return null
+                  return (
+                    <div className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-xs text-slate-100 shadow-lg">
+                      <p className="mb-1 font-medium">
+                        {formatTime(point.time, true)} MT
+                      </p>
+                      <p className="text-teal-300">
+                        Truck {point.temperature.toFixed(1)}°F
+                      </p>
+                      {point.outdoor != null && (
+                        <p className="text-indigo-300">
+                          Outdoor {point.outdoor.toFixed(1)}°F
+                        </p>
+                      )}
+                      {point.spread != null && (
+                        <p>
+                          Spread {Math.abs(point.spread).toFixed(1)}°F
+                          {point.spread > 0
+                            ? ' warmer inside'
+                            : point.spread < 0
+                              ? ' cooler inside'
+                              : ''}
+                        </p>
+                      )}
+                      {showExtremes && point.extremes && (
+                        <p>
+                          Truck low–high {point.extremes[0]}–{point.extremes[1]}
+                          °F
+                        </p>
+                      )}
+                    </div>
+                  )
                 }}
               />
-              {spread && (
-                <ReferenceLine
-                  y={0}
-                  stroke="#94a3b8"
-                  strokeDasharray="4 4"
-                  ifOverflow="extendDomain"
-                />
-              )}
-              {!spread && data?.lowF != null && (
+              {data?.lowF != null && (
                 <ReferenceLine
                   y={data.lowF}
                   stroke="#38bdf8"
                   strokeDasharray="4 4"
-                  ifOverflow="extendDomain"
                 />
               )}
-              {!spread && data?.highF != null && (
+              {data?.highF != null && (
                 <ReferenceLine
                   y={data.highF}
                   stroke="#fb923c"
                   strokeDasharray="4 4"
-                  ifOverflow="extendDomain"
                 />
               )}
               {showExtremes && (
@@ -329,6 +353,16 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
                 />
               )}
               <Line
+                name="Outdoor temperature"
+                dataKey="outdoor"
+                stroke="#a5b4fc"
+                strokeWidth={2}
+                strokeDasharray="5 4"
+                isAnimationActive={false}
+                dot={{ r: 2, strokeWidth: 0, fill: '#a5b4fc' }}
+              />
+              <Line
+                name="Truck temperature"
                 dataKey="temperature"
                 stroke="#5eead4"
                 strokeWidth={2}
@@ -343,16 +377,19 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
               ? 'Unable to load temperature history.'
               : query.isPending
                 ? 'Loading history…'
-                : spread
-                  ? 'No paired truck and outdoor readings in this time range yet.'
-                  : 'No readings in this time range.'}
+                : 'No readings in this time range.'}
           </p>
         )}
       </div>
       <p className="mt-2 text-xs text-slate-400">
         Mountain Time · {interval} averages
         {showExtremes && ' with highs and lows'}
-        {spread && ' · Truck minus outdoor · Positive means warmer inside'}
+        {data?.outdoorHistoryUnavailable &&
+          ' · Outdoor history is temporarily unavailable'}
+        {!data?.outdoorHistoryUnavailable &&
+          points.length > 0 &&
+          !points.some((point) => point.outdoor != null) &&
+          ' · No matching outdoor readings in this time range'}
       </p>
       {canEditAlarms && data && (
         <AlarmSettings
