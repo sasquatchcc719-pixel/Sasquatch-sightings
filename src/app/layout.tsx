@@ -91,7 +91,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <Suspense fallback={null}>
               <OneSignalPublicInit />
             </Suspense>
-            <SiteAnalytics />
+            <Suspense fallback={null}>
+              <SiteAnalytics />
+            </Suspense>
             <ReactQueryDevtools initialIsOpen={false} />
           </ReactQueryProvider>
         </ThemeProvider>

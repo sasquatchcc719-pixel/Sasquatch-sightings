@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { connection, NextResponse } from 'next/server'
 import { loadCustomerArrival } from '@/lib/ops/customer-arrival'
 
 const headers = {
@@ -8,6 +8,7 @@ const headers = {
 }
 
 export async function GET(request: Request) {
+  await connection()
   try {
     const token =
       request.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1] ?? ''
