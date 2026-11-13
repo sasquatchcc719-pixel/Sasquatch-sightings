@@ -352,6 +352,9 @@ void printStatus(const char *event = "status") {
   doc["discardedOldest"] = dropped; doc["lastHttpCode"] = lastHttpCode;
   doc["lastTlsError"] = lastTlsError;
   if (std::isfinite(batteryV)) doc["batteryV"] = batteryV; else doc["batteryV"] = nullptr;
+  doc["probeStatus"] = TemperatureProbe::status;
+  if (std::isfinite(TemperatureProbe::celsius)) doc["temperatureC"] = TemperatureProbe::celsius;
+  else doc["temperatureC"] = nullptr;
   serializeJson(doc, Serial); Serial.println();
   // Opt-in bench history survives USB reconnects and contains no locations/secrets.
   if (diagnosticsEnabled && int32_t(millis() - diagnosticsUntil) >= 0) {
@@ -646,7 +649,7 @@ void setup() {
   pinMode(MODEM_POWER, OUTPUT); digitalWrite(MODEM_POWER, HIGH);
   modem.setRxBufferSize(2048); modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   Wire.begin(15, 16); Wire.setTimeOut(50);
-  TemperatureProbe::bus.begin(1);
+  TemperatureProbe::bus.begin(TemperatureProbe::PIN);
   preferences.begin("sq-tracker", false);
   diagnosticsEnabled = preferences.getBool("diagnostics", false);
   diagnosticsUntil = millis() + 1800000;
