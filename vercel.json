@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/fleet-outdoor-temperature",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/fleet-temperature",
       "schedule": "* * * * *"
     },

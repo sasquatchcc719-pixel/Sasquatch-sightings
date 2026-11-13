@@ -53,6 +53,14 @@ export const boxTruckStatusOutput = z.object({
       high: reading.nullable(),
     })
     .nullable(),
+  spread_history: z
+    .object({
+      days,
+      intervals: z.number(),
+      low_f: z.number().nullable(),
+      high_f: z.number().nullable(),
+    })
+    .nullable(),
   palmer_lake_current_f: z.number().nullable(),
   outdoor_observed_at: z.string().nullable(),
   outdoor_station: z.string().nullable(),
@@ -82,13 +90,19 @@ export async function readBoxTruckStatus(
     getTruckWeather(),
   ])
   const tracker = trackerResult.data
-  const historyResult =
+  const [historyResult, spreadResult] =
     tracker && historyDays
-      ? await db.rpc('fleet_temperature_history_summary', {
-          p_tracker_id: tracker.id,
-          p_days: historyDays,
-        })
-      : null
+      ? await Promise.all([
+          db.rpc('fleet_temperature_history_summary', {
+            p_tracker_id: tracker.id,
+            p_days: historyDays,
+          }),
+          db.rpc('fleet_temperature_spread', {
+            p_tracker_id: tracker.id,
+            p_days: historyDays,
+          }),
+        ])
+      : [null, null]
   const now = Date.now()
   const temperatureF =
     tracker?.probe_temperature_c == null
@@ -129,6 +143,12 @@ export async function readBoxTruckStatus(
     }
   }
 
+  const spreads: number[] = (spreadResult?.data ?? []).map(
+    (row: { spread_f: number }) => row.spread_f,
+  )
+  if (historyDays && (!spreadResult || spreadResult.error))
+    unavailable.push('outdoor spread history')
+
   return {
     vehicle: BOX_TRUCK_NAME,
     checked_at: new Date(now).toISOString(),
@@ -158,6 +178,15 @@ export async function readBoxTruckStatus(
         }
       : null,
     history,
+    spread_history:
+      historyDays && spreadResult && !spreadResult.error
+        ? {
+            days: historyDays,
+            intervals: spreads.length,
+            low_f: spreads.length ? round(Math.min(...spreads)) : null,
+            high_f: spreads.length ? round(Math.max(...spreads)) : null,
+          }
+        : null,
     palmer_lake_current_f:
       forecast.currentF == null ? null : round(forecast.currentF),
     outdoor_observed_at: forecast.observedAt,

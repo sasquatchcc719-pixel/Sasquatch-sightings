@@ -795,7 +795,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'get_box_truck_status',
     title: 'Get David’s box truck status',
     description:
-      'Use when Charles asks about David’s box truck, overnight freeze risk, temperature alarms, or whether David is hanging door flyers. Reads live vehicle travel status, probe temperature and age, configured limits and current threshold crossing, phone canvassing activity, the current Palmer Lake outdoor temperature, the truck-to-outdoor difference, and the overnight forecast. Optionally summarizes recorded temperature highs and lows for 1, 7, 30 or 90 days. Use America/Denver for timestamps. A history timestamp is the start of a chart interval, and history only covers readings received. A stale probe reading is last known. A threshold crossing does not confirm notification delivery.',
+      'Use when Charles asks about David’s box truck, overnight freeze risk, temperature alarms, or whether David is hanging door flyers. Reads live vehicle travel status, probe temperature and age, configured limits and current threshold crossing, phone canvassing activity, the current Palmer Lake outdoor temperature, the truck-to-outdoor difference, and the overnight forecast. Optionally summarizes recorded temperature highs and lows and the range of paired truck-minus-outdoor interval averages for 1, 7, 30 or 90 days. Use America/Denver for timestamps. A history timestamp is the start of a chart interval, and history only covers readings received. A stale probe reading is last known. A threshold crossing does not confirm notification delivery.',
     inputSchema: boxTruckStatusInput,
     outputSchema: boxTruckStatusOutput,
     async handler(input, extra) {

@@ -74,6 +74,20 @@ export async function GET(request: NextRequest) {
     if (probePruneError)
       console.error('[gps-cleanup] Probe prune error:', probePruneError)
 
+    // Retain the lead-in observation needed to pair the oldest truck readings.
+    const { error: outdoorPruneError } = await supabase
+      .from('fleet_outdoor_temperature')
+      .delete()
+      .lt(
+        'observed_at',
+        new Date(ninetyDaysAgo.getTime() - 90 * 60_000).toISOString(),
+      )
+    if (outdoorPruneError)
+      console.error(
+        '[gps-cleanup] Outdoor temperature prune error:',
+        outdoorPruneError,
+      )
+
     // ── 3. Roll up any completed shifts that are missing visit summaries ──
     const { data: completedWithoutVisits } = await supabase
       .from('gps_shifts')

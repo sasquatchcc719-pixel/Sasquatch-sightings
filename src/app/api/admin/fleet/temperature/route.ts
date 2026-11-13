@@ -49,12 +49,18 @@ export async function GET(request: NextRequest) {
   const range = TEMPERATURE_HISTORY_RANGES.find(
     (range) => String(range.days) === days,
   )
+  const spread = request.nextUrl.searchParams.get('view') === 'spread'
   const history =
     data && range
-      ? await db.rpc('fleet_temperature_history_summary', {
-          p_tracker_id: data.id,
-          p_days: range.days,
-        })
+      ? await db.rpc(
+          spread
+            ? 'fleet_temperature_spread'
+            : 'fleet_temperature_history_summary',
+          {
+            p_tracker_id: data.id,
+            p_days: range.days,
+          },
+        )
       : null
   if (history?.error)
     return NextResponse.json(

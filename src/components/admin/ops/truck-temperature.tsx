@@ -28,15 +28,22 @@ const endpoint = '/api/admin/fleet/temperature'
 type HistoryReading = {
   minute_at: string
   temperature_f: number
-  low_f: number
-  high_f: number
+  low_f?: number
+  high_f?: number
+  spread_f?: number
 }
 type TemperatureData = TruckTemperature & { history: HistoryReading[] }
 
-async function readTemperature(days?: number): Promise<TemperatureData> {
-  const response = await fetch(days ? `${endpoint}?days=${days}` : endpoint, {
-    cache: 'no-store',
-  })
+async function readTemperature(
+  days?: number,
+  spread = false,
+): Promise<TemperatureData> {
+  const response = await fetch(
+    days ? `${endpoint}?days=${days}${spread ? '&view=spread' : ''}` : endpoint,
+    {
+      cache: 'no-store',
+    },
+  )
   if (response.status === 401) throw new Error('Unauthorized')
   if (!response.ok) throw new Error('Temperature unavailable')
   return response.json()
@@ -171,18 +178,19 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
   const [range, setRange] = useState<
     (typeof TEMPERATURE_HISTORY_RANGES)[number]
   >(TEMPERATURE_HISTORY_RANGES[0])
+  const [spread, setSpread] = useState(false)
   const { days, bucketMinutes, interval } = range
-  const showExtremes = days >= 30
+  const showExtremes = days >= 30 && !spread
   const query = useQuery({
-    queryKey: ['truck-temperature', days],
-    queryFn: () => readTemperature(days),
+    queryKey: ['truck-temperature', days, spread],
+    queryFn: () => readTemperature(days, spread),
     refetchInterval: 60_000,
   })
   const data = query.data
   const history = data?.history ?? []
   const bucketMs = bucketMinutes * 60_000
   const showDatesOnly =
-    showExtremes &&
+    days >= 30 &&
     history.length > 1 &&
     Date.parse(history[history.length - 1].minute_at) -
       Date.parse(history[0].minute_at) >=
@@ -190,13 +198,17 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
   const points = history.flatMap((reading, index) => {
     const time = Date.parse(reading.minute_at)
     const previous = index > 0 ? Date.parse(history[index - 1].minute_at) : time
+    const value = spread ? reading.spread_f : reading.temperature_f
     const point = {
       time,
-      temperature: Number(reading.temperature_f.toFixed(1)),
-      extremes: [
-        Number(reading.low_f.toFixed(1)),
-        Number(reading.high_f.toFixed(1)),
-      ],
+      temperature: value == null ? null : Number(value.toFixed(1)),
+      extremes:
+        reading.low_f == null || reading.high_f == null
+          ? null
+          : [
+              Number(reading.low_f.toFixed(1)),
+              Number(reading.high_f.toFixed(1)),
+            ],
     }
     return time - previous > bucketMs
       ? [
@@ -223,6 +235,19 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
             </button>
           ))}
         </div>
+      </div>
+      <div className="mt-2 flex gap-1" aria-label="Chart measurement">
+        {[false, true].map((showSpread) => (
+          <button
+            key={String(showSpread)}
+            type="button"
+            onClick={() => setSpread(showSpread)}
+            aria-pressed={spread === showSpread}
+            className={`rounded-md px-2.5 py-1.5 text-xs ${spread === showSpread ? 'bg-cyan-900 text-white' : 'text-slate-300'}`}
+          >
+            {showSpread ? 'Spread' : 'Truck temperature'}
+          </button>
+        ))}
       </div>
       <div className="mt-2 h-56 rounded-xl border border-white/10 bg-slate-900/70 pt-3">
         {points.length > 0 ? (
@@ -262,7 +287,7 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
                 formatter={(value) =>
                   Array.isArray(value)
                     ? [`${value[0]}–${value[1]}°F`, 'Low to high']
-                    : [`${value}°F`, 'Average']
+                    : [`${value}°F`, spread ? 'Truck minus outdoor' : 'Average']
                 }
                 contentStyle={{
                   background: '#0f172a',
@@ -270,7 +295,15 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
                   color: '#f8fafc',
                 }}
               />
-              {data?.lowF != null && (
+              {spread && (
+                <ReferenceLine
+                  y={0}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                  ifOverflow="extendDomain"
+                />
+              )}
+              {!spread && data?.lowF != null && (
                 <ReferenceLine
                   y={data.lowF}
                   stroke="#38bdf8"
@@ -278,7 +311,7 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
                   ifOverflow="extendDomain"
                 />
               )}
-              {data?.highF != null && (
+              {!spread && data?.highF != null && (
                 <ReferenceLine
                   y={data.highF}
                   stroke="#fb923c"
@@ -310,13 +343,16 @@ function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
               ? 'Unable to load temperature history.'
               : query.isPending
                 ? 'Loading history…'
-                : 'No readings in this time range.'}
+                : spread
+                  ? 'No paired truck and outdoor readings in this time range yet.'
+                  : 'No readings in this time range.'}
           </p>
         )}
       </div>
       <p className="mt-2 text-xs text-slate-400">
         Mountain Time · {interval} averages
         {showExtremes && ' with highs and lows'}
+        {spread && ' · Truck minus outdoor · Positive means warmer inside'}
       </p>
       {canEditAlarms && data && (
         <AlarmSettings
