@@ -69,6 +69,7 @@ const STREET_TOKEN_ALIASES: Record<string, string> = {
   drive: 'dr',
   east: 'e',
   grove: 'grv',
+  heights: 'hts',
   highway: 'hwy',
   lane: 'ln',
   north: 'n',

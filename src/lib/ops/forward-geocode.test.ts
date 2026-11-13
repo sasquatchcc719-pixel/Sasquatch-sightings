@@ -137,6 +137,28 @@ describe('isVerifiedStreetCandidate', () => {
     ).toBe(true)
   })
 
+  it('matches Heights to HTS from the Colorado address-point service', () => {
+    expect(
+      isVerifiedStreetCandidate(
+        {
+          street_1: '4349 Gray Fox Heights',
+          city: 'Colorado Springs',
+          state: 'CO',
+          zip_code: '80922',
+        },
+        {
+          address: {
+            house_number: '4349',
+            road: 'GRAY FOX HTS',
+            city: 'Colorado Springs',
+            postcode: '80922',
+            state: 'Colorado',
+          },
+        },
+      ),
+    ).toBe(true)
+  })
+
   it('accepts the submitted house number and normalized street', () => {
     expect(isVerifiedStreetCandidate(submitted, exactCandidate)).toBe(true)
   })
