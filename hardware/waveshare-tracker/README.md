@@ -14,7 +14,7 @@ Install Arduino CLI, then the official Espressif Arduino core and JSON library:
 
 ```sh
 arduino-cli core install esp32:esp32@3.3.4 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli lib install ArduinoJson@7.4.2
+arduino-cli lib install ArduinoJson@7.4.2 OneWire@2.3.8
 arduino-cli compile --fqbn 'esp32:esp32:esp32s3:FlashSize=16M,FlashMode=qio,PSRAM=opi,CDCOnBoot=default,PartitionScheme=app3M_fat9M_16MB' --build-path /tmp/sasquatch-waveshare-build hardware/waveshare-tracker/tracker
 ```
 
@@ -89,6 +89,8 @@ Firmware **0.1.1** adds an explicit USB Wi-Fi diagnostic:
 This briefly pauses reconnection and scans 2.4 GHz for the configured network. It prints only `configuredNetworkFound` and, if found, the strongest matching channel, RSSI, and numeric auth mode; failures return a numeric `scanError`. It never prints SSIDs, BSSIDs, passwords, or tokens. The configured credentials and offline queue are retained, and automatic connection is restored afterward. A scan can briefly pause GPS sampling. Numeric Wi-Fi status 3 means connected; the exact disconnect reason comes from the ESP-IDF Wi-Fi reason enum, rather than guessing from connection failure alone.
 
 ## Hardware
+
+- DS18B20 probe: adapter DAT to **GPIO1**, VCC to **3V3**, and GND to **GND**. Firmware 0.4.2 reports a CRC-checked Celsius reading through the regular heartbeat, even with no GPS fix. A missing or unreadable probe reports null.
 
 - Modem UART: ESP32 RX **GPIO17**, TX **GPIO18**, 115200 8N1, no hardware flow control.
 - Modem power enable: **GPIO21 HIGH** (V2). Keep the physical **4G DIP ON** for initial testing. Older generic FAQ references to GPIO33/22 do not match the V2 schematic.

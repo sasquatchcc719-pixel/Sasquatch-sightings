@@ -20,6 +20,8 @@ export const trackerTelemetrySchema = z.object({
   uptimeMs: z.number().int().min(0).max(4294967295),
   batteryV: nullableNumber(2, 5),
   gpsFix: z.boolean(),
+  temperatureC: nullableNumber(-55, 125).optional(),
+  network: z.enum(['cellular', 'wifi']).optional(),
   points: z.array(trackerPointSchema).max(32),
 })
 

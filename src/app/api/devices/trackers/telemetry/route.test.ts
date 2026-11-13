@@ -52,6 +52,18 @@ describe('device telemetry endpoint', () => {
     })
     expect(await response.text()).not.toContain(token)
   })
+  it('passes a probe reading over cellular without a GPS fix', async () => {
+    const reading = { ...payload, temperatureC: 21.125, network: 'cellular' }
+    expect((await POST(request(JSON.stringify(reading)))).status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('ingest_fleet_tracker', {
+      p_token_hash: createHash('sha256').update(token).digest('hex'),
+      p_payload: reading,
+    })
+  })
+  it('rejects temperatures outside the DS18B20 range', async () => {
+    expect((await POST(request(JSON.stringify({ ...payload, temperatureC: 126 })))).status).toBe(400)
+    expect(rpc).not.toHaveBeenCalled()
+  })
   it('rejects oversized bodies even without a Content-Length header', async () => {
     expect(
       (await POST(request(JSON.stringify({ padding: 'a'.repeat(33000) }))))

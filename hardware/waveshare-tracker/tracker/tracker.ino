@@ -24,6 +24,7 @@
 #include "upload_batch.h"
 #include "camera_usb.h"
 #include "tls_root.h"
+#include "temperature_probe.h"
 
 // Waveshare V2 schematic; these differ from older board revisions.
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
@@ -609,6 +610,9 @@ void postTelemetry() {
   body["firmware"] = FIRMWARE; body["bootId"] = bootId; body["uptimeMs"] = millis();
   if (std::isfinite(batteryV)) body["batteryV"] = batteryV; else body["batteryV"] = nullptr;
   body["gpsFix"] = freshFix();
+  if (std::isfinite(TemperatureProbe::celsius)) body["temperatureC"] = TemperatureProbe::celsius;
+  else body["temperatureC"] = nullptr;
+  body["network"] = activeNetwork();
   JsonArray points = body["points"].to<JsonArray>();
   request->count = selectUploadBatch(orders, QUEUE_SIZE, latestSlot, request->tickets, BATCH_SIZE);
   for (size_t i = 0; i < request->count; ++i) {
@@ -642,6 +646,7 @@ void setup() {
   pinMode(MODEM_POWER, OUTPUT); digitalWrite(MODEM_POWER, HIGH);
   modem.setRxBufferSize(2048); modem.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
   Wire.begin(15, 16); Wire.setTimeOut(50);
+  TemperatureProbe::bus.begin(1);
   preferences.begin("sq-tracker", false);
   diagnosticsEnabled = preferences.getBool("diagnostics", false);
   diagnosticsUntil = millis() + 1800000;
@@ -676,6 +681,7 @@ void loop() {
   collectUploadResults();
   if (cellularRestartPending && !uploadInFlight) restartCellular();
   processSerial();
+  TemperatureProbe::poll(millis());
   bool moving = freshFix() && currentFix.speedMps > 0.5;
   TrackerOta::health(configured && storageReady && uploaderReady && lastHttpCode == 200, moving);
   if (!uploadInFlight && !TrackerOta::pending && !TrackerOta::offered.isEmpty() &&
