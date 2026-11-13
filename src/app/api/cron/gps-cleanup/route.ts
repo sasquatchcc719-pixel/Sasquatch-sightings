@@ -9,7 +9,10 @@ import { createAdminClient } from '@/supabase/server'
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
-  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (
+    !process.env.CRON_SECRET ||
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -63,6 +66,13 @@ export async function GET(request: NextRequest) {
     if (pruneError) {
       console.error('[gps-cleanup] Prune error:', pruneError)
     }
+
+    const { error: probePruneError } = await supabase
+      .from('fleet_temperature_readings')
+      .delete()
+      .lt('minute_at', new Date(now.getTime() - 30 * 86_400_000).toISOString())
+    if (probePruneError)
+      console.error('[gps-cleanup] Probe prune error:', probePruneError)
 
     // ── 3. Roll up any completed shifts that are missing visit summaries ──
     const { data: completedWithoutVisits } = await supabase

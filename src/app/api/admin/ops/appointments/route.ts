@@ -1,3 +1,5 @@
+import { dispatchLocation } from '@/lib/ops/daily-dispatch'
+import { queueGeocodeForAddress } from '@/lib/ops/forward-geocode'
 import { sortLineItems } from '@/lib/ops/line-item-order'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
@@ -578,6 +580,13 @@ export async function POST(request: NextRequest) {
           .single()
 
       if (existingAddressError) throw existingAddressError
+      if (!dispatchLocation(existingAddress, null, null)) {
+        await queueGeocodeForAddress(
+          supabase,
+          existingAddress.id,
+          existingAddress,
+        )
+      }
       address = existingAddress
     } else {
       const inlineAddress = {

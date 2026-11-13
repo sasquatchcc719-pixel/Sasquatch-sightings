@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/fleet-temperature",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/phone-health",
       "schedule": "*/5 * * * *"
     },

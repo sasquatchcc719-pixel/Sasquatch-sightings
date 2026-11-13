@@ -6,6 +6,7 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ScheduleDispatchPanel } from './schedule-dispatch-panel'
 
 // Native dialog focus and animation are additionally exercised in a real browser.
@@ -31,6 +32,36 @@ afterEach(() => {
 })
 
 describe('calendar dispatch panel', () => {
+  it('shows an active door-hanger session beside the live truck status', async () => {
+    const now = new Date().toISOString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          trackers: [
+            {
+              name: "David's Box Truck",
+              enabled: true,
+              gps_fix: true,
+              last_seen_at: now,
+              gps_at: now,
+              speed_mps: 0,
+            },
+          ],
+          hangingDoors: true,
+        }),
+      ),
+    )
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ScheduleDispatchPanel day="2026-10-19" showTravelStatus />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('David · Hanging door flyers')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Parked')
+    expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()
+  })
+
   it('loads maps only when opened and removes them after closing', async () => {
     render(<ScheduleDispatchPanel day="2026-10-19" />)
     expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()

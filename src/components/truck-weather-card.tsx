@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { MoonStar, RefreshCw, Snowflake } from 'lucide-react'
 import type { TruckWeather } from '@/lib/tech/truck-weather'
 
 const REFRESH_MS = 15 * 60_000
 
-export function TruckWeatherCard() {
+export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
   const [weather, setWeather] = useState<TruckWeather | null>(null)
   const [loading, setLoading] = useState(true)
   const requestId = useRef(0)
@@ -87,45 +87,49 @@ export function TruckWeatherCard() {
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
-      <div className="mt-2 flex items-center gap-5" role="status">
-        <div className="shrink-0">
-          <p className="text-[11px] font-medium tracking-wider text-slate-300 uppercase">
-            Overnight low
-          </p>
-          <p className="mt-1 font-mono text-4xl font-bold tracking-tight">
-            {weather?.lowF != null ? `${Math.round(weather.lowF)}°F` : '—'}
-          </p>
-        </div>
-        <div className="min-w-0 border-l border-white/15 pl-5 text-sm">
-          {cold ? (
-            <>
-              <p className="flex items-center gap-2 font-semibold text-amber-200">
-                <Snowflake className="h-4 w-4 shrink-0" />
-                Protect the truck tonight
-              </p>
-              <p className="mt-1 leading-relaxed text-amber-50">
-                Put a heater in the truck. Close and latch the back door.
-              </p>
-            </>
-          ) : weather ? (
-            <>
-              <p className="font-semibold text-cyan-100">
-                Tonight in Palmer Lake
-              </p>
-              <p className="mt-1 text-slate-300">
-                Heater reminder at 33°F or colder. Close and latch the back door
-                every day.
-              </p>
-            </>
-          ) : loading ? (
-            <p className="text-slate-300">Checking the overnight forecast…</p>
-          ) : (
-            <p className="text-amber-200">
-              Forecast unavailable. Check the overnight low; at 33°F or colder,
-              put a heater in the truck. Close and latch the back door.
+      <div className="mt-2 flex flex-wrap items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-5" role="status">
+          <div className="shrink-0">
+            <p className="text-[11px] font-medium tracking-wider text-slate-300 uppercase">
+              Overnight low
             </p>
-          )}
+            <p className="mt-1 font-mono text-4xl font-bold tracking-tight">
+              {weather?.lowF != null ? `${Math.round(weather.lowF)}°F` : '—'}
+            </p>
+          </div>
+          <div className="min-w-0 border-l border-white/15 pl-5 text-sm">
+            {cold ? (
+              <>
+                <p className="flex items-center gap-2 font-semibold text-amber-200">
+                  <Snowflake className="h-4 w-4 shrink-0" />
+                  Protect the truck tonight
+                </p>
+                <p className="mt-1 leading-relaxed text-amber-50">
+                  Put a heater in the truck. Close and latch the back door.
+                </p>
+              </>
+            ) : weather ? (
+              <>
+                <p className="font-semibold text-cyan-100">
+                  Tonight in Palmer Lake
+                </p>
+                <p className="mt-1 text-slate-300">
+                  Heater reminder at 33°F or colder. Close and latch the back
+                  door every day.
+                </p>
+              </>
+            ) : loading ? (
+              <p className="text-slate-300">Checking the overnight forecast…</p>
+            ) : (
+              <p className="text-amber-200">
+                Forecast unavailable. Check the overnight low; at 33°F or
+                colder, put a heater in the truck. Close and latch the back
+                door.
+              </p>
+            )}
+          </div>
         </div>
+        {temperature && <div className="w-full sm:w-auto">{temperature}</div>}
       </div>
       <p className="mt-3 text-[11px] text-slate-400">
         National Weather Service{updated ? ` · Updated ${updated} MT` : ''} ·

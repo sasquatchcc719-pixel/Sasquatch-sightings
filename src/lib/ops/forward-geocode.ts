@@ -68,6 +68,7 @@ const STREET_TOKEN_ALIASES: Record<string, string> = {
   court: 'ct',
   drive: 'dr',
   east: 'e',
+  grove: 'grv',
   highway: 'hwy',
   lane: 'ln',
   north: 'n',
@@ -102,7 +103,7 @@ function normalizedRoad(value: string, state: string): string {
   // while county address points put it first (W Thunder Rd). Preserve the
   // direction itself, and only move it when a road type makes it unambiguous.
   const road = normalizedTokens(value).replace(
-    /^(.+ (?:ave|blvd|cir|ct|dr|ln|pkwy|pl|pt|rd|st|ter|trl)) (n|s|e|w|ne|nw|se|sw)$/,
+    /^(.+ (?:ave|blvd|cir|ct|dr|grv|ln|pkwy|pl|pt|rd|st|ter|trl)) (n|s|e|w|ne|nw|se|sw)$/,
     '$2 $1',
   )
   // Colorado's map data labels numbered state highways as "CO 105".

@@ -2046,6 +2046,7 @@ export function OperationsSchedule() {
           <ScheduleDispatchPanel
             day={selectedDateKey}
             staffFilter={staffFilter}
+            showTravelStatus
           />
 
           <div className="flex-1" />

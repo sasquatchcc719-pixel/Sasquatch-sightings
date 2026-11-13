@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { dispatchLocation } from '@/lib/ops/daily-dispatch'
 import { queueGeocodeForAddress } from '@/lib/ops/forward-geocode'
 
 function normStreet1(value: string | null | undefined): string {
@@ -59,7 +60,7 @@ export async function resolveServiceAddress(
       return true
     })
     if (match) {
-      if (!match.latitude || !match.longitude || !match.geocoded_at) {
+      if (!dispatchLocation(match, null, null)) {
         await queueGeocodeForAddress(supabase, match.id, match)
       }
       return match

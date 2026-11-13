@@ -120,6 +120,23 @@ describe('isVerifiedStreetCandidate', () => {
     }
   })
 
+  it('matches Grove to GRV when the address-point city differs and ZIP agrees', () => {
+    expect(
+      isVerifiedStreetCandidate(
+        { ...submitted, street_1: '100 Example Grove' },
+        {
+          address: {
+            house_number: '100',
+            road: 'EXAMPLE GRV',
+            city: 'Palmer Lake',
+            postcode: '80132',
+            state: 'Colorado',
+          },
+        },
+      ),
+    ).toBe(true)
+  })
+
   it('accepts the submitted house number and normalized street', () => {
     expect(isVerifiedStreetCandidate(submitted, exactCandidate)).toBe(true)
   })

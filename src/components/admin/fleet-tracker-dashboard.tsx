@@ -86,6 +86,11 @@ export default function FleetTrackerDashboard({
   const [showHistory, setShowHistory] = useState(false)
   const [selectedDrive, setSelectedDrive] = useState<number | null>(null)
   const [focusRequest, setFocusRequest] = useState(0)
+  const [verifyingJob, setVerifyingJob] = useState<string | null>(null)
+  const [verificationError, setVerificationError] = useState<{
+    jobId: string
+    message: string
+  } | null>(null)
   function changeDay(nextDay: string) {
     if (!isDispatchDay(nextDay)) return
     setChosenDay(nextDay)
@@ -107,6 +112,35 @@ export default function FleetTrackerDashboard({
     enabled: !!bounds,
     refetchInterval: 60000,
   })
+  async function verifyAddress(jobId: string) {
+    setVerifyingJob(jobId)
+    setVerificationError(null)
+    try {
+      const response = await fetch(
+        '/api/admin/fleet/daily-map/verify-address',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId }),
+        },
+      )
+      if (!response.ok)
+        throw new Error(
+          (await response.json()).error || 'Unable to verify the address.',
+        )
+      await schedule.refetch()
+    } catch (error) {
+      setVerificationError({
+        jobId,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to verify the address.',
+      })
+    } finally {
+      setVerifyingJob(null)
+    }
+  }
   const jobs = useMemo(
     () =>
       (schedule.data?.jobs ?? []).filter(
@@ -297,12 +331,42 @@ export default function FleetTrackerDashboard({
           <p className="mt-1">
             {unmapped.length} scheduled{' '}
             {unmapped.length === 1 ? 'stop needs' : 'stops need'} verified
-            locations: {unmapped.map((job) => job.name).join(', ')}.
+            locations.
           </p>
           <p className="mt-1 text-amber-200/80">
             The planned route is incomplete. Legs touching these stops cannot be
             shown yet.
           </p>
+          <ul className="mt-2 list-inside list-disc space-y-1">
+            {unmapped.map((job) => (
+              <li key={job.id}>
+                <Link
+                  href={job.href}
+                  className="font-medium underline underline-offset-2"
+                >
+                  {job.name}
+                </Link>
+                {job.address && (
+                  <span className="text-amber-200/80"> · {job.address}</span>
+                )}
+                {job.address && (
+                  <button
+                    type="button"
+                    disabled={verifyingJob !== null}
+                    onClick={() => void verifyAddress(job.id)}
+                    className="ml-2 rounded-md border border-amber-300/40 px-2.5 py-1.5 text-xs font-semibold hover:bg-amber-300/15 disabled:opacity-50"
+                  >
+                    {verifyingJob === job.id ? 'Checking…' : 'Verify address'}
+                  </button>
+                )}
+                {verificationError?.jobId === job.id && (
+                  <p className="mt-1 text-amber-100">
+                    {verificationError.message}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950">

@@ -1,3 +1,4 @@
+import { NextRequest } from 'next/server'
 import { beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   guard: vi.fn(),
@@ -10,6 +11,7 @@ vi.mock('@/supabase/server', () => ({
   createAdminClient: () => ({ from: mocks.from }),
 }))
 import { GET } from './route'
+const request = new NextRequest('https://example.test/api/admin/fleet/trackers')
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.guard.mockResolvedValue({})
@@ -19,11 +21,11 @@ beforeEach(() => {
 })
 it('requires dispatch access to vehicle locations', async () => {
   mocks.guard.mockRejectedValue(new Error('Unauthorized'))
-  expect((await GET()).status).toBe(401)
+  expect((await GET(request)).status).toBe(401)
   expect(mocks.from).not.toHaveBeenCalled()
 })
 it('never exposes token hashes through the dashboard API', async () => {
-  expect((await GET()).status).toBe(200)
+  expect((await GET(request)).status).toBe(200)
   expect(mocks.guard).toHaveBeenCalledWith(['admin', 'owner', 'dispatcher'])
   expect(mocks.select.mock.calls[0][0]).not.toContain('token_hash')
   expect(mocks.select.mock.calls[0][0]).not.toBe('*')
