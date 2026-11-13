@@ -75,6 +75,19 @@ beforeEach(() => {
             },
           ],
         }
+      } else if (url === '/api/admin/ops/customers?q=Taylor') {
+        payload = {
+          customers: [
+            {
+              id: 'saved-customer',
+              full_name: 'Taylor Example',
+              phone: '+17195550100',
+              ops_service_addresses: [],
+            },
+          ],
+        }
+      } else if (url === '/api/admin/ops/customers/saved-customer/past-jobs') {
+        payload = { jobs: [] }
       } else if (url === '/api/public/lead-sources') {
         payload = { options: [] }
       } else if (url === '/api/admin/promo-codes') {
@@ -418,6 +431,31 @@ describe('Book Job residential estimate mode', () => {
     ).not.toBeInTheDocument()
     expect(postRequests()).toEqual([])
   })
+})
+
+it('defaults a booking for a saved customer to Repeat customer and allows overrides', async () => {
+  navigation.params = new URLSearchParams()
+  const { container } = render(<NewJobWorkspace />)
+  const source = await screen.findByLabelText('Lead Source *')
+  expect(source).toHaveValue('')
+
+  fireEvent.change(screen.getByLabelText('Find customer'), {
+    target: { value: 'Taylor' },
+  })
+  fireEvent.click(await screen.findByRole('button', { name: /Taylor Example/ }))
+  expect(source).toHaveValue('repeat_customer')
+
+  const form = container.querySelector('form')!
+  fireEvent.submit(form)
+  await waitFor(() => expect(postRequests()).toHaveLength(1))
+  expect(postRequests()[0].body).toMatchObject({
+    customer_id: 'saved-customer',
+    lead_source_key: 'repeat_customer',
+    lead_source_detail: null,
+  })
+
+  fireEvent.change(source, { target: { value: 'google_search' } })
+  expect(source).toHaveValue('google_search')
 })
 
 describe('Book Job automatic minimum', () => {

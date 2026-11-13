@@ -399,7 +399,9 @@ export function NewJobWorkspace() {
   const [couponCodesOpen, setCouponCodesOpen] = useState(false)
   const [promoPreviewLoading, setPromoPreviewLoading] = useState(false)
   const [promoMessage, setPromoMessage] = useState<string | null>(null)
-  const [leadSource, setLeadSource] = useState('')
+  const [leadSourceOverride, setLeadSourceOverride] = useState<string | null>(
+    null,
+  )
   const [leadSourceDetail, setLeadSourceDetail] = useState('')
   const [isCommercial, setIsCommercial] = useState(false)
   const estimateMode = estimateRequested && !serviceConcernId && !isCommercial
@@ -454,6 +456,14 @@ export function NewJobWorkspace() {
   const addrBlurDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
+  const bookingCustomerId =
+    selectedCustomer &&
+    customerFormStillMatchesSelection(customerForm, selectedCustomer)
+      ? selectedCustomer.id
+      : null
+  const leadSource =
+    leadSourceOverride ??
+    (bookingCustomerId && !serviceConcernId ? 'repeat_customer' : '')
 
   const dismissAddrSuggestions = useCallback(() => {
     if (addrBlurDismissRef.current) {
@@ -1044,7 +1054,7 @@ export function NewJobWorkspace() {
           },
         ])
         setDiscount('0')
-        setLeadSource(
+        setLeadSourceOverride(
           originalJob.lead_source_key || originalJob.original_lead_source || '',
         )
         setLeadSourceDetail(originalJob.lead_source_detail || '')
@@ -1253,11 +1263,7 @@ export function NewJobWorkspace() {
         warranty_duration_minutes: serviceConcernId
           ? warrantyDurationMinutes
           : null,
-        customer_id:
-          selectedCustomer &&
-          customerFormStillMatchesSelection(customerForm, selectedCustomer)
-            ? selectedCustomer.id
-            : null,
+        customer_id: bookingCustomerId,
         customer: customerForm,
         address:
           addressSelection !== 'new'
@@ -2038,14 +2044,7 @@ export function NewJobWorkspace() {
                 setConflictOverride(null)
               }}
               input={{
-                customer_id:
-                  selectedCustomer &&
-                  customerFormStillMatchesSelection(
-                    customerForm,
-                    selectedCustomer,
-                  )
-                    ? selectedCustomer.id
-                    : null,
+                customer_id: bookingCustomerId,
                 customer: customerForm,
                 address:
                   addressSelection !== 'new'
@@ -2172,7 +2171,7 @@ export function NewJobWorkspace() {
                     value={leadSource}
                     disabled={Boolean(serviceConcernId)}
                     onChange={(event) => {
-                      setLeadSource(event.target.value)
+                      setLeadSourceOverride(event.target.value)
                       setLeadSourceDetail('')
                     }}
                   >
