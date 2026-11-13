@@ -38,7 +38,7 @@ function BoxTruckTravelStatus() {
     refetchInterval: 10_000,
     retry: false,
   })
-  const tracker = data?.trackers.find((item) => item.name === BOX_TRUCK_NAME)
+  const tracker = data?.trackers?.find((item) => item.name === BOX_TRUCK_NAME)
   if (!tracker) return null
   const status = isError
     ? 'Status unavailable'

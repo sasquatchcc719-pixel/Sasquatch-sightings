@@ -2051,44 +2051,51 @@ export function OperationsSchedule() {
 
           <div className="flex-1" />
 
-          <Button
-            asChild
-            className="book-job-cta group relative h-11 overflow-hidden rounded-xl border-0 px-6 text-base font-bold tracking-wide text-white transition-transform duration-300 hover:scale-[1.04] focus-visible:scale-[1.04]"
+          <div
+            data-testid="schedule-primary-actions"
+            className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center"
           >
-            <Link href="/admin/operations/new-job">
-              <span
-                aria-hidden
-                className="book-job-sheen pointer-events-none absolute inset-0 -translate-x-full transition-transform duration-700 ease-out group-hover:translate-x-full"
-              />
-              <Plus className="h-5 w-5" />
-              Book Job
-            </Link>
-          </Button>
-          {canScheduleCommercialEstimate ? (
+            <Button
+              asChild
+              className="book-job-cta group relative col-span-2 h-12 w-full overflow-hidden rounded-xl border-0 px-6 text-base font-bold tracking-wide text-white transition-transform duration-300 hover:scale-[1.02] focus-visible:scale-[1.02] sm:col-span-1 sm:h-11 sm:w-auto sm:hover:scale-[1.04] sm:focus-visible:scale-[1.04]"
+            >
+              <Link href="/admin/operations/new-job">
+                <span
+                  aria-hidden
+                  className="book-job-sheen pointer-events-none absolute inset-0 -translate-x-full transition-transform duration-700 ease-out group-hover:translate-x-full"
+                />
+                <Plus className="h-5 w-5" />
+                Book Job
+              </Link>
+            </Button>
+            {canScheduleCommercialEstimate ? (
+              <Button
+                asChild
+                variant="outline"
+                className="h-14 w-full min-w-0 flex-col gap-1 rounded-xl border-amber-300 bg-amber-50/70 px-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 hover:text-amber-950 sm:h-11 sm:w-auto sm:flex-row sm:gap-2 sm:px-4 sm:text-sm"
+              >
+                <Link href="/admin/operations/estimates/new">
+                  <Ruler className="h-5 w-5 text-amber-600" />
+                  Commercial Estimate
+                </Link>
+              </Button>
+            ) : null}
             <Button
               asChild
               variant="outline"
-              className="h-11 gap-2 rounded-xl border-amber-300 bg-amber-50/70 px-4 font-semibold text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+              className="h-14 w-full min-w-0 flex-col gap-1 rounded-xl px-2 text-xs font-semibold sm:h-11 sm:w-auto sm:flex-row sm:gap-2 sm:px-4 sm:text-sm"
             >
-              <Link href="/admin/operations/estimates/new">
-                <Ruler className="h-5 w-5 text-amber-600" />
-                Commercial Estimate
+              <Link href="/admin/operations/restoration/new">
+                <Droplets className="h-5 w-5 text-sky-600" />
+                Water Loss
               </Link>
             </Button>
-          ) : null}
-          <Button
-            asChild
-            variant="outline"
-            className="h-11 gap-2 rounded-xl px-4 font-semibold"
-          >
-            <Link href="/admin/operations/restoration/new">
-              <Droplets className="h-5 w-5 text-sky-600" />
-              Water Loss
-            </Link>
-          </Button>
+          </div>
           <Button
             size="icon"
             variant="outline"
+            aria-label="Refresh schedule"
+            className="ml-auto sm:ml-0"
             onClick={() => void loadSchedule()}
           >
             {loading ? (

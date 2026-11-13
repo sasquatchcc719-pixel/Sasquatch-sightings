@@ -2,11 +2,13 @@ import {
   cleanup,
   createEvent,
   fireEvent,
-  render,
+  render as testingLibraryRender,
   screen,
   waitFor,
   within,
 } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OperationsSchedule } from './operations-schedule'
 
@@ -16,6 +18,20 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => params,
   useRouter: () => router,
 }))
+
+function render(ui: ReactElement) {
+  return testingLibraryRender(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        })
+      }
+    >
+      {ui}
+    </QueryClientProvider>,
+  )
+}
 
 const saturdayJob = {
   id: 'saturday-job',
@@ -56,7 +72,7 @@ function mockSchedule(
             staff,
             currentUserRole: 'owner',
           }
-        : {},
+        : { trackers: [] },
   }))
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -467,6 +483,20 @@ describe('commercial estimate scheduling', () => {
       name: /Commercial Estimate/i,
     })
     expect(topAction).toHaveAttribute('href', '/admin/operations/estimates/new')
+
+    const primaryActions = screen.getByTestId('schedule-primary-actions')
+    expect(primaryActions).toHaveClass('grid', 'grid-cols-2', 'w-full')
+    expect(
+      within(primaryActions).getByRole('link', { name: /Book Job/i }),
+    ).toHaveClass('col-span-2', 'w-full')
+    expect(
+      within(primaryActions).getByRole('link', {
+        name: /Commercial Estimate/i,
+      }),
+    ).toHaveClass('w-full')
+    expect(
+      within(primaryActions).getByRole('link', { name: /Water Loss/i }),
+    ).toHaveClass('w-full')
 
     fireEvent.click(screen.getByRole('button', { name: /^day$/i }))
     fireEvent.click(
