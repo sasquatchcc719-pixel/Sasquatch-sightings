@@ -2,7 +2,13 @@ import { PUBLIC_AREAS } from '@/lib/public-areas'
 
 export const TRUCK_COLD_THRESHOLD_F = 33
 
-export type TruckWeather = {
+type OutdoorTemperature = {
+  currentF: number | null
+  observedAt: string | null
+  stationName: string | null
+}
+
+export type TruckWeather = OutdoorTemperature & {
   lowF: number | null
   cold: boolean
   forecastUpdatedAt: string | null
@@ -20,8 +26,8 @@ export function overnightTruckWeather(
   periods: ForecastPeriod[],
   updatedAt: string,
   now = new Date(),
-): TruckWeather {
-  const unavailable: TruckWeather = {
+): Omit<TruckWeather, keyof OutdoorTemperature> {
+  const unavailable: ReturnType<typeof overnightTruckWeather> = {
     lowF: null,
     cold: false,
     forecastUpdatedAt: null,
@@ -74,24 +80,99 @@ export async function getTruckWeather(): Promise<TruckWeather> {
     return response.json()
   }
 
-  try {
-    const { lat, lng } = PUBLIC_AREAS['palmer-lake']
-    const point = await getJson(`https://api.weather.gov/points/${lat},${lng}`)
-    const forecastUrl = new URL(point.properties.forecast)
+  const noObservation: OutdoorTemperature = {
+    currentF: null,
+    observedAt: null,
+    stationName: null,
+  }
+  const noForecast = { lowF: null, cold: false, forecastUpdatedAt: null }
+  const origin = 'https://api.weather.gov'
+
+  async function readForecast(link: string) {
+    const url = new URL(link)
     if (
-      forecastUrl.origin !== 'https://api.weather.gov' ||
-      !/^\/gridpoints\/[A-Z]+\/\d+,\d+\/forecast$/.test(forecastUrl.pathname)
-    ) {
+      url.origin !== origin ||
+      !/^\/gridpoints\/[A-Z]+\/\d+,\d+\/forecast$/.test(url.pathname)
+    )
       throw new Error('Unexpected NWS forecast URL')
-    }
-    forecastUrl.searchParams.set('units', 'us')
-    const forecast = await getJson(forecastUrl.toString())
+    url.searchParams.set('units', 'us')
+    const forecast = await getJson(url.toString())
     return overnightTruckWeather(
       forecast.properties.periods,
       forecast.properties.updateTime,
     )
+  }
+
+  async function readObservation(link?: string): Promise<OutdoorTemperature> {
+    if (!link) return noObservation
+    const url = new URL(link)
+    if (
+      url.origin !== origin ||
+      !/^\/gridpoints\/[A-Z]+\/\d+,\d+\/stations$/.test(url.pathname)
+    )
+      throw new Error('Unexpected NWS stations URL')
+    const stations = await getJson(url.toString())
+    const candidates = await Promise.all(
+      (stations.features ?? [])
+        .slice(0, 4)
+        .map(
+          async (feature: {
+            properties?: { stationIdentifier?: string; name?: string }
+          }): Promise<OutdoorTemperature | null> => {
+            const id = feature.properties?.stationIdentifier
+            if (!id || !/^[A-Z0-9]+$/.test(id)) return null
+            const observation = await getJson(
+              `${origin}/stations/${id}/observations/latest`,
+            ).catch(() => null)
+            const { timestamp, temperature } = observation?.properties ?? {}
+            const age = Date.now() - Date.parse(timestamp)
+            if (
+              !(age >= 0 && age <= 90 * 60_000) ||
+              typeof temperature?.value !== 'number' ||
+              !Number.isFinite(temperature.value)
+            )
+              return null
+            const value =
+              temperature.unitCode === 'wmoUnit:degC'
+                ? temperature.value * 1.8 + 32
+                : temperature.unitCode === 'wmoUnit:degF'
+                  ? temperature.value
+                  : null
+            return value == null
+              ? null
+              : {
+                  currentF: value,
+                  observedAt: timestamp,
+                  stationName: feature.properties?.name ?? id,
+                }
+          },
+        ),
+    )
+    return candidates.find((candidate) => candidate != null) ?? noObservation
+  }
+
+  try {
+    const { lat, lng } = PUBLIC_AREAS['palmer-lake']
+    const point = await getJson(`${origin}/points/${lat},${lng}`)
+    const [forecast, observation] = await Promise.allSettled([
+      readForecast(point.properties.forecast),
+      readObservation(point.properties.observationStations),
+    ])
+    if (forecast.status === 'rejected')
+      console.error('[truck-weather] Forecast unavailable:', forecast.reason)
+    if (observation.status === 'rejected')
+      console.error(
+        '[truck-weather] Observation unavailable:',
+        observation.reason,
+      )
+    return {
+      ...(forecast.status === 'fulfilled' ? forecast.value : noForecast),
+      ...(observation.status === 'fulfilled'
+        ? observation.value
+        : noObservation),
+    }
   } catch (error) {
-    console.error('[truck-weather] Forecast unavailable:', error)
-    return { lowF: null, cold: false, forecastUpdatedAt: null }
+    console.error('[truck-weather] Location unavailable:', error)
+    return { ...noForecast, ...noObservation }
   }
 }

@@ -50,7 +50,13 @@ export type TrackerHistoryPoint = {
   break_before?: boolean
 }
 
-export function trackerStatus(tracker: FleetTracker, now = Date.now()) {
+export function trackerStatus(
+  tracker: Pick<
+    FleetTracker,
+    'enabled' | 'last_seen_at' | 'gps_fix' | 'gps_at' | 'speed_mps'
+  >,
+  now = Date.now(),
+) {
   if (!tracker.enabled) return 'Disabled'
   if (!tracker.last_seen_at) return 'Waiting for first connection'
   if (now - Date.parse(tracker.last_seen_at) > 45_000) return 'Offline'

@@ -129,6 +129,48 @@ describe('overnight truck weather', () => {
     )
   })
 
+  it('skips stale and missing station temperatures while keeping the overnight forecast', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const point = {
+          forecast: 'https://api.weather.gov/gridpoints/PUB/1,2/forecast',
+          observationStations:
+            'https://api.weather.gov/gridpoints/PUB/1,2/stations',
+        }
+        if (url.includes('/points/'))
+          return Response.json({ properties: point })
+        if (url.startsWith(point.forecast))
+          return Response.json({
+            properties: { periods: [period], updateTime: updated },
+          })
+        if (url === point.observationStations)
+          return Response.json({
+            features: ['STALE', 'MISSING', 'FRESH'].map(
+              (stationIdentifier) => ({ properties: { stationIdentifier } }),
+            ),
+          })
+        return Response.json({
+          properties: {
+            timestamp: url.includes('STALE') ? '2026-10-16T20:00:00Z' : updated,
+            temperature: {
+              unitCode: 'wmoUnit:degC',
+              value: url.includes('MISSING') ? null : 5,
+            },
+          },
+        })
+      }),
+    )
+    expect(await getTruckWeather()).toMatchObject({
+      lowF: 33,
+      currentF: 41,
+      observedAt: updated,
+      stationName: 'FRESH',
+    })
+  })
+
   it('falls back when the provider is unavailable', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
@@ -136,6 +178,9 @@ describe('overnight truck weather', () => {
       lowF: null,
       cold: false,
       forecastUpdatedAt: null,
+      currentF: null,
+      observedAt: null,
+      stationName: null,
     })
   })
 

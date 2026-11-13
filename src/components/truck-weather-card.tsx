@@ -1,8 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { MoonStar, RefreshCw, Snowflake } from 'lucide-react'
 import type { TruckWeather } from '@/lib/tech/truck-weather'
+
+export const OutdoorTemperatureContext = createContext<number | null>(null)
 
 const REFRESH_MS = 15 * 60_000
 
@@ -17,19 +26,24 @@ export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
     try {
       const response = await fetch('/api/tech/truck-weather', {
         cache: 'no-store',
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(12_000),
       })
       if (!response.ok) throw new Error('Forecast unavailable')
       const next: TruckWeather = await response.json()
-      if (
-        typeof next.lowF !== 'number' ||
-        !Number.isFinite(next.lowF) ||
-        !next.forecastUpdatedAt ||
-        !Number.isFinite(Date.parse(next.forecastUpdatedAt))
-      ) {
-        throw new Error('Forecast unavailable')
-      }
-      if (id === requestId.current) setWeather(next)
+      if (id === requestId.current)
+        setWeather({
+          ...next,
+          lowF:
+            Number.isFinite(next.lowF) &&
+            Number.isFinite(Date.parse(next.forecastUpdatedAt ?? ''))
+              ? next.lowF
+              : null,
+          currentF:
+            Number.isFinite(next.currentF) &&
+            Number.isFinite(Date.parse(next.observedAt ?? ''))
+              ? next.currentF
+              : null,
+        })
     } catch {
       if (id === requestId.current) setWeather(null)
     } finally {
@@ -55,17 +69,23 @@ export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
   }, [refresh])
 
   const cold = weather?.cold ?? false
-  const updated = weather?.forecastUpdatedAt
-    ? new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Denver',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(new Date(weather.forecastUpdatedAt))
-    : null
+  const formatClock = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const updated =
+    weather?.forecastUpdatedAt && weather.lowF != null
+      ? formatClock.format(new Date(weather.forecastUpdatedAt))
+      : null
+  const observed =
+    weather?.observedAt && weather.currentF != null
+      ? formatClock.format(new Date(weather.observedAt))
+      : null
 
   return (
     <section
-      aria-label="Palmer Lake overnight weather"
+      aria-label="Palmer Lake weather"
       className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${
         cold
           ? 'border-amber-300/40 bg-gradient-to-br from-amber-950/90 to-slate-950 text-amber-50 shadow-amber-950/20'
@@ -91,9 +111,24 @@ export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
         <div className="flex min-w-0 flex-1 items-center gap-5" role="status">
           <div className="shrink-0">
             <p className="text-[11px] font-medium tracking-wider text-slate-300 uppercase">
+              Current outdoor
+            </p>
+            <p
+              className="mt-1 font-mono text-3xl font-bold tracking-tight"
+              title={
+                weather?.currentF != null
+                  ? (weather.stationName ?? undefined)
+                  : undefined
+              }
+            >
+              {weather?.currentF != null
+                ? `${Math.round(weather.currentF)}°F`
+                : '—'}
+            </p>
+            <p className="mt-3 text-[11px] font-medium tracking-wider text-slate-300 uppercase">
               Overnight low
             </p>
-            <p className="mt-1 font-mono text-4xl font-bold tracking-tight">
+            <p className="mt-1 font-mono text-2xl font-bold tracking-tight">
               {weather?.lowF != null ? `${Math.round(weather.lowF)}°F` : '—'}
             </p>
           </div>
@@ -108,7 +143,7 @@ export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
                   Put a heater in the truck. Close and latch the back door.
                 </p>
               </>
-            ) : weather ? (
+            ) : weather?.lowF != null ? (
               <>
                 <p className="font-semibold text-cyan-100">
                   Tonight in Palmer Lake
@@ -129,11 +164,17 @@ export function TruckWeatherCard({ temperature }: { temperature?: ReactNode }) {
             )}
           </div>
         </div>
-        {temperature && <div className="w-full sm:w-auto">{temperature}</div>}
+        {temperature && (
+          <OutdoorTemperatureContext.Provider value={weather?.currentF ?? null}>
+            <div className="w-full sm:w-auto">{temperature}</div>
+          </OutdoorTemperatureContext.Provider>
+        )}
       </div>
       <p className="mt-3 text-[11px] text-slate-400">
-        National Weather Service{updated ? ` · Updated ${updated} MT` : ''} ·
-        Refreshes every 15 min
+        National Weather Service
+        {observed ? ` · Observed ${observed} MT` : ''}
+        {updated ? ` · Forecast updated ${updated} MT` : ''} · Refreshes every
+        15 min
       </p>
     </section>
   )

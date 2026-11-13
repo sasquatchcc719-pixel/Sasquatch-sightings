@@ -61,6 +61,22 @@ describe('Sasquatch read-only MCP server', () => {
     ).toMatchObject({ readOnlyHint: false, destructiveHint: true })
   })
 
+  it('exposes truck status as an owner read and rejects unauthenticated calls', async () => {
+    const client = await connectedClient()
+    const { tools } = await client.listTools()
+    expect(
+      tools.find((tool) => tool.name === 'get_box_truck_status')?.annotations,
+    ).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    const result = await client.callTool({
+      name: 'get_box_truck_status',
+      arguments: { history_days: 90 },
+    })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.content)).toContain(
+      'OAuth authorization is required',
+    )
+  })
+
   it('rejects list_appointments without a date or complete range', async () => {
     const client = await connectedClient()
     const result = await client.callTool({

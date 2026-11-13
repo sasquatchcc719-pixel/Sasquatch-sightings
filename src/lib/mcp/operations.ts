@@ -362,6 +362,22 @@ export function getCapabilityCatalog(
         ],
       },
       {
+        area: 'fleet_monitoring',
+        workflows: [
+          'check David’s vehicle travel and door-hanging status',
+          'check box truck temperature, alarm limits, and recorded highs and lows',
+          'read the Palmer Lake overnight low forecast',
+        ],
+        tools: ['get_box_truck_status'],
+        access: 'available' as const,
+        scope: 'business:read',
+        side_effects: [],
+        approval: 'Existing OAuth owner read grant',
+        limitations: [
+          'Probe history covers recorded readings only. Alarm status indicates a threshold crossing.',
+        ],
+      },
+      {
         area: 'operations_control_center',
         workflows: [
           'review attention queues',

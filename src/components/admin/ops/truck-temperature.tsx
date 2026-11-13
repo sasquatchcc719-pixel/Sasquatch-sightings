@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type FormEvent } from 'react'
+import { useContext, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Thermometer, X } from 'lucide-react'
 import {
@@ -21,6 +21,8 @@ import {
   temperatureAlarm,
   type TruckTemperature,
 } from '@/lib/truck-temperature'
+
+import { OutdoorTemperatureContext } from '@/components/truck-weather-card'
 
 const endpoint = '/api/admin/fleet/temperature'
 type HistoryReading = {
@@ -61,11 +63,16 @@ export function TruckTemperatureButton({
     refetchInterval: 30_000,
     retry: false,
   })
+  const outdoorF = useContext(OutdoorTemperatureContext)
   const reading = query.data
   const stale =
     query.isError ||
     !reading?.receivedAt ||
     query.dataUpdatedAt - Date.parse(reading.receivedAt) > PROBE_STALE_MS
+  const spread =
+    !stale && reading?.temperatureF != null && outdoorF != null
+      ? Math.round(reading.temperatureF - outdoorF)
+      : null
   const alarm =
     !stale &&
     temperatureAlarm(
@@ -120,6 +127,13 @@ export function TruckTemperatureButton({
                       : 'No probe reading'}
             </span>
           </span>
+          {spread != null && (
+            <span className="mt-1 block text-xs text-slate-300">
+              {spread === 0
+                ? 'Same as outdoors'
+                : `${Math.abs(spread)}°F ${spread > 0 ? 'warmer' : 'cooler'} than outdoors`}
+            </span>
+          )}
         </span>
         <ChevronRight
           aria-hidden="true"

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { DAVID_CANVASS_USER_ID } from '@/lib/gps/canvassAutoStop'
+import { readDavidCanvassStatus } from '@/lib/gps/david-canvass-status'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -21,31 +21,10 @@ export async function GET(request: NextRequest) {
       { error: 'Unable to load trackers' },
       { status: 503 },
     )
-  let hangingDoors: boolean | null = null
-  if (request.nextUrl.searchParams.get('activity') === '1') {
-    const session = await db
-      .from('canvass_sessions')
-      .select('id,started_at')
-      .eq('user_id', DAVID_CANVASS_USER_ID)
-      .eq('status', 'active')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!session.error && !session.data) hangingDoors = false
-    if (session.data) {
-      const point = await db
-        .from('canvass_points')
-        .select('recorded_at')
-        .eq('session_id', session.data.id)
-        .order('recorded_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (!point.error) {
-        const lastActivity = point.data?.recorded_at ?? session.data.started_at
-        hangingDoors = Date.now() - Date.parse(lastActivity) < 5 * 60_000
-      }
-    }
-  }
+  const hangingDoors =
+    request.nextUrl.searchParams.get('activity') === '1'
+      ? await readDavidCanvassStatus(db)
+      : null
   return NextResponse.json(
     { trackers: data, ...(hangingDoors == null ? {} : { hangingDoors }) },
     { headers: { 'Cache-Control': 'no-store' } },

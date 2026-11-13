@@ -117,7 +117,14 @@ export function TechClockControl() {
       }
       setTruckWeather(weather)
     } catch {
-      setTruckWeather({ lowF: null, cold: false, forecastUpdatedAt: null })
+      setTruckWeather({
+        lowF: null,
+        cold: false,
+        forecastUpdatedAt: null,
+        currentF: null,
+        observedAt: null,
+        stationName: null,
+      })
     } finally {
       setWeatherLoading(false)
     }
