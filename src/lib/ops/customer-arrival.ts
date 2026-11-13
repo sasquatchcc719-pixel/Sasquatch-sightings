@@ -19,15 +19,21 @@ type ArrivalRow = {
   longitude: number | null
   destination_lat: number | null
   destination_lng: number | null
+  technician_first_name: string | null
+  technician_photo_url: string | null
 }
 
+type ArrivalTechnician = { firstName: string; photoUrl: string | null }
+
 export type CustomerArrival =
-  | { status: 'ended' | 'arrived' | 'waiting' }
+  | { status: 'ended' | 'arrived'; technician?: never }
+  | { status: 'waiting'; technician?: ArrivalTechnician }
   | {
       status: 'en_route'
       earliest: string
       latest: string
       arrivingSoon: boolean
+      technician?: ArrivalTechnician
     }
 
 const TRACKING_ORIGIN = 'https://sightings.sasquatchcarpet.com'
@@ -81,6 +87,21 @@ async function readArrival(db: Database, hash: string) {
   return data
 }
 
+function customerTechnician(trip: ArrivalRow): {
+  technician?: ArrivalTechnician
+} {
+  const firstName = trip.technician_first_name?.trim()
+  if (!firstName) return {}
+  const photoUrl = trip.technician_photo_url
+  const storageUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')
+  const allowedPhoto =
+    storageUrl &&
+    photoUrl?.startsWith(
+      `${storageUrl}/storage/v1/object/public/job-images/staff-photos/`,
+    )
+  return { technician: { firstName, photoUrl: allowedPhoto ? photoUrl : null } }
+}
+
 export async function loadCustomerArrival(
   token: string,
 ): Promise<CustomerArrival> {
@@ -89,10 +110,16 @@ export async function loadCustomerArrival(
   const hash = tokenHash(token)
   const trip = await readArrival(db, hash)
   if (!trip) return { status: 'ended' }
-  if (trip.status !== 'en_route') return { status: trip.status }
+  if (trip.status === 'ended' || trip.status === 'arrived')
+    return { status: trip.status }
+  const waiting: CustomerArrival = {
+    status: 'waiting',
+    ...customerTechnician(trip),
+  }
+  if (trip.status === 'waiting') return waiting
   const mapToken =
     process.env.MAPBOX_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-  if (!mapToken) return { status: 'waiting' }
+  if (!mapToken) return waiting
 
   const coordinates = `${trip.longitude},${trip.latitude};${trip.destination_lng},${trip.destination_lat}`
   const url = new URL(
@@ -110,23 +137,27 @@ export async function loadCustomerArrival(
       signal: AbortSignal.timeout(4500),
       next: { revalidate: 30 },
     })
-    if (!response.ok) return { status: 'waiting' }
+    if (!response.ok) return waiting
     const body = await response.json()
     seconds = body.routes?.[0]?.duration
     if (body.code !== 'Ok' || !Number.isFinite(seconds) || seconds < 0)
-      return { status: 'waiting' }
+      return waiting
   } catch {
-    return { status: 'waiting' }
+    return waiting
   }
 
   // Recheck in case arrival or cancellation occurred during the routing request.
   const current = await readArrival(db, hash)
   if (!current) return { status: 'ended' }
-  if (current.status !== 'en_route') return { status: current.status }
+  if (current.status === 'ended' || current.status === 'arrived')
+    return { status: current.status }
+  if (current.status === 'waiting')
+    return { status: 'waiting', ...customerTechnician(current) }
 
   const now = Date.now()
   return {
     status: 'en_route',
+    ...customerTechnician(current),
     earliest: new Date(now + Math.ceil(seconds / 60) * 60_000).toISOString(),
     latest: new Date(
       now + (Math.ceil(seconds / 60) + 5) * 60_000,

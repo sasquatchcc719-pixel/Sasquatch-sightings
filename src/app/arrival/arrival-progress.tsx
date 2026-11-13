@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import type { CustomerArrival } from '@/lib/ops/customer-arrival'
 
@@ -55,11 +56,42 @@ export default function ArrivalProgress() {
         : 0
 
   return (
-    <main className="min-h-dvh bg-slate-950 px-5 py-20 text-slate-100">
+    <main className="min-h-dvh bg-slate-950 px-5 py-8 text-slate-100 sm:py-16">
       <section className="mx-auto max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 sm:p-8">
-        <p className="mb-2 text-sm font-semibold text-emerald-300">
-          Sasquatch Carpet Cleaning
-        </p>
+        <Image
+          src="/tap/share-card.jpg"
+          alt="Sasquatch Carpet Cleaning"
+          width={1200}
+          height={630}
+          sizes="(max-width: 450px) calc(100vw - 90px), 382px"
+          className="mb-6 h-auto w-full rounded-xl"
+        />
+        {trip?.technician && (
+          <div className="mb-5 flex items-center gap-3">
+            {trip.technician.photoUrl ? (
+              <Image
+                src={trip.technician.photoUrl}
+                alt=""
+                width={44}
+                height={44}
+                className="size-11 shrink-0 rounded-full border border-slate-600 object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-slate-800 font-semibold"
+              >
+                {trip.technician.firstName[0]?.toUpperCase()}
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="text-xs text-slate-300">Your technician</p>
+              <p className="font-semibold break-words">
+                {trip.technician.firstName}
+              </p>
+            </div>
+          </div>
+        )}
         <div aria-live="polite">
           {trip?.status === 'en_route' ? (
             <>
@@ -84,22 +116,43 @@ export default function ArrivalProgress() {
             </h1>
           )}
           {trip && trip.status !== 'ended' && (
-            <ol
-              aria-label="Arrival progress"
-              className="mt-8 grid grid-cols-3 gap-2"
-            >
-              {['On the way', 'Arriving soon', 'Arrived'].map(
-                (label, index) => (
-                  <li
-                    key={label}
-                    aria-current={index === step ? 'step' : undefined}
-                    className={`border-t-4 pt-2 text-sm ${index <= step ? 'border-emerald-400 font-semibold text-white' : 'border-slate-600 text-slate-400'}`}
-                  >
-                    {label}
-                  </li>
-                ),
-              )}
-            </ol>
+            <div className="mt-5">
+              <div aria-hidden="true" className="relative h-11">
+                <div className="absolute inset-x-0 bottom-0 h-1.5 overflow-hidden rounded-full bg-slate-600">
+                  <div
+                    className="h-full rounded-full bg-emerald-400 motion-safe:transition-[width] motion-safe:duration-700"
+                    style={{ width: `${[15, 50, 100][step]}%` }}
+                  />
+                </div>
+                <div className="absolute inset-x-8 bottom-1">
+                  <Image
+                    src="/arrival/sasquatch-van.webp"
+                    alt=""
+                    width={256}
+                    height={113}
+                    sizes="64px"
+                    className="absolute bottom-0 h-auto w-16 -translate-x-1/2 motion-safe:transition-[left] motion-safe:duration-700 motion-safe:ease-in-out"
+                    style={{ left: `${step * 50}%` }}
+                  />
+                </div>
+              </div>
+              <ol
+                aria-label="Arrival progress"
+                className="mt-3 grid grid-cols-3 gap-2 text-center"
+              >
+                {['On the way', 'Arriving soon', 'Arrived'].map(
+                  (label, index) => (
+                    <li
+                      key={label}
+                      aria-current={index === step ? 'step' : undefined}
+                      className={`text-sm ${index <= step ? 'font-semibold text-white' : 'text-slate-400'}`}
+                    >
+                      {label}
+                    </li>
+                  ),
+                )}
+              </ol>
+            </div>
           )}
         </div>
       </section>
