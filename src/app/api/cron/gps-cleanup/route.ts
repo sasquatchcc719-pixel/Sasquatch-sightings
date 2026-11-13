@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const { error: probePruneError } = await supabase
       .from('fleet_temperature_readings')
       .delete()
-      .lt('minute_at', new Date(now.getTime() - 30 * 86_400_000).toISOString())
+      .lt('minute_at', ninetyDaysAgo.toISOString())
     if (probePruneError)
       console.error('[gps-cleanup] Probe prune error:', probePruneError)
 

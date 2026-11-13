@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAnyRole } from '@/lib/auth'
-import { BOX_TRUCK_NAME } from '@/lib/truck-temperature'
+import {
+  BOX_TRUCK_NAME,
+  TEMPERATURE_HISTORY_RANGES,
+} from '@/lib/truck-temperature'
 import { createAdminClient } from '@/supabase/server'
 
 const columns =
@@ -31,11 +34,14 @@ export async function GET(request: NextRequest) {
     )
 
   const days = request.nextUrl.searchParams.get('days')
+  const range = TEMPERATURE_HISTORY_RANGES.find(
+    (range) => String(range.days) === days,
+  )
   const history =
-    data && (days === '1' || days === '7')
-      ? await db.rpc('fleet_temperature_history', {
+    data && range
+      ? await db.rpc('fleet_temperature_history_summary', {
           p_tracker_id: data.id,
-          p_days: Number(days),
+          p_days: range.days,
         })
       : null
   if (history?.error)

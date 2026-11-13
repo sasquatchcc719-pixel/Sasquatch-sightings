@@ -4,9 +4,10 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Thermometer, X } from 'lucide-react'
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -16,12 +17,18 @@ import {
 import {
   BOX_TRUCK_NAME,
   PROBE_STALE_MS,
+  TEMPERATURE_HISTORY_RANGES,
   temperatureAlarm,
   type TruckTemperature,
 } from '@/lib/truck-temperature'
 
 const endpoint = '/api/admin/fleet/temperature'
-type HistoryReading = { minute_at: string; temperature_f: number }
+type HistoryReading = {
+  minute_at: string
+  temperature_f: number
+  low_f: number
+  high_f: number
+}
 type TemperatureData = TruckTemperature & { history: HistoryReading[] }
 
 async function readTemperature(days?: number): Promise<TemperatureData> {
@@ -143,7 +150,11 @@ export function TruckTemperatureButton() {
 }
 
 function TemperatureDetails() {
-  const [days, setDays] = useState(1)
+  const [range, setRange] = useState<
+    (typeof TEMPERATURE_HISTORY_RANGES)[number]
+  >(TEMPERATURE_HISTORY_RANGES[0])
+  const { days, bucketMinutes, interval } = range
+  const showExtremes = days >= 30
   const query = useQuery({
     queryKey: ['truck-temperature', days],
     queryFn: () => readTemperature(days),
@@ -151,33 +162,46 @@ function TemperatureDetails() {
   })
   const data = query.data
   const history = data?.history ?? []
-  const bucketMs = (days === 7 ? 15 : 2) * 60_000
+  const bucketMs = bucketMinutes * 60_000
+  const showDatesOnly =
+    showExtremes &&
+    history.length > 1 &&
+    Date.parse(history[history.length - 1].minute_at) -
+      Date.parse(history[0].minute_at) >=
+      2 * 86_400_000
   const points = history.flatMap((reading, index) => {
     const time = Date.parse(reading.minute_at)
     const previous = index > 0 ? Date.parse(history[index - 1].minute_at) : time
     const point = {
       time,
       temperature: Number(reading.temperature_f.toFixed(1)),
+      extremes: [
+        Number(reading.low_f.toFixed(1)),
+        Number(reading.high_f.toFixed(1)),
+      ],
     }
     return time - previous > bucketMs
-      ? [{ time: previous + bucketMs, temperature: null }, point]
+      ? [
+          { time: previous + bucketMs, temperature: null, extremes: null },
+          point,
+        ]
       : [point]
   })
 
   return (
     <>
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Temperature history</h3>
         <div className="flex gap-1 rounded-lg bg-slate-900 p-1">
-          {[1, 7].map((range) => (
+          {TEMPERATURE_HISTORY_RANGES.map((option) => (
             <button
-              key={range}
+              key={option.days}
               type="button"
-              onClick={() => setDays(range)}
-              aria-pressed={days === range}
-              className={`rounded-md px-2 py-1.5 text-xs ${days === range ? 'bg-cyan-900 text-white' : 'text-slate-300'}`}
+              onClick={() => setRange(option)}
+              aria-pressed={days === option.days}
+              className={`rounded-md px-2 py-1.5 text-xs ${days === option.days ? 'bg-cyan-900 text-white' : 'text-slate-300'}`}
             >
-              {range === 1 ? '24 hours' : '7 days'}
+              {option.label}
             </button>
           ))}
         </div>
@@ -185,7 +209,7 @@ function TemperatureDetails() {
       <div className="mt-2 h-56 rounded-xl border border-white/10 bg-slate-900/70 pt-3">
         {points.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart
+            <ComposedChart
               data={points}
               margin={{ top: 6, right: 18, bottom: 8, left: 0 }}
               accessibilityLayer
@@ -195,7 +219,15 @@ function TemperatureDetails() {
                 dataKey="time"
                 type="number"
                 domain={['dataMin', 'dataMax']}
-                tickFormatter={(value) => formatTime(value, days === 7)}
+                tickFormatter={(value) =>
+                  showDatesOnly
+                    ? new Date(value).toLocaleDateString('en-US', {
+                        timeZone: 'America/Denver',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : formatTime(value, days > 1)
+                }
                 tick={{ fill: '#cbd5e1', fontSize: 11 }}
                 minTickGap={28}
               />
@@ -209,7 +241,11 @@ function TemperatureDetails() {
                 labelFormatter={(value) =>
                   `${formatTime(Number(value), true)} MT`
                 }
-                formatter={(value) => [`${value}°F`, 'Truck probe']}
+                formatter={(value) =>
+                  Array.isArray(value)
+                    ? [`${value[0]}–${value[1]}°F`, 'Low to high']
+                    : [`${value}°F`, 'Average']
+                }
                 contentStyle={{
                   background: '#0f172a',
                   borderColor: '#475569',
@@ -232,6 +268,15 @@ function TemperatureDetails() {
                   ifOverflow="extendDomain"
                 />
               )}
+              {showExtremes && (
+                <Area
+                  dataKey="extremes"
+                  stroke="none"
+                  fill="#5eead4"
+                  fillOpacity={0.24}
+                  isAnimationActive={false}
+                />
+              )}
               <Line
                 dataKey="temperature"
                 stroke="#5eead4"
@@ -239,7 +284,7 @@ function TemperatureDetails() {
                 isAnimationActive={false}
                 dot={{ r: 2, strokeWidth: 0, fill: '#5eead4' }}
               />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         ) : (
           <p role="status" className="p-4 text-sm text-slate-300">
@@ -252,7 +297,8 @@ function TemperatureDetails() {
         )}
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        Mountain Time · {days === 1 ? '2-minute' : '15-minute'} averages
+        Mountain Time · {interval} averages
+        {showExtremes && ' with highs and lows'}
       </p>
       {data && (
         <AlarmSettings
