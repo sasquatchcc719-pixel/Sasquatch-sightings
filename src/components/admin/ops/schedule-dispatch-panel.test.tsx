@@ -62,6 +62,48 @@ describe('calendar dispatch panel', () => {
     expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()
   })
 
+  it('shows David’s live ETA, remaining distance and trip progress', async () => {
+    const now = new Date().toISOString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          trackers: [
+            {
+              name: "David's Box Truck",
+              enabled: true,
+              gps_fix: true,
+              last_seen_at: now,
+              gps_at: now,
+              speed_mps: 12,
+            },
+          ],
+          travelProgress: {
+            appointmentId: 'appointment-1',
+            destinationName: 'Jineane Bazzle',
+            eta: '2026-11-13T16:10:00.000Z',
+            minutesRemaining: 10,
+            milesRemaining: 1,
+            progressPercent: 80,
+          },
+        }),
+      ),
+    )
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ScheduleDispatchPanel day="2026-11-13" showTravelStatus />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('ETA 9:10 AM')).toBeVisible()
+    expect(screen.getByText('10 min · 1.0 mi left')).toBeVisible()
+    expect(screen.getByText('To Jineane Bazzle')).toBeVisible()
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Trip progress to Jineane Bazzle',
+      }),
+    ).toHaveAttribute('aria-valuenow', '80')
+  })
+
   it('loads maps only when opened and removes them after closing', async () => {
     render(<ScheduleDispatchPanel day="2026-10-19" />)
     expect(screen.queryByText('Loaded map')).not.toBeInTheDocument()

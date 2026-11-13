@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { Map, Truck, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { trackerStatus, type FleetTracker } from '@/lib/fleet-tracking'
+import type { BoxTruckTravelProgress } from '@/lib/ops/box-truck-travel'
 import { BOX_TRUCK_NAME } from '@/lib/truck-temperature'
 import { Button } from '@/components/ui/button'
 import styles from './schedule-dispatch-panel.module.css'
@@ -14,12 +15,19 @@ const VehicleMap = dynamic(() => import('../fleet-tracker-dashboard'), {
   loading: () => <p className="p-6 text-slate-300">Loading vehicle map…</p>,
 })
 
+const mountainTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Denver',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
 function BoxTruckTravelStatus() {
   const { data, dataUpdatedAt, isError } = useQuery({
     queryKey: ['fleet-travel-status'],
     queryFn: async (): Promise<{
       trackers: FleetTracker[]
       hangingDoors?: boolean
+      travelProgress?: BoxTruckTravelProgress
     }> => {
       const response = await fetch('/api/admin/fleet/trackers?activity=1', {
         cache: 'no-store',
@@ -35,22 +43,53 @@ function BoxTruckTravelStatus() {
   const status = isError
     ? 'Status unavailable'
     : trackerStatus(tracker, dataUpdatedAt)
+  const trip = isError ? undefined : data?.travelProgress
   return (
-    <span
+    <div
       role="status"
-      className="border-border bg-background/55 inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2 text-xs"
+      className="border-border bg-background/55 flex min-h-8 min-w-0 basis-full flex-col rounded-xl border px-3 py-2 text-xs sm:basis-auto"
     >
-      <Truck
-        aria-hidden="true"
-        className={`h-3.5 w-3.5 ${status === 'Moving' ? 'text-emerald-500' : 'text-muted-foreground'}`}
-      />
-      <span>
-        {data?.hangingDoors && !isError
-          ? 'David · Hanging door flyers'
-          : 'David’s box truck'}
-      </span>
-      <span className="text-muted-foreground">· {status}</span>
-    </span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Truck
+          aria-hidden="true"
+          className={`h-3.5 w-3.5 shrink-0 ${status === 'Moving' ? 'text-emerald-500' : 'text-muted-foreground'}`}
+        />
+        <span className="truncate">
+          {data?.hangingDoors && !isError
+            ? 'David · Hanging door flyers'
+            : 'David’s box truck'}
+        </span>
+        <span className="text-muted-foreground shrink-0">· {status}</span>
+      </div>
+      {trip && (
+        <div className="mt-2 min-w-0">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              ETA {mountainTime.format(new Date(trip.eta))}
+            </span>
+            <span className="text-muted-foreground tabular-nums">
+              {trip.minutesRemaining} min · {trip.milesRemaining.toFixed(1)} mi
+              left
+            </span>
+          </div>
+          <p className="mt-1 truncate font-medium">To {trip.destinationName}</p>
+          <div
+            role="progressbar"
+            aria-label={`Trip progress to ${trip.destinationName}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={trip.progressPercent}
+            aria-valuetext={`${trip.progressPercent}% complete, ${trip.milesRemaining.toFixed(1)} miles remaining`}
+            className="bg-muted mt-2 h-2 overflow-hidden rounded-full"
+          >
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-[width] duration-700"
+              style={{ width: `${trip.progressPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

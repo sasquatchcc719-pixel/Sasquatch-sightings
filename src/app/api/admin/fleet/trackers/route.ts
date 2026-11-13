@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { readDavidCanvassStatus } from '@/lib/gps/david-canvass-status'
+import { readBoxTruckTravelProgress } from '@/lib/ops/box-truck-travel'
+import { BOX_TRUCK_NAME } from '@/lib/truck-temperature'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -21,12 +23,20 @@ export async function GET(request: NextRequest) {
       { error: 'Unable to load trackers' },
       { status: 503 },
     )
-  const hangingDoors =
-    request.nextUrl.searchParams.get('activity') === '1'
-      ? await readDavidCanvassStatus(db)
-      : null
+  const includeActivity = request.nextUrl.searchParams.get('activity') === '1'
+  const tracker = data?.find((item) => item.name === BOX_TRUCK_NAME)
+  const [hangingDoors, travelProgress] = includeActivity
+    ? await Promise.all([
+        readDavidCanvassStatus(db),
+        tracker ? readBoxTruckTravelProgress(db, tracker) : null,
+      ])
+    : [null, null]
   return NextResponse.json(
-    { trackers: data, ...(hangingDoors == null ? {} : { hangingDoors }) },
+    {
+      trackers: data,
+      ...(hangingDoors == null ? {} : { hangingDoors }),
+      ...(travelProgress ? { travelProgress } : {}),
+    },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }
