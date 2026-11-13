@@ -106,8 +106,13 @@ export async function loadCustomerArrival(
   token: string,
 ): Promise<CustomerArrival> {
   if (!isArrivalToken(token)) return { status: 'ended' }
-  const db = createAdminClient()
-  const hash = tokenHash(token)
+  return loadCustomerArrivalByHash(createAdminClient(), tokenHash(token))
+}
+
+export async function loadCustomerArrivalByHash(
+  db: Database,
+  hash: string,
+): Promise<CustomerArrival> {
   const trip = await readArrival(db, hash)
   if (!trip) return { status: 'ended' }
   if (trip.status === 'ended' || trip.status === 'arrived')

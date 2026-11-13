@@ -12,6 +12,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { getAssignedTechAppointments } from '@/lib/tech/appointments'
 import { getTechCalendarEvents } from '@/lib/tech/calendar-events'
+import { BoxTruckStatusCard } from '@/components/tech/box-truck-status-card'
 import { TechDaySchedule } from '@/components/tech/tech-day-schedule'
 import { getMountainDateKey, shiftDateKey } from '@/lib/tech/day-schedule'
 import { getSemiMonthlyPayPeriod } from '@/lib/ops/timesheet-pay'
@@ -82,6 +83,7 @@ export default async function TechHomePage({
 
   return (
     <div className="space-y-5">
+      {access.id === DAVID_CANVASS_USER_ID && <BoxTruckStatusCard />}
       <TruckWeatherCard
         temperature={
           access.id === DAVID_CANVASS_USER_ID ? (
