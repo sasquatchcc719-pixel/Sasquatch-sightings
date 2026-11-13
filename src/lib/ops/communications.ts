@@ -5,6 +5,7 @@ import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { isBlacklisted, normalizePhone } from '@/lib/blacklist'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
+import { createCustomerArrivalUrl } from './customer-arrival'
 
 export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
@@ -116,6 +117,10 @@ type AppointmentCustomer = {
 type AppointmentWithRelations = {
   id: string
   customer_id: string
+  service_address_id?: string | null
+  on_my_way_at?: string | null
+  gps_lat?: number | null
+  gps_lng?: number | null
   appointment_date: string
   start_time: string
   end_time: string
@@ -128,12 +133,20 @@ type AppointmentWithRelations = {
         city: string
         state: string
         zip_code: string
+        latitude?: number | null
+        longitude?: number | null
+        geocoded_at?: string | null
+        geocode_source?: string | null
       }
     | {
         street_1: string
         city: string
         state: string
         zip_code: string
+        latitude?: number | null
+        longitude?: number | null
+        geocoded_at?: string | null
+        geocode_source?: string | null
       }[]
     | null
   ops_appointment_line_items: Array<{
@@ -186,6 +199,10 @@ export function dayBeforeTemplateKey(
 const APPOINTMENT_SELECT = `
   id,
   customer_id,
+  service_address_id,
+  on_my_way_at,
+  gps_lat,
+  gps_lng,
   appointment_date,
   start_time,
   end_time,
@@ -213,7 +230,11 @@ const APPOINTMENT_SELECT = `
     street_1,
     city,
     state,
-    zip_code
+    zip_code,
+    latitude,
+    longitude,
+    geocoded_at,
+    geocode_source
   ),
   ops_appointment_line_items (
     id, sort_order, created_at,
@@ -1042,6 +1063,28 @@ export async function sendOpsLifecycleCommunications(params: {
 
     if (template.channel === 'sms') {
       if (!customerPhone) continue
+      let smsBody = body
+      if (
+        params.event === 'on_my_way' &&
+        template.template_key === 'on_my_way_sms'
+      ) {
+        try {
+          const url = await createCustomerArrivalUrl(
+            supabase,
+            appointment,
+            unwrapRelation(appointment.ops_service_addresses),
+          )
+          if (url) smsBody += `\nTrack your arrival: ${url}`
+        } catch {
+          console.error(
+            '[ops/communications] Could not create a customer arrival link',
+          )
+        }
+      }
+      const outboundBody = withSchedulingSmsOptOut(
+        smsBody,
+        smsRecipient.portalOptIn,
+      )
       // Estimate quick actions must not claim success when Twilio rejects a text.
       const sendSms =
         template.template_key === 'on_my_way_estimate_sms'
@@ -1049,7 +1092,7 @@ export async function sendOpsLifecycleCommunications(params: {
           : sendCustomerSMS
       await sendSms(
         customerPhone,
-        withSchedulingSmsOptOut(body, smsRecipient.portalOptIn),
+        outboundBody,
         undefined,
         `ops_${template.template_key}`,
         twilioFrom,
@@ -1057,7 +1100,7 @@ export async function sendOpsLifecycleCommunications(params: {
       sent.push({
         template_key: template.template_key,
         channel: 'sms',
-        body: withSchedulingSmsOptOut(body, smsRecipient.portalOptIn),
+        body: outboundBody,
         actually_sent: true,
       })
       continue

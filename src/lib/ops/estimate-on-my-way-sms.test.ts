@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   strictSend: vi.fn(),
   legacySend: vi.fn(),
+  createArrivalUrl: vi.fn(),
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: mocks.db }))
 vi.mock('@/lib/twilio', () => ({
@@ -14,10 +15,17 @@ vi.mock('@/lib/blacklist', () => ({
   isBlacklisted: vi.fn().mockResolvedValue(false),
   normalizePhone: (phone: string) => phone,
 }))
+vi.mock('./customer-arrival', () => ({
+  createCustomerArrivalUrl: mocks.createArrivalUrl,
+}))
 import { sendOpsLifecycleCommunications } from './communications'
+
+let appointmentKind = 'estimate'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  appointmentKind = 'estimate'
+  mocks.createArrivalUrl.mockResolvedValue(null)
   mocks.strictSend.mockResolvedValue({ sid: 'mock-sid' })
   mocks.db.mockReturnValue({
     from: (table: string) => {
@@ -26,11 +34,16 @@ beforeEach(() => {
           table === 'ops_communication_templates'
             ? [
                 {
-                  template_key: 'on_my_way_estimate_sms',
+                  template_key:
+                    appointmentKind === 'estimate'
+                      ? 'on_my_way_estimate_sms'
+                      : 'on_my_way_sms',
                   channel: 'sms',
                   is_enabled: true,
                   body_template:
-                    '{{tech_name}} is on the way for your estimate.',
+                    appointmentKind === 'estimate'
+                      ? '{{tech_name}} is on the way for your estimate.'
+                      : '{{tech_name}} is on the way.',
                 },
               ]
             : null,
@@ -44,7 +57,7 @@ beforeEach(() => {
         single: vi.fn().mockResolvedValue({
           data: {
             id: 'estimate-a',
-            kind: 'estimate',
+            kind: appointmentKind,
             customer_id: 'customer-a',
             appointment_date: '2026-09-04',
             start_time: '10:00',
@@ -92,5 +105,29 @@ describe('estimate arrival SMS confirmation', () => {
         appointmentId: 'estimate-a',
       }),
     ).rejects.toThrow('Provider rejected message')
+  })
+})
+
+describe('customer arrival link', () => {
+  it('appends the link to the existing job text and sent-message record', async () => {
+    appointmentKind = 'job'
+    const url = 'https://sightings.sasquatchcarpet.com/arrival#test'
+    mocks.createArrivalUrl.mockResolvedValue(url)
+    const result = await sendOpsLifecycleCommunications({
+      event: 'on_my_way',
+      appointmentId: 'job-a',
+    })
+    const body = `Charles is on the way.\nTrack your arrival: ${url}`
+    expect(mocks.legacySend.mock.calls[0]?.[1]).toBe(body)
+    expect(result.sent[0]?.body).toBe(body)
+  })
+
+  it('keeps the normal text when the job is ineligible for a link', async () => {
+    appointmentKind = 'job'
+    await sendOpsLifecycleCommunications({
+      event: 'on_my_way',
+      appointmentId: 'job-a',
+    })
+    expect(mocks.legacySend.mock.calls[0]?.[1]).toBe('Charles is on the way.')
   })
 })

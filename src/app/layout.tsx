@@ -3,13 +3,12 @@ import { Suspense } from 'react'
 import { Geist } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import NextTopLoader from 'nextjs-toploader'
-import { Analytics } from '@vercel/analytics/react'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import Script from 'next/script'
 import './globals.css'
 import ReactQueryProvider from '@/providers/ReactQueryProvider'
 import { OneSignalPublicInit } from '@/components/onesignal-public-init'
 import { ThemeSwitcher } from '@/components/theme-switcher'
+import { SiteAnalytics } from '@/components/site-analytics'
 
 // Fixed canonical host — VERCEL_URL points at per-deployment hashes, which
 // made metadataBase (and every relative OG/canonical URL) unstable.
@@ -74,20 +73,6 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <meta name="theme-color" content="#16a34a" />
       </head>
       <body className={`${geistSans.className} antialiased`}>
-        {/* Google Analytics */}
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-RWTGVVX5RK"
-          strategy="afterInteractive"
-        />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-RWTGVVX5RK');
-          `}
-        </Script>
-
         <NextTopLoader showSpinner={false} height={2} color="#2acf80" />
         <ThemeProvider
           attribute="class"
@@ -106,7 +91,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <Suspense fallback={null}>
               <OneSignalPublicInit />
             </Suspense>
-            <Analytics />
+            <SiteAnalytics />
             <ReactQueryDevtools initialIsOpen={false} />
           </ReactQueryProvider>
         </ThemeProvider>
