@@ -15,15 +15,24 @@ const settings = z
   .refine(({ lowF, highF }) => lowF == null || highF == null || lowF < highF)
 
 export async function GET(request: NextRequest) {
+  let access
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    access = await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  if (access.role === 'tech' && !access.staff)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const db = createAdminClient()
-  const { data, error } = await db
-    .from('fleet_trackers')
-    .select(columns)
+  const trackers = db.from('fleet_trackers')
+  const boxTruck =
+    access.role === 'tech'
+      ? trackers
+          .select(`${columns},fleet_dispatch_tracking!inner(staff_user_id)`)
+          .eq('fleet_dispatch_tracking.staff_user_id', access.staff!.id)
+      : trackers.select(columns)
+  const { data, error } = await boxTruck
     .eq('name', BOX_TRUCK_NAME)
     .eq('enabled', true)
     .maybeSingle()
@@ -32,6 +41,9 @@ export async function GET(request: NextRequest) {
       { error: 'Unable to load truck temperature' },
       { status: 503 },
     )
+
+  if (access.role === 'tech' && !data)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const days = request.nextUrl.searchParams.get('days')
   const range = TEMPERATURE_HISTORY_RANGES.find(

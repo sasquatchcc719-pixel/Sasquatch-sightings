@@ -48,7 +48,11 @@ const formatTime = (time: number | string, includeDate = false) =>
     minute: '2-digit',
   })
 
-export function TruckTemperatureButton() {
+export function TruckTemperatureButton({
+  canEditAlarms = true,
+}: {
+  canEditAlarms?: boolean
+}) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [open, setOpen] = useState(false)
   const query = useQuery({
@@ -142,14 +146,14 @@ export function TruckTemperatureButton() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          {open && <TemperatureDetails />}
+          {open && <TemperatureDetails canEditAlarms={canEditAlarms} />}
         </div>
       </dialog>
     </>
   )
 }
 
-function TemperatureDetails() {
+function TemperatureDetails({ canEditAlarms }: { canEditAlarms: boolean }) {
   const [range, setRange] = useState<
     (typeof TEMPERATURE_HISTORY_RANGES)[number]
   >(TEMPERATURE_HISTORY_RANGES[0])
@@ -300,7 +304,7 @@ function TemperatureDetails() {
         Mountain Time · {interval} averages
         {showExtremes && ' with highs and lows'}
       </p>
-      {data && (
+      {canEditAlarms && data && (
         <AlarmSettings
           key={`${data.lowF}:${data.highF}`}
           lowF={data.lowF}

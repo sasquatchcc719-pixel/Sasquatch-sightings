@@ -19,6 +19,8 @@ import {
   loadAddOnBonuses,
   usesInvoiceGrowthBonus,
 } from '@/lib/ops/add-on-bonuses'
+import { TruckTemperatureButton } from '@/components/admin/ops/truck-temperature'
+import { DAVID_CANVASS_USER_ID } from '@/lib/gps/canvassAutoStop'
 import { TruckWeatherCard } from '@/components/truck-weather-card'
 
 type TechHomePageProps = {
@@ -80,7 +82,13 @@ export default async function TechHomePage({
 
   return (
     <div className="space-y-5">
-      <TruckWeatherCard />
+      <TruckWeatherCard
+        temperature={
+          access.id === DAVID_CANVASS_USER_ID ? (
+            <TruckTemperatureButton canEditAlarms={false} />
+          ) : null
+        }
+      />
       <section className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 p-5 shadow-2xl shadow-emerald-950/30">
         <p className="flex items-center gap-2 text-sm font-medium text-emerald-200">
           <CalendarDays className="h-4 w-4" />
