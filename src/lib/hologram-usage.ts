@@ -74,7 +74,10 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     `/devices?orgid=${encodeURIComponent(orgId)}&limit=100&withlocation=false`,
     apiKey,
   )
-  const device = devices.data?.find((item) => String(item.id) === deviceId)
+  const device = devices.data?.find(
+    (item) =>
+      String(item.id) === deviceId || String(item.simcardid) === deviceId,
+  )
   const simCardId = device?.simcardid
   if (!devices.success || !device || simCardId == null) {
     const returnedIds =

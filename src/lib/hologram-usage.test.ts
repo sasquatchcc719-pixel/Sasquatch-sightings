@@ -27,8 +27,8 @@ it('returns carrier-billed usage against the configured data limit', async () =>
           success: true,
           data: [
             {
-              id: 6874649,
-              simcardid: 1234,
+              id: 5856987,
+              simcardid: 6874649,
               intended_plan_data: 0,
               links: {
                 cellular: [{ overagelimit: 1_000_000_000, state: 'active' }],
@@ -52,7 +52,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
 
   await expect(readCellularUsage()).resolves.toMatchObject({
     deviceId: '6874649',
-    simCardId: '1234',
+    simCardId: '6874649',
     usedBytes: 100_030_000,
     limitBytes: 1_000_000_000,
     remainingBytes: 899_970_000,
@@ -67,7 +67,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
   )
   expect(fetchMock).toHaveBeenNthCalledWith(
     2,
-    'https://dashboard.hologram.io/api/1/usage/billing/simcard/1234',
+    'https://dashboard.hologram.io/api/1/usage/billing/simcard/6874649',
     expect.objectContaining({ cache: 'no-store' }),
   )
   expect(
