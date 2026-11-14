@@ -1,18 +1,22 @@
 const HOLOGRAM_API_BASE = 'https://dashboard.hologram.io/api/1'
 const DEFAULT_DEVICE_ID = '6874649'
+const DEFAULT_ORG_ID = '112601'
 
 type HologramCellularLink = {
   overagelimit?: number | null
   state?: string | null
 }
 
-type HologramDeviceResponse = {
+type HologramDevice = {
+  id?: number | string | null
+  simcardid?: number | string | null
+  intended_plan_data?: number | null
+  links?: { cellular?: HologramCellularLink[] | null } | null
+}
+
+type HologramDeviceListResponse = {
   success?: boolean
-  data?: {
-    simcardid?: number | string | null
-    intended_plan_data?: number | null
-    links?: { cellular?: HologramCellularLink[] | null } | null
-  }
+  data?: HologramDevice[] | null
 }
 
 type HologramUsageResponse = {
@@ -63,19 +67,21 @@ async function hologramRequest<T>(path: string, apiKey: string): Promise<T> {
 export async function readCellularUsage(): Promise<CellularUsage> {
   const apiKey = process.env.HOLOGRAM_API_KEY?.trim()
   const deviceId = process.env.HOLOGRAM_DEVICE_ID?.trim() || DEFAULT_DEVICE_ID
+  const orgId = process.env.HOLOGRAM_ORG_ID?.trim() || DEFAULT_ORG_ID
   if (!apiKey) throw new Error('Hologram usage is not configured')
 
-  const device = await hologramRequest<HologramDeviceResponse>(
-    `/devices/${encodeURIComponent(deviceId)}`,
+  const devices = await hologramRequest<HologramDeviceListResponse>(
+    `/devices?orgid=${encodeURIComponent(orgId)}&ids=${encodeURIComponent(deviceId)}&limit=1&withlocation=false`,
     apiKey,
   )
-  const simCardId = device.data?.simcardid
-  if (!device.success || simCardId == null)
+  const device = devices.data?.find((item) => String(item.id) === deviceId)
+  const simCardId = device?.simcardid
+  if (!devices.success || !device || simCardId == null)
     throw new Error('Hologram device is unavailable')
 
-  const cellularLink = device.data?.links?.cellular?.[0]
+  const cellularLink = device.links?.cellular?.[0]
   const configuredLimit = cellularLink?.overagelimit
-  const planData = device.data?.intended_plan_data
+  const planData = device.intended_plan_data
   const limitBytes =
     configuredLimit === -1
       ? null

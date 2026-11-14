@@ -3,16 +3,19 @@ import { readCellularUsage } from './hologram-usage'
 
 const originalKey = process.env.HOLOGRAM_API_KEY
 const originalDeviceId = process.env.HOLOGRAM_DEVICE_ID
+const originalOrgId = process.env.HOLOGRAM_ORG_ID
 
 beforeEach(() => {
   process.env.HOLOGRAM_API_KEY = 'test-key'
   process.env.HOLOGRAM_DEVICE_ID = '6874649'
+  process.env.HOLOGRAM_ORG_ID = '112601'
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
   process.env.HOLOGRAM_API_KEY = originalKey
   process.env.HOLOGRAM_DEVICE_ID = originalDeviceId
+  process.env.HOLOGRAM_ORG_ID = originalOrgId
 })
 
 it('returns carrier-billed usage against the configured data limit', async () => {
@@ -22,13 +25,16 @@ it('returns carrier-billed usage against the configured data limit', async () =>
       new Response(
         JSON.stringify({
           success: true,
-          data: {
-            simcardid: 1234,
-            intended_plan_data: 0,
-            links: {
-              cellular: [{ overagelimit: 1_000_000_000, state: 'active' }],
+          data: [
+            {
+              id: 6874649,
+              simcardid: 1234,
+              intended_plan_data: 0,
+              links: {
+                cellular: [{ overagelimit: 1_000_000_000, state: 'active' }],
+              },
             },
-          },
+          ],
         }),
       ),
     )
@@ -54,6 +60,11 @@ it('returns carrier-billed usage against the configured data limit', async () =>
     billingPeriodEnd: '2026-12-07T00:00:00Z',
     status: 'active',
   })
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    1,
+    'https://dashboard.hologram.io/api/1/devices?orgid=112601&ids=6874649&limit=1&withlocation=false',
+    expect.objectContaining({ cache: 'no-store' }),
+  )
   expect(fetchMock).toHaveBeenNthCalledWith(
     2,
     'https://dashboard.hologram.io/api/1/usage/billing/simcard/1234',
