@@ -47,7 +47,16 @@ async function hologramRequest<T>(path: string, apiKey: string): Promise<T> {
     signal: AbortSignal.timeout(8_000),
   })
 
-  if (!response.ok) throw new Error('Hologram request failed')
+  if (!response.ok) {
+    let providerError = ''
+    try {
+      const body = (await response.json()) as { error?: unknown }
+      if (typeof body.error === 'string') providerError = `: ${body.error}`
+    } catch {
+      // Keep provider failures concise and never log response bodies wholesale.
+    }
+    throw new Error(`Hologram request failed (${response.status})${providerError}`)
+  }
   return response.json() as Promise<T>
 }
 
