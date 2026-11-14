@@ -27,6 +27,7 @@ type HologramUsageResponse = {
   data?:
     | {
         bytes?: number | string | null
+        date?: string | null
       }[]
     | null
 }
@@ -120,11 +121,17 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     throw new Error('Hologram cellular link is unavailable')
   const usageFilter = `linkid=${encodeURIComponent(String(cellularLink.id))}`
   const usage = await hologramRequest<HologramUsageResponse>(
-    `/usage/data/daily?${usageFilter}&timestart=${Math.floor(periodStart / 1_000)}&timeend=${Math.floor(now / 1_000)}&limit=100`,
+    `/usage/data/daily?${usageFilter}&limit=100`,
     apiKey,
   )
   if (!usage.success) throw new Error('Hologram usage is unavailable')
   const usedBytes = (usage.data ?? []).reduce((total, row) => {
+    const usageDate = Date.parse(row.date ?? '')
+    if (
+      Number.isFinite(usageDate) &&
+      (usageDate < periodStart || usageDate >= periodEnd)
+    )
+      return total
     const bytes = Number(row.bytes)
     return Number.isFinite(bytes) ? total + Math.max(0, bytes) : total
   }, 0)

@@ -48,6 +48,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
           data: [
             {
               bytes: '100030000',
+              date: '2026-11-14',
             },
           ],
         }),
@@ -73,7 +74,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
   expect(fetchMock).toHaveBeenNthCalledWith(
     2,
     expect.stringContaining(
-      'https://dashboard.hologram.io/api/1/usage/data/daily?linkid=4321&timestart=',
+      'https://dashboard.hologram.io/api/1/usage/data/daily?linkid=4321&limit=100',
     ),
     expect.objectContaining({ cache: 'no-store' }),
   )
