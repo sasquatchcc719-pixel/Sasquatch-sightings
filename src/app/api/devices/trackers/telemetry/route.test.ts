@@ -60,8 +60,36 @@ describe('device telemetry endpoint', () => {
       p_payload: reading,
     })
   })
+  it('accepts offline temperature samples with their original times', async () => {
+    const reading = {
+      ...payload,
+      temperatureC: 21.125,
+      temperatureSamples: [
+        { recordedAt: '2026-11-13T18:30:00.000Z', temperatureC: 20.75 },
+      ],
+    }
+    expect((await POST(request(JSON.stringify(reading)))).status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('ingest_fleet_tracker', {
+      p_token_hash: createHash('sha256').update(token).digest('hex'),
+      p_payload: reading,
+    })
+  })
+  it('rejects oversized temperature backlogs', async () => {
+    const temperatureSamples = Array.from({ length: 33 }, (_, index) => ({
+      recordedAt: `2026-11-13T18:${String(index).padStart(2, '0')}:00.000Z`,
+      temperatureC: 20,
+    }))
+    expect(
+      (await POST(request(JSON.stringify({ ...payload, temperatureSamples }))))
+        .status,
+    ).toBe(400)
+    expect(rpc).not.toHaveBeenCalled()
+  })
   it('rejects temperatures outside the DS18B20 range', async () => {
-    expect((await POST(request(JSON.stringify({ ...payload, temperatureC: 126 })))).status).toBe(400)
+    expect(
+      (await POST(request(JSON.stringify({ ...payload, temperatureC: 126 }))))
+        .status,
+    ).toBe(400)
     expect(rpc).not.toHaveBeenCalled()
   })
   it('rejects oversized bodies even without a Content-Length header', async () => {
@@ -94,6 +122,19 @@ describe('device telemetry endpoint', () => {
     }
     expect(
       (await POST(request(JSON.stringify({ ...payload, points: [point] }))))
+        .status,
+    ).toBe(400)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('rejects future offline temperature timestamps', async () => {
+    const temperatureSamples = [
+      {
+        recordedAt: new Date(Date.now() + 3600_000).toISOString(),
+        temperatureC: 20,
+      },
+    ]
+    expect(
+      (await POST(request(JSON.stringify({ ...payload, temperatureSamples }))))
         .status,
     ).toBe(400)
     expect(rpc).not.toHaveBeenCalled()

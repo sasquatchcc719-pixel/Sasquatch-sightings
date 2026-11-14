@@ -15,4 +15,8 @@ int main() {
   assert(otaCheckDue(1000, 0));
   assert(!otaCheckDue(OTA_CHECK_INTERVAL_MS - 1, 1));
   assert(otaCheckDue(OTA_CHECK_INTERVAL_MS + 1, 1));
+
+  assert(temperatureSampleDue(1, 0));
+  assert(!temperatureSampleDue(TEMPERATURE_SAMPLE_INTERVAL_MS, 1));
+  assert(temperatureSampleDue(TEMPERATURE_SAMPLE_INTERVAL_MS + 1, 1));
 }

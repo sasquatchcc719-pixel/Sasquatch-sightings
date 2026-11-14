@@ -30,7 +30,9 @@
 // Waveshare V2 schematic; these differ from older board revisions.
 constexpr int MODEM_RX = 17, MODEM_TX = 18, MODEM_POWER = 21, STATUS_LED = 38;
 constexpr size_t QUEUE_SIZE = 5000, BATCH_SIZE = 32;
+constexpr size_t TEMPERATURE_QUEUE_SIZE = 576, TEMPERATURE_BATCH_SIZE = 32;
 constexpr uint32_t RECORD_MAGIC = 0x53515431;
+constexpr uint32_t TEMPERATURE_RECORD_MAGIC = 0x53515432;
 #include "build_info.h"
 #include "ota.h"
 constexpr char CELLULAR_APN[] = "hologram";
@@ -46,11 +48,20 @@ struct Record {
   float speedMps, bearing;
   uint32_t crc;
 };
+struct TemperatureRecord {
+  uint32_t magic;
+  uint64_t order;
+  int64_t epoch;
+  float celsius;
+  uint32_t crc;
+};
 struct UploadRequest {
   String endpoint, token, payload, otaReport, otaManifest;
   bool checkOta = false, otaHealthy = false;
   UploadTicket tickets[BATCH_SIZE];
   size_t count = 0;
+  UploadTicket temperatureTickets[TEMPERATURE_BATCH_SIZE];
+  size_t temperatureCount = 0;
   bool cellular = false;
   uint32_t generation = 0, startedMs = 0, durationMs = 0, testDelayMs = 0;
   int code = -1, tlsError = 0;
@@ -64,13 +75,19 @@ uint32_t cellularGeneration = 0, lastUploadDurationMs = 0, maxGpsFixGapSeconds =
 Preferences preferences;
 HardwareSerial modem(1);
 File queueFile;
+File temperatureQueueFile;
 uint64_t orders[QUEUE_SIZE] = {}, nextOrder = 1;
+uint64_t temperatureOrders[TEMPERATURE_QUEUE_SIZE] = {}, nextTemperatureOrder = 1;
 size_t queued = 0;
+size_t temperatureQueued = 0;
 uint32_t dropped = 0, sequence = 0;
+uint32_t temperatureDropped = 0, lastTemperatureSampleMs = 0;
 int latestSlot = -1;
+int latestTemperatureSlot = -1;
 char bootId[37];
 String ssid, password, endpoint, token, serialInput;
-bool configured = false, storageReady = false, modemReady = false, gpsFix = false;
+bool configured = false, storageReady = false, temperatureStorageReady = false;
+bool modemReady = false, gpsFix = false;
 bool serialOverflow = false;
 GpsFix currentFix;
 int64_t lastRecordedEpoch = 0, lastSavedEpoch = 0;
@@ -144,10 +161,43 @@ void initQueue() {
     if (record.order >= nextOrder) nextOrder = record.order + 1;
   }
 }
+bool readTemperatureRecord(int slot, TemperatureRecord &record) {
+  if (!temperatureStorageReady || slot < 0 || slot >= int(TEMPERATURE_QUEUE_SIZE)) return false;
+  if (!temperatureQueueFile.seek(size_t(slot) * sizeof(TemperatureRecord))) return false;
+  return temperatureQueueFile.read(reinterpret_cast<uint8_t *>(&record), sizeof(record)) == sizeof(record) &&
+    record.magic == TEMPERATURE_RECORD_MAGIC && std::isfinite(record.celsius) &&
+    record.celsius >= -55 && record.celsius <= 125 &&
+    record.crc == recordCrc(&record, offsetof(TemperatureRecord, crc));
+}
+void initTemperatureQueue() {
+  if (!storageReady) return;
+  temperatureQueueFile = FFat.open("/temperature-v1.bin", "r+");
+  if (!temperatureQueueFile) temperatureQueueFile = FFat.open("/temperature-v1.bin", "w+");
+  if (!temperatureQueueFile) return;
+  if (temperatureQueueFile.size() < TEMPERATURE_QUEUE_SIZE * sizeof(TemperatureRecord)) {
+    temperatureQueueFile.seek(TEMPERATURE_QUEUE_SIZE * sizeof(TemperatureRecord) - 1);
+    temperatureQueueFile.write(uint8_t(0)); temperatureQueueFile.flush();
+  }
+  memset(temperatureOrders, 0, sizeof(temperatureOrders));
+  temperatureQueued = 0; nextTemperatureOrder = 1; latestTemperatureSlot = -1;
+  temperatureStorageReady = true;
+  TemperatureRecord record;
+  for (size_t slot = 0; slot < TEMPERATURE_QUEUE_SIZE; ++slot)
+    if (readTemperatureRecord(slot, record)) {
+      temperatureOrders[slot] = record.order; ++temperatureQueued;
+      if (record.order >= nextTemperatureOrder) nextTemperatureOrder = record.order + 1;
+    }
+}
 int oldestSlot() {
   int oldest = -1;
   for (size_t i = 0; i < QUEUE_SIZE; ++i)
     if (orders[i] && (oldest < 0 || orders[i] < orders[oldest])) oldest = i;
+  return oldest;
+}
+int oldestTemperatureSlot() {
+  int oldest = -1;
+  for (size_t i = 0; i < TEMPERATURE_QUEUE_SIZE; ++i)
+    if (temperatureOrders[i] && (oldest < 0 || temperatureOrders[i] < temperatureOrders[oldest])) oldest = i;
   return oldest;
 }
 void saveFix(const GpsFix &fix) {
@@ -176,6 +226,32 @@ void acknowledge(int slot) {
     orders[slot] = 0; --queued;
     if (latestSlot == slot) latestSlot = -1;
   } else storageReady = false;
+}
+void saveTemperature(int64_t epoch, float celsius) {
+  if (!temperatureStorageReady || epoch < 1704067200 || !std::isfinite(celsius)) return;
+  int slot = -1;
+  for (size_t i = 0; i < TEMPERATURE_QUEUE_SIZE; ++i)
+    if (!temperatureOrders[i]) { slot = i; break; }
+  if (slot < 0) { slot = oldestTemperatureSlot(); ++temperatureDropped; }
+  TemperatureRecord record = {};
+  record.magic = TEMPERATURE_RECORD_MAGIC; record.order = nextTemperatureOrder++;
+  record.epoch = epoch; record.celsius = celsius;
+  record.crc = recordCrc(&record, offsetof(TemperatureRecord, crc));
+  if (!temperatureQueueFile.seek(size_t(slot) * sizeof(TemperatureRecord)) ||
+      temperatureQueueFile.write(reinterpret_cast<const uint8_t *>(&record), sizeof(record)) != sizeof(record)) {
+    temperatureStorageReady = false; return;
+  }
+  temperatureQueueFile.flush();
+  if (!temperatureOrders[slot]) ++temperatureQueued;
+  temperatureOrders[slot] = record.order; latestTemperatureSlot = slot;
+}
+void acknowledgeTemperature(int slot) {
+  const uint32_t empty = 0;
+  if (temperatureQueueFile.seek(size_t(slot) * sizeof(TemperatureRecord)) &&
+      temperatureQueueFile.write(reinterpret_cast<const uint8_t *>(&empty), sizeof(empty)) == sizeof(empty)) {
+    temperatureOrders[slot] = 0; --temperatureQueued;
+    if (latestTemperatureSlot == slot) latestTemperatureSlot = -1;
+  } else temperatureStorageReady = false;
 }
 String command(const char *text, uint32_t timeout = 1200) {
   if (cellularStarted) {
@@ -354,6 +430,8 @@ void printStatus(const char *event = "status") {
   doc["gpsFixReplies"] = gpsFixReplies; doc["gpsEmptyReplies"] = gpsEmptyReplies; doc["gpsInvalidReplies"] = gpsInvalidReplies;
   doc["clockReady"] = time(nullptr) >= 1704067200;
   doc["storageReady"] = storageReady; doc["queued"] = queued;
+  doc["temperatureStorageReady"] = temperatureStorageReady;
+  doc["temperatureQueued"] = temperatureQueued; doc["temperatureDropped"] = temperatureDropped;
   doc["discardedOldest"] = dropped; doc["lastHttpCode"] = lastHttpCode;
   doc["lastTlsError"] = lastTlsError;
   if (std::isfinite(batteryV)) doc["batteryV"] = batteryV; else doc["batteryV"] = nullptr;
@@ -496,8 +574,9 @@ void processSerial() {
       if (uploadInFlight) { Serial.println("{\"event\":\"error\",\"error\":\"upload_in_progress\"}"); continue; }
       if (storageReady) { Serial.println("{\"event\":\"error\",\"error\":\"storage_already_initialized\"}"); continue; }
       if (queueFile) queueFile.close();
+      if (temperatureQueueFile) temperatureQueueFile.close();
       FFat.end();
-      if (FFat.begin(true)) initQueue();
+      if (FFat.begin(true)) { initQueue(); initTemperatureQueue(); }
       printStatus("storage_initialized"); continue;
     }
     if (action == "configure") {
@@ -584,7 +663,11 @@ void collectUploadResults() {
     if (lastHttpCode == 200) {
       for (size_t i = 0; i < request->count; ++i)
         if (uploadTicketIsCurrent(request->tickets[i], orders, QUEUE_SIZE)) acknowledge(request->tickets[i].slot);
+      for (size_t i = 0; i < request->temperatureCount; ++i)
+        if (uploadTicketIsCurrent(request->temperatureTickets[i], temperatureOrders, TEMPERATURE_QUEUE_SIZE))
+          acknowledgeTemperature(request->temperatureTickets[i].slot);
       if (storageReady) queueFile.flush();
+      if (temperatureStorageReady) temperatureQueueFile.flush();
       failures = 0;
       if (request->checkOta) {
         TrackerOta::controlHealthy = request->otaHealthy;
@@ -600,7 +683,8 @@ void collectUploadResults() {
       nextPostMs = millis() + min(uint32_t(30000), backoff + esp_random() % 500);
     } else {
       const bool moving = freshFix() && currentFix.speedMps > 0.5;
-      const bool backlog = queued && request->count == BATCH_SIZE;
+      const bool backlog = (queued && request->count == BATCH_SIZE) ||
+        (temperatureQueued && request->temperatureCount == TEMPERATURE_BATCH_SIZE);
       nextPostMs = request->startedMs + ReportingPolicy::uploadIntervalMs(moving, backlog);
       // Respect the server's one-request/second limit after a slow request.
       if (int32_t(nextPostMs - millis()) < 1100) nextPostMs = millis() + 1100;
@@ -634,6 +718,18 @@ void postTelemetry() {
     if (std::isfinite(record.bearing)) point["bearing"] = record.bearing; else point["bearing"] = nullptr;
     point["satellites"] = nullptr; // CGPSINFO does not include a satellite count.
   }
+  JsonArray temperatures = body["temperatureSamples"].to<JsonArray>();
+  request->temperatureCount = selectUploadBatch(temperatureOrders, TEMPERATURE_QUEUE_SIZE,
+    latestTemperatureSlot, request->temperatureTickets, TEMPERATURE_BATCH_SIZE);
+  for (size_t i = 0; i < request->temperatureCount; ++i) {
+    TemperatureRecord record;
+    if (!readTemperatureRecord(request->temperatureTickets[i].slot, record)) {
+      temperatureStorageReady = false; delete request; return;
+    }
+    JsonObject sample = temperatures.add<JsonObject>();
+    char recordedAt[25]; formatUtc(record.epoch, recordedAt, sizeof(recordedAt));
+    sample["recordedAt"] = String(recordedAt); sample["temperatureC"] = record.celsius;
+  }
   serializeJson(body, request->payload);
   request->endpoint = endpoint; request->token = token;
   lastUploadNetwork = activeNetwork();
@@ -665,6 +761,7 @@ void setup() {
     configured = !ssid.isEmpty() && validToken(token) && validEndpoint(endpoint);
   }
   initQueue();
+  initTemperatureQueue();
   TrackerOta::begin();
   uploadRequests = xQueueCreate(1, sizeof(UploadRequest *));
   uploadResults = xQueueCreate(1, sizeof(UploadRequest *));
@@ -690,13 +787,22 @@ void loop() {
   if (cellularRestartPending && !uploadInFlight) restartCellular();
   processSerial();
   TemperatureProbe::poll(millis());
+  if (std::isfinite(TemperatureProbe::celsius) && time(nullptr) >= 1704067200 &&
+      ReportingPolicy::temperatureSampleDue(millis(), lastTemperatureSampleMs)) {
+    saveTemperature(time(nullptr), TemperatureProbe::celsius);
+    lastTemperatureSampleMs = millis();
+  }
   bool moving = freshFix() && currentFix.speedMps > 0.5;
-  TrackerOta::health(configured && storageReady && uploaderReady && lastHttpCode == 200, moving);
+  TrackerOta::health(configured && storageReady && temperatureStorageReady && uploaderReady && lastHttpCode == 200, moving);
   if (!uploadInFlight && !TrackerOta::pending && !TrackerOta::offered.isEmpty() &&
       internetReady() && int32_t(millis() - TrackerOta::retryAt) >= 0 && millis() - TrackerOta::parkedSince > 30000 && std::isfinite(batteryV) && batteryV >= 3.7) {
     JsonDocument manifest;
     if (!deserializeJson(manifest, TrackerOta::offered) && manifest["sequence"].as<uint32_t>() <= max(FIRMWARE_SEQUENCE, TrackerOta::failedSequence)) TrackerOta::offered = "";
-    else { if (queueFile) queueFile.flush(); CameraUsb::stop(); TrackerOta::install(token); }
+    else {
+      if (queueFile) queueFile.flush();
+      if (temperatureQueueFile) temperatureQueueFile.flush();
+      CameraUsb::stop(); TrackerOta::install(token);
+    }
   }
   uint32_t now = millis();
   if (now - lastPollMs >= (modemReady ? 1000u : 5000u)) { lastPollMs = now; pollGps(); }

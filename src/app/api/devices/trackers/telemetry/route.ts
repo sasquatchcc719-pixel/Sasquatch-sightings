@@ -46,10 +46,13 @@ export async function POST(request: NextRequest) {
   if (
     parsed.data.points.some(
       (point) => Date.parse(point.recordedAt) > now + 300_000,
+    ) ||
+    parsed.data.temperatureSamples?.some(
+      (sample) => Date.parse(sample.recordedAt) > now + 300_000,
     )
   )
     return NextResponse.json(
-      { error: 'GPS timestamp is in the future' },
+      { error: 'Telemetry timestamp is in the future' },
       { status: 400 },
     )
   const { data, error } = await createAdminClient().rpc(

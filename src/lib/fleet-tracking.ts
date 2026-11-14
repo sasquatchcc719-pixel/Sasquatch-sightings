@@ -14,6 +14,11 @@ export const trackerPointSchema = z.object({
   satellites: z.number().int().min(0).max(200).nullable(),
 })
 
+export const trackerTemperatureSampleSchema = z.object({
+  recordedAt: z.iso.datetime(),
+  temperatureC: z.number().finite().min(-55).max(125),
+})
+
 export const trackerTelemetrySchema = z.object({
   firmware: z.string().min(1).max(64),
   bootId: z.uuid(),
@@ -23,6 +28,10 @@ export const trackerTelemetrySchema = z.object({
   temperatureC: nullableNumber(-55, 125).optional(),
   network: z.enum(['cellular', 'wifi']).optional(),
   points: z.array(trackerPointSchema).max(32),
+  temperatureSamples: z
+    .array(trackerTemperatureSampleSchema)
+    .max(32)
+    .optional(),
 })
 
 export type FleetTracker = {
