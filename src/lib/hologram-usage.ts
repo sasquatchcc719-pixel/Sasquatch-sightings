@@ -111,8 +111,12 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     usage.data?.find((period) => Number(period.periods_back) === 0) ??
     usage.data?.[0]
   const usedBytes = Number(currentPeriod?.bytes)
-  if (!usage.success || !currentPeriod || !Number.isFinite(usedBytes))
-    throw new Error('Hologram usage is unavailable')
+  if (!usage.success || !currentPeriod || !Number.isFinite(usedBytes)) {
+    const firstFields = Object.keys(usage.data?.[0] ?? {}).join(',') || 'none'
+    throw new Error(
+      `Hologram usage is unavailable (success=${String(usage.success)}; count=${usage.data?.length ?? 0}; fields=${firstFields}; bytesType=${typeof currentPeriod?.bytes})`,
+    )
+  }
 
   const safeUsedBytes = Math.max(0, usedBytes)
   const remainingBytes =
