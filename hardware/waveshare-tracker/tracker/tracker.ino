@@ -21,6 +21,7 @@
 #include "gps_parser.h"
 #include "modem_clock.h"
 #include "modem_reply.h"
+#include "reporting_policy.h"
 #include "upload_batch.h"
 #include "camera_usb.h"
 #include "tls_root.h"
@@ -72,7 +73,7 @@ String ssid, password, endpoint, token, serialInput;
 bool configured = false, storageReady = false, modemReady = false, gpsFix = false;
 bool serialOverflow = false;
 GpsFix currentFix;
-int64_t lastRecordedEpoch = 0;
+int64_t lastRecordedEpoch = 0, lastSavedEpoch = 0;
 uint32_t lastFixMs = 0, lastPollMs = 0, lastHeartbeatMs = 0, nextPostMs = 0;
 uint32_t lastConnectMs = 0, lastStatusMs = 0;
 uint8_t failures = 0, modemReadFailures = 0;
@@ -314,7 +315,11 @@ void pollGps() {
   if (fix.epoch != lastRecordedEpoch) {
     if (lastRecordedEpoch && fix.epoch > lastRecordedEpoch)
       maxGpsFixGapSeconds = max(maxGpsFixGapSeconds, uint32_t(fix.epoch - lastRecordedEpoch));
-    saveFix(fix); lastRecordedEpoch = fix.epoch;
+    const bool moving = std::isfinite(fix.speedMps) && fix.speedMps > 0.5;
+    if (ReportingPolicy::shouldSaveFix(fix.epoch, lastSavedEpoch, moving)) {
+      saveFix(fix); lastSavedEpoch = fix.epoch;
+    }
+    lastRecordedEpoch = fix.epoch;
   }
 }
 float readBattery() {
@@ -596,7 +601,7 @@ void collectUploadResults() {
     } else {
       const bool moving = freshFix() && currentFix.speedMps > 0.5;
       const bool backlog = queued && request->count == BATCH_SIZE;
-      nextPostMs = request->startedMs + ((moving || backlog) ? 2000 : 10000);
+      nextPostMs = request->startedMs + ReportingPolicy::uploadIntervalMs(moving, backlog);
       // Respect the server's one-request/second limit after a slow request.
       if (int32_t(nextPostMs - millis()) < 1100) nextPostMs = millis() + 1100;
     }
@@ -635,7 +640,7 @@ void postTelemetry() {
   if (lastUploadNetwork == "cellular") { PPP.setDefault(); maintainCellularDns(true); }
   else WiFi.STA.setDefault();
   request->cellular = lastUploadNetwork == "cellular";
-  request->checkOta = endpoint == DEFAULT_ENDPOINT && (!TrackerOta::lastCheck || millis() - TrackerOta::lastCheck >= 60000);
+  request->checkOta = endpoint == DEFAULT_ENDPOINT && ReportingPolicy::otaCheckDue(millis(), TrackerOta::lastCheck);
   if (request->checkOta) { request->otaReport = TrackerOta::report(); TrackerOta::lastCheck = millis(); }
   request->generation = cellularGeneration; request->startedMs = millis();
   request->testDelayMs = nextUploadDelayMs;

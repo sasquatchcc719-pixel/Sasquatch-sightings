@@ -214,6 +214,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**
 
 - Show Palmer Lake's overnight low and the 33°F truck-protection warning at the top of both the technician and admin dashboards, with automatic refresh throughout the day.
+- For a cellular tracker outage, check the Hologram SIM status and data cap before directing anyone to physical hardware; do not send users to switches hidden behind the acrylic enclosure when the SIM is paused.
 
 - A button labeled Email or Send must open a review of the exact customer-facing recipient, subject, language, line items, notes, discounts, totals, and actions; keep a persistent success or failure state beside the button, show success only after the server confirms delivery, include the external transaction ID when available, and never use a send-labeled button as a silent scroll link.
 
