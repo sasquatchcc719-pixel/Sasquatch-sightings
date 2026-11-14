@@ -121,7 +121,7 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     throw new Error('Hologram cellular link is unavailable')
   const usageFilter = `linkid=${encodeURIComponent(String(cellularLink.id))}`
   const usage = await hologramRequest<HologramUsageResponse>(
-    `/usage/data/daily?${usageFilter}&limit=100`,
+    `/usage/data/daily?orgid=${encodeURIComponent(orgId)}&${usageFilter}&limit=100`,
     apiKey,
   )
   if (!usage.success) throw new Error('Hologram usage is unavailable')
