@@ -67,7 +67,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
   )
   expect(fetchMock).toHaveBeenNthCalledWith(
     2,
-    'https://dashboard.hologram.io/api/1/usage/billing/simcard/6874649',
+    'https://dashboard.hologram.io/api/1/usage/billing/simcard/5856987',
     expect.objectContaining({ cache: 'no-store' }),
   )
   expect(

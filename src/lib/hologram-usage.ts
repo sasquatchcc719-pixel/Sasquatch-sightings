@@ -100,13 +100,30 @@ export async function readCellularUsage(): Promise<CellularUsage> {
           ? Math.max(0, planData)
           : null
 
-  const usage = await hologramRequest<HologramUsageResponse>(
-    `/usage/billing/simcard/${encodeURIComponent(String(simCardId))}`,
-    apiKey,
-  )
+  let usage: HologramUsageResponse | null = null
+  let usageError: unknown
+  const billingIds = [...new Set([device.id, simCardId].map(String))]
+  for (const billingId of billingIds) {
+    try {
+      const candidate = await hologramRequest<HologramUsageResponse>(
+        `/usage/billing/simcard/${encodeURIComponent(billingId)}`,
+        apiKey,
+      )
+      if (
+        candidate.success &&
+        typeof candidate.data?.current_billing_usage === 'number'
+      ) {
+        usage = candidate
+        break
+      }
+      usageError = new Error('Hologram usage is unavailable')
+    } catch (error) {
+      usageError = error
+    }
+  }
+  if (!usage) throw usageError ?? new Error('Hologram usage is unavailable')
   const usedBytes = usage.data?.current_billing_usage
-  if (!usage.success || typeof usedBytes !== 'number')
-    throw new Error('Hologram usage is unavailable')
+  if (typeof usedBytes !== 'number') throw new Error('Hologram usage is unavailable')
 
   const safeUsedBytes = Math.max(0, usedBytes)
   const remainingBytes =
