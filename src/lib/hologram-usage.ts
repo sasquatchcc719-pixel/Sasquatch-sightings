@@ -3,6 +3,7 @@ const DEFAULT_DEVICE_ID = '6874649'
 const DEFAULT_ORG_ID = '112601'
 
 type HologramCellularLink = {
+  id?: number | string | null
   overagelimit?: number | null
   state?: string | null
 }
@@ -103,8 +104,12 @@ export async function readCellularUsage(): Promise<CellularUsage> {
           : null
 
   const billingDeviceId = String(device.id ?? deviceId)
+  const billingFilter =
+    cellularLink?.id == null
+      ? `deviceids=${encodeURIComponent(billingDeviceId)}`
+      : `linkid=${encodeURIComponent(String(cellularLink.id))}`
   const usage = await hologramRequest<HologramUsageResponse>(
-    `/usage/data/billing?deviceids=${encodeURIComponent(billingDeviceId)}&maxperiodsback=1&limit=10`,
+    `/usage/data/billing?${billingFilter}&maxperiodsback=1&limit=10`,
     apiKey,
   )
   const currentPeriod =
