@@ -24,7 +24,7 @@ type HologramUsageResponse = {
   data?:
     | {
         periods_back?: number | string | null
-        bytes?: number | null
+        bytes?: number | string | null
         cur_period_end?: string | null
       }[]
     | null
@@ -110,9 +110,9 @@ export async function readCellularUsage(): Promise<CellularUsage> {
   const currentPeriod =
     usage.data?.find((period) => Number(period.periods_back) === 0) ??
     usage.data?.[0]
-  if (!usage.success || !currentPeriod || typeof currentPeriod.bytes !== 'number')
+  const usedBytes = Number(currentPeriod?.bytes)
+  if (!usage.success || !currentPeriod || !Number.isFinite(usedBytes))
     throw new Error('Hologram usage is unavailable')
-  const usedBytes = currentPeriod.bytes
 
   const safeUsedBytes = Math.max(0, usedBytes)
   const remainingBytes =

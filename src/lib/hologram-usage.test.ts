@@ -45,7 +45,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
           data: [
             {
               periods_back: '0',
-              bytes: 100_030_000,
+              bytes: '100030000',
               cur_period_end: '2026-12-07T00:00:00Z',
             },
           ],
