@@ -42,10 +42,13 @@ it('returns carrier-billed usage against the configured data limit', async () =>
       new Response(
         JSON.stringify({
           success: true,
-          data: {
-            current_billing_usage: 100_030_000,
-            billing_period_end: '2026-12-07T00:00:00Z',
-          },
+          data: [
+            {
+              periods_back: '0',
+              bytes: 100_030_000,
+              cur_period_end: '2026-12-07T00:00:00Z',
+            },
+          ],
         }),
       ),
     )
@@ -67,7 +70,7 @@ it('returns carrier-billed usage against the configured data limit', async () =>
   )
   expect(fetchMock).toHaveBeenNthCalledWith(
     2,
-    'https://dashboard.hologram.io/api/1/usage/billing/simcard/5856987',
+    'https://dashboard.hologram.io/api/1/usage/data/billing?deviceids=5856987&maxperiodsback=1&limit=10',
     expect.objectContaining({ cache: 'no-store' }),
   )
   expect(

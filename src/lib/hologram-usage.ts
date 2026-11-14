@@ -21,11 +21,13 @@ type HologramDeviceListResponse = {
 
 type HologramUsageResponse = {
   success?: boolean
-  data?: {
-    current_billing_usage?: number | null
-    billing_period_start?: string | null
-    billing_period_end?: string | null
-  }
+  data?:
+    | {
+        periods_back?: number | string | null
+        bytes?: number | null
+        cur_period_end?: string | null
+      }[]
+    | null
 }
 
 export type CellularUsage = {
@@ -100,30 +102,17 @@ export async function readCellularUsage(): Promise<CellularUsage> {
           ? Math.max(0, planData)
           : null
 
-  let usage: HologramUsageResponse | null = null
-  let usageError: unknown
-  const billingIds = [...new Set([device.id, simCardId].map(String))]
-  for (const billingId of billingIds) {
-    try {
-      const candidate = await hologramRequest<HologramUsageResponse>(
-        `/usage/billing/simcard/${encodeURIComponent(billingId)}`,
-        apiKey,
-      )
-      if (
-        candidate.success &&
-        typeof candidate.data?.current_billing_usage === 'number'
-      ) {
-        usage = candidate
-        break
-      }
-      usageError = new Error('Hologram usage is unavailable')
-    } catch (error) {
-      usageError = error
-    }
-  }
-  if (!usage) throw usageError ?? new Error('Hologram usage is unavailable')
-  const usedBytes = usage.data?.current_billing_usage
-  if (typeof usedBytes !== 'number') throw new Error('Hologram usage is unavailable')
+  const billingDeviceId = String(device.id ?? deviceId)
+  const usage = await hologramRequest<HologramUsageResponse>(
+    `/usage/data/billing?deviceids=${encodeURIComponent(billingDeviceId)}&maxperiodsback=1&limit=10`,
+    apiKey,
+  )
+  const currentPeriod =
+    usage.data?.find((period) => Number(period.periods_back) === 0) ??
+    usage.data?.[0]
+  if (!usage.success || !currentPeriod || typeof currentPeriod.bytes !== 'number')
+    throw new Error('Hologram usage is unavailable')
+  const usedBytes = currentPeriod.bytes
 
   const safeUsedBytes = Math.max(0, usedBytes)
   const remainingBytes =
@@ -140,8 +129,8 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     limitBytes,
     remainingBytes,
     percentUsed,
-    billingPeriodStart: usage.data?.billing_period_start ?? null,
-    billingPeriodEnd: usage.data?.billing_period_end ?? null,
+    billingPeriodStart: null,
+    billingPeriodEnd: currentPeriod.cur_period_end ?? null,
     status: cellularLink?.state ?? null,
     updatedAt: new Date().toISOString(),
   }
