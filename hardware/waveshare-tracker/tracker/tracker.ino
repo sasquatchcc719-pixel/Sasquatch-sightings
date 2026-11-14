@@ -316,7 +316,7 @@ void pollGps() {
     if (lastRecordedEpoch && fix.epoch > lastRecordedEpoch)
       maxGpsFixGapSeconds = max(maxGpsFixGapSeconds, uint32_t(fix.epoch - lastRecordedEpoch));
     const bool moving = std::isfinite(fix.speedMps) && fix.speedMps > 0.5;
-    if (ReportingPolicy::shouldSaveFix(fix.epoch, lastSavedEpoch, moving)) {
+    if (ReportingPolicy::shouldSaveFix(lastSavedEpoch, moving)) {
       saveFix(fix); lastSavedEpoch = fix.epoch;
     }
     lastRecordedEpoch = fix.epoch;

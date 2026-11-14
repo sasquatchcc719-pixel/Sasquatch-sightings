@@ -4,10 +4,9 @@
 int main() {
   using namespace ReportingPolicy;
 
-  assert(shouldSaveFix(1000, 0, false));
-  assert(shouldSaveFix(1001, 1000, true));
-  assert(!shouldSaveFix(1059, 1000, false));
-  assert(shouldSaveFix(1060, 1000, false));
+  assert(shouldSaveFix(0, false));
+  assert(shouldSaveFix(1000, true));
+  assert(!shouldSaveFix(1000, false));
 
   assert(uploadIntervalMs(true, false) == 30000);
   assert(uploadIntervalMs(false, true) == 10000);
