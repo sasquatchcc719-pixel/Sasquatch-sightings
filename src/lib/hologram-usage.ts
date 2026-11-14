@@ -71,7 +71,7 @@ export async function readCellularUsage(): Promise<CellularUsage> {
   if (!apiKey) throw new Error('Hologram usage is not configured')
 
   const devices = await hologramRequest<HologramDeviceListResponse>(
-    `/devices?orgid=${encodeURIComponent(orgId)}&ids=${encodeURIComponent(deviceId)}&limit=1&withlocation=false`,
+    `/devices?orgid=${encodeURIComponent(orgId)}&limit=100&withlocation=false`,
     apiKey,
   )
   const device = devices.data?.find((item) => String(item.id) === deviceId)
