@@ -92,7 +92,11 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     )
   }
 
-  const cellularLink = device.links?.cellular?.[0]
+  const cellularLinks = device.links?.cellular ?? []
+  const cellularLink =
+    cellularLinks.find((link) =>
+      ['LIVE', 'CONNECTED', 'READY'].includes(link.state?.toUpperCase() ?? ''),
+    ) ?? cellularLinks[0]
   const configuredLimit = cellularLink?.overagelimit
   const planData = device.intended_plan_data
   const limitBytes =
@@ -117,9 +121,20 @@ export async function readCellularUsage(): Promise<CellularUsage> {
   )
   const periodStart = activationTime + periodsSinceActivation * periodDuration
   const periodEnd = periodStart + periodDuration
-  if (cellularLink?.id == null)
+  const linkIds = [
+    ...new Set(
+      cellularLinks
+        .map((link) => link.id)
+        .filter((id): id is number | string => id != null)
+        .map(String),
+    ),
+  ]
+  if (linkIds.length === 0)
     throw new Error('Hologram cellular link is unavailable')
-  const usageFilter = `linkid=${encodeURIComponent(String(cellularLink.id))}`
+  const usageFilter =
+    linkIds.length === 1
+      ? `linkid=${encodeURIComponent(linkIds[0])}`
+      : `linkids=${encodeURIComponent(linkIds.join(','))}`
   const usage = await hologramRequest<HologramUsageResponse>(
     `/usage/data/daily?orgid=${encodeURIComponent(orgId)}&${usageFilter}&limit=100`,
     apiKey,
