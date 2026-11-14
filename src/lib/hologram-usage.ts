@@ -6,12 +6,14 @@ type HologramCellularLink = {
   id?: number | string | null
   overagelimit?: number | null
   state?: string | null
+  whencreated?: string | null
 }
 
 type HologramDevice = {
   id?: number | string | null
   simcardid?: number | string | null
   intended_plan_data?: number | null
+  whenclaimed?: string | null
   links?: { cellular?: HologramCellularLink[] | null } | null
 }
 
@@ -24,9 +26,7 @@ type HologramUsageResponse = {
   success?: boolean
   data?:
     | {
-        periods_back?: number | string | null
         bytes?: number | string | null
-        cur_period_end?: string | null
       }[]
     | null
 }
@@ -103,25 +103,31 @@ export async function readCellularUsage(): Promise<CellularUsage> {
           ? Math.max(0, planData)
           : null
 
-  const billingDeviceId = String(device.id ?? deviceId)
-  const billingFilter =
-    cellularLink?.id == null
-      ? `deviceids=${encodeURIComponent(billingDeviceId)}`
-      : `linkid=${encodeURIComponent(String(cellularLink.id))}`
+  const now = Date.now()
+  const periodDuration = 30 * 24 * 60 * 60 * 1_000
+  const activation = Date.parse(
+    device.whenclaimed ?? cellularLink?.whencreated ?? '',
+  )
+  const activationTime = Number.isFinite(activation)
+    ? Math.min(activation, now)
+    : now - periodDuration
+  const periodsSinceActivation = Math.floor(
+    (now - activationTime) / periodDuration,
+  )
+  const periodStart = activationTime + periodsSinceActivation * periodDuration
+  const periodEnd = periodStart + periodDuration
+  if (cellularLink?.id == null)
+    throw new Error('Hologram cellular link is unavailable')
+  const usageFilter = `linkid=${encodeURIComponent(String(cellularLink.id))}`
   const usage = await hologramRequest<HologramUsageResponse>(
-    `/usage/data/billing?${billingFilter}&maxperiodsback=1&limit=10`,
+    `/usage/data/daily?${usageFilter}&timestart=${Math.floor(periodStart / 1_000)}&timeend=${Math.floor(now / 1_000)}&limit=100`,
     apiKey,
   )
-  const currentPeriod =
-    usage.data?.find((period) => Number(period.periods_back) === 0) ??
-    usage.data?.[0]
-  const usedBytes = Number(currentPeriod?.bytes)
-  if (!usage.success || !currentPeriod || !Number.isFinite(usedBytes)) {
-    const firstFields = Object.keys(usage.data?.[0] ?? {}).join(',') || 'none'
-    throw new Error(
-      `Hologram usage is unavailable (success=${String(usage.success)}; count=${usage.data?.length ?? 0}; fields=${firstFields}; bytesType=${typeof currentPeriod?.bytes})`,
-    )
-  }
+  if (!usage.success) throw new Error('Hologram usage is unavailable')
+  const usedBytes = (usage.data ?? []).reduce((total, row) => {
+    const bytes = Number(row.bytes)
+    return Number.isFinite(bytes) ? total + Math.max(0, bytes) : total
+  }, 0)
 
   const safeUsedBytes = Math.max(0, usedBytes)
   const remainingBytes =
@@ -138,8 +144,8 @@ export async function readCellularUsage(): Promise<CellularUsage> {
     limitBytes,
     remainingBytes,
     percentUsed,
-    billingPeriodStart: null,
-    billingPeriodEnd: currentPeriod.cur_period_end ?? null,
+    billingPeriodStart: new Date(periodStart).toISOString(),
+    billingPeriodEnd: new Date(periodEnd).toISOString(),
     status: cellularLink?.state ?? null,
     updatedAt: new Date().toISOString(),
   }
