@@ -76,8 +76,14 @@ export async function readCellularUsage(): Promise<CellularUsage> {
   )
   const device = devices.data?.find((item) => String(item.id) === deviceId)
   const simCardId = device?.simcardid
-  if (!devices.success || !device || simCardId == null)
-    throw new Error('Hologram device is unavailable')
+  if (!devices.success || !device || simCardId == null) {
+    const returnedIds =
+      devices.data?.map((item) => String(item.id ?? '?')).join(',') || 'none'
+    const firstFields = Object.keys(devices.data?.[0] ?? {}).join(',') || 'none'
+    throw new Error(
+      `Hologram device is unavailable (count=${devices.data?.length ?? 0}; ids=${returnedIds}; fields=${firstFields})`,
+    )
+  }
 
   const cellularLink = device.links?.cellular?.[0]
   const configuredLimit = cellularLink?.overagelimit
