@@ -57,6 +57,7 @@ beforeEach(() => {
     id: '44444444-4444-4444-8444-444444444444',
     role: 'dispatcher',
     email: 'dispatch@example.com',
+    staff: { display_name: 'Tiffany' },
   })
   mocks.db.mockReturnValue({ from: vi.fn() })
   mocks.createEstimate.mockResolvedValue({
@@ -84,9 +85,9 @@ describe('commercial estimate creation', () => {
         start_time: '11:00',
         visit_duration_minutes: 60,
         assigned_staff_user_id: staffId,
-        booking_channel: 'admin',
+        booking_channel: 'Tiffany',
         source_label: 'Admin Commercial Estimate',
-        actor_label: 'dispatch@example.com',
+        actor_label: 'Tiffany',
         created_by: '44444444-4444-4444-8444-444444444444',
       }),
     )

@@ -26,7 +26,7 @@ import { applyAppointmentBuffer } from '@/lib/ops/availability'
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner'])
+    const access = await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
     const body = await request.json()
 
@@ -92,7 +92,8 @@ export async function POST(request: NextRequest) {
         service_address_id: serviceAddressId,
         batch_billing_customer_id: customerId,
         recurring_template_id: null,
-        booking_channel: 'admin',
+        booking_channel:
+          access.staff?.display_name || access.email || access.role,
         source: 'batch_billing_adhoc',
         status: 'booked',
         payment_status: 'unpaid',

@@ -659,6 +659,13 @@ export async function POST(request: NextRequest) {
     const appointmentKind =
       body.appointment?.kind === 'estimate' ? 'estimate' : 'service'
     const isEstimate = appointmentKind === 'estimate'
+    const requestedBookingChannel = String(
+      body.appointment?.booking_channel || '',
+    ).trim()
+    const bookingChannel =
+      requestedBookingChannel && requestedBookingChannel !== 'admin'
+        ? requestedBookingChannel
+        : access.staff?.display_name || access.email || access.role
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
       .insert({
@@ -668,7 +675,7 @@ export async function POST(request: NextRequest) {
         conversation_id: body.appointment?.conversation_id || null,
         assigned_staff_user_id:
           body.appointment?.assigned_staff_user_id || null,
-        booking_channel: body.appointment?.booking_channel || 'admin',
+        booking_channel: bookingChannel,
         source: body.appointment?.source || 'internal',
         ...leadSourcePayload,
         partner_id: attributedPartnerId,

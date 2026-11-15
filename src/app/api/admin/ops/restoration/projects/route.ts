@@ -135,7 +135,8 @@ export async function POST(request: NextRequest) {
       .insert({
         customer_id: customerId,
         service_address_id: serviceAddressId,
-        booking_channel: 'admin',
+        booking_channel:
+          access.staff?.display_name || access.email || access.role,
         source: 'admin',
         status: 'booked',
         payment_status: 'unpaid',

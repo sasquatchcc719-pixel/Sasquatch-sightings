@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
   try {
     const access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const body = commercialEstimateSchema.parse(await request.json())
+    const actorLabel = access.staff?.display_name || access.email || access.role
     const result = await createAiStyleEstimate({
       supabase: createAdminClient(),
       customer_id: body.customer_id,
@@ -122,11 +123,11 @@ export async function POST(request: NextRequest) {
       visit_duration_minutes: 60,
       assigned_staff_user_id: body.assigned_staff_user_id,
       job_description: body.job_description,
-      booking_channel: 'admin',
+      booking_channel: actorLabel,
       source_label: 'Admin Commercial Estimate',
       lead_source: body.lead_source,
       lead_source_detail: body.lead_source_detail,
-      actor_label: access.email || access.role,
+      actor_label: actorLabel,
       admin_heading: 'commercial estimate scheduled',
       created_by: access.id,
     })

@@ -34,6 +34,7 @@ import {
   UserRoundSearch,
   Send,
   ShieldCheck,
+  Fuel,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -79,6 +80,12 @@ const navSections: NavSection[] = [
         href: '/admin/operations',
         icon: Calendar,
         description: 'Calendar & bookings',
+      },
+      {
+        name: 'Receipt Records',
+        href: '/admin/operations/receipts',
+        icon: Fuel,
+        description: 'Gas & expense receipts sent to QuickBooks',
       },
       {
         name: 'Service Concerns',

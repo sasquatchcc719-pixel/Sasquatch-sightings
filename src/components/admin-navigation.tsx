@@ -36,6 +36,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Fuel,
 } from 'lucide-react'
 
 interface NavTab {
@@ -152,6 +153,13 @@ export function AdminNavigation() {
       icon: Calendar,
       active: pathname === '/admin/operations',
       description: 'Internal booking, calendar, invoices, and sync queue',
+    },
+    {
+      name: 'Receipt Records',
+      href: '/admin/operations/receipts',
+      icon: Fuel,
+      active: pathname === '/admin/operations/receipts',
+      description: 'Gas & expense receipts sent to QuickBooks',
     },
     {
       name: 'Service Concerns',
