@@ -19,6 +19,15 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 type TapStats = {
   totalTaps: number
@@ -37,6 +46,7 @@ type TapStats = {
   monthTaps: number
   topCities: { city: string; count: number }[]
   deviceBreakdown: { mobile: number; tablet: number; desktop: number }
+  engagementTrend: { period: string; taps: number; actions: number }[]
   // Source breakdown
   cardScans: number
   contestScans: number
@@ -64,6 +74,13 @@ type Conversation = {
     source: string
     status: string
   } | null
+}
+
+function formatTrendPeriod(period: string, timeframe: string) {
+  return new Date(`${period}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: timeframe === 'all' ? undefined : 'numeric',
+  })
 }
 
 export default function TapAnalyticsPage() {
@@ -354,6 +371,102 @@ export default function TapAnalyticsPage() {
           <p className="text-xs text-gray-500">button clicks</p>
         </Card>
       </div>
+
+      {/* Engagement Trend */}
+      <Card className="p-4 sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold sm:text-xl">
+              Engagement Over Time
+            </h2>
+            <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+              Card visits and actions taken on the landing page
+            </p>
+          </div>
+          <div className="flex gap-4 text-xs text-gray-600 dark:text-gray-300">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+              Taps
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+              Actions
+            </span>
+          </div>
+        </div>
+
+        {stats.engagementTrend.length > 0 ? (
+          <div
+            className="mt-4 h-60 w-full sm:h-72"
+            aria-label="Business card engagement over time"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={stats.engagementTrend}
+                margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+              >
+                <CartesianGrid
+                  vertical={false}
+                  stroke="rgba(148,163,184,0.2)"
+                  strokeDasharray="3 3"
+                />
+                <XAxis
+                  dataKey="period"
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={24}
+                  tick={{ fill: 'currentColor', fontSize: 11 }}
+                  tickFormatter={(period: string) =>
+                    formatTrendPeriod(period, timeframe)
+                  }
+                  className="text-gray-500"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'currentColor', fontSize: 11 }}
+                  className="text-gray-500"
+                />
+                <Tooltip
+                  labelFormatter={(period) =>
+                    formatTrendPeriod(String(period), timeframe)
+                  }
+                  formatter={(value, name) => [
+                    Number(value),
+                    name === 'taps' ? 'Taps' : 'Actions',
+                  ]}
+                  contentStyle={{
+                    borderRadius: 8,
+                    borderColor: 'rgba(148,163,184,0.35)',
+                    backgroundColor: 'hsl(var(--card))',
+                  }}
+                />
+                <Line
+                  type="linear"
+                  dataKey="taps"
+                  stroke="#3b82f6"
+                  strokeWidth={2.5}
+                  dot={stats.engagementTrend.length <= 31}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="linear"
+                  dataKey="actions"
+                  stroke="#22c55e"
+                  strokeWidth={2.5}
+                  dot={stats.engagementTrend.length <= 31}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex h-48 items-center justify-center text-sm text-gray-500">
+            No engagement in this time range yet.
+          </div>
+        )}
+      </Card>
 
       {/* Button Engagement */}
       <Card className="p-4 sm:p-6">
