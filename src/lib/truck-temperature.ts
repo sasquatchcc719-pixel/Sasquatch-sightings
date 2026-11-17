@@ -1,5 +1,6 @@
 export const BOX_TRUCK_NAME = "David's Box Truck"
 export const PROBE_STALE_MS = 5 * 60_000
+export const TEMPERATURE_ALARM_HYSTERESIS_F = 2
 
 export const TEMPERATURE_HISTORY_RANGES = [
   { days: 1, label: '24 hours', bucketMinutes: 2, interval: '2-minute' },
@@ -24,4 +25,26 @@ export function temperatureAlarm(
   if (lowF != null && temperatureF <= lowF) return 'low'
   if (highF != null && temperatureF >= highF) return 'high'
   return null
+}
+
+export function temperatureAlarmState(
+  temperatureF: number | null,
+  lowF: number | null,
+  highF: number | null,
+  previous: 'low' | 'high' | null,
+): 'low' | 'high' | null {
+  if (temperatureF == null) return null
+  if (
+    previous === 'low' &&
+    lowF != null &&
+    temperatureF < lowF + TEMPERATURE_ALARM_HYSTERESIS_F
+  )
+    return 'low'
+  if (
+    previous === 'high' &&
+    highF != null &&
+    temperatureF > highF - TEMPERATURE_ALARM_HYSTERESIS_F
+  )
+    return 'high'
+  return temperatureAlarm(temperatureF, lowF, highF)
 }

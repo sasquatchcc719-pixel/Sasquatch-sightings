@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
-import { PROBE_STALE_MS, temperatureAlarm } from '@/lib/truck-temperature'
+import { PROBE_STALE_MS, temperatureAlarmState } from '@/lib/truck-temperature'
 
 export async function GET(request: NextRequest) {
   if (
@@ -33,12 +33,17 @@ export async function GET(request: NextRequest) {
   for (const tracker of data ?? []) {
     if (tracker.probe_temperature_c == null) continue
     const temperatureF = tracker.probe_temperature_c * 1.8 + 32
-    const alarm = temperatureAlarm(
+    const previousAlarm = tracker.temperature_alarm_sent as
+      | 'low'
+      | 'high'
+      | null
+    const alarm = temperatureAlarmState(
       temperatureF,
       tracker.temperature_low_f,
       tracker.temperature_high_f,
+      previousAlarm,
     )
-    if (alarm === tracker.temperature_alarm_sent) continue
+    if (alarm === previousAlarm) continue
 
     const update = db
       .from('fleet_trackers')
@@ -59,21 +64,31 @@ export async function GET(request: NextRequest) {
       failed++
       continue
     }
-    if (!claim.data || !alarm) continue
+    if (!claim.data) continue
 
-    const threshold =
-      alarm === 'low' ? tracker.temperature_low_f : tracker.temperature_high_f
+    const recovered = Boolean(previousAlarm && !alarm)
+    const threshold = alarm
+      ? alarm === 'low'
+        ? tracker.temperature_low_f
+        : tracker.temperature_high_f
+      : previousAlarm === 'low'
+        ? tracker.temperature_low_f
+        : tracker.temperature_high_f
     const sent = await sendTelegramNotification(
-      `${tracker.name} temperature alarm: ${temperatureF.toFixed(1)}°F (${alarm} limit ${threshold}°F).\nhttps://sightings.sasquatchcarpet.com/admin/operations`,
+      recovered
+        ? `${tracker.name} temperature recovered: ${temperatureF.toFixed(1)}°F (clear of ${previousAlarm} limit ${threshold}°F).\nhttps://sightings.sasquatchcarpet.com/admin/operations`
+        : `${tracker.name} temperature alarm: ${temperatureF.toFixed(1)}°F (${alarm} limit ${threshold}°F).\nhttps://sightings.sasquatchcarpet.com/admin/operations`,
       { disablePreview: true },
     )
     if (!sent) {
       failed++
-      await db
+      const rollback = db
         .from('fleet_trackers')
-        .update({ temperature_alarm_sent: null })
+        .update({ temperature_alarm_sent: previousAlarm })
         .eq('id', tracker.id)
-        .eq('temperature_alarm_sent', alarm)
+      if (alarm == null) rollback.is('temperature_alarm_sent', null)
+      else rollback.eq('temperature_alarm_sent', alarm)
+      await rollback
     }
   }
 
