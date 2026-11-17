@@ -7,17 +7,24 @@ const mocks = vi.hoisted(() => ({
   credentialMaybeSingle: vi.fn(),
   trackerEq: vi.fn(),
   trackerMaybeSingle: vi.fn(),
+  rpc: vi.fn(),
 }))
 vi.mock('@/supabase/server', () => ({
-  createAdminClient: () => ({ from: mocks.from }),
+  createAdminClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
 }))
 import { GET } from './route'
 
 const token = 'c'.repeat(64)
-const request = (authorization: string | null = `Bearer ${token}`) =>
-  new Request('https://example.test/api/devices/box-truck/temperature', {
-    headers: authorization ? { Authorization: authorization } : {},
-  })
+const request = (
+  authorization: string | null = `Bearer ${token}`,
+  query = '',
+) =>
+  new Request(
+    `https://example.test/api/devices/box-truck/temperature${query}`,
+    {
+      headers: authorization ? { Authorization: authorization } : {},
+    },
+  )
 
 describe('box truck display temperature', () => {
   beforeEach(() => {
@@ -44,6 +51,7 @@ describe('box truck display temperature', () => {
     })
     mocks.trackerMaybeSingle.mockResolvedValue({
       data: {
+        id: 'truck',
         probe_temperature_c: 10,
         probe_received_at: new Date().toISOString(),
         temperature_low_f: 35,
@@ -51,6 +59,7 @@ describe('box truck display temperature', () => {
       },
       error: null,
     })
+    mocks.rpc.mockResolvedValue({ data: [], error: null })
   })
 
   it('requires a display credential before reading the tracker', async () => {
@@ -72,7 +81,34 @@ describe('box truck display temperature', () => {
       highF: 90,
       fresh: true,
       alarm: null,
+      history: [],
     })
+  })
+
+  it('returns the requested recorded temperature history', async () => {
+    const history = [
+      {
+        minute_at: '2026-11-17T18:00:00Z',
+        temperature_f: 48,
+        low_f: 46,
+        high_f: 50,
+      },
+    ]
+    mocks.rpc.mockResolvedValue({ data: history, error: null })
+
+    const response = await GET(request(undefined, '?days=7'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'fleet_temperature_history_summary',
+      { p_tracker_id: 'truck', p_days: 7 },
+    )
+    expect((await response.json()).history).toEqual(history)
+  })
+
+  it('rejects unsupported history ranges', async () => {
+    expect((await GET(request(undefined, '?days=365'))).status).toBe(400)
+    expect(mocks.trackerMaybeSingle).not.toHaveBeenCalled()
   })
 
   it('rejects a revoked credential', async () => {

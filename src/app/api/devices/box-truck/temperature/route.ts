@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import {
   BOX_TRUCK_NAME,
   PROBE_STALE_MS,
+  TEMPERATURE_HISTORY_RANGES,
   temperatureAlarm,
 } from '@/lib/truck-temperature'
 import { createAdminClient } from '@/supabase/server'
@@ -29,10 +30,22 @@ export async function GET(request: Request) {
   if (!credential)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const requestedDays = new URL(request.url).searchParams.get('days')
+  const range = requestedDays
+    ? TEMPERATURE_HISTORY_RANGES.find(
+        ({ days }) => String(days) === requestedDays,
+      )
+    : null
+  if (requestedDays && !range)
+    return NextResponse.json(
+      { error: 'Invalid history range' },
+      { status: 400 },
+    )
+
   const { data, error } = await db
     .from('fleet_trackers')
     .select(
-      'probe_temperature_c,probe_received_at,temperature_low_f,temperature_high_f',
+      'id,probe_temperature_c,probe_received_at,temperature_low_f,temperature_high_f',
     )
     .eq('name', BOX_TRUCK_NAME)
     .eq('enabled', true)
@@ -40,6 +53,18 @@ export async function GET(request: Request) {
   if (error || !data)
     return NextResponse.json(
       { error: 'Temperature unavailable' },
+      { status: 503 },
+    )
+
+  const history = range
+    ? await db.rpc('fleet_temperature_history_summary', {
+        p_tracker_id: data.id,
+        p_days: range.days,
+      })
+    : null
+  if (history?.error)
+    return NextResponse.json(
+      { error: 'Temperature history unavailable' },
       { status: 503 },
     )
 
@@ -67,6 +92,7 @@ export async function GET(request: Request) {
             data.temperature_high_f,
           )
         : null,
+      history: history?.data ?? [],
     },
     { headers: { 'Cache-Control': 'no-store' } },
   )
