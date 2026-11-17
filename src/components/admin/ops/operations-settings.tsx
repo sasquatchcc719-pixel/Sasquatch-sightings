@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { QuickBooksStatus } from '@/components/admin/ops/quickbooks-status'
 import { AgentApiSettings } from '@/components/admin/ops/agent-api-settings'
 import { StaffPhotoCropper } from '@/components/admin/ops/staff-photo-cropper'
+import { StationHealthAlertSettings } from '@/components/admin/ops/station-health-alert-settings'
 
 type QueueStats = {
   pending: number
@@ -633,6 +634,8 @@ export function OperationsSettings() {
       </Card>
 
       <StaffPhotoCard />
+
+      <StationHealthAlertSettings />
 
       <ClientPortalAccessCard />
 

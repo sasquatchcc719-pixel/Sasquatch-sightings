@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendPartnerSMS } from '@/lib/twilio'
+import { readStationHealthSmsSetting } from '@/lib/station-health-settings'
 
 // Thresholds in days
 const WARNING_THRESHOLD_DAYS = 7
@@ -46,11 +47,43 @@ export async function GET(request: NextRequest) {
   try {
     // Verify this is a legitimate cron request
     const authHeader = request.headers.get('authorization')
-    if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (
+      !process.env.CRON_SECRET ||
+      authHeader !== `Bearer ${process.env.CRON_SECRET}`
+    ) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const supabase = await createAdminClient()
+
+    let smsSetting
+    try {
+      smsSetting = await readStationHealthSmsSetting(supabase)
+    } catch (settingError) {
+      console.error(
+        'Station-health SMS setting could not be read:',
+        settingError,
+      )
+      return NextResponse.json(
+        {
+          success: false,
+          enabled: false,
+          skipped: true,
+          error: 'Station-health SMS setting is unavailable; failed closed',
+        },
+        { status: 503 },
+      )
+    }
+
+    if (!smsSetting.enabled) {
+      return NextResponse.json({
+        success: true,
+        enabled: false,
+        skipped: true,
+        message: 'Automatic station-health partner SMS is off',
+      })
+    }
+
     const now = new Date()
     const results = {
       partnersChecked: 0,
@@ -168,7 +201,16 @@ export async function GET(request: NextRequest) {
     // Send alerts
     for (const alert of alertsToSend) {
       try {
-        await sendPartnerSMS(alert.partnerPhone, alert.message)
+        const accepted = await sendPartnerSMS(
+          alert.partnerPhone,
+          alert.message,
+          alert.partnerId,
+          'station_health',
+        )
+        if (!accepted) {
+          results.errors.push(`${alert.partnerName}: SMS was not accepted`)
+          continue
+        }
 
         // Record the alert
         await supabase.from('station_health_alerts').insert({

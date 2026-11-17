@@ -126,17 +126,18 @@ export async function sendAdminSMS(
 }
 
 /**
- * Send SMS to partner when they receive a referral
+ * Send SMS to partner when they receive a referral.
+ * Returns true only after Twilio accepts the message, not proof of delivery.
  */
 export async function sendPartnerSMS(
   partnerPhone: string,
   message: string,
   partnerId?: string,
   messageType: string = 'partner_notification',
-): Promise<void> {
+): Promise<boolean> {
   if (!client || !twilioPhone) {
     console.warn('Twilio credentials not configured, skipping SMS')
-    return
+    return false
   }
 
   const normalizedMessage = normalizeSmsBody(message)
@@ -157,6 +158,7 @@ export async function sendPartnerSMS(
       messageContent: normalizedMessage,
       twilioSid: result.sid,
     })
+    return true
   } catch (error) {
     console.error(`Failed to send partner SMS to ${partnerPhone}:`, error)
 
@@ -168,6 +170,7 @@ export async function sendPartnerSMS(
       messageContent: normalizedMessage,
       status: 'failed',
     })
+    return false
   }
 }
 
