@@ -559,6 +559,147 @@ describe('commercial estimate scheduling', () => {
   })
 })
 
+describe('unscheduled job details', () => {
+  it('expands Heather’s parked job with calendar-consistent services, pricing, and source provenance', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (url: string, options?: RequestInit) => {
+        if (url === '/api/admin/ops/restoration/projects') {
+          return { ok: true, json: async () => ({ projects: [] }) }
+        }
+        if (url === '/api/admin/ops/schedule/parked') {
+          return {
+            ok: true,
+            json: async () => ({
+              appointments: [
+                {
+                  id: 'b0acf440-9c1d-4cb4-a850-dc2ac0e53036',
+                  duration_minutes: 120,
+                  quoted_total: 240,
+                  internal_notes: null,
+                  lead_source: 'Repeat Customer',
+                  lead_source_key: 'repeat_customer',
+                  lead_source_detail: null,
+                  original_lead_source: null,
+                  booking_channel: 'website',
+                  source: 'admin',
+                  ops_customers: {
+                    full_name: 'Heather Branam',
+                    business_name: null,
+                    phone: '+13344305671',
+                    email: 'houltonbranam@gmail.com',
+                  },
+                  ops_service_addresses: {
+                    street_1: '3830 Range View',
+                    street_2: null,
+                    city: 'Monument',
+                    state: 'CO',
+                    zip_code: '80132',
+                  },
+                  ops_appointment_line_items: [
+                    {
+                      id: 'room-line',
+                      name_snapshot: 'Sasquatch Size Room (200 to 400 Sqft)',
+                      quantity: 2,
+                      unit_price: 90,
+                      line_total: 180,
+                      duration_minutes: 60,
+                      notes: null,
+                    },
+                    {
+                      id: 'urine-line',
+                      name_snapshot: 'Urine Eliminator Treatment',
+                      quantity: 2,
+                      unit_price: 30,
+                      line_total: 60,
+                      duration_minutes: 60,
+                      notes: null,
+                    },
+                  ],
+                  ops_invoices: {
+                    id: '6a37b714-245c-45a4-9e1d-fd0c92100863',
+                    invoice_number: 18983,
+                    status: 'draft',
+                    payment_status: 'unpaid',
+                    subtotal: 240,
+                    discount_amount: 0,
+                    percentage_discount_amount: 0,
+                    minimum_charge_adjustment: 0,
+                    total: 240,
+                  },
+                  converted_from_estimate_id: null,
+                },
+              ],
+            }),
+          }
+        }
+        if (url.startsWith('/api/admin/ops/schedule?')) {
+          return {
+            ok: true,
+            json: async () => ({
+              appointments: [],
+              events: [],
+              staff: [],
+              currentUserRole: 'owner',
+            }),
+          }
+        }
+        return { ok: true, json: async () => ({ templates: [] }) }
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<OperationsSchedule />)
+
+    expect(await screen.findByText('Heather Branam')).toBeVisible()
+    expect(screen.getByText(/needs a date · 2 hr/)).toBeVisible()
+    expect(
+      screen.queryByText('Sasquatch Size Room (200 to 400 Sqft)'),
+    ).not.toBeInTheDocument()
+
+    const detailsButton = screen.getByRole('button', { name: 'Details' })
+    fireEvent.click(detailsButton)
+
+    const panel = screen.getByRole('region', {
+      name: 'Details for Heather Branam',
+    })
+    expect(detailsButton).toHaveAttribute('aria-expanded', 'true')
+    expect(within(panel).getByText(/2 × Sasquatch Size Room/)).toBeVisible()
+    expect(within(panel).getByText('$90.00 each · 1 hr')).toBeVisible()
+    expect(within(panel).getByText('$180.00')).toBeVisible()
+    expect(
+      within(panel).getByText(/2 × Urine Eliminator Treatment/),
+    ).toBeVisible()
+    expect(within(panel).getByText('$30.00 each · 1 hr')).toBeVisible()
+    expect(within(panel).getByText('$60.00')).toBeVisible()
+    expect(within(panel).getByText('No discount')).toBeVisible()
+    expect(within(panel).getByText('No adjustment')).toBeVisible()
+    expect(within(panel).getByText('Repeat Customer · Website')).toBeVisible()
+    expect(within(panel).getByText('Unknown — not recorded')).toBeVisible()
+    expect(
+      within(panel).getByRole('link', { name: 'Invoice #18983 · draft' }),
+    ).toHaveAttribute(
+      'href',
+      '/admin/operations/invoices/6a37b714-245c-45a4-9e1d-fd0c92100863',
+    )
+    expect(
+      within(panel).getByRole('link', { name: 'Open full job' }),
+    ).toHaveAttribute(
+      'href',
+      '/admin/operations/appointments/b0acf440-9c1d-4cb4-a850-dc2ac0e53036',
+    )
+    expect(
+      fetchMock.mock.calls.every(
+        (call) => !call[1]?.method || call[1].method === 'GET',
+      ),
+    ).toBe(true)
+
+    fireEvent.click(detailsButton)
+    expect(
+      screen.queryByRole('region', { name: 'Details for Heather Branam' }),
+    ).not.toBeInTheDocument()
+  })
+})
+
 describe('unscheduled job deletion', () => {
   it('deletes a parked job without a confirmation or customer notification', async () => {
     const confirmMock = vi.fn()

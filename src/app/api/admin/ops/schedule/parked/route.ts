@@ -22,10 +22,13 @@ export async function GET() {
     const { data, error } = await supabase
       .from('ops_appointments')
       .select(
-        `id, appointment_date, start_time, end_time, quoted_total, kind,
+        `id, appointment_date, start_time, end_time, quoted_total, kind, internal_notes,
+         lead_source, lead_source_key, lead_source_detail, original_lead_source, booking_channel, source,
          follow_up:ops_unscheduled_follow_ups (next_follow_up_date, next_follow_up_time, reviewed_at, review_note, updated_at, resolved_at),
          ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, phone, email, email_opt_out ),
-         ops_service_addresses ( street_1, city )`,
+         ops_service_addresses ( street_1, street_2, city, state, zip_code ),
+         ops_appointment_line_items ( id, name_snapshot, quantity, unit_price, line_total, duration_minutes, notes ),
+         ops_invoices ( id, invoice_number, status, payment_status, subtotal, discount_amount, percentage_discount_amount, minimum_charge_adjustment, total )`,
       )
       .not('parked_at', 'is', null)
       .order('parked_at', { ascending: true })
@@ -33,6 +36,22 @@ export async function GET() {
       .limit(50)
 
     if (error) throw error
+
+    const appointmentIds = (data ?? []).map((job) => job.id)
+    const convertedEstimates = appointmentIds.length
+      ? await supabase
+          .from('ops_appointments')
+          .select('id, converted_appointment_id')
+          .eq('kind', 'estimate')
+          .in('converted_appointment_id', appointmentIds)
+      : { data: [], error: null }
+    if (convertedEstimates.error) throw convertedEstimates.error
+    const estimateByAppointment = new Map(
+      (convertedEstimates.data ?? []).map((estimate) => [
+        estimate.converted_appointment_id,
+        estimate.id,
+      ]),
+    )
 
     const phones = [
       ...new Set(
@@ -57,6 +76,7 @@ export async function GET() {
     return NextResponse.json({
       appointments: (data ?? []).map((job) => ({
         ...job,
+        converted_from_estimate_id: estimateByAppointment.get(job.id) ?? null,
         follow_up: projectUnscheduledFollowUp(job.follow_up),
         contact: (() => {
           const customer = Array.isArray(job.ops_customers)

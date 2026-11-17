@@ -20,6 +20,50 @@ export type QueuedVisit = {
     blocked: boolean
     emailOptOut: boolean
   }
+  details?: {
+    quotedTotal: number | null
+    internalNotes: string | null
+    leadSource: string | null
+    leadSourceKey: string | null
+    leadSourceDetail: string | null
+    originalLeadSource: string | null
+    bookingChannel: string | null
+    bookingSource: string | null
+    customer: {
+      fullName: string | null
+      businessName: string | null
+      phone: string | null
+      email: string | null
+    } | null
+    address: {
+      street1: string | null
+      street2: string | null
+      city: string | null
+      state: string | null
+      zipCode: string | null
+    } | null
+    lineItems: Array<{
+      id: string
+      name: string
+      quantity: number | null
+      unitPrice: number | null
+      lineTotal: number | null
+      durationMinutes: number | null
+      notes: string | null
+    }>
+    invoice: {
+      id: string
+      invoiceNumber: number | null
+      status: string | null
+      paymentStatus: string | null
+      subtotal: number | null
+      discountAmount: number | null
+      percentageDiscountAmount: number | null
+      minimumChargeAdjustment: number | null
+      total: number | null
+    } | null
+    estimateId: string | null
+  }
 }
 
 export type StaffMember = {

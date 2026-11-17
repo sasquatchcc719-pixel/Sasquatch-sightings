@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   GripVertical,
   Loader2,
   Plus,
@@ -72,6 +73,7 @@ import {
   getScheduleCardSources,
   getStatusTone,
   getViewLabel,
+  humanizeSourceLabel,
   HOUR_HEIGHT,
   intersectsDay,
   minutesToDbTime,
@@ -96,6 +98,235 @@ import {
   EditEventDialog,
 } from './operations-schedule-editors'
 import { ScheduleDispatchPanel } from './schedule-dispatch-panel'
+
+function formatQueuedDuration(minutes: number): string {
+  const wholeMinutes = Math.max(0, Math.round(minutes))
+  const hours = Math.floor(wholeMinutes / 60)
+  const remainder = wholeMinutes % 60
+  if (!hours) return `${remainder} min`
+  if (!remainder) return `${hours} hr`
+  return `${hours} hr ${remainder} min`
+}
+
+function UnscheduledVisitDetails({ visit }: { visit: QueuedVisit }) {
+  const details = visit.details
+  if (!details) return null
+
+  const currentBooking = [
+    humanizeSourceLabel(details.leadSourceKey || details.leadSource),
+    humanizeSourceLabel(details.bookingChannel || details.bookingSource),
+  ].filter((label): label is string => Boolean(label))
+  const originalAcquisition = humanizeSourceLabel(details.originalLeadSource)
+  const address = details.address
+    ? [
+        details.address.street1,
+        details.address.street2,
+        [details.address.city, details.address.state]
+          .filter(Boolean)
+          .join(', '),
+        details.address.zipCode,
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : null
+  const invoice = details.invoice
+  const discount = invoice
+    ? invoice.discountAmount == null && invoice.percentageDiscountAmount == null
+      ? null
+      : (invoice.discountAmount ?? 0) + (invoice.percentageDiscountAmount ?? 0)
+    : null
+  const adjustment = invoice?.minimumChargeAdjustment ?? null
+
+  return (
+    <section
+      id={`queued-details-${visit.id}`}
+      aria-label={`Details for ${visit.label}`}
+      className="border-t border-sky-200 bg-slate-50 px-4 py-4 text-slate-800"
+    >
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div>
+          <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Services
+          </h3>
+          {details.lineItems.length ? (
+            <ul className="mt-2 divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+              {details.lineItems.map((item) => (
+                <li key={item.id} className="px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {item.quantity == null
+                          ? 'Quantity unknown'
+                          : item.quantity}{' '}
+                        × {item.name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {item.unitPrice == null
+                          ? 'Unit price not recorded'
+                          : `${formatScheduleAmount(item.unitPrice)} each`}
+                        {item.durationMinutes == null
+                          ? ''
+                          : ` · ${formatQueuedDuration(item.durationMinutes)}`}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-semibold">
+                      {item.lineTotal == null
+                        ? 'Unknown'
+                        : formatScheduleAmount(item.lineTotal)}
+                    </span>
+                  </div>
+                  {item.notes ? (
+                    <p className="mt-1 text-xs text-slate-600">{item.notes}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-slate-600">
+              No service line items recorded.
+            </p>
+          )}
+          <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-slate-600">Estimated duration</dt>
+            <dd className="font-medium">
+              {formatQueuedDuration(visit.durationMinutes ?? 120)}
+            </dd>
+            <dt className="text-slate-600">Quoted total</dt>
+            <dd className="font-medium">
+              {details.quotedTotal == null
+                ? 'Unknown — not recorded'
+                : formatScheduleAmount(details.quotedTotal)}
+            </dd>
+            <dt className="text-slate-600">Discounts</dt>
+            <dd className="font-medium">
+              {!invoice || discount == null
+                ? 'Unknown — no invoice data'
+                : discount === 0
+                  ? 'No discount'
+                  : `−${formatScheduleAmount(discount)}`}
+            </dd>
+            <dt className="text-slate-600">Adjustments</dt>
+            <dd className="font-medium">
+              {!invoice || adjustment == null
+                ? 'Unknown — no invoice data'
+                : adjustment === 0
+                  ? 'No adjustment'
+                  : formatScheduleAmount(adjustment)}
+            </dd>
+            <dt className="font-semibold text-slate-900">Invoice total</dt>
+            <dd className="font-semibold text-slate-900">
+              {invoice?.total == null
+                ? 'Unknown — no invoice data'
+                : formatScheduleAmount(invoice.total)}
+            </dd>
+          </dl>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Customer and address
+            </h3>
+            <p className="mt-2 font-medium">
+              {details.customer?.businessName ||
+                details.customer?.fullName ||
+                'Unknown customer'}
+            </p>
+            {details.customer?.businessName && details.customer.fullName ? (
+              <p className="text-sm text-slate-600">
+                {details.customer.fullName}
+              </p>
+            ) : null}
+            <p className="text-sm text-slate-600">
+              {address || 'Address not recorded'}
+            </p>
+            <p className="text-sm text-slate-600">
+              {[details.customer?.phone, details.customer?.email]
+                .filter(Boolean)
+                .join(' · ') || 'Contact details not recorded'}
+            </p>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Booking sources
+            </h3>
+            <dl className="mt-2 space-y-1 text-sm">
+              <div>
+                <dt className="inline text-slate-600">Current booking: </dt>
+                <dd className="inline font-medium">
+                  {currentBooking.join(' · ') || 'Unknown — not recorded'}
+                </dd>
+              </div>
+              {details.leadSourceDetail ? (
+                <div>
+                  <dt className="inline text-slate-600">Source detail: </dt>
+                  <dd className="inline font-medium">
+                    {details.leadSourceDetail}
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="inline text-slate-600">
+                  Original acquisition source:{' '}
+                </dt>
+                <dd className="inline font-medium">
+                  {originalAcquisition || 'Unknown — not recorded'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Notes
+            </h3>
+            <p className="mt-2 text-sm whitespace-pre-wrap text-slate-700">
+              {details.internalNotes?.trim() || 'No notes recorded.'}
+            </p>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Linked records
+            </h3>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium">
+              <Link
+                href={`/admin/operations/appointments/${visit.id}`}
+                className="text-sky-800 underline underline-offset-2"
+              >
+                Open full job
+              </Link>
+              {invoice ? (
+                <Link
+                  href={`/admin/operations/invoices/${invoice.id}`}
+                  className="text-sky-800 underline underline-offset-2"
+                >
+                  {invoice.invoiceNumber
+                    ? `Invoice #${invoice.invoiceNumber}`
+                    : 'Open invoice'}
+                  {invoice.status ? ` · ${invoice.status}` : ''}
+                </Link>
+              ) : (
+                <span className="text-slate-500">No linked invoice</span>
+              )}
+              {details.estimateId ? (
+                <Link
+                  href={`/admin/operations/estimates/${details.estimateId}`}
+                  className="text-sky-800 underline underline-offset-2"
+                >
+                  Open linked estimate
+                </Link>
+              ) : (
+                <span className="text-slate-500">No linked estimate</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 export function OperationsSchedule() {
   const router = useRouter()
@@ -305,6 +536,9 @@ export function OperationsSchedule() {
     string | null
   >(null)
   const [contactVisit, setContactVisit] = useState<QueuedVisit | null>(null)
+  const [expandedQueuedVisitIds, setExpandedQueuedVisitIds] = useState<
+    Set<string>
+  >(() => new Set())
 
   const loadQueuedVisits = useCallback(async () => {
     try {
@@ -365,6 +599,92 @@ export function OperationsSchedule() {
               durationMinutes: job.duration_minutes ?? 120,
               contact: job.contact,
               followUp: job.follow_up,
+              details: {
+                quotedTotal:
+                  job.quoted_total == null ? null : Number(job.quoted_total),
+                internalNotes: job.internal_notes ?? null,
+                leadSource: job.lead_source ?? null,
+                leadSourceKey: job.lead_source_key ?? null,
+                leadSourceDetail: job.lead_source_detail ?? null,
+                originalLeadSource: job.original_lead_source ?? null,
+                bookingChannel: job.booking_channel ?? null,
+                bookingSource: job.source ?? null,
+                customer: customer
+                  ? {
+                      fullName: customer.full_name ?? null,
+                      businessName: customer.business_name ?? null,
+                      phone: customer.phone ?? null,
+                      email: customer.email ?? null,
+                    }
+                  : null,
+                address: address
+                  ? {
+                      street1: address.street_1 ?? null,
+                      street2: address.street_2 ?? null,
+                      city: address.city ?? null,
+                      state: address.state ?? null,
+                      zipCode: address.zip_code ?? null,
+                    }
+                  : null,
+                lineItems: (job.ops_appointment_line_items ?? []).map(
+                  (item: {
+                    id: string
+                    name_snapshot?: string | null
+                    quantity?: number | null
+                    unit_price?: number | null
+                    line_total?: number | null
+                    duration_minutes?: number | null
+                    notes?: string | null
+                  }) => ({
+                    id: item.id,
+                    name: item.name_snapshot || 'Unnamed service',
+                    quantity:
+                      item.quantity == null ? null : Number(item.quantity),
+                    unitPrice:
+                      item.unit_price == null ? null : Number(item.unit_price),
+                    lineTotal:
+                      item.line_total == null ? null : Number(item.line_total),
+                    durationMinutes:
+                      item.duration_minutes == null
+                        ? null
+                        : Number(item.duration_minutes),
+                    notes: item.notes ?? null,
+                  }),
+                ),
+                invoice: (() => {
+                  const invoice = unwrapRelation(job.ops_invoices)
+                  return invoice
+                    ? {
+                        id: invoice.id,
+                        invoiceNumber:
+                          invoice.invoice_number == null
+                            ? null
+                            : Number(invoice.invoice_number),
+                        status: invoice.status ?? null,
+                        paymentStatus: invoice.payment_status ?? null,
+                        subtotal:
+                          invoice.subtotal == null
+                            ? null
+                            : Number(invoice.subtotal),
+                        discountAmount:
+                          invoice.discount_amount == null
+                            ? null
+                            : Number(invoice.discount_amount),
+                        percentageDiscountAmount:
+                          invoice.percentage_discount_amount == null
+                            ? null
+                            : Number(invoice.percentage_discount_amount),
+                        minimumChargeAdjustment:
+                          invoice.minimum_charge_adjustment == null
+                            ? null
+                            : Number(invoice.minimum_charge_adjustment),
+                        total:
+                          invoice.total == null ? null : Number(invoice.total),
+                      }
+                    : null
+                })(),
+                estimateId: job.converted_from_estimate_id ?? null,
+              },
             })
           }
         }
@@ -2254,7 +2574,7 @@ export function OperationsSchedule() {
                 </Button>
               </section>
             ) : null}
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-2 lg:grid-cols-2">
               {queuedVisits.map((visit) => (
                 <div
                   key={visit.id}
@@ -2270,60 +2590,93 @@ export function OperationsSchedule() {
                     setArmedVisit(null)
                     setContactVisit(null)
                   }}
-                  className={`flex overflow-hidden rounded-lg border text-sm transition ${
+                  className={`overflow-hidden rounded-lg border text-sm transition ${
+                    expandedQueuedVisitIds.has(visit.id) ? 'lg:col-span-2' : ''
+                  } ${
                     armedVisit?.id === visit.id || contactVisit?.id === visit.id
                       ? 'border-sky-600 bg-sky-600 text-white'
                       : 'border-sky-300 bg-white text-slate-800 hover:bg-sky-100'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setArmedVisit(null)
-                      if (visit.source === 'appointment')
-                        setContactVisit((current) =>
-                          current?.id === visit.id ? null : visit,
-                        )
-                      else setArmedVisit(visit)
-                    }}
-                    className="min-w-0 flex-1 px-3 py-2 text-left"
-                  >
-                    <span className="font-medium">{visit.label}</span>
-                    {visit.source === 'appointment' ? (
-                      <span className="ml-2 inline-block rounded border border-current/20 px-1.5 py-0.5 text-[11px] font-medium">
-                        {visit.followUp
-                          ? `${visit.followUp.due ? 'Follow-up due' : 'Follow-up'} · ${visit.followUp.next_follow_up_date}${visit.followUp.next_follow_up_time ? ` at ${visit.followUp.next_follow_up_time} MT` : ''}`
-                          : 'Follow-up date unavailable'}
+                  <div className="flex">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setArmedVisit(null)
+                        if (visit.source === 'appointment')
+                          setContactVisit((current) =>
+                            current?.id === visit.id ? null : visit,
+                          )
+                        else setArmedVisit(visit)
+                      }}
+                      className="min-w-0 flex-1 px-3 py-2 text-left"
+                    >
+                      <span className="font-medium">{visit.label}</span>
+                      {visit.source === 'appointment' ? (
+                        <span className="ml-2 inline-block rounded border border-current/20 px-1.5 py-0.5 text-[11px] font-medium">
+                          {visit.followUp
+                            ? `${visit.followUp.due ? 'Follow-up due' : 'Follow-up'} · ${visit.followUp.next_follow_up_date}${visit.followUp.next_follow_up_time ? ` at ${visit.followUp.next_follow_up_time} MT` : ''}`
+                            : 'Follow-up date unavailable'}
+                        </span>
+                      ) : null}
+                      {visit.place ? (
+                        <span className="block text-xs opacity-70">
+                          {visit.place}
+                        </span>
+                      ) : null}
+                      <span className="block text-xs opacity-80">
+                        {visit.visitType}
+                        {visit.sequence ? ` ${visit.sequence}` : ''} ·{' '}
+                        {formatQueuedDuration(visit.durationMinutes ?? 60)}
                       </span>
+                    </button>
+                    {visit.details ? (
+                      <button
+                        type="button"
+                        aria-expanded={expandedQueuedVisitIds.has(visit.id)}
+                        aria-controls={`queued-details-${visit.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setExpandedQueuedVisitIds((current) => {
+                            const next = new Set(current)
+                            if (next.has(visit.id)) next.delete(visit.id)
+                            else next.add(visit.id)
+                            return next
+                          })
+                        }}
+                        className={`flex min-h-11 shrink-0 items-center gap-1 border-l px-3 font-medium transition ${
+                          armedVisit?.id === visit.id ||
+                          contactVisit?.id === visit.id
+                            ? 'border-white/30 text-white hover:bg-white/15'
+                            : 'border-sky-200 text-sky-800 hover:bg-sky-50'
+                        }`}
+                      >
+                        Details
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
                     ) : null}
-                    {visit.place ? (
-                      <span className="block text-xs opacity-70">
-                        {visit.place}
-                      </span>
-                    ) : null}
-                    <span className="block text-xs opacity-80">
-                      {visit.visitType}
-                      {visit.sequence ? ` ${visit.sequence}` : ''} · 1 hr
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${visit.label} from unscheduled jobs`}
-                    disabled={deletingQueuedVisitId === visit.id}
-                    onClick={() => void deleteQueuedVisit(visit)}
-                    className={`flex min-h-11 w-11 shrink-0 items-center justify-center border-l transition disabled:cursor-wait disabled:opacity-60 ${
-                      armedVisit?.id === visit.id ||
-                      contactVisit?.id === visit.id
-                        ? 'border-white/30 text-white hover:bg-white/15'
-                        : 'border-sky-200 text-red-600 hover:bg-red-50 hover:text-red-700'
-                    }`}
-                  >
-                    {deletingQueuedVisitId === visit.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${visit.label} from unscheduled jobs`}
+                      disabled={deletingQueuedVisitId === visit.id}
+                      onClick={() => void deleteQueuedVisit(visit)}
+                      className={`flex min-h-11 w-11 shrink-0 items-center justify-center border-l transition disabled:cursor-wait disabled:opacity-60 ${
+                        armedVisit?.id === visit.id ||
+                        contactVisit?.id === visit.id
+                          ? 'border-white/30 text-white hover:bg-white/15'
+                          : 'border-sky-200 text-red-600 hover:bg-red-50 hover:text-red-700'
+                      }`}
+                    >
+                      {deletingQueuedVisitId === visit.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  {visit.details && expandedQueuedVisitIds.has(visit.id) ? (
+                    <UnscheduledVisitDetails visit={visit} />
+                  ) : null}
                 </div>
               ))}
             </div>
