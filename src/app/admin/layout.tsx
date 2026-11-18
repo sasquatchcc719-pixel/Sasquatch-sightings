@@ -10,6 +10,7 @@ import { VideoBackground } from '@/components/public/VideoBackground'
 import { SoftphoneProvider } from '@/components/admin/softphone'
 import { MobileHeader } from '@/components/admin/mobile-header'
 import { MobileBottomNav } from '@/components/admin/mobile-bottom-nav'
+import { readNavigationPreferences } from '@/lib/admin-navigation-server'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -44,6 +45,8 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   console.log('[AdminLayout] Access granted - internal ops role:', role)
+  const navigationPreferences = await readNavigationPreferences(user.id)
+  const canEditNavigation = role === 'owner' || role === 'admin'
 
   return (
     <SoftphoneProvider>
@@ -52,7 +55,11 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
         <div className="pointer-events-none fixed inset-0 z-0 bg-slate-950/55" />
 
         {/* Mobile-only top header with hamburger drawer */}
-        <MobileHeader userEmail={user.email ?? ''} />
+        <MobileHeader
+          userEmail={user.email ?? ''}
+          preferences={navigationPreferences}
+          canEdit={canEditNavigation}
+        />
 
         <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-8 pt-14 pb-10 sm:pt-0 sm:pb-10">
           {/* Desktop-only top nav bar */}
@@ -82,7 +89,10 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
           <div className="flex w-full flex-1 flex-col gap-6 p-4 pb-24 sm:p-5 sm:pb-10">
             {/* Desktop-only nav panel */}
             <div className="glass-panel glass-accent-ring relative z-[200] hidden rounded-2xl border p-4 sm:block">
-              <AdminNavigation />
+              <AdminNavigation
+                preferences={navigationPreferences}
+                canEdit={canEditNavigation}
+              />
             </div>
             <div className="glass-panel glass-accent-ring animate-slide-up relative z-[10] rounded-2xl border p-4 sm:p-6">
               {children}
@@ -95,7 +105,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         {/* Mobile-only bottom tab bar */}
-        <MobileBottomNav />
+        <MobileBottomNav preferences={navigationPreferences} />
       </main>
     </SoftphoneProvider>
   )

@@ -3,79 +3,101 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { ChevronDown, ExternalLink, Settings2 } from 'lucide-react'
 import {
-  Briefcase,
-  Trophy,
-  Users,
-  ExternalLink,
-  Calendar,
-  Phone,
-  MessageSquare,
-  BarChart3,
-  CreditCard,
-  MapPin,
-  ChevronDown,
-  Eye,
-  Award,
-  Truck,
-  Store,
-  Map,
-  Bot,
-  Target,
-  Link2,
-  Megaphone,
-  ImagePlay,
-  Mail,
-  ClipboardList,
-  Tag,
-  UserRoundSearch,
-  Ban,
-  PhoneCall,
-  FlaskConical,
-  ShieldAlert,
-  Search,
-  Send,
-  ShieldCheck,
-  Fuel,
-} from 'lucide-react'
+  NAVIGATION_ITEM_BY_ID,
+  NAVIGATION_SECTIONS,
+  isNavigationItemActive,
+  type NavigationItem,
+  type NavigationPreferences,
+  type NavigationSectionId,
+} from '@/lib/admin-navigation'
+import { NavigationIcon } from '@/components/admin/navigation-icons'
 
-interface NavTab {
-  name: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
+function ItemLink({
+  item,
+  active,
+  onClose,
+}: {
+  item: NavigationItem
   active: boolean
-  description: string
+  onClose: () => void
+}) {
+  const className = `flex items-start gap-3 rounded-lg border-l-2 px-3 py-2 transition-all ${
+    active
+      ? 'border-l-emerald-400 bg-emerald-500/10 text-emerald-300'
+      : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground border-l-transparent hover:border-l-emerald-400/50'
+  }`
+  const content = (
+    <>
+      <NavigationIcon
+        name={item.icon}
+        className={`mt-0.5 h-4 w-4 flex-shrink-0 ${active ? 'text-emerald-400' : ''}`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">
+          {item.desktopName ?? item.name}
+        </div>
+        <div className="text-muted-foreground text-xs">{item.description}</div>
+      </div>
+      {item.external && <ExternalLink className="mt-1 h-3 w-3 flex-shrink-0" />}
+    </>
+  )
+
+  return item.external ? (
+    <a
+      href={item.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClose}
+      className={className}
+    >
+      {content}
+    </a>
+  ) : (
+    <Link href={item.href} onClick={onClose} className={className}>
+      {content}
+    </Link>
+  )
 }
 
 function NavDropdown({
-  label,
-  icon: Icon,
+  sectionId,
   isOpen,
   onToggle,
   onClose,
-  isActive,
-  tabs,
+  items,
+  pathname,
+  searchParams,
 }: {
-  label: string
-  icon: React.ComponentType<{ className?: string }>
+  sectionId: NavigationSectionId
   isOpen: boolean
   onToggle: () => void
   onClose: () => void
-  isActive: boolean
-  tabs: NavTab[]
+  items: NavigationItem[]
+  pathname: string
+  searchParams: Pick<URLSearchParams, 'get'>
 }) {
+  const section = NAVIGATION_SECTIONS[sectionId]
+  const active = items.some((item) =>
+    isNavigationItemActive(item, pathname, searchParams),
+  )
+
+  if (items.length === 0) return null
+
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={onToggle}
         className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
-          isActive
+          active
             ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
             : 'bg-white/10 text-slate-100 hover:bg-white/20 hover:text-white'
         }`}
       >
-        <Icon className="h-4 w-4" />
-        {label}
+        <NavigationIcon name={section.icon} className="h-4 w-4" />
+        {section.label}
         <ChevronDown
           className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
@@ -84,33 +106,16 @@ function NavDropdown({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[100]" onClick={onClose} />
-          <div className="animate-dropdown-in border-border bg-popover text-popover-foreground absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border shadow-2xl">
-            <div className="p-2">
-              {tabs.map((tab) => {
-                const TabIcon = tab.icon
-                return (
-                  <Link
-                    key={tab.name}
-                    href={tab.href}
-                    onClick={onClose}
-                    className={`flex items-start gap-3 rounded-lg px-3 py-2 transition-all ${
-                      tab.active
-                        ? 'border-l-2 border-l-emerald-400 bg-emerald-500/10 text-emerald-300'
-                        : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground border-l-2 border-l-transparent hover:border-l-emerald-400/50'
-                    }`}
-                  >
-                    <TabIcon
-                      className={`mt-0.5 h-4 w-4 flex-shrink-0 ${tab.active ? 'text-emerald-400' : ''}`}
-                    />
-                    <div>
-                      <div className="text-sm font-medium">{tab.name}</div>
-                      <div className="text-muted-foreground text-xs">
-                        {tab.description}
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })}
+          <div className="animate-dropdown-in border-border bg-popover text-popover-foreground absolute top-full left-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border shadow-2xl">
+            <div className="space-y-0.5 p-2">
+              {items.map((item) => (
+                <ItemLink
+                  key={item.id}
+                  item={item}
+                  active={isNavigationItemActive(item, pathname, searchParams)}
+                  onClose={onClose}
+                />
+              ))}
             </div>
           </div>
         </>
@@ -119,572 +124,83 @@ function NavDropdown({
   )
 }
 
-export function AdminNavigation() {
+export function AdminNavigation({
+  preferences,
+  canEdit,
+}: {
+  preferences: NavigationPreferences
+  canEdit: boolean
+}) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const isAIChatsSource = searchParams.get('source') === 'ai_chats'
-  const [operationsOpen, setOperationsOpen] = useState(false)
-  const [marketingOpen, setMarketingOpen] = useState(false)
-  const [callsOpen, setCallsOpen] = useState(false)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
-
-  // Close all dropdowns
-  const closeAll = () => {
-    setOperationsOpen(false)
-    setMarketingOpen(false)
-    setCallsOpen(false)
-    setAiOpen(false)
-    setPreviewOpen(false)
-  }
-
-  // Operations group (Jobs + Stats)
-  const operationsTabs: NavTab[] = [
-    {
-      name: 'Commercial Accounts',
-      href: '/admin/operations/commercial',
-      icon: Briefcase,
-      active: pathname.startsWith('/admin/operations/commercial'),
-      description: 'Business agreements, signatures, and service plans',
-    },
-    {
-      name: 'Operations',
-      href: '/admin/operations',
-      icon: Calendar,
-      active: pathname === '/admin/operations',
-      description: 'Internal booking, calendar, invoices, and sync queue',
-    },
-    {
-      name: 'Receipt Records',
-      href: '/admin/operations/receipts',
-      icon: Fuel,
-      active: pathname === '/admin/operations/receipts',
-      description: 'Gas & expense receipts sent to QuickBooks',
-    },
-    {
-      name: 'Service Concerns',
-      href: '/admin/operations/service-concerns',
-      icon: ShieldCheck,
-      active: pathname.startsWith('/admin/operations/service-concerns'),
-      description: 'Review evidence before approving a warranty return',
-    },
-    {
-      name: 'Toolbox',
-      href: '/field',
-      icon: Briefcase,
-      active: pathname.startsWith('/field') || pathname.startsWith('/tech'),
-      description: 'Canvassing, Brain, inventory, and Gears quick actions',
-    },
-    {
-      name: 'Jobs',
-      href: '/admin/jobs',
-      icon: Briefcase,
-      active: pathname === '/admin/jobs',
-      description: 'Manage completed jobs',
-    },
-    {
-      name: 'Stats',
-      href: '/admin/stats',
-      icon: BarChart3,
-      active: pathname === '/admin/stats',
-      description: 'Revenue & utilization tracking',
-    },
-    {
-      name: 'Chemicals',
-      href: '/admin/chemicals',
-      icon: FlaskConical,
-      active: pathname === '/admin/chemicals',
-      description: 'Truck chemical inventory & AI assistant specs',
-    },
-    {
-      name: 'Fleet',
-      href: '/admin/fleet',
-      icon: Truck,
-      active: pathname === '/admin/fleet',
-      description: 'Vehicles, meters, and maintenance intervals',
-    },
-  ]
-
-  // Marketing group (leads, vendors, partners, cards, contest)
-  const marketingTabs: NavTab[] = [
-    {
-      name: 'Radar',
-      href: '/admin/marketing/radar',
-      icon: Target,
-      active: pathname === '/admin/marketing/radar',
-      description: 'Local rank tracking & competitor SERPs',
-    },
-    {
-      name: 'Search Rankings',
-      href: '/admin/marketing/search-rankings',
-      icon: Search,
-      active: pathname === '/admin/marketing/search-rankings',
-      description: 'Google keywords we track in the weekly report',
-    },
-    {
-      name: 'Business Decisions',
-      href: '/admin/marketing/rollup',
-      icon: BarChart3,
-      active: pathname === '/admin/marketing/rollup',
-      description: 'Decisions, invoiced work, and recorded lead sources',
-    },
-    {
-      name: 'Google LSA',
-      href: '/admin/marketing/lsa',
-      icon: BarChart3,
-      active: pathname === '/admin/marketing/lsa',
-      description: 'LSA charges, conversations, and what they booked',
-    },
-    {
-      name: 'Ad Performance',
-      href: '/admin/marketing',
-      icon: BarChart3,
-      active: pathname === '/admin/marketing',
-      description: 'What each lead source earns after ad spend and labor',
-    },
-    {
-      name: 'Canvassing',
-      href: '/admin/canvass',
-      icon: Map,
-      active: pathname === '/admin/canvass',
-      description: 'Door-hanger walk coverage map & session audit',
-    },
-    {
-      name: 'Card Analytics',
-      href: '/admin/tap-analytics',
-      icon: BarChart3,
-      active: pathname === '/admin/tap-analytics',
-      description: 'Business card taps, clicks, and conversion breakdown',
-    },
-    {
-      name: 'All Leads',
-      href: '/admin/leads',
-      icon: Phone,
-      active: pathname === '/admin/leads',
-      description: 'Lead pipeline & follow-ups',
-    },
-    {
-      name: 'Contest',
-      href: '/admin/sightings',
-      icon: Trophy,
-      active: pathname === '/admin/sightings',
-      description: 'Sightings & contest entries',
-    },
-    {
-      name: 'Vendors',
-      href: '/admin/vendors',
-      icon: Store,
-      active: pathname === '/admin/vendors',
-      description: 'Manage vendor locations & station health',
-    },
-    {
-      name: 'Partners',
-      href: '/admin/partners',
-      icon: Users,
-      active: pathname === '/admin/partners',
-      description: 'Referral partners',
-    },
-    {
-      name: 'Push',
-      href: '/admin/push',
-      icon: Megaphone,
-      active: pathname === '/admin/push',
-      description: 'Send push notifications',
-    },
-    {
-      name: 'Social Posts',
-      href: '/admin/social-posts',
-      icon: ImagePlay,
-      active: pathname === '/admin/social-posts',
-      description: 'GBP job posts, offers & event campaigns',
-    },
-    {
-      name: 'Promo Codes',
-      href: '/admin/promo-codes',
-      icon: Tag,
-      active: pathname === '/admin/promo-codes',
-      description: 'Create, expire, and track discount codes',
-    },
-  ]
-
-  // AI tools (Ranger hiring + AI Chats)
-  const aiTabs: NavTab[] = [
-    {
-      name: 'Scout Logs',
-      href: '/admin/scout/logs',
-      icon: Bot,
-      active: pathname.startsWith('/admin/scout'),
-      description: 'Website chat transcripts, tools, and bookings',
-    },
-    {
-      name: 'Ranger Hiring',
-      href: '/admin/ranger',
-      icon: UserRoundSearch,
-      active: pathname === '/admin/ranger',
-      description: 'Hiring agent pipeline, Candidate Reports, and approvals',
-    },
-    {
-      name: 'AI Chats',
-      href: '/admin/conversations?source=ai_chats',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations' && isAIChatsSource,
-      description: 'All AI-initiated chats (vendor, card, contest)',
-    },
-    {
-      name: 'Brain Logs',
-      href: '/admin/foreman-logs',
-      icon: FlaskConical,
-      active: pathname === '/admin/foreman-logs',
-      description: 'Field AI stain/fiber diagnoses given to techs',
-    },
-    {
-      name: 'Fiber Checks',
-      href: '/admin/fiber-checks',
-      icon: ShieldAlert,
-      active: pathname === '/admin/fiber-checks',
-      description: 'Rugs and upholstery identified before cleaning',
-    },
-  ]
-
-  // Comms group (Phone system + email)
-  const callsTabs: NavTab[] = [
-    {
-      name: 'Phone',
-      href: '/admin/phone',
-      icon: Phone,
-      active: pathname === '/admin/phone',
-      description: 'Make outbound calls from your browser',
-    },
-    {
-      name: 'Call Log',
-      href: '/admin/call-logs',
-      icon: PhoneCall,
-      active: pathname.startsWith('/admin/call-logs'),
-      description: 'Inbound call history — answered, voicemail, missed',
-    },
-    {
-      name: 'Direct Texts',
-      href: '/admin/conversations?source=phone',
-      icon: MessageSquare,
-      active:
-        pathname === '/admin/conversations' &&
-        searchParams.get('source') === 'phone',
-      description: 'Texts from people who contacted your number directly',
-    },
-    {
-      name: 'SMS Outbox',
-      href: '/admin/sms-outbox',
-      icon: MessageSquare,
-      active: pathname === '/admin/sms-outbox',
-      description: 'Outbound Operations texts (booking, on my way, job done)',
-    },
-    {
-      name: 'Telegram',
-      href: '/admin/telegram',
-      icon: Send,
-      active:
-        pathname === '/admin/telegram' ||
-        pathname.startsWith('/admin/telegram/'),
-      description:
-        'Google Search rankings, keyword watchlist, and weekly alerts',
-    },
-    {
-      name: 'Email Outbox',
-      href: '/admin/email-outbox',
-      icon: Mail,
-      active: pathname === '/admin/email-outbox',
-      description: 'Emails sent to customers',
-    },
-    {
-      name: 'Voicemails',
-      href: '/admin/voicemails',
-      icon: Phone,
-      active: pathname === '/admin/voicemails',
-      description: 'Voicemail recordings',
-    },
-    {
-      name: 'Templates & Drip',
-      href: '/admin/operations/communications',
-      icon: Mail,
-      active: pathname === '/admin/operations/communications',
-      description: 'Lifecycle templates & drip email campaigns',
-    },
-    {
-      name: 'Settings',
-      href: '/admin/phone-settings',
-      icon: Phone,
-      active: pathname === '/admin/phone-settings',
-      description: 'Voicemail message, hours & routing',
-    },
-    {
-      name: 'Blacklist',
-      href: '/admin/blacklist',
-      icon: Ban,
-      active: pathname === '/admin/blacklist',
-      description: 'Block customers from calling or booking',
-    },
-  ]
-
-  // Check active states for dropdown highlights
-  const operationsActive = operationsTabs.some((tab) => tab.active)
-  const marketingActive = marketingTabs.some((tab) => tab.active)
-  const callsActive = callsTabs.some((tab) => tab.active)
-  const aiActive = aiTabs.some((tab) => tab.active)
+  const [openSection, setOpenSection] = useState<NavigationSectionId | null>(
+    null,
+  )
+  const hidden = new Set(preferences.desktop.hidden)
+  const shortcutLinks = preferences.desktop.shortcuts.map((id) => {
+    const item = NAVIGATION_ITEM_BY_ID[id]
+    if (!item) return null
+    const active = isNavigationItemActive(item, pathname, searchParams)
+    return (
+      <Link
+        key={item.id}
+        href={item.href}
+        className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
+          active
+            ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+            : 'bg-white/10 text-slate-100 hover:bg-white/20 hover:text-white'
+        }`}
+      >
+        <NavigationIcon name={item.icon} className="h-4 w-4" />
+        {item.shortName ?? item.desktopName ?? item.name}
+      </Link>
+    )
+  })
 
   return (
-    <div>
-      <nav aria-label="Tabs">
-        {/* Mobile: 2-column grid, Desktop: flex row */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
-          {/* Operations Dropdown */}
-          <NavDropdown
-            label="Operations"
-            icon={Truck}
-            isOpen={operationsOpen}
-            onToggle={() => {
-              closeAll()
-              setOperationsOpen(!operationsOpen)
-            }}
-            onClose={closeAll}
-            isActive={operationsActive}
-            tabs={operationsTabs}
-          />
+    <nav aria-label="Admin navigation">
+      <div className="flex flex-wrap items-center gap-3">
+        {preferences.desktop.shortcutAfter === 'start' && shortcutLinks}
+        {preferences.desktop.sectionOrder.map((sectionId) => {
+          const items = preferences.desktop.sections[sectionId]
+            .map((id) => NAVIGATION_ITEM_BY_ID[id])
+            .filter((item): item is NavigationItem => Boolean(item))
+            .filter((item) => !hidden.has(item.id))
+          return (
+            <div key={sectionId} className="contents">
+              <NavDropdown
+                sectionId={sectionId}
+                isOpen={openSection === sectionId}
+                onToggle={() =>
+                  setOpenSection((current) =>
+                    current === sectionId ? null : sectionId,
+                  )
+                }
+                onClose={() => setOpenSection(null)}
+                items={items}
+                pathname={pathname}
+                searchParams={searchParams}
+              />
+              {preferences.desktop.shortcutAfter === sectionId && shortcutLinks}
+            </div>
+          )
+        })}
+        {preferences.desktop.shortcutAfter === 'end' && shortcutLinks}
 
-          {/* Marketing Dropdown */}
-          <NavDropdown
-            label="Marketing"
-            icon={Megaphone}
-            isOpen={marketingOpen}
-            onToggle={() => {
-              closeAll()
-              setMarketingOpen(!marketingOpen)
-            }}
-            onClose={closeAll}
-            isActive={marketingActive}
-            tabs={marketingTabs}
-          />
-
-          {/* Comms Dropdown */}
-          <NavDropdown
-            label="Comms"
-            icon={Phone}
-            isOpen={callsOpen}
-            onToggle={() => {
-              closeAll()
-              setCallsOpen(!callsOpen)
-            }}
-            onClose={closeAll}
-            isActive={callsActive}
-            tabs={callsTabs}
-          />
-
+        {canEdit && (
           <Link
-            href="/admin/call-logs"
-            className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
-              pathname.startsWith('/admin/call-logs')
-                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-                : 'bg-white/10 text-slate-100 hover:bg-white/20 hover:text-white'
+            href="/admin/navigation"
+            className={`ml-auto flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/admin/navigation'
+                ? 'border-cyan-400 bg-cyan-400/15 text-cyan-200'
+                : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
             }`}
           >
-            <PhoneCall className="h-4 w-4" />
-            Call Log
+            <Settings2 className="h-4 w-4" />
+            Edit navigation
           </Link>
-
-          {/* AI Controls Dropdown */}
-          <NavDropdown
-            label="AI"
-            icon={Bot}
-            isOpen={aiOpen}
-            onToggle={() => {
-              closeAll()
-              setAiOpen(!aiOpen)
-            }}
-            onClose={closeAll}
-            isActive={aiActive}
-            tabs={aiTabs}
-          />
-
-          {/* Preview Pages dropdown */}
-          <div className="relative col-span-2 sm:col-span-1">
-            <button
-              onClick={() => {
-                closeAll()
-                setPreviewOpen(!previewOpen)
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition-all hover:bg-white/20 hover:text-white sm:w-auto sm:justify-start"
-            >
-              <Eye className="h-4 w-4" />
-              Preview
-              <ChevronDown
-                className={`h-3 w-3 transition-transform ${previewOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-
-            {previewOpen && (
-              <>
-                <div className="fixed inset-0 z-[100]" onClick={closeAll} />
-                <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border shadow-2xl">
-                  <div className="p-2">
-                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                      Lead Generation
-                    </div>
-                    <a
-                      href="/tap"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <CreditCard className="h-4 w-4 text-blue-400" />
-                      <div>
-                        <div className="text-sm font-medium">Business Card</div>
-                        <div className="text-muted-foreground text-xs">
-                          Your NFC card landing page
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                    <a
-                      href="/sightings"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Trophy className="h-4 w-4 text-amber-400" />
-                      <div>
-                        <div className="text-sm font-medium">Contest Page</div>
-                        <div className="text-muted-foreground text-xs">
-                          Sasquatch sightings contest
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                    <a
-                      href="/links"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Link2 className="h-4 w-4 text-green-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Review & Share
-                        </div>
-                        <div className="text-muted-foreground text-xs">
-                          Post-service follow-up page
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                    <a
-                      href="/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Map className="h-4 w-4 text-green-400" />
-                      <div>
-                        <div className="text-sm font-medium">Sightings Map</div>
-                        <div className="text-muted-foreground text-xs">
-                          Public map of sightings
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                  </div>
-
-                  <div className="border-border/60 border-t p-2">
-                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                      Vendor Pages
-                    </div>
-                    <a
-                      href="/location/demo"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <MapPin className="h-4 w-4 text-red-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Vendor Landing
-                        </div>
-                        <div className="text-muted-foreground text-xs">
-                          What customers see at vendor locations
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                    <a
-                      href="/location/demo/contest"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Trophy className="h-4 w-4 text-amber-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Vendor Contest
-                        </div>
-                        <div className="text-muted-foreground text-xs">
-                          Vendor-specific contest page
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                  </div>
-
-                  <div className="border-border/60 border-t p-2">
-                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                      Partner Pages
-                    </div>
-                    <a
-                      href="/partners/register"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Users className="h-4 w-4 text-purple-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Partner Signup
-                        </div>
-                        <div className="text-muted-foreground text-xs">
-                          Referral partner registration
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                    <a
-                      href="/preferred-partners"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={closeAll}
-                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-                    >
-                      <Award className="h-4 w-4 text-green-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Preferred Partners
-                        </div>
-                        <div className="text-muted-foreground text-xs">
-                          Public partner directory
-                        </div>
-                      </div>
-                      <ExternalLink className="ml-auto h-3 w-3" />
-                    </a>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
-    </div>
+        )}
+      </div>
+    </nav>
   )
 }

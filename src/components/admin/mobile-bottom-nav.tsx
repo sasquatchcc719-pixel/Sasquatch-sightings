@@ -1,20 +1,19 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import {
-  Calendar,
-  MessageSquare,
-  Users,
-  BarChart3,
-  LogIn,
-  LogOut,
-  Clock,
-} from 'lucide-react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { LogIn, LogOut, Clock } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useGpsContextOptional } from '@/contexts/GpsTrackerContext'
 import { GpsConsentModal } from '@/components/admin/GpsConsentModal'
+import {
+  NAVIGATION_ITEM_BY_ID,
+  isNavigationItemActive,
+  type NavigationItem,
+  type NavigationPreferences,
+} from '@/lib/admin-navigation'
+import { NavigationIcon } from '@/components/admin/navigation-icons'
 
 type UnreadCountResponse = {
   total: number
@@ -54,41 +53,6 @@ function formatElapsed(ms: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
 }
-
-const NAV_TABS = [
-  {
-    key: 'schedule',
-    label: 'Schedule',
-    href: '/admin/operations',
-    icon: Calendar,
-    match: (p: string) =>
-      p.startsWith('/admin/operations') &&
-      !p.startsWith('/admin/operations/customers'),
-  },
-  {
-    key: 'comms',
-    label: 'Comms',
-    href: '/admin/comms',
-    icon: MessageSquare,
-    match: (p: string) =>
-      p.startsWith('/admin/comms') || p.startsWith('/admin/conversations'),
-  },
-  // GPS tab injected here when enabled
-  {
-    key: 'customers',
-    label: 'Customers',
-    href: '/admin/operations/customers',
-    icon: Users,
-    match: (p: string) => p.startsWith('/admin/operations/customers'),
-  },
-  {
-    key: 'stats',
-    label: 'Stats',
-    href: '/admin/stats',
-    icon: BarChart3,
-    match: (p: string) => p.startsWith('/admin/stats'),
-  },
-]
 
 function GpsNavTab() {
   const gps = useGpsContextOptional()
@@ -210,8 +174,53 @@ function GpsNavTab() {
   )
 }
 
-export function MobileBottomNav() {
+function BottomTab({
+  item,
+  active,
+  unreadTotal,
+}: {
+  item: NavigationItem
+  active: boolean
+  unreadTotal: number
+}) {
+  const showsUnread = [
+    'comms-home',
+    'all-conversations',
+    'direct-texts',
+  ].includes(item.id)
+  return (
+    <Link
+      href={item.href}
+      className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
+        active ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      {active && (
+        <span className="absolute top-0 right-6 left-6 h-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500" />
+      )}
+      <div className="relative">
+        <NavigationIcon
+          name={item.icon}
+          className={`h-5 w-5 ${active ? 'text-emerald-400' : 'text-slate-400'}`}
+        />
+        {showsUnread && <BadgeCount count={unreadTotal} />}
+      </div>
+      <span
+        className={`max-w-[70px] truncate text-[10px] leading-none font-medium ${active ? 'text-emerald-400' : 'text-slate-500'}`}
+      >
+        {item.shortName ?? item.name}
+      </span>
+    </Link>
+  )
+}
+
+export function MobileBottomNav({
+  preferences,
+}: {
+  preferences: NavigationPreferences
+}) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const gps = useGpsContextOptional()
   const gpsEnabled = gps?.gpsEnabled ?? false
 
@@ -225,9 +234,11 @@ export function MobileBottomNav() {
 
   const unreadTotal = data?.total ?? 0
 
-  // Split tabs: first 2, GPS in center, last 2
-  const leftTabs = NAV_TABS.slice(0, 2)
-  const rightTabs = NAV_TABS.slice(2)
+  const tabs = preferences.mobile.bottom
+    .map((id) => NAVIGATION_ITEM_BY_ID[id])
+    .filter((item): item is NavigationItem => Boolean(item))
+  const leftTabs = tabs.slice(0, 2)
+  const rightTabs = tabs.slice(2)
 
   return (
     <nav
@@ -239,70 +250,27 @@ export function MobileBottomNav() {
     >
       <div className="flex items-stretch">
         {/* Left tabs */}
-        {leftTabs.map((tab) => {
-          const Icon = tab.icon
-          const isActive = tab.match(pathname)
-          return (
-            <Link
-              key={tab.key}
-              href={tab.href}
-              className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
-                isActive
-                  ? 'text-emerald-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {isActive && (
-                <span className="absolute top-0 right-6 left-6 h-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500" />
-              )}
-              <div className="relative">
-                <Icon
-                  className={`h-5 w-5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}
-                />
-                {tab.key === 'comms' && <BadgeCount count={unreadTotal} />}
-              </div>
-              <span
-                className={`text-[10px] leading-none font-medium ${isActive ? 'text-emerald-400' : 'text-slate-500'}`}
-              >
-                {tab.label}
-              </span>
-            </Link>
-          )
-        })}
+        {leftTabs.map((item) => (
+          <BottomTab
+            key={item.id}
+            item={item}
+            active={isNavigationItemActive(item, pathname, searchParams)}
+            unreadTotal={unreadTotal}
+          />
+        ))}
 
         {/* Center GPS tab — only when enabled */}
         {gpsEnabled && <GpsNavTab />}
 
         {/* Right tabs */}
-        {rightTabs.map((tab) => {
-          const Icon = tab.icon
-          const isActive = tab.match(pathname)
-          return (
-            <Link
-              key={tab.key}
-              href={tab.href}
-              className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
-                isActive
-                  ? 'text-emerald-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {isActive && (
-                <span className="absolute top-0 right-6 left-6 h-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500" />
-              )}
-              <div className="relative">
-                <Icon
-                  className={`h-5 w-5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}
-                />
-              </div>
-              <span
-                className={`text-[10px] leading-none font-medium ${isActive ? 'text-emerald-400' : 'text-slate-500'}`}
-              >
-                {tab.label}
-              </span>
-            </Link>
-          )
-        })}
+        {rightTabs.map((item) => (
+          <BottomTab
+            key={item.id}
+            item={item}
+            active={isNavigationItemActive(item, pathname, searchParams)}
+            unreadTotal={unreadTotal}
+          />
+        ))}
       </div>
 
       {/* iOS safe area padding */}
