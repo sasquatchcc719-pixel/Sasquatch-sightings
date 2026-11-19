@@ -17,16 +17,25 @@ describe('calculatePayPeriodOvertime', () => {
   ) => ({
     staffUserId: id,
     staffDisplayName: id,
+    workDate: startedAt.slice(0, 10),
     startedAt,
     payableMinutes: minutes,
     hourlyRate: rate,
   })
 
-  it('adds the extra half-rate premium only after 40 payable hours', () => {
-    const result = calculatePayPeriodOvertime([
-      entry('David', 40 * 60, 25, '2026-11-11T15:00:00Z'),
-      entry('David', 5 * 60 + 18, 25, '2026-11-17T15:00:00Z'),
-    ])
+  it('adds the extra half-rate premium after 40 hours in one workweek', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 8 * 60, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-10T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-11T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-12T15:00:00Z'),
+        entry('David', 5 * 60 + 18, 25, '2026-11-13T15:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
 
     expect(result.minutes).toBe(318)
     expect(result.premiumCents).toBe(6625)
@@ -36,27 +45,120 @@ describe('calculatePayPeriodOvertime', () => {
         minutes: 318,
         hourlyRate: 25,
         premiumCents: 6625,
+        method: 'weekly',
+        weekStart: '2026-11-08',
       }),
     ])
   })
 
   it('uses the saved rate on the shifts that cross the threshold', () => {
-    const result = calculatePayPeriodOvertime([
-      entry('David', 40 * 60, 20, '2026-11-11T15:00:00Z'),
-      entry('David', 60, 25, '2026-11-12T15:00:00Z'),
-    ])
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 10 * 60, 20, '2026-11-08T15:00:00Z'),
+        entry('David', 10 * 60, 20, '2026-11-09T15:00:00Z'),
+        entry('David', 10 * 60, 20, '2026-11-10T15:00:00Z'),
+        entry('David', 10 * 60, 20, '2026-11-11T15:00:00Z'),
+        entry('David', 60, 25, '2026-11-12T15:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
 
     expect(result.premiumCents).toBe(1250)
     expect(result.breakdown[0].hourlyRate).toBe(25)
   })
 
   it('applies the 40-hour threshold separately to each worker', () => {
-    const result = calculatePayPeriodOvertime([
-      entry('David', 30 * 60, 25, '2026-11-11T15:00:00Z'),
-      entry('Brianna', 30 * 60, 20, '2026-11-11T15:00:00Z'),
-    ])
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 10 * 60, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-10T15:00:00Z'),
+        entry('Brianna', 10 * 60, 20, '2026-11-08T16:00:00Z'),
+        entry('Brianna', 10 * 60, 20, '2026-11-09T16:00:00Z'),
+        entry('Brianna', 10 * 60, 20, '2026-11-10T16:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
 
     expect(result).toEqual({ minutes: 0, premiumCents: 0, breakdown: [] })
+  })
+
+  it('pays time over 12 hours in a workday when the week stays under 40', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 13 * 60 + 30, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 8 * 60 + 15, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 8 * 60 + 15, 25, '2026-11-10T15:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
+
+    expect(result.minutes).toBe(90)
+    expect(result.premiumCents).toBe(1875)
+    expect(result.breakdown[0]).toEqual(
+      expect.objectContaining({ method: 'daily', minutes: 90 }),
+    )
+  })
+
+  it('uses the higher weekly calculation without stacking daily overtime', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 13 * 60 + 30, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-10T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-11T15:00:00Z'),
+        entry('David', 8 * 60, 25, '2026-11-12T15:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
+
+    expect(result.minutes).toBe(330)
+    expect(result.premiumCents).toBe(6875)
+    expect(result.breakdown[0].method).toBe('weekly')
+  })
+
+  it('never averages hours across the two workweeks in a pay period', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 10 * 60, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-10T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-15T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-16T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-17T15:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-21',
+    )
+
+    expect(result).toEqual({ minutes: 0, premiumCents: 0, breakdown: [] })
+  })
+
+  it('uses the full workweek when the pay period starts midweek', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 10 * 60, 25, '2026-11-08T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-09T15:00:00Z'),
+        entry('David', 10 * 60, 25, '2026-11-10T15:00:00Z'),
+        entry('David', 12 * 60, 25, '2026-11-11T15:00:00Z'),
+      ],
+      '2026-11-11',
+      '2026-11-24',
+    )
+
+    expect(result.minutes).toBe(120)
+    expect(result.premiumCents).toBe(2500)
+    expect(result.breakdown[0]).toEqual(
+      expect.objectContaining({
+        method: 'weekly',
+        weekStart: '2026-11-08',
+        minutes: 120,
+      }),
+    )
   })
 })
 

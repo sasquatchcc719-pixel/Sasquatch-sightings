@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { calculatePayPeriodOvertime } from '@/lib/ops/timesheet-pay'
+import {
+  calculatePayPeriodOvertime,
+  getSundayWorkweek,
+} from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 function jsonError(message: string, status: number) {
@@ -46,11 +49,14 @@ async function calculateOvertime(
   endDate: string,
   staffUserId: string,
 ) {
+  const queryStartDate = getSundayWorkweek(startDate).startDate
+  const queryEndDate = getSundayWorkweek(endDate).endDate
   let query = supabase
     .from('ops_timesheet_entries')
     .select(
       `
         staff_user_id,
+        work_date,
         started_at,
         break_minutes,
         break_started_at,
@@ -60,8 +66,8 @@ async function calculateOvertime(
         staff_users ( display_name )
       `,
     )
-    .gte('work_date', startDate)
-    .lte('work_date', endDate)
+    .gte('work_date', queryStartDate)
+    .lte('work_date', queryEndDate)
     .order('started_at', { ascending: true })
 
   if (staffUserId) query = query.eq('staff_user_id', staffUserId)
@@ -82,6 +88,7 @@ async function calculateOvertime(
     return {
       staffUserId: entry.staff_user_id,
       staffDisplayName: staff?.display_name || 'Unknown',
+      workDate: entry.work_date,
       startedAt: entry.started_at,
       payableMinutes,
       hourlyRate: Number(entry.hourly_rate || 0),
@@ -89,9 +96,12 @@ async function calculateOvertime(
   })
 
   return {
-    ...calculatePayPeriodOvertime(entries),
+    ...calculatePayPeriodOvertime(entries, startDate, endDate),
     hasActiveEntries: (data || []).some(
-      (entry) => entry.clock_state !== 'complete',
+      (entry) =>
+        entry.work_date >= startDate &&
+        entry.work_date <= endDate &&
+        entry.clock_state !== 'complete',
     ),
   }
 }
@@ -239,6 +249,8 @@ export async function POST(request: NextRequest) {
           minutes: number
           hourlyRate: number
           premiumPay: number
+          method: string
+          weekStart: string
         }>
       }
     >()
@@ -254,6 +266,8 @@ export async function POST(request: NextRequest) {
         minutes: group.minutes,
         hourlyRate: group.hourlyRate,
         premiumPay: group.premiumCents / 100,
+        method: group.method,
+        weekStart: group.weekStart,
       })
       byStaff.set(group.staffUserId, current)
     }

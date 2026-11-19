@@ -7,65 +7,163 @@ export function parseHourlyRate(value: unknown): number | null {
 export type OvertimeEntry = {
   staffUserId: string
   staffDisplayName: string
+  workDate: string
   startedAt: string
   payableMinutes: number
   hourlyRate: number
 }
 
+export type OvertimeMethod = 'weekly' | 'daily' | 'consecutive'
+
 export type OvertimeBreakdown = {
   key: string
   staffUserId: string
   staffDisplayName: string
+  weekStart: string
+  method: OvertimeMethod
   minutes: number
   hourlyRate: number
   premiumCents: number
 }
 
+export function getSundayWorkweek(value: string): {
+  startDate: string
+  endDate: string
+} {
+  const date = new Date(`${value}T00:00:00Z`)
+  const start = new Date(date)
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay())
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 6)
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  }
+}
+
 export function calculatePayPeriodOvertime(
   entries: OvertimeEntry[],
-  thresholdMinutes = 40 * 60,
+  periodStartDate: string,
+  periodEndDate: string,
 ): {
   minutes: number
   premiumCents: number
   breakdown: OvertimeBreakdown[]
 } {
-  const minutesByStaff = new Map<string, number>()
-  const groups = new Map<string, OvertimeBreakdown>()
-
-  for (const entry of [...entries].sort((a, b) =>
+  const sorted = [...entries].sort((a, b) =>
     a.startedAt.localeCompare(b.startedAt),
-  )) {
-    const payableMinutes = Math.max(0, entry.payableMinutes)
-    const previousMinutes = minutesByStaff.get(entry.staffUserId) || 0
-    const overtimeBefore = Math.max(0, previousMinutes - thresholdMinutes)
-    const overtimeAfter = Math.max(
-      0,
-      previousMinutes + payableMinutes - thresholdMinutes,
-    )
-    const overtimeMinutes = overtimeAfter - overtimeBefore
+  )
 
-    minutesByStaff.set(entry.staffUserId, previousMinutes + payableMinutes)
-    if (overtimeMinutes <= 0) continue
-
-    const key = `${entry.staffUserId}:${entry.hourlyRate}`
-    const group = groups.get(key) || {
-      key,
-      staffUserId: entry.staffUserId,
-      staffDisplayName: entry.staffDisplayName,
-      minutes: 0,
-      hourlyRate: entry.hourlyRate,
-      premiumCents: 0,
-    }
-    group.minutes += overtimeMinutes
-    group.premiumCents += Math.round(
-      (overtimeMinutes / 60) * entry.hourlyRate * 0.5 * 100,
-    )
-    groups.set(key, group)
+  type Candidate = {
+    staffUserId: string
+    staffDisplayName: string
+    weekStart: string
+    minutes: number
+    premiumCents: number
+    periodRates: Map<number, { minutes: number; premiumCents: number }>
   }
 
-  const breakdown = [...groups.values()].sort(
+  function calculateRule(method: OvertimeMethod, thresholdMinutes: number) {
+    const runningMinutes = new Map<string, number>()
+    const candidates = new Map<string, Candidate>()
+
+    sorted.forEach((entry, index) => {
+      const weekStart = getSundayWorkweek(entry.workDate).startDate
+      const weekKey = `${entry.staffUserId}:${weekStart}`
+      const runningKey =
+        method === 'weekly'
+          ? weekKey
+          : method === 'daily'
+            ? `${weekKey}:${entry.workDate}`
+            : `${weekKey}:${index}`
+      const payableMinutes = Math.max(0, entry.payableMinutes)
+      const previousMinutes = runningMinutes.get(runningKey) || 0
+      const overtimeBefore = Math.max(0, previousMinutes - thresholdMinutes)
+      const overtimeAfter = Math.max(
+        0,
+        previousMinutes + payableMinutes - thresholdMinutes,
+      )
+      const overtimeMinutes = overtimeAfter - overtimeBefore
+
+      runningMinutes.set(runningKey, previousMinutes + payableMinutes)
+      if (overtimeMinutes <= 0) return
+
+      const candidate = candidates.get(weekKey) || {
+        staffUserId: entry.staffUserId,
+        staffDisplayName: entry.staffDisplayName,
+        weekStart,
+        minutes: 0,
+        premiumCents: 0,
+        periodRates: new Map(),
+      }
+      const premiumCents = Math.round(
+        (overtimeMinutes / 60) * entry.hourlyRate * 0.5 * 100,
+      )
+      candidate.minutes += overtimeMinutes
+      candidate.premiumCents += premiumCents
+      if (
+        entry.workDate >= periodStartDate &&
+        entry.workDate <= periodEndDate
+      ) {
+        const rate = candidate.periodRates.get(entry.hourlyRate) || {
+          minutes: 0,
+          premiumCents: 0,
+        }
+        rate.minutes += overtimeMinutes
+        rate.premiumCents += premiumCents
+        candidate.periodRates.set(entry.hourlyRate, rate)
+      }
+      candidates.set(weekKey, candidate)
+    })
+
+    return candidates
+  }
+
+  const weekly = calculateRule('weekly', 40 * 60)
+  const daily = calculateRule('daily', 12 * 60)
+  const consecutive = calculateRule('consecutive', 12 * 60)
+  const weekKeys = new Set([
+    ...weekly.keys(),
+    ...daily.keys(),
+    ...consecutive.keys(),
+  ])
+  const breakdown: OvertimeBreakdown[] = []
+
+  for (const weekKey of weekKeys) {
+    const choices = [
+      { method: 'weekly' as const, candidate: weekly.get(weekKey) },
+      { method: 'daily' as const, candidate: daily.get(weekKey) },
+      {
+        method: 'consecutive' as const,
+        candidate: consecutive.get(weekKey),
+      },
+    ]
+    const selected = choices.reduce((best, choice) =>
+      (choice.candidate?.premiumCents || 0) >
+      (best.candidate?.premiumCents || 0)
+        ? choice
+        : best,
+    )
+    if (!selected.candidate || selected.candidate.premiumCents <= 0) continue
+
+    for (const [hourlyRate, rate] of selected.candidate.periodRates) {
+      breakdown.push({
+        key: `${weekKey}:${selected.method}:${hourlyRate}`,
+        staffUserId: selected.candidate.staffUserId,
+        staffDisplayName: selected.candidate.staffDisplayName,
+        weekStart: selected.candidate.weekStart,
+        method: selected.method,
+        minutes: rate.minutes,
+        hourlyRate,
+        premiumCents: rate.premiumCents,
+      })
+    }
+  }
+
+  breakdown.sort(
     (a, b) =>
       a.staffDisplayName.localeCompare(b.staffDisplayName) ||
+      a.weekStart.localeCompare(b.weekStart) ||
       a.hourlyRate - b.hourlyRate,
   )
 

@@ -87,6 +87,8 @@ vi.mock('@tanstack/react-query', () => ({
               key: 'david:25',
               staffUserId: 'david',
               staffDisplayName: 'David Gonzalez',
+              weekStart: '2026-11-08',
+              method: 'weekly',
               minutes: 1067,
               hourlyRate: 25,
               premiumPay: 222.29,
@@ -299,11 +301,11 @@ describe('payroll gratuity display', () => {
 
     const summary = screen.getByRole('region', { name: 'Payroll summary' })
     expect(
-      within(summary).getByText('17h 47m × $12.50/hr premium'),
+      within(summary).getByText('17h 47m × $12.50/hr premium · over 40h/week'),
     ).toBeInTheDocument()
     expect(
       within(
-        within(summary).getByText('Overtime (over 40h)').parentElement!,
+        within(summary).getByText('Overtime (Colorado rules)').parentElement!,
       ).getByText('$222.29'),
     ).toBeInTheDocument()
     expect(

@@ -217,6 +217,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 - For a cellular tracker outage, check the Hologram SIM status and data cap before directing anyone to physical hardware; do not send users to switches hidden behind the acrylic enclosure when the SIM is paused.
 
 - A button labeled Email or Send must open a review of the exact customer-facing recipient, subject, language, line items, notes, discounts, totals, and actions; keep a persistent success or failure state beside the button, show success only after the server confirms delivery, include the external transaction ID when available, and never use a send-labeled button as a silent scroll link.
+- Payroll overtime must use the configured fixed workweek (currently Sunday–Saturday) plus 12-hour workday and consecutive-shift calculations, apply whichever pays more without stacking, and never average a semi-monthly pay period into one workweek.
 
 - David’s vehicle-help scripts must identify David as the caller even when Charles views the portal; the account may be under Charles Sewell, but bill and issue all paperwork to Sasquatch Carpet Cleaning. Keep pickup GPS for roadside/towing and shop directions/drop-off instructions for repairs.
 

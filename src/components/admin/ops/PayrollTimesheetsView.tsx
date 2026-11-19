@@ -150,6 +150,8 @@ type OvertimeSummary = {
       key: string
       staffUserId: string
       staffDisplayName: string
+      weekStart: string
+      method: 'weekly' | 'daily' | 'consecutive'
       minutes: number
       hourlyRate: number
       premiumPay: number
@@ -1315,10 +1317,10 @@ export function PayrollTimesheetsView() {
           {viewMode === 'period' && (
             <div className="flex items-center justify-between gap-4 px-5 py-4">
               <dt className="text-slate-200">
-                Overtime (over 40h)
+                Overtime (Colorado rules)
                 <div className="mt-2 space-y-1 text-base text-white">
                   {overtime.breakdown.length === 0
-                    ? 'No time over 40h in this pay period.'
+                    ? 'No overtime under the configured Colorado hour rules.'
                     : overtime.breakdown.map((group) => (
                         <p key={group.key}>
                           {overtime.breakdown.length > 1 && (
@@ -1327,6 +1329,12 @@ export function PayrollTimesheetsView() {
                           <span className="font-mono">
                             {fmtMin(group.minutes)} ×{' '}
                             {fmtMoney(group.hourlyRate * 0.5)}/hr premium
+                            {' · '}
+                            {group.method === 'weekly'
+                              ? 'over 40h/week'
+                              : group.method === 'daily'
+                                ? 'over 12h/day'
+                                : 'over 12 consecutive hours'}
                             {overtime.breakdown.length > 1
                               ? ` = ${fmtMoney(group.premiumPay)}`
                               : ''}
@@ -1335,8 +1343,9 @@ export function PayrollTimesheetsView() {
                       ))}
                   {overtime.breakdown.length > 0 && (
                     <p>
-                      Straight-time pay is included above; this adds the extra
-                      0.5×.
+                      Uses whichever calculation pays more in each workweek; the
+                      rules are not stacked. Straight-time pay is included
+                      above.
                     </p>
                   )}
                 </div>
