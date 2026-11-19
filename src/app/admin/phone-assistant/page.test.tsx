@@ -5,6 +5,23 @@ import { getUserWithRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import Page from './page'
 
+vi.mock('./actions', () => ({ setCoachingExcluded: vi.fn() }))
+vi.mock('@/lib/phone-assistant/coaching', async (original) => ({
+  ...(await original<typeof import('@/lib/phone-assistant/coaching')>()),
+  getCallReview: async () => ({
+    excluded: false,
+    review: {
+      partial: false,
+      findings: [
+        {
+          key: 'repeat_question',
+          sequence: 3,
+          note: 'Asked for the same detail.',
+        },
+      ],
+    },
+  }),
+}))
 vi.mock('@/lib/auth', () => ({ getUserWithRole: vi.fn() }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: vi.fn(() => ({})) }))
 vi.mock('@/lib/phone-assistant/records', () => ({ getVoiceSession: vi.fn() }))
@@ -36,6 +53,7 @@ describe('exact phone transcript', () => {
           content: 'Could I get three bedrooms cleaned before Friday?',
         },
         {
+          sequence: 3,
           role: 'assistant',
           content:
             'I can take a message for Charles to follow up during business hours.',
@@ -47,6 +65,11 @@ describe('exact phone transcript', () => {
     expect(
       screen.getByRole('heading', { name: 'Transcript' }),
     ).toBeInTheDocument()
+    const evidence = screen.getByRole('link', { name: 'View transcript line' })
+    expect(evidence).toHaveAttribute('href', '#turn-3')
+    expect(document.getElementById('turn-3')).toHaveTextContent(
+      'Phone assistant',
+    )
     expect(screen.getByText('Caller')).toBeInTheDocument()
     expect(screen.getByText('Phone assistant')).toBeInTheDocument()
     expect(screen.getByText(/Private preview/)).toBeInTheDocument()

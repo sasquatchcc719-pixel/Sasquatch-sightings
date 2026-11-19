@@ -5,6 +5,7 @@ import {
 } from '@/lib/mcp/inbound-events'
 import { deliverPendingMissedCallEmails } from '@/lib/mcp/missed-call-email-bridge'
 import { deliverPendingVoiceSummaries } from '@/lib/phone-assistant/summary-email'
+import { reviewPendingCalls } from '@/lib/phone-assistant/review-calls'
 import { createAdminClient } from '@/supabase/server'
 
 export const maxDuration = 60
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
-    const [nativeEvents, missedCallEmails, voiceSummaries] =
+    const [nativeEvents, missedCallEmails, voiceSummaries, callReviews] =
       await Promise.allSettled([
         (async () => {
           const enqueued = await enqueuePersistedInboundEvents(supabase)
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
         })(),
         deliverPendingMissedCallEmails({ db: supabase }),
         deliverPendingVoiceSummaries(supabase),
+        reviewPendingCalls(supabase),
       ])
     if (nativeEvents.status === 'rejected')
       console.error(
@@ -44,7 +46,15 @@ export async function GET(request: NextRequest) {
         '[phone-assistant] summary worker failed:',
         voiceSummaries.reason,
       )
+    if (callReviews.status === 'rejected')
+      console.error(
+        '[phone-assistant] call review worker failed',
+        callReviews.reason instanceof Error
+          ? callReviews.reason.name
+          : 'lookup',
+      )
     if (
+      callReviews.status === 'rejected' ||
       voiceSummaries.status === 'rejected' ||
       nativeEvents.status === 'rejected' ||
       missedCallEmails.status === 'rejected'

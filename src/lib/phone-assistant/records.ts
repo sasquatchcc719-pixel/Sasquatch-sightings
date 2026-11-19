@@ -1,7 +1,11 @@
 import { createAdminClient } from '@/supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type VoiceTurn = { role: 'assistant' | 'user'; content: string }
+export type VoiceTurn = {
+  sequence?: number
+  role: 'assistant' | 'user'
+  content: string
+}
 export type VoiceSession = {
   callSid: string
   callerPhone: string
@@ -54,7 +58,7 @@ export async function getVoiceSession(
   for (let offset = 0; ; offset += pageSize) {
     const page = await db
       .from('phone_assistant_transcript')
-      .select('role,content')
+      .select('sequence,role,content')
       .eq('call_sid', callSid)
       .order('sequence')
       .range(offset, offset + pageSize - 1)

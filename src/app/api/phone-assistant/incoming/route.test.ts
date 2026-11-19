@@ -10,6 +10,10 @@ const m = vi.hoisted(() => ({
   mark: vi.fn(),
   after: vi.fn(),
 }))
+vi.mock('@/supabase/server', () => ({ createAdminClient: () => ({}) }))
+vi.mock('@/lib/phone-assistant/coaching', () => ({
+  coachingInstructions: async () => 'Active coaching',
+}))
 vi.mock('openai', () => ({
   default: class {
     static APIError = Error
@@ -71,6 +75,7 @@ it('accepts an authenticated call with interruptible audio and call-scoped tools
   expect(m.accept).toHaveBeenCalledWith(
     'rtc_1',
     expect.objectContaining({
+      instructions: expect.stringContaining('Active coaching'),
       audio: expect.objectContaining({
         output: { voice: 'cedar', speed: 0.97 },
         input: {

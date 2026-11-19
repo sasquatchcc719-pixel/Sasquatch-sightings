@@ -11,6 +11,8 @@ import {
   getVoiceSessionDetails,
 } from '@/lib/phone-assistant/records'
 import { phoneGreeting, phoneInstructions } from '@/lib/phone-assistant/engine'
+import { coachingInstructions } from '@/lib/phone-assistant/coaching'
+import { createAdminClient } from '@/supabase/server'
 import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
 
 export const maxDuration = 30
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
   }
   const instructions =
     phoneInstructions(session.pilot) +
+    (await coachingInstructions(createAdminClient())) +
     '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
   try {
     await client.realtime.calls.accept(
