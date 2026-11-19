@@ -14,7 +14,9 @@ export function testProfile(pilot: boolean): TestProfile {
   const isolated =
     process.env.VERCEL_ENV === 'preview' ||
     (!process.env.VERCEL_ENV && process.env.NODE_ENV !== 'production') ||
-    process.env.VERCEL_ENV === 'development'
+    process.env.VERCEL_ENV === 'development' ||
+    (process.env.VERCEL_ENV === 'production' &&
+      process.env.HARRY_VOICE_TEST_TRANSPORT === 'live')
   if (!pilot || !isolated) return 'current'
   const name = process.env.HARRY_VOICE_TEST_PROFILE
   if (!name || name === 'current') return 'current'

@@ -13,11 +13,15 @@ export function livePreviewEnabled(
   base: string,
 ) {
   return (
-    process.env.VERCEL_ENV === 'preview' &&
+    pilot &&
+    (process.env.VERCEL_ENV === 'preview' ||
+      process.env.VERCEL_ENV === 'production') &&
     process.env.HARRY_VOICE_TEST_TRANSPORT === 'live' &&
     testProfile(pilot) === 'dispatcher-server' &&
     new URL(base).protocol === 'https:' &&
-    previewCallbacksLocal(requestUrl, base)
+    (process.env.VERCEL_ENV === 'production'
+      ? new URL(requestUrl).origin === new URL(base).origin
+      : previewCallbacksLocal(requestUrl, base))
   )
 }
 

@@ -140,6 +140,6 @@ it('gives Live pilots a signed origin-bound invite and full disclosure before co
   expect(twiml).not.toMatch(/How can I help|X-Sightings-Invite=/)
   vi.stubEnv('VERCEL_ENV', 'production')
   expect(await (await send('start&preview=1')).text()).toContain(
-    'X-Sightings-Invite=',
+    'X-Sightings-Live-Invite=',
   )
 })

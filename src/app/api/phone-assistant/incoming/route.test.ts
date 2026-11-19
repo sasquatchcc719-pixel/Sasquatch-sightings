@@ -275,7 +275,7 @@ it('ignores the competing event without accepting or rejecting the call', async 
   expect(m.livePost).not.toHaveBeenCalled()
   expect(m.bind).not.toHaveBeenCalled()
 })
-it('cannot opt a public, production, development, unscoped, wrong-origin, or inactive call into Live', async () => {
+it('cannot opt a public, development, unscoped, wrong-origin, or inactive call into Live', async () => {
   configureLive()
   for (const token of [
     issueCallToken(sid, 'invite'),
@@ -297,8 +297,6 @@ it('cannot opt a public, production, development, unscoped, wrong-origin, or ina
       body: '{}',
     }),
   )
-  vi.stubEnv('VERCEL_ENV', 'production')
-  await send()
   vi.stubEnv('VERCEL_ENV', 'development')
   await send()
   vi.stubEnv('VERCEL_ENV', 'preview')
@@ -307,6 +305,18 @@ it('cannot opt a public, production, development, unscoped, wrong-origin, or ina
   expect(m.bind).not.toHaveBeenCalled()
   expect(m.livePost).not.toHaveBeenCalled()
   expect(m.mark).not.toHaveBeenCalled()
+})
+it('accepts the signed private pilot on the matching production origin', async () => {
+  configureLive()
+  vi.stubEnv('VERCEL_ENV', 'production')
+  m.unwrap.mockResolvedValue(liveEvent())
+  expect((await send()).status).toBe(204)
+  expect(m.bind).toHaveBeenCalledWith(sid, 'live_session-17')
+  expect(m.livePost).toHaveBeenCalledWith(
+    '/live/sessions/live_session-17/accept',
+    expect.objectContaining({ body: { session: expect.any(Object) } }),
+  )
+  expect(m.mark).toHaveBeenCalledWith(sid, 'live_session-17')
 })
 it('deduplicates a successful Live acceptance and never marks a failed or ambiguous decision answered', async () => {
   configureLive()
