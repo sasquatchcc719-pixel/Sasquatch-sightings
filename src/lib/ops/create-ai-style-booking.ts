@@ -36,6 +36,10 @@ export type AiStyleBookingLineRequest = {
 
 export type CreateAiStyleBookingInput = {
   supabase: SupabaseClient
+  /** A caller-verified Sightings customer. When supplied, do not find-or-create. */
+  existing_customer_id?: string
+  /** A caller-confirmed saved address owned by existing_customer_id. */
+  existing_service_address_id?: string
   customer: {
     first_name: string
     last_name: string
@@ -632,28 +636,62 @@ export async function createAiStyleBooking(
 
   const fullName = `${firstName} ${lastName}`.trim()
   let customerId: string
-  try {
-    const resolvedCustomer = await resolveOpsCustomer({
-      supabase,
-      firstName,
-      lastName,
-      email,
-      phone,
-    })
-    customerId = resolvedCustomer.id
-  } catch (customerErr) {
-    console.error('[createAiStyleBooking] resolve customer:', customerErr)
-    return { ok: false, error: 'Could not create customer record' }
+  if (input.existing_customer_id) {
+    const { data: selectedCustomer, error: selectedCustomerError } =
+      await supabase
+        .from('ops_customers')
+        .select('id')
+        .eq('id', input.existing_customer_id)
+        .maybeSingle()
+    if (selectedCustomerError || !selectedCustomer) {
+      console.error(
+        '[createAiStyleBooking] selected customer:',
+        selectedCustomerError,
+      )
+      return { ok: false, error: 'Could not verify customer record' }
+    }
+    customerId = selectedCustomer.id
+  } else {
+    try {
+      const resolvedCustomer = await resolveOpsCustomer({
+        supabase,
+        firstName,
+        lastName,
+        email,
+        phone,
+      })
+      customerId = resolvedCustomer.id
+    } catch (customerErr) {
+      console.error('[createAiStyleBooking] resolve customer:', customerErr)
+      return { ok: false, error: 'Could not create customer record' }
+    }
   }
 
-  const resolvedAddr = await resolveServiceAddress(supabase, customerId, {
-    label: 'Service Address',
-    street_1: street1,
-    street_2: street2,
-    city,
-    state,
-    zip_code: zipCode,
-  })
+  const selectedAddress = input.existing_service_address_id
+    ? await supabase
+        .from('ops_service_addresses')
+        .select('*')
+        .eq('id', input.existing_service_address_id)
+        .eq('customer_id', customerId)
+        .maybeSingle()
+    : null
+  if (selectedAddress?.error) {
+    console.error(
+      '[createAiStyleBooking] selected address:',
+      selectedAddress.error,
+    )
+    return { ok: false, error: 'Could not verify service address' }
+  }
+  const resolvedAddr = input.existing_service_address_id
+    ? selectedAddress?.data || null
+    : await resolveServiceAddress(supabase, customerId, {
+        label: 'Service Address',
+        street_1: street1,
+        street_2: street2,
+        city,
+        state,
+        zip_code: zipCode,
+      })
   if (!resolvedAddr) {
     return { ok: false, error: 'Could not save service address' }
   }

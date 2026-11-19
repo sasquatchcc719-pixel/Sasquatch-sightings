@@ -58,7 +58,17 @@ afterEach(() => vi.unstubAllEnvs())
 beforeEach(() => {
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'test-key')
   vi.resetAllMocks()
-  deps.db.mockReturnValue({})
+  deps.db.mockReturnValue({
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        in: vi.fn(() => ({
+          order: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+        })),
+      })),
+    })),
+  })
   deps.catalog.mockResolvedValue([
     { id, name: 'Test Room', base_price: 100, pricing_unit: 'per_room' },
   ])
@@ -69,9 +79,84 @@ beforeEach(() => {
 })
 describe('customer voice preview', () => {
   it('publishes only valid read and simulation tool schemas', () => {
-    expect(phoneTools).toHaveLength(7)
+    expect(phoneTools).toHaveLength(8)
     for (const t of phoneTools)
       expect(z.toJSONSchema(t.inputSchema).type).toBe('object')
+  })
+  it('finds the existing caller by inbound number and collapses duplicate address spellings', async () => {
+    const customerId = '11111111-1111-4111-8111-111111111111'
+    const customers = [
+      {
+        id: customerId,
+        full_name: 'Charles Caller',
+        first_name: 'Charles',
+        last_name: 'Caller',
+        business_name: null,
+        email: 'saved@example.com',
+        updated_at: '2099-01-02T00:00:00Z',
+      },
+    ]
+    const addresses = [
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        customer_id: customerId,
+        label: 'Home',
+        street_1: '740 Example Lane',
+        street_2: null,
+        city: 'Palmer Lake',
+        state: 'CO',
+        zip_code: '80133',
+      },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        customer_id: customerId,
+        label: 'Home',
+        street_1: '740 Example Ln.',
+        street_2: null,
+        city: 'Palmer Lake',
+        state: 'CO',
+        zip_code: '80133',
+      },
+    ]
+    const phoneIn = vi.fn(() => ({
+      order: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue({ data: customers, error: null }),
+      })),
+    }))
+    const addressIn = vi.fn(() => ({
+      order: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue({ data: addresses, error: null }),
+      })),
+    }))
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() => ({
+        in: table === 'ops_customers' ? phoneIn : addressIn,
+      })),
+    }))
+    deps.db.mockReturnValue({ from })
+
+    const result = await runPhoneTool(
+      'phone_caller_lookup',
+      { first_name: 'Charles', last_name: 'Caller' },
+      ctx,
+    )
+    expect(result).toMatchObject({
+      status: 'existing_customer',
+      caller_number_matched: true,
+      customer_ref: customerId,
+      customer: { email: 'saved@example.com' },
+      saved_locations: [
+        {
+          customer_ref: customerId,
+          street: '740 Example Lane',
+          zip_code: '80133',
+        },
+      ],
+    })
+    expect(phoneIn).toHaveBeenCalledWith(
+      'phone',
+      expect.arrayContaining([ctx.callerPhone]),
+    )
   })
   it('prices a normal call without an LSA fee and applies a validated coupon', async () => {
     deps.promo.mockResolvedValue(
@@ -382,6 +467,87 @@ describe('customer voice preview', () => {
         notify_internal: false,
         sync_quickbooks: false,
         customer: expect.objectContaining({ phone: ctx.callerPhone }),
+      }),
+    )
+  })
+  it('requires a known inbound caller to be selected and reuses the selected saved record', async () => {
+    const customerId = '11111111-1111-4111-8111-111111111111'
+    const addressId = '22222222-2222-4222-8222-222222222222'
+    const customers = [
+      {
+        id: customerId,
+        full_name: 'Saved Caller',
+        first_name: 'Saved',
+        last_name: 'Caller',
+        business_name: null,
+        email: 'saved@example.com',
+        updated_at: '2099-01-02T00:00:00Z',
+      },
+    ]
+    const savedAddress = {
+      id: addressId,
+      customer_id: customerId,
+      label: 'Home',
+      street_1: '740 Saved Lane',
+      street_2: null,
+      city: 'Palmer Lake',
+      state: 'CO',
+      zip_code: '80133',
+    }
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() =>
+        table === 'ops_customers'
+          ? {
+              in: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  limit: vi
+                    .fn()
+                    .mockResolvedValue({ data: customers, error: null }),
+                })),
+              })),
+            }
+          : {
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi
+                    .fn()
+                    .mockResolvedValue({ data: savedAddress, error: null }),
+                })),
+              })),
+            },
+      ),
+    }))
+    deps.db.mockReturnValue({ from })
+
+    expect(
+      await runPhoneTool('phone_preview_booking', booking, ctx),
+    ).toMatchObject({
+      error: expect.stringContaining('already has customer records'),
+    })
+    expect(deps.book).not.toHaveBeenCalled()
+
+    expect(
+      await runPhoneTool(
+        'phone_preview_booking',
+        {
+          ...booking,
+          zip_code: '80133',
+          service: { ...service, zip_code: '80133' },
+          customer_ref: customerId,
+          service_address_ref: addressId,
+        },
+        ctx,
+      ),
+    ).toMatchObject({ status: 'simulated' })
+    expect(deps.book).toHaveBeenCalledWith(
+      expect.objectContaining({
+        existing_customer_id: customerId,
+        existing_service_address_id: addressId,
+        customer: expect.objectContaining({
+          first_name: 'Saved',
+          email: 'saved@example.com',
+        }),
+        address: expect.objectContaining({ street_1: '740 Saved Lane' }),
       }),
     )
   })
