@@ -109,12 +109,13 @@ export async function POST(request: NextRequest) {
     if (!project || !/^proj_[a-zA-Z0-9_-]+$/.test(project))
       throw new Error('Missing project')
     const profile = testProfile(pilot)
+    const live = livePreviewEnabled(pilot, request.url, queueBaseUrl())
     if (
       profile !== 'current' &&
+      !live &&
       !previewCallbacksLocal(request.url, queueBaseUrl())
     )
       throw new Error('Invalid preview callback origin')
-    const live = livePreviewEnabled(pilot, request.url, queueBaseUrl())
     const invite = issueCallToken(
       callSid,
       live ? liveInvitePurpose(queueBaseUrl()) : 'invite',

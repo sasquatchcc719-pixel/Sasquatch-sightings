@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   start: vi.fn(),
   append: vi.fn(),
   config: vi.fn(),
+  base: vi.fn(),
 }))
 vi.mock('@/lib/twilio/inbound-auth', () => ({
   validateTwilioInboundRequest: m.signed,
@@ -20,7 +21,7 @@ vi.mock('@/lib/twilio/harry-access', () => ({
   isHarryMainNumber: (n: string) => n === '+15550000001',
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
-  queueBaseUrl: () => 'https://example.com',
+  queueBaseUrl: m.base,
 }))
 vi.mock('@/lib/twilio/call-routing-config', () => ({
   getCallRoutingConfig: m.config,
@@ -36,7 +37,7 @@ import { POST } from './route'
 const sid = 'CA' + 'b'.repeat(32)
 const send = (step: string, fields: Record<string, string> = {}) =>
   POST(
-    new NextRequest('https://example.com/api/twilio/harry-voice?step=' + step, {
+    new NextRequest(m.base() + '/api/twilio/harry-voice?step=' + step, {
       method: 'POST',
       body: new URLSearchParams({
         From: '+15550000123',
@@ -50,6 +51,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   m.signed.mockReturnValue(true)
   m.access.mockResolvedValue({ preview: true, publicEnabled: false })
+  m.base.mockReturnValue('https://example.com')
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'test-key')
   vi.stubEnv('HARRY_VOICE_PROJECT_ID', 'proj_test')
 })
@@ -142,4 +144,8 @@ it('gives Live pilots a signed origin-bound invite and full disclosure before co
   expect(await (await send('start&preview=1')).text()).toContain(
     'X-Sightings-Live-Invite=',
   )
+  m.base.mockReturnValue('https://sightings.sasquatchcarpet.com')
+  const production = await (await send('start&preview=1')).text()
+  expect(production).toContain('X-Sightings-Live-Invite=')
+  expect(production).not.toContain('unavailable right now')
 })
