@@ -135,6 +135,10 @@ describe('customer voice preview', () => {
     }))
     deps.db.mockReturnValue({ from })
 
+    expect(await runPhoneTool('phone_caller_lookup', {}, ctx)).toMatchObject({
+      status: 'name_confirmation_required',
+      suggested_first_name: 'Charles',
+    })
     const result = await runPhoneTool(
       'phone_caller_lookup',
       { first_name: 'Charles', last_name: 'Caller' },

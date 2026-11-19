@@ -15,6 +15,7 @@ const m = vi.hoisted(() => ({
   bind: vi.fn(),
   claim: vi.fn(),
   mark: vi.fn(),
+  recognize: vi.fn(),
   after: vi.fn(),
 }))
 vi.mock('@/lib/ops/bookable-catalog', () => ({
@@ -43,6 +44,7 @@ vi.mock('@/lib/phone-assistant/engine', () => ({
   phoneInstructions: () => 'Business rules',
   phoneGreeting: 'Test greeting',
   phoneTools: [{ name: 'phone_catalog' }, { name: 'phone_quote' }],
+  recognizePhoneCaller: m.recognize,
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
   queueBaseUrl: () => 'https://example.com',
@@ -188,12 +190,17 @@ function configureLive() {
   vi.stubEnv('VERCEL_ENV', 'preview')
   m.get.mockResolvedValue({
     callSid: sid,
+    callerPhone: '+17195550123',
     providerCallId: null,
     status: 'active',
     startedAt: new Date().toISOString(),
     pilot: true,
   })
   m.mark.mockResolvedValue(true)
+  m.recognize.mockResolvedValue({
+    firstName: 'Charles',
+    customerRef: '11111111-1111-4111-8111-111111111111',
+  })
 }
 function liveEvent(value = liveToken(), id = 'live_session-17') {
   return {
@@ -245,7 +252,14 @@ it('answers only signed, isolated Live pilots with scoped hosted business tools 
   })
   expect(config.audio).not.toHaveProperty('format')
   expect(config.input[0].content[0].text).toContain('already begun speaking')
-  expect(config.input[0].content[0].text).toContain('leave a message')
+  expect(config.input[0].content[0].text).toContain(
+    'Harry here—is this Charles?',
+  )
+  expect(m.recognize).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    expect.any(AbortSignal),
+  )
   expect(config.instructions).toContain(
     'pet urine treatment, rugs, furniture and tile',
   )
@@ -253,6 +267,15 @@ it('answers only signed, isolated Live pilots with scoped hosted business tools 
   const token = config.delegation.responses.tools[0].authorization
   expect(verifyCallToken(token, 'tools')).toBe(sid)
   expect(verifyCallToken(token, 'invite')).toBeNull()
+})
+it('keeps the neutral opening for an unknown caller number', async () => {
+  configureLive()
+  m.recognize.mockResolvedValue(null)
+  m.unwrap.mockResolvedValue(liveEvent())
+  await send()
+  const config = m.livePost.mock.calls[0][1].body.session
+  expect(config.input[0].content[0].text).toContain('leave a message')
+  expect(config.input[0].content[0].text).not.toContain('is this Charles')
 })
 it('ignores the competing event without accepting or rejecting the call', async () => {
   configureLive()

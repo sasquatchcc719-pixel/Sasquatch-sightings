@@ -6,7 +6,7 @@ import {
   issueCallToken,
   verifyCallToken,
 } from '@/lib/phone-assistant/call-token'
-import { phoneTools } from '@/lib/phone-assistant/engine'
+import { phoneTools, recognizePhoneCaller } from '@/lib/phone-assistant/engine'
 import {
   liveInviteHeader,
   liveInvitePurpose,
@@ -67,9 +67,14 @@ export async function handleLiveIncoming(
     return ignored()
   }
   const db = createAdminClient()
-  const [catalog, coaching] = await Promise.all([
+  const [catalog, coaching, caller] = await Promise.all([
     loadBookableCatalog(db, AbortSignal.timeout(600)).catch(() => []),
     coachingInstructions(db),
+    recognizePhoneCaller(
+      session.callerPhone,
+      db,
+      AbortSignal.timeout(600),
+    ).catch(() => null),
   ])
   const completeCatalog =
     catalog.length > 0 &&
@@ -79,11 +84,20 @@ export async function handleLiveIncoming(
   const names = phoneTools
     .filter((tool) => !completeCatalog || tool.name !== 'phone_catalog')
     .map((tool) => tool.name)
-  const config = livePreviewSession(catalog, coaching, {
-    server_url: base + '/api/phone-assistant/tools',
-    authorization: issueCallToken(sid, 'tools', Date.parse(session.startedAt)),
-    allowed_tools: [...names, 'request_flood_confirmation', 'end_call'],
-  })
+  const config = livePreviewSession(
+    catalog,
+    coaching,
+    {
+      server_url: base + '/api/phone-assistant/tools',
+      authorization: issueCallToken(
+        sid,
+        'tools',
+        Date.parse(session.startedAt),
+      ),
+      allowed_tools: [...names, 'request_flood_confirmation', 'end_call'],
+    },
+    caller,
+  )
   try {
     await client
       .post(path + '/accept', {
