@@ -98,6 +98,7 @@ vi.mock('@tanstack/react-query', () => ({
                 appliedPay: state.premiumPay,
                 appliedMinutes: 60,
                 manualStartTime: null,
+                manualEndTime: null,
               },
             ]
           : [],
@@ -220,17 +221,25 @@ describe('payroll gratuity display', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/Scheduled start used/)).toBeInTheDocument()
   })
-  it('recalculates an unapplied premium when its start time is edited', () => {
+  it('recalculates an unapplied premium when its start or end time is edited', () => {
     state.premiumPay = 10
     state.premiumApplied = false
     render(<PayrollTimesheetsView />)
     const input = screen.getByLabelText(
       'Saltgrass Colorado Springs premium start',
     )
+    const endInput = screen.getByLabelText(
+      'Saltgrass Colorado Springs premium end',
+    )
     expect(input).toHaveValue('21:00')
+    expect(endInput).toHaveValue('22:00')
     fireEvent.change(input, { target: { value: '21:30' } })
     expect(
       screen.getByRole('button', { name: 'Apply +$5.00' }),
+    ).toBeInTheDocument()
+    fireEvent.change(endInput, { target: { value: '21:45' } })
+    expect(
+      screen.getByRole('button', { name: 'Apply +$2.50' }),
     ).toBeInTheDocument()
   })
   it('shows each saved hourly rate separately rather than inventing an average', () => {

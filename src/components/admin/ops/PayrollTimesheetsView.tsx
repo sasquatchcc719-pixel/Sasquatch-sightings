@@ -6,6 +6,7 @@ import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import {
   computeAfterHoursMinutes,
   computePremiumPay,
+  resolveAfterHoursPremiumEnd,
 } from '@/lib/ops/after-hours-premium'
 import type {
   PayrollGratuityRow,
@@ -258,6 +259,7 @@ type PremiumRow = {
   appliedPay: number | null
   appliedMinutes: number | null
   manualStartTime: string | null
+  manualEndTime: string | null
 }
 
 type AddOnBonusRow = {
@@ -446,6 +448,9 @@ export function PayrollTimesheetsView() {
     Record<string, string>
   >({})
   const [premiumStartDraft, setPremiumStartDraft] = useState<
+    Record<string, string>
+  >({})
+  const [premiumEndDraft, setPremiumEndDraft] = useState<
     Record<string, string>
   >({})
   const [payrollAmountDraft, setPayrollAmountDraft] = useState<
@@ -736,14 +741,18 @@ export function PayrollTimesheetsView() {
     setEditForm(null)
   }
 
-  async function applyPremium(appointmentId: string, startTime: string) {
+  async function applyPremium(
+    appointmentId: string,
+    startTime: string,
+    endTime: string,
+  ) {
     setIsSaving(true)
     setMessage(null)
     try {
       const res = await fetch('/api/admin/ops/payroll/after-hours-premiums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, startTime }),
+        body: JSON.stringify({ appointmentId, startTime, endTime }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to apply premium')
@@ -1807,7 +1816,7 @@ export function PayrollTimesheetsView() {
             <p className="mt-0.5 text-xs text-slate-400">
               +$10/hr on worked time after 6 PM (Start Job → Complete). A saved
               scheduled start is used when a completed legacy job is missing
-              Start Job. Apply to add it to this pay period.
+              Start Job. Adjust Start and End, then apply it to this pay period.
             </p>
           </div>
           <div className="divide-y divide-white/5">
@@ -1819,9 +1828,19 @@ export function PayrollTimesheetsView() {
               const startAt =
                 mountainLocalDateTimeToIso(premium.workDate, startTime) ||
                 premium.jobStartedAt
+              const endTime =
+                premium.manualEndTime ||
+                premiumEndDraft[premium.appointmentId] ||
+                fmtInputTime(premium.completedAt)
+              const endAt =
+                resolveAfterHoursPremiumEnd(
+                  startAt,
+                  premium.workDate,
+                  endTime,
+                ) || premium.completedAt
               const shownMinutes = premium.applied
                 ? (premium.appliedMinutes ?? premium.minutes)
-                : computeAfterHoursMinutes(startAt, premium.completedAt)
+                : computeAfterHoursMinutes(startAt, endAt)
               const shownPay = premium.applied
                 ? (premium.appliedPay ?? premium.premiumPay)
                 : computePremiumPay(shownMinutes, premium.premiumRate)
@@ -1837,15 +1856,15 @@ export function PayrollTimesheetsView() {
                     </p>
                     <p className="text-xs text-slate-400">
                       {fmtDate(premium.workDate)} · {fmtTime(startAt)}–
-                      {fmtTime(premium.completedAt)} · {fmtMin(shownMinutes)}{' '}
-                      after 6 PM × ${premium.premiumRate} ={' '}
+                      {fmtTime(endAt)} · {fmtMin(shownMinutes)} after 6 PM × $
+                      {premium.premiumRate} ={' '}
                       <span className="font-semibold text-emerald-300">
                         {fmtMoney(shownPay)}
                       </span>
-                      {premium.manualStartTime ? (
+                      {premium.manualStartTime || premium.manualEndTime ? (
                         <span className="text-emerald-200">
                           {' '}
-                          · Manual start saved
+                          · Manual time saved
                         </span>
                       ) : (
                         premium.startSource === 'scheduled' && (
@@ -1932,12 +1951,33 @@ export function PayrollTimesheetsView() {
                           className="mt-1 block rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-sm text-white"
                         />
                       </label>
+                      <label className="text-[11px] text-slate-400">
+                        End
+                        <input
+                          aria-label={`${premium.customerName} premium end`}
+                          type="time"
+                          value={endTime}
+                          onChange={(event) =>
+                            setPremiumEndDraft((current) => ({
+                              ...current,
+                              [premium.appointmentId]: event.target.value,
+                            }))
+                          }
+                          className="mt-1 block rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-sm text-white"
+                        />
+                      </label>
                       <button
                         type="button"
                         onClick={() =>
-                          applyPremium(premium.appointmentId, startTime)
+                          applyPremium(
+                            premium.appointmentId,
+                            startTime,
+                            endTime,
+                          )
                         }
-                        disabled={isSaving || shownMinutes <= 0}
+                        disabled={
+                          isSaving || shownMinutes <= 0 || shownMinutes > 1440
+                        }
                         className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
                       >
                         Apply +{fmtMoney(shownPay)}

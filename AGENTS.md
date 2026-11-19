@@ -318,6 +318,7 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Payroll summaries must show logged payable hours × the saved hourly rate on the hourly row (separate calculations for different rates), separate gratuity and add-on rows, and one bottom total that includes them; never require staff to interpret “incl.” or add extras to an already combined figure.
 - Payroll eligibility changes must include and verify every affected job in the current open pay period; never ship a future-only rule change when existing payroll needs correction.
 - Recovery Village and Saltgrass Colorado Springs premiums are $10/hour for worked time after 6 PM Mountain; keep the cutoff and payroll labels aligned.
+- Manual after-hours premium corrections must expose and persist both start and end times; do not make only one side of the worked window editable.
 
 - Planned daily driving routes must include the assigned vehicle’s saved base → first job and last job → base, with a base pin and both legs included in the total. Never substitute the current vehicle position for its base.
 

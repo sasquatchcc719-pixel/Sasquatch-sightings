@@ -3,6 +3,7 @@ import {
   computeAfterHoursMinutes,
   computePremiumPay,
   isAfterHoursPremiumCustomer,
+  resolveAfterHoursPremiumEnd,
   resolveAfterHoursPremiumStart,
 } from './after-hours-premium'
 
@@ -21,6 +22,28 @@ describe('isAfterHoursPremiumCustomer', () => {
     expect(isAfterHoursPremiumCustomer('Saltgrass Denver')).toBe(false)
     expect(isAfterHoursPremiumCustomer(null)).toBe(false)
     expect(isAfterHoursPremiumCustomer(undefined)).toBe(false)
+  })
+})
+
+describe('resolveAfterHoursPremiumEnd', () => {
+  it('keeps a later clock time on the same work date', () => {
+    expect(
+      resolveAfterHoursPremiumEnd(
+        '2026-11-18T01:00:00.000Z',
+        '2026-11-17',
+        '19:15',
+      ),
+    ).toBe('2026-11-18T02:15:00.000Z')
+  })
+
+  it('moves an earlier clock time to the next date for overnight work', () => {
+    expect(
+      resolveAfterHoursPremiumEnd(
+        '2026-11-17T04:45:00.000Z',
+        '2026-11-16',
+        '00:01',
+      ),
+    ).toBe('2026-11-17T07:01:00.000Z')
   })
 })
 

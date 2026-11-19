@@ -38,6 +38,30 @@ export function resolveAfterHoursPremiumStart(
   return scheduled ? { timestamp: scheduled, source: 'scheduled' } : null
 }
 
+function nextDateKey(dateKey: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey)
+  if (!match) return null
+  const next = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1),
+  )
+  return next.toISOString().slice(0, 10)
+}
+
+/** Resolve a hand-entered end time, treating an earlier clock time as next day. */
+export function resolveAfterHoursPremiumEnd(
+  startedAt: string,
+  workDate: string,
+  endTime: string,
+): string | null {
+  const sameDay = mountainLocalDateTimeToIso(workDate, endTime)
+  const startMs = new Date(startedAt).getTime()
+  if (!sameDay || !Number.isFinite(startMs)) return null
+  if (new Date(sameDay).getTime() > startMs) return sameDay
+
+  const nextDay = nextDateKey(workDate)
+  return nextDay ? mountainLocalDateTimeToIso(nextDay, endTime) : null
+}
+
 /**
  * Minutes of the resolved work window [start, completedAt] that fall after
  * 6:00 PM Mountain on the day the job started. Returns 0 when the job wrapped

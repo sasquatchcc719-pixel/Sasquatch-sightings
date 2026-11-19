@@ -10,6 +10,7 @@ import {
   computeAfterHoursMinutes,
   computePremiumPay,
   isAfterHoursPremiumCustomer,
+  resolveAfterHoursPremiumEnd,
   resolveAfterHoursPremiumStart,
 } from '@/lib/ops/after-hours-premium'
 
@@ -22,7 +23,16 @@ function unwrap<T>(value: T | T[] | null | undefined): T | null {
 }
 
 function manualStartTimeFromNotes(notes: string | null | undefined) {
-  return /^manual_start_time=(\d{2}:\d{2})$/.exec(notes || '')?.[1] ?? null
+  return (
+    /(?:^|;)manual_start_time=(\d{2}:\d{2})(?:;|$)/.exec(notes || '')?.[1] ??
+    null
+  )
+}
+
+function manualEndTimeFromNotes(notes: string | null | undefined) {
+  return (
+    /(?:^|;)manual_end_time=(\d{2}:\d{2})(?:;|$)/.exec(notes || '')?.[1] ?? null
+  )
 }
 
 type ApprovedTimesheetEndMap = Map<string, string>
@@ -245,6 +255,7 @@ export async function GET(request: NextRequest) {
         appliedPay: applied?.premium_pay ?? null,
         appliedMinutes: applied?.premium_minutes ?? null,
         manualStartTime: manualStartTimeFromNotes(applied?.notes),
+        manualEndTime: manualEndTimeFromNotes(applied?.notes),
       }
     })
 
@@ -273,9 +284,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const appointmentId = String(body.appointmentId || '')
     const manualStartTime = String(body.startTime || '').trim()
+    const manualEndTime = String(body.endTime || '').trim()
     if (!appointmentId) return jsonError('appointmentId is required', 400)
     if (manualStartTime && !/^\d{2}:\d{2}$/.test(manualStartTime)) {
       return jsonError('startTime must be HH:MM', 400)
+    }
+    if (manualEndTime && !/^\d{2}:\d{2}$/.test(manualEndTime)) {
+      return jsonError('endTime must be HH:MM', 400)
     }
 
     const { data: appt, error } = await supabase
@@ -328,24 +343,40 @@ export async function POST(request: NextRequest) {
       return jsonError('Job has no Start Job or scheduled start time', 400)
     }
     const workDate = mountainDateKey(premiumStart.timestamp)
-    const approvedEnds = await loadApprovedTimesheetEnds(
-      supabase,
-      [appt.assigned_staff_user_id],
-      workDate,
-      workDate,
-    )
-    const effectiveCompletedAt = capToApprovedTimesheetEnd(
-      appt.completed_at,
-      approvedEnds.get(
-        approvedTimesheetEndKey(appt.assigned_staff_user_id, workDate),
-      ),
-    )
+    const manualEndAt = manualEndTime
+      ? resolveAfterHoursPremiumEnd(
+          premiumStart.timestamp,
+          workDate,
+          manualEndTime,
+        )
+      : null
+    if (manualEndTime && !manualEndAt) {
+      return jsonError('endTime is invalid', 400)
+    }
+    let effectiveCompletedAt: string | null | undefined = manualEndAt
+    if (!effectiveCompletedAt) {
+      const approvedEnds = await loadApprovedTimesheetEnds(
+        supabase,
+        [appt.assigned_staff_user_id],
+        workDate,
+        workDate,
+      )
+      effectiveCompletedAt = capToApprovedTimesheetEnd(
+        appt.completed_at,
+        approvedEnds.get(
+          approvedTimesheetEndKey(appt.assigned_staff_user_id, workDate),
+        ),
+      )
+    }
     const minutes = computeAfterHoursMinutes(
       premiumStart.timestamp,
       effectiveCompletedAt,
     )
-    if (minutes <= 0) {
-      return jsonError('Job has no worked time after 6pm', 400)
+    if (minutes <= 0 || minutes > 1440) {
+      return jsonError(
+        'Premium window must include 1 to 1,440 minutes after 6pm',
+        400,
+      )
     }
 
     const { data: premium, error: upsertError } = await supabase
@@ -358,9 +389,13 @@ export async function POST(request: NextRequest) {
           premium_minutes: minutes,
           premium_rate: AFTER_HOURS_PREMIUM_RATE,
           status: 'approved',
-          notes: manualStartTime
-            ? `manual_start_time=${manualStartTime}`
-            : null,
+          notes:
+            [
+              manualStartTime && `manual_start_time=${manualStartTime}`,
+              manualEndTime && `manual_end_time=${manualEndTime}`,
+            ]
+              .filter(Boolean)
+              .join(';') || null,
           created_by: access.id,
           updated_at: new Date().toISOString(),
         },
