@@ -74,6 +74,16 @@ export async function getHarryAccess(caller: string) {
   }
 }
 
+export async function isHarryPreviewCall(callSid: string, callerPhone: string) {
+  const { data, error } = await createAdminClient()
+    .from('call_logs')
+    .select('voice_preview')
+    .eq('call_sid', callSid)
+    .eq('caller_phone', callerPhone)
+    .maybeSingle()
+  return !error && data?.voice_preview === true
+}
+
 export async function setHarryPublic(enabled: boolean) {
   await saveSetting(PUBLIC_KEY, enabled)
 }

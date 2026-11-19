@@ -13,6 +13,8 @@ const { getCallRoutingConfigMock, admin, update, push, auth, access } =
 
 vi.mock('@/lib/twilio/harry-access', () => ({
   getHarryAccess: access,
+  harryPreviewReady: () => true,
+  isHarryPreviewCall: vi.fn().mockResolvedValue(true),
   isHarryMainNumber: (number: string) => number === '+17195550000',
 }))
 
@@ -173,6 +175,55 @@ describe('POST /api/twilio/ivr-menu', () => {
     expect((await POST(twilioRequest('1'))).status).toBe(403)
     expect(update).not.toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
+  })
+  it.each(['business-hours', 'after-hours', 'harry-public', 'harry-preview'])(
+    'routes unlisted 3 to a simulated call from the %s menu with the public switch off',
+    async (context) => {
+      const single = vi.fn().mockResolvedValue({ error: null })
+      const query = {
+        eq: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        single,
+      }
+      update.mockReturnValue(query)
+      const xml = await (await POST(twilioRequest('3', { context }))).text()
+      expect(xml).toContain('preview=1&amp;entry=keypad')
+      expect(update).toHaveBeenCalledWith({
+        voice_preview: true,
+        forwarding_required: false,
+      })
+      expect(query.eq).toHaveBeenCalledWith('call_sid', 'CA123')
+      expect(query.eq).toHaveBeenCalledWith('caller_phone', '+17195550123')
+      expect(push).not.toHaveBeenCalled()
+    },
+  )
+  it('does not start a test from a flood confirmation or reveal 3 in a spoken menu', async () => {
+    const { buildCallerMenu, buildHarryDirectory } =
+      await import('@/lib/twilio/caller-menu')
+    const baseUrl = 'https://example.com'
+    const menus = [
+      buildCallerMenu({ baseUrl }),
+      buildCallerMenu({ baseUrl, afterHours: true }),
+      buildCallerMenu({ baseUrl, attempt: 1 }),
+      buildHarryDirectory(baseUrl, 'harry-public'),
+      buildHarryDirectory(baseUrl, 'harry-preview'),
+    ]
+    for (const menu of menus) expect(menu).not.toMatch(/press (?:3|three)/i)
+    const xml = await (
+      await POST(
+        twilioRequest('3', { context: 'harry-preview', flood: 'confirm' }),
+      )
+    ).text()
+    expect(xml).not.toMatch(/entry=keypad|<Dial/)
+  })
+  it('keeps a flood request from a keypad test simulated', async () => {
+    const xml = await (
+      await POST(
+        twilioRequest('1', { context: 'harry-preview', flood: 'confirm' }),
+      )
+    ).text()
+    expect(xml).toContain('simulated')
+    expect(xml).not.toContain('<Dial')
   })
   it('requires an active caller preview and valid digit before reaching the assistant', async () => {
     const request = () => twilioRequest('1', { context: 'harry-preview' })

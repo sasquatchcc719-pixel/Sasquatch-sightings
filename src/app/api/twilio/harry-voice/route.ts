@@ -4,7 +4,12 @@ import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { forwardingExpectedAt } from '@/lib/twilio/phone-health'
-import { getHarryAccess, isHarryMainNumber } from '@/lib/twilio/harry-access'
+import {
+  getHarryAccess,
+  harryPreviewReady,
+  isHarryPreviewCall,
+  isHarryMainNumber,
+} from '@/lib/twilio/harry-access'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import {
   appendVoiceTranscript,
@@ -68,7 +73,16 @@ export async function POST(request: NextRequest) {
   }
   if (step !== 'start' || !isHarryMainNumber(To))
     return new Response('Invalid entry', { status: 403 })
-  const access = await getHarryAccess(callerPhone)
+  const keypadPreview =
+    pilot && request.nextUrl.searchParams.get('entry') === 'keypad'
+  const access = keypadPreview
+    ? {
+        preview:
+          harryPreviewReady() &&
+          (await isHarryPreviewCall(callSid, callerPhone)),
+        publicEnabled: false,
+      }
+    : await getHarryAccess(callerPhone)
   if (
     pilot
       ? !access.preview

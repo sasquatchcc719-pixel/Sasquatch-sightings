@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { buildForwardDial, escapeTwiml } from '@/lib/twilio/forward-twiml'
-import { getHarryAccess, isHarryMainNumber } from '@/lib/twilio/harry-access'
+import {
+  getHarryAccess,
+  harryPreviewReady,
+  isHarryPreviewCall,
+  isHarryMainNumber,
+} from '@/lib/twilio/harry-access'
 import {
   buildCallerMenu,
   buildHarryDirectory,
@@ -49,7 +54,11 @@ async function harryMenuResponse(
   if (!isHarryMainNumber(String(form.get('To') || '')))
     return end('This directory is unavailable.')
   const access = await getHarryAccess(callerPhone)
-  if (preview && !access.preview) return end('Your private preview has ended.')
+  if (preview && !access.preview) {
+    // A keypad tester can reach this confirmation from an active pilot call.
+    if (!flood || !(await isHarryPreviewCall(callSid, callerPhone)))
+      return end('Your private preview has ended.')
+  }
   if (flood === 'prompt' || (!flood && digits === '2')) {
     return twiml(buildHarryDirectory(baseUrl, context, true))
   }
@@ -102,6 +111,35 @@ export async function POST(request: NextRequest) {
     )
       return new NextResponse('Forbidden', { status: 403 })
     const context = request.nextUrl.searchParams.get('context')
+    if (
+      formData.get('Digits') === '3' &&
+      !request.nextUrl.searchParams.has('flood') &&
+      isHarryMainNumber(String(formData.get('To') || '')) &&
+      harryPreviewReady()
+    ) {
+      // Suppress missed-call follow-ups even when the tester hangs up during the redirect.
+      const { error } = await createAdminClient()
+        .from('call_logs')
+        .update({ voice_preview: true, forwarding_required: false })
+        .eq('call_sid', String(formData.get('CallSid') || ''))
+        .eq('caller_phone', String(formData.get('From') || ''))
+        .select('call_sid')
+        .single()
+      if (error)
+        return new NextResponse(
+          '<Response><Say>The test call is unavailable right now.</Say><Hangup/></Response>',
+          { headers: { 'Content-Type': 'text/xml' } },
+        )
+      const destination =
+        getBaseUrl() +
+        '/api/twilio/harry-voice?step=start&preview=1&entry=keypad'
+      return new NextResponse(
+        '<Response><Redirect method="POST">' +
+          escapeTwiml(destination) +
+          '</Redirect></Response>',
+        { headers: { 'Content-Type': 'text/xml' } },
+      )
+    }
     if (context === 'harry-preview' || context === 'harry-public') {
       return await harryMenuResponse(request, formData, context)
     }

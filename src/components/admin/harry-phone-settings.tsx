@@ -119,7 +119,20 @@ export function HarryPhoneSettings() {
               {settings.publicEnabled ? 'On' : 'Off'}
             </Button>
           </div>
-          <div className="space-y-2 border-t pt-4">
+          {settings.previewReady && (
+            <p className="text-sm">
+              To test Harry from any phone, call the main number and press{' '}
+              <strong>3</strong> during the greeting. Bookings and transfers are
+              simulated.
+            </p>
+          )}
+          <details
+            className="space-y-2 border-t pt-4"
+            open={settings.previewExpiresAt ? true : undefined}
+          >
+            <summary className="cursor-pointer font-medium">
+              Preview the full after-hours menu from one cell
+            </summary>
             <Label htmlFor="harry-preview-phone">
               Private preview cell number
             </Label>
@@ -166,7 +179,7 @@ export function HarryPhoneSettings() {
                   ? `Call the main number from ${settings.previewPhone} and press 1. Your preview ends at ${new Date(settings.previewExpiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
                   : 'Call the main number from this cell during the preview to try the after-hours directory. Bookings and transfers are simulated.'}
             </p>
-          </div>
+          </details>
         </>
       ) : (
         !error && <p className="text-muted-foreground text-sm">Loading…</p>

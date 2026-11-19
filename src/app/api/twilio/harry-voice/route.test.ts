@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({
   signed: vi.fn(),
+  previewCall: vi.fn(),
   access: vi.fn(),
   start: vi.fn(),
   append: vi.fn(),
@@ -13,6 +14,8 @@ vi.mock('@/lib/twilio/inbound-auth', () => ({
 }))
 vi.mock('@/lib/twilio/harry-access', () => ({
   getHarryAccess: m.access,
+  harryPreviewReady: () => true,
+  isHarryPreviewCall: m.previewCall,
   isHarryMainNumber: (n: string) => n === '+15550000001',
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
@@ -55,6 +58,20 @@ it('starts native SIP and both-track transcription for the authorized preview', 
   expect(result).toContain('secure=true?X-Sightings-Invite=')
   expect(result).toContain('track="both_tracks"')
   expect(result).toContain('simulated')
+  expect(m.start).toHaveBeenCalledWith({
+    callSid: sid,
+    callerPhone: '+15550000123',
+    pilot: true,
+  })
+})
+it('accepts an unregistered caller only after this exact call was marked as a keypad test', async () => {
+  m.access.mockResolvedValue({ preview: false, publicEnabled: false })
+  m.previewCall.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  const step = 'start&preview=1&entry=keypad'
+  expect(await (await send(step)).text()).not.toContain('<Sip>')
+  expect(await (await send(step)).text()).toContain('<Sip>')
+  expect(m.previewCall).toHaveBeenCalledWith(sid, '+15550000123')
+  expect(m.start).toHaveBeenCalledTimes(1)
   expect(m.start).toHaveBeenCalledWith({
     callSid: sid,
     callerPhone: '+15550000123',
