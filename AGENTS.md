@@ -319,6 +319,7 @@ Read once. Edit sections 10 and 11 for your project. Prune the rest over time. T
 - Payroll eligibility changes must include and verify every affected job in the current open pay period; never ship a future-only rule change when existing payroll needs correction.
 - Recovery Village and Saltgrass Colorado Springs premiums are $10/hour for worked time after 6 PM Mountain; keep the cutoff and payroll labels aligned.
 - Manual after-hours premium corrections must expose and persist both start and end times; do not make only one side of the worked window editable.
+- Payroll overtime must always show the live over-40 calculation, but use one pay-period-level Apply action to add the extra 0.5x premium to gross pay.
 
 - Planned daily driving routes must include the assigned vehicle’s saved base → first job and last job → base, with a base pin and both legs included in the total. Never substitute the current vehicle position for its base.
 

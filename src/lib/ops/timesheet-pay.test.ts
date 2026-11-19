@@ -1,11 +1,64 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculatePayPeriodOvertime,
   getSemiMonthlyPayPeriod,
   mountainLocalDateTimeToIso,
   mountainDateKey,
   parseHourlyRate,
   shiftSemiMonthlyPayPeriod,
 } from './timesheet-pay'
+
+describe('calculatePayPeriodOvertime', () => {
+  const entry = (
+    id: string,
+    minutes: number,
+    rate: number,
+    startedAt: string,
+  ) => ({
+    staffUserId: id,
+    staffDisplayName: id,
+    startedAt,
+    payableMinutes: minutes,
+    hourlyRate: rate,
+  })
+
+  it('adds the extra half-rate premium only after 40 payable hours', () => {
+    const result = calculatePayPeriodOvertime([
+      entry('David', 40 * 60, 25, '2026-11-11T15:00:00Z'),
+      entry('David', 5 * 60 + 18, 25, '2026-11-17T15:00:00Z'),
+    ])
+
+    expect(result.minutes).toBe(318)
+    expect(result.premiumCents).toBe(6625)
+    expect(result.breakdown).toEqual([
+      expect.objectContaining({
+        staffUserId: 'David',
+        minutes: 318,
+        hourlyRate: 25,
+        premiumCents: 6625,
+      }),
+    ])
+  })
+
+  it('uses the saved rate on the shifts that cross the threshold', () => {
+    const result = calculatePayPeriodOvertime([
+      entry('David', 40 * 60, 20, '2026-11-11T15:00:00Z'),
+      entry('David', 60, 25, '2026-11-12T15:00:00Z'),
+    ])
+
+    expect(result.premiumCents).toBe(1250)
+    expect(result.breakdown[0].hourlyRate).toBe(25)
+  })
+
+  it('applies the 40-hour threshold separately to each worker', () => {
+    const result = calculatePayPeriodOvertime([
+      entry('David', 30 * 60, 25, '2026-11-11T15:00:00Z'),
+      entry('Brianna', 30 * 60, 20, '2026-11-11T15:00:00Z'),
+    ])
+
+    expect(result).toEqual({ minutes: 0, premiumCents: 0, breakdown: [] })
+  })
+})
 
 describe('parseHourlyRate', () => {
   it('accepts and rounds a valid hourly rate', () => {

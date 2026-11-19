@@ -4,6 +4,78 @@ export function parseHourlyRate(value: unknown): number | null {
   return Math.round((rate + Number.EPSILON) * 100) / 100
 }
 
+export type OvertimeEntry = {
+  staffUserId: string
+  staffDisplayName: string
+  startedAt: string
+  payableMinutes: number
+  hourlyRate: number
+}
+
+export type OvertimeBreakdown = {
+  key: string
+  staffUserId: string
+  staffDisplayName: string
+  minutes: number
+  hourlyRate: number
+  premiumCents: number
+}
+
+export function calculatePayPeriodOvertime(
+  entries: OvertimeEntry[],
+  thresholdMinutes = 40 * 60,
+): {
+  minutes: number
+  premiumCents: number
+  breakdown: OvertimeBreakdown[]
+} {
+  const minutesByStaff = new Map<string, number>()
+  const groups = new Map<string, OvertimeBreakdown>()
+
+  for (const entry of [...entries].sort((a, b) =>
+    a.startedAt.localeCompare(b.startedAt),
+  )) {
+    const payableMinutes = Math.max(0, entry.payableMinutes)
+    const previousMinutes = minutesByStaff.get(entry.staffUserId) || 0
+    const overtimeBefore = Math.max(0, previousMinutes - thresholdMinutes)
+    const overtimeAfter = Math.max(
+      0,
+      previousMinutes + payableMinutes - thresholdMinutes,
+    )
+    const overtimeMinutes = overtimeAfter - overtimeBefore
+
+    minutesByStaff.set(entry.staffUserId, previousMinutes + payableMinutes)
+    if (overtimeMinutes <= 0) continue
+
+    const key = `${entry.staffUserId}:${entry.hourlyRate}`
+    const group = groups.get(key) || {
+      key,
+      staffUserId: entry.staffUserId,
+      staffDisplayName: entry.staffDisplayName,
+      minutes: 0,
+      hourlyRate: entry.hourlyRate,
+      premiumCents: 0,
+    }
+    group.minutes += overtimeMinutes
+    group.premiumCents += Math.round(
+      (overtimeMinutes / 60) * entry.hourlyRate * 0.5 * 100,
+    )
+    groups.set(key, group)
+  }
+
+  const breakdown = [...groups.values()].sort(
+    (a, b) =>
+      a.staffDisplayName.localeCompare(b.staffDisplayName) ||
+      a.hourlyRate - b.hourlyRate,
+  )
+
+  return {
+    minutes: breakdown.reduce((sum, group) => sum + group.minutes, 0),
+    premiumCents: breakdown.reduce((sum, group) => sum + group.premiumCents, 0),
+    breakdown,
+  }
+}
+
 export function mountainDateKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value)
   return date.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })

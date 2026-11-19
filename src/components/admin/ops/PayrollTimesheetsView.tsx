@@ -142,6 +142,48 @@ async function fetchEntries(
   return res.json()
 }
 
+type OvertimeSummary = {
+  calculation: {
+    minutes: number
+    premiumPay: number
+    breakdown: Array<{
+      key: string
+      staffUserId: string
+      staffDisplayName: string
+      minutes: number
+      hourlyRate: number
+      premiumPay: number
+    }>
+  }
+  applied: {
+    rows: Array<{
+      id: string
+      staffUserId: string
+      staffDisplayName: string
+      minutes: number
+      premiumPay: number
+      status: string
+    }>
+    totalPay: number
+    matchesCalculation: boolean
+  }
+  hasActiveEntries: boolean
+}
+
+async function fetchOvertime(
+  startDate: string,
+  endDate: string,
+  staffUserId: string,
+): Promise<OvertimeSummary> {
+  const params = new URLSearchParams({ startDate, endDate })
+  if (staffUserId) params.set('staffUserId', staffUserId)
+  const res = await fetch(
+    `/api/admin/ops/payroll/overtime?${params.toString()}`,
+  )
+  if (!res.ok) throw new Error('Failed to load overtime')
+  return res.json()
+}
+
 type ClockEvent = {
   id: string
   staffUserId: string
@@ -564,6 +606,18 @@ export function PayrollTimesheetsView() {
       ),
     refetchInterval: 60_000,
   })
+  const overtimeQuery = useQuery({
+    queryKey: [
+      'payroll-overtime',
+      payPeriod.startDate,
+      payPeriod.endDate,
+      staffFilter,
+    ],
+    queryFn: () =>
+      fetchOvertime(payPeriod.startDate, payPeriod.endDate, staffFilter),
+    enabled: viewMode === 'period',
+    refetchInterval: 60_000,
+  })
   const gratuities = useMemo(
     () => gratuitiesQuery.data?.rows ?? [],
     [gratuitiesQuery.data?.rows],
@@ -603,6 +657,18 @@ export function PayrollTimesheetsView() {
       (a, b) => a.name.localeCompare(b.name) || a.rate - b.rate,
     )
   }, [entries])
+  const overtime = overtimeQuery.data?.calculation ?? {
+    minutes: 0,
+    premiumPay: 0,
+    breakdown: [],
+  }
+  const appliedOvertimeRows = useMemo(
+    () =>
+      viewMode === 'period' ? (overtimeQuery.data?.applied.rows ?? []) : [],
+    [overtimeQuery.data?.applied.rows, viewMode],
+  )
+  const totalAppliedOvertimePay =
+    viewMode === 'period' ? (overtimeQuery.data?.applied.totalPay ?? 0) : 0
 
   const premiums = useMemo(() => {
     const all = premiumsQuery.data?.premiums ?? []
@@ -627,6 +693,7 @@ export function PayrollTimesheetsView() {
     gratuitiesQuery,
     addOnBonusesQuery,
     premiumsQuery,
+    ...(viewMode === 'period' ? [overtimeQuery] : []),
   ]
   const summaryUnavailable = summaryQueries.some((query) => query.isError)
   const summaryLoading = summaryQueries.some((query) => query.isPending)
@@ -648,6 +715,7 @@ export function PayrollTimesheetsView() {
         name: string
         minutes: number
         grossPay: number
+        overtimePay: number
         premiumPay: number
         addOnBonusPay: number
         gratuityPay: number
@@ -658,6 +726,7 @@ export function PayrollTimesheetsView() {
         name: entry.staffDisplayName,
         minutes: 0,
         grossPay: 0,
+        overtimePay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
         gratuityPay: 0,
@@ -666,12 +735,26 @@ export function PayrollTimesheetsView() {
       existing.grossPay += entry.grossPay
       totals.set(entry.staffUserId, existing)
     }
+    for (const appliedOvertime of appliedOvertimeRows) {
+      const existing = totals.get(appliedOvertime.staffUserId) || {
+        name: appliedOvertime.staffDisplayName,
+        minutes: 0,
+        grossPay: 0,
+        overtimePay: 0,
+        premiumPay: 0,
+        addOnBonusPay: 0,
+        gratuityPay: 0,
+      }
+      existing.overtimePay += appliedOvertime.premiumPay
+      totals.set(appliedOvertime.staffUserId, existing)
+    }
     for (const premium of premiums) {
       if (!premium.applied) continue
       const existing = totals.get(premium.staffUserId) || {
         name: premium.staffName,
         minutes: 0,
         grossPay: 0,
+        overtimePay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
         gratuityPay: 0,
@@ -685,6 +768,7 @@ export function PayrollTimesheetsView() {
         name: bonus.staffName,
         minutes: 0,
         grossPay: 0,
+        overtimePay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
         gratuityPay: 0,
@@ -698,6 +782,7 @@ export function PayrollTimesheetsView() {
         name: gratuity.staffName,
         minutes: 0,
         grossPay: 0,
+        overtimePay: 0,
         premiumPay: 0,
         addOnBonusPay: 0,
         gratuityPay: 0,
@@ -706,7 +791,7 @@ export function PayrollTimesheetsView() {
       totals.set(gratuity.staffUserId, existing)
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [addOnBonuses, entries, premiums, gratuities])
+  }, [addOnBonuses, appliedOvertimeRows, entries, premiums, gratuities])
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -761,6 +846,32 @@ export function PayrollTimesheetsView() {
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : 'Failed to apply premium',
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function applyOvertime() {
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const params = new URLSearchParams({
+        startDate: payPeriod.startDate,
+        endDate: payPeriod.endDate,
+      })
+      if (staffFilter) params.set('staffUserId', staffFilter)
+      const res = await fetch(
+        `/api/admin/ops/payroll/overtime?${params.toString()}`,
+        { method: 'POST' },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to apply overtime')
+      await overtimeQuery.refetch()
+      setMessage('Overtime applied to the pay period.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to apply overtime',
       )
     } finally {
       setIsSaving(false)
@@ -1201,6 +1312,74 @@ export function PayrollTimesheetsView() {
                   : fmtMoney(totalGrossPay)}
             </dd>
           </div>
+          {viewMode === 'period' && (
+            <div className="flex items-center justify-between gap-4 px-5 py-4">
+              <dt className="text-slate-200">
+                Overtime (over 40h)
+                <div className="mt-2 space-y-1 text-base text-white">
+                  {overtime.breakdown.length === 0
+                    ? 'No time over 40h in this pay period.'
+                    : overtime.breakdown.map((group) => (
+                        <p key={group.key}>
+                          {overtime.breakdown.length > 1 && (
+                            <span>{group.staffDisplayName}: </span>
+                          )}
+                          <span className="font-mono">
+                            {fmtMin(group.minutes)} ×{' '}
+                            {fmtMoney(group.hourlyRate * 0.5)}/hr premium
+                            {overtime.breakdown.length > 1
+                              ? ` = ${fmtMoney(group.premiumPay)}`
+                              : ''}
+                          </span>
+                        </p>
+                      ))}
+                  {overtime.breakdown.length > 0 && (
+                    <p>
+                      Straight-time pay is included above; this adds the extra
+                      0.5×.
+                    </p>
+                  )}
+                </div>
+              </dt>
+              <dd className="flex shrink-0 flex-col items-end gap-2 text-right">
+                <span className="font-mono text-lg text-white">
+                  {overtimeQuery.isError
+                    ? 'Unavailable'
+                    : overtimeQuery.isPending
+                      ? 'Loading…'
+                      : fmtMoney(overtime.premiumPay)}
+                </span>
+                {!overtimeQuery.isError && !overtimeQuery.isPending && (
+                  <>
+                    {totalAppliedOvertimePay > 0 && (
+                      <span className="text-xs text-emerald-300">
+                        {fmtMoney(totalAppliedOvertimePay)} applied to total
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={applyOvertime}
+                      disabled={
+                        isSaving ||
+                        overtime.premiumPay <= 0 ||
+                        overtimeQuery.data?.hasActiveEntries ||
+                        overtimeQuery.data?.applied.matchesCalculation
+                      }
+                      className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {overtimeQuery.data?.hasActiveEntries
+                        ? 'Clock out to apply'
+                        : overtimeQuery.data?.applied.matchesCalculation
+                          ? 'Applied'
+                          : totalAppliedOvertimePay > 0
+                            ? `Update to ${fmtMoney(overtime.premiumPay)}`
+                            : `Apply +${fmtMoney(overtime.premiumPay)}`}
+                    </button>
+                  </>
+                )}
+              </dd>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <dt className="text-slate-200">Gratuity</dt>
             <dd className="font-mono text-lg text-white">
@@ -1244,6 +1423,7 @@ export function PayrollTimesheetsView() {
                   ? 'Loading…'
                   : fmtMoney(
                       totalGrossPay +
+                        totalAppliedOvertimePay +
                         totalGratuity +
                         totalEarnedAddOnBonus +
                         totalAppliedPremiumPay,
@@ -1270,6 +1450,7 @@ export function PayrollTimesheetsView() {
                   {[
                     'Worker',
                     'Hourly pay',
+                    'Overtime',
                     'Gratuity',
                     'Add-on bonus',
                     'After-hours',
@@ -1289,10 +1470,12 @@ export function PayrollTimesheetsView() {
                     </th>
                     {[
                       total.grossPay,
+                      total.overtimePay,
                       total.gratuityPay,
                       total.addOnBonusPay,
                       total.premiumPay,
                       total.grossPay +
+                        total.overtimePay +
                         total.gratuityPay +
                         total.addOnBonusPay +
                         total.premiumPay,

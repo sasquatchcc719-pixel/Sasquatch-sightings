@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   premiumApplied: true,
   mixedRates: false,
   addOnRows: false,
+  overtimeApplied: false,
 }))
 vi.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
@@ -77,6 +78,39 @@ vi.mock('@tanstack/react-query', () => ({
         totalGrossPay: state.mixedRates ? 70 : 1444.58,
       },
       'payroll-clock-events': [],
+      'payroll-overtime': {
+        calculation: {
+          minutes: 1067,
+          premiumPay: 222.29,
+          breakdown: [
+            {
+              key: 'david:25',
+              staffUserId: 'david',
+              staffDisplayName: 'David Gonzalez',
+              minutes: 1067,
+              hourlyRate: 25,
+              premiumPay: 222.29,
+            },
+          ],
+        },
+        applied: {
+          rows: state.overtimeApplied
+            ? [
+                {
+                  id: 'overtime',
+                  staffUserId: 'david',
+                  staffDisplayName: 'David Gonzalez',
+                  minutes: 1067,
+                  premiumPay: 222.29,
+                  status: 'approved',
+                },
+              ]
+            : [],
+          totalPay: state.overtimeApplied ? 222.29 : 0,
+          matchesCalculation: state.overtimeApplied,
+        },
+        hasActiveEntries: false,
+      },
       'payroll-after-hours-premiums': {
         premiums: state.premiumPay
           ? [
@@ -166,6 +200,7 @@ afterEach(() => {
   state.premiumApplied = true
   state.mixedRates = false
   state.addOnRows = false
+  state.overtimeApplied = false
 })
 
 describe('payroll gratuity display', () => {
@@ -256,6 +291,53 @@ describe('payroll gratuity display', () => {
       within(within(summary).getByText('Hourly pay').parentElement!).getByText(
         '$70.00',
       ),
+    ).toBeInTheDocument()
+  })
+  it('shows time over 40 hours as a separate half-rate premium in pay-period view', () => {
+    render(<PayrollTimesheetsView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pay period' }))
+
+    const summary = screen.getByRole('region', { name: 'Payroll summary' })
+    expect(
+      within(summary).getByText('17h 47m × $12.50/hr premium'),
+    ).toBeInTheDocument()
+    expect(
+      within(
+        within(summary).getByText('Overtime (over 40h)').parentElement!,
+      ).getByText('$222.29'),
+    ).toBeInTheDocument()
+    expect(
+      within(summary).getByRole('button', { name: 'Apply +$222.29' }),
+    ).toBeInTheDocument()
+    expect(
+      within(
+        within(summary).getByText('Total gross pay').parentElement!,
+      ).getByText('$1,508.80'),
+    ).toBeInTheDocument()
+  })
+  it('adds overtime to gross pay only after the global calculation is applied', () => {
+    state.overtimeApplied = true
+    render(<PayrollTimesheetsView />)
+    let summary = screen.getByRole('region', { name: 'Payroll summary' })
+    expect(
+      within(
+        within(summary).getByText('Total gross pay').parentElement!,
+      ).getByText('$1,508.80'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pay period' }))
+
+    summary = screen.getByRole('region', { name: 'Payroll summary' })
+    expect(
+      within(summary).getByRole('button', { name: 'Applied' }),
+    ).toBeDisabled()
+    expect(
+      within(summary).getByText('$222.29 applied to total'),
+    ).toBeInTheDocument()
+    expect(
+      within(
+        within(summary).getByText('Total gross pay').parentElement!,
+      ).getByText('$1,731.09'),
     ).toBeInTheDocument()
   })
   it('clearly marks the total incomplete if gratuity cannot be loaded', () => {
