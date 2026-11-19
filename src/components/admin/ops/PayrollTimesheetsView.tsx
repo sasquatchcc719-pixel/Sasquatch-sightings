@@ -3,7 +3,14 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
-import type { PayrollGratuitySummary } from '@/lib/ops/payroll-gratuities'
+import {
+  computeAfterHoursMinutes,
+  computePremiumPay,
+} from '@/lib/ops/after-hours-premium'
+import type {
+  PayrollGratuityRow,
+  PayrollGratuitySummary,
+} from '@/lib/ops/payroll-gratuities'
 import {
   getSemiMonthlyPayPeriod,
   mountainDateKey,
@@ -250,6 +257,7 @@ type PremiumRow = {
   status: string | null
   appliedPay: number | null
   appliedMinutes: number | null
+  manualStartTime: string | null
 }
 
 type AddOnBonusRow = {
@@ -264,6 +272,8 @@ type AddOnBonusRow = {
   eligibleRevenue: number
   bonusRate: number
   bonusAmount: number
+  calculatedBonusAmount: number
+  overrideAmount: number | null
   status: 'earned' | 'pending'
 }
 
@@ -292,7 +302,14 @@ async function fetchGratuities(
   startDate: string,
   endDate: string,
   staffUserId: string,
-): Promise<PayrollGratuitySummary> {
+): Promise<
+  Omit<PayrollGratuitySummary, 'rows'> & {
+    rows: (PayrollGratuityRow & {
+      calculatedAmount: number
+      overrideAmount: number | null
+    })[]
+  }
+> {
   const params = new URLSearchParams({ startDate, endDate })
   if (staffUserId) params.set('staffUserId', staffUserId)
   const res = await fetch(`/api/admin/ops/payroll/gratuities?${params}`)
@@ -426,6 +443,12 @@ export function PayrollTimesheetsView() {
   const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [premiumMinutesDraft, setPremiumMinutesDraft] = useState<
+    Record<string, string>
+  >({})
+  const [premiumStartDraft, setPremiumStartDraft] = useState<
+    Record<string, string>
+  >({})
+  const [payrollAmountDraft, setPayrollAmountDraft] = useState<
     Record<string, string>
   >({})
   const payPeriod = useMemo(
@@ -713,14 +736,14 @@ export function PayrollTimesheetsView() {
     setEditForm(null)
   }
 
-  async function applyPremium(appointmentId: string) {
+  async function applyPremium(appointmentId: string, startTime: string) {
     setIsSaving(true)
     setMessage(null)
     try {
       const res = await fetch('/api/admin/ops/payroll/after-hours-premiums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId }),
+        body: JSON.stringify({ appointmentId, startTime }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to apply premium')
@@ -729,6 +752,86 @@ export function PayrollTimesheetsView() {
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : 'Failed to apply premium',
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function savePayrollAmountOverride(
+    component: 'gratuity' | 'add_on_bonus',
+    sourceKey: string,
+    currentAmount: number,
+  ) {
+    const draftKey = `${component}:${sourceKey}`
+    const rawAmount = payrollAmountDraft[draftKey] ?? String(currentAmount)
+    const overrideAmount = Number(rawAmount)
+    if (
+      !/^\d+(?:\.\d{0,2})?$/.test(rawAmount) ||
+      !Number.isFinite(overrideAmount) ||
+      overrideAmount > 1_000_000
+    ) {
+      setMessage(
+        'Payroll amounts must be 0 to 1,000,000 with at most two decimals.',
+      )
+      return
+    }
+
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/admin/ops/payroll/component-overrides', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ component, sourceKey, overrideAmount }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok)
+        throw new Error(data.error || 'Failed to save payroll amount')
+      await (component === 'gratuity'
+        ? gratuitiesQuery.refetch()
+        : addOnBonusesQuery.refetch())
+      setPayrollAmountDraft((current) => {
+        const next = { ...current }
+        delete next[draftKey]
+        return next
+      })
+      setMessage('Payroll amount override saved.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save payroll amount',
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function resetPayrollAmountOverride(
+    component: 'gratuity' | 'add_on_bonus',
+    sourceKey: string,
+  ) {
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const params = new URLSearchParams({ component, sourceKey })
+      const res = await fetch(
+        `/api/admin/ops/payroll/component-overrides?${params}`,
+        { method: 'DELETE' },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok)
+        throw new Error(data.error || 'Failed to reset payroll amount')
+      await (component === 'gratuity'
+        ? gratuitiesQuery.refetch()
+        : addOnBonusesQuery.refetch())
+      setMessage('Payroll amount reset to the source calculation.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to reset payroll amount',
       )
     } finally {
       setIsSaving(false)
@@ -1473,10 +1576,64 @@ export function PayrollTimesheetsView() {
                       {gratuity.paymentMethod || 'Payment method not recorded'}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-mono font-semibold text-violet-200">
-                      {fmtMoney(gratuity.amount)}
-                    </p>
+                  <div className="flex flex-col items-end gap-1 text-right">
+                    <label className="text-[11px] text-slate-400">
+                      Payroll amount
+                      <span className="mt-1 flex items-center rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1">
+                        <span className="text-slate-500">$</span>
+                        <input
+                          aria-label={`${gratuity.customerName} gratuity amount`}
+                          type="number"
+                          min="0"
+                          max="1000000"
+                          step="0.01"
+                          value={
+                            payrollAmountDraft[
+                              `gratuity:${gratuity.invoiceId}`
+                            ] ?? String(gratuity.amount)
+                          }
+                          onChange={(event) =>
+                            setPayrollAmountDraft((current) => ({
+                              ...current,
+                              [`gratuity:${gratuity.invoiceId}`]:
+                                event.target.value,
+                            }))
+                          }
+                          className="w-20 bg-transparent pl-1 text-right font-mono font-semibold text-violet-200 outline-none"
+                        />
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          savePayrollAmountOverride(
+                            'gratuity',
+                            gratuity.invoiceId,
+                            gratuity.amount,
+                          )
+                        }
+                        disabled={isSaving}
+                        className="text-violet-200 hover:text-white disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      {gratuity.overrideAmount !== null && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resetPayrollAmountOverride(
+                              'gratuity',
+                              gratuity.invoiceId,
+                            )
+                          }
+                          disabled={isSaving}
+                          className="text-slate-400 hover:text-white disabled:opacity-50"
+                        >
+                          Reset to {fmtMoney(gratuity.calculatedAmount)}
+                        </button>
+                      )}
+                    </div>
                     <span
                       className={`text-xs ${gratuity.status === 'payable' ? 'text-emerald-200' : 'text-amber-200'}`}
                     >
@@ -1566,10 +1723,62 @@ export function PayrollTimesheetsView() {
                       {Math.round(bonus.bonusRate * 100)}%
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-mono font-semibold text-cyan-200">
-                      {fmtMoney(bonus.bonusAmount)}
-                    </p>
+                  <div className="flex flex-col items-end gap-1 text-right">
+                    <label className="text-[11px] text-slate-400">
+                      Payroll amount
+                      <span className="mt-1 flex items-center rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1">
+                        <span className="text-slate-500">$</span>
+                        <input
+                          aria-label={`${bonus.customerName} add-on bonus amount`}
+                          type="number"
+                          min="0"
+                          max="1000000"
+                          step="0.01"
+                          value={
+                            payrollAmountDraft[`add_on_bonus:${bonus.key}`] ??
+                            String(bonus.bonusAmount)
+                          }
+                          onChange={(event) =>
+                            setPayrollAmountDraft((current) => ({
+                              ...current,
+                              [`add_on_bonus:${bonus.key}`]: event.target.value,
+                            }))
+                          }
+                          className="w-20 bg-transparent pl-1 text-right font-mono font-semibold text-cyan-200 outline-none"
+                        />
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          savePayrollAmountOverride(
+                            'add_on_bonus',
+                            bonus.key,
+                            bonus.bonusAmount,
+                          )
+                        }
+                        disabled={isSaving}
+                        className="text-cyan-200 hover:text-white disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      {bonus.overrideAmount !== null && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resetPayrollAmountOverride(
+                              'add_on_bonus',
+                              bonus.key,
+                            )
+                          }
+                          disabled={isSaving}
+                          className="text-slate-400 hover:text-white disabled:opacity-50"
+                        >
+                          Reset to {fmtMoney(bonus.calculatedBonusAmount)}
+                        </button>
+                      )}
+                    </div>
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
                         bonus.status === 'earned'
@@ -1596,111 +1805,148 @@ export function PayrollTimesheetsView() {
               Recovery Village &amp; Saltgrass after-hours premiums
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">
-              +$10/hr on worked time after 5 PM (Start Job → Complete). A saved
+              +$10/hr on worked time after 6 PM (Start Job → Complete). A saved
               scheduled start is used when a completed legacy job is missing
               Start Job. Apply to add it to this pay period.
             </p>
           </div>
           <div className="divide-y divide-white/5">
-            {premiums.map((premium) => (
-              <div
-                key={premium.appointmentId}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-white">
-                    {premium.staffName} · {premium.customerName}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {fmtDate(premium.workDate)} ·{' '}
-                    {fmtTime(premium.jobStartedAt)}–
-                    {fmtTime(premium.completedAt)} · {fmtMin(premium.minutes)}{' '}
-                    after 5 PM × ${premium.premiumRate} ={' '}
-                    <span className="font-semibold text-emerald-300">
-                      {fmtMoney(
-                        premium.applied
-                          ? (premium.appliedPay ?? premium.premiumPay)
-                          : premium.premiumPay,
+            {premiums.map((premium) => {
+              const startTime =
+                premium.manualStartTime ||
+                premiumStartDraft[premium.appointmentId] ||
+                fmtInputTime(premium.jobStartedAt)
+              const startAt =
+                mountainLocalDateTimeToIso(premium.workDate, startTime) ||
+                premium.jobStartedAt
+              const shownMinutes = premium.applied
+                ? (premium.appliedMinutes ?? premium.minutes)
+                : computeAfterHoursMinutes(startAt, premium.completedAt)
+              const shownPay = premium.applied
+                ? (premium.appliedPay ?? premium.premiumPay)
+                : computePremiumPay(shownMinutes, premium.premiumRate)
+
+              return (
+                <div
+                  key={premium.appointmentId}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">
+                      {premium.staffName} · {premium.customerName}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {fmtDate(premium.workDate)} · {fmtTime(startAt)}–
+                      {fmtTime(premium.completedAt)} · {fmtMin(shownMinutes)}{' '}
+                      after 6 PM × ${premium.premiumRate} ={' '}
+                      <span className="font-semibold text-emerald-300">
+                        {fmtMoney(shownPay)}
+                      </span>
+                      {premium.manualStartTime ? (
+                        <span className="text-emerald-200">
+                          {' '}
+                          · Manual start saved
+                        </span>
+                      ) : (
+                        premium.startSource === 'scheduled' && (
+                          <span className="text-amber-200">
+                            {' '}
+                            · Scheduled start used
+                          </span>
+                        )
                       )}
-                    </span>
-                    {premium.startSource === 'scheduled' && (
-                      <span className="text-amber-200">
-                        {' '}
-                        · Scheduled start used
-                      </span>
-                    )}
-                  </p>
-                </div>
-                {premium.applied ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-200">
-                      {premium.status === 'paid' ? 'Paid' : 'Applied'}
-                    </span>
-                    {premium.status !== 'paid' && premium.premiumId && (
-                      <>
-                        <label className="flex items-center gap-2 text-xs text-slate-300">
-                          Minutes
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={
-                              premiumMinutesDraft[premium.premiumId] ??
-                              String(premium.appliedMinutes ?? premium.minutes)
-                            }
-                            onChange={(event) =>
-                              setPremiumMinutesDraft((current) => ({
-                                ...current,
-                                [premium.premiumId as string]:
-                                  event.target.value,
-                              }))
-                            }
-                            className="w-20 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1 text-xs text-white"
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updatePremium(
-                              premium.premiumId as string,
-                              premium.appliedMinutes ?? premium.minutes,
-                            )
-                          }
-                          disabled={isSaving}
-                          className="text-xs text-emerald-200 hover:text-white disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            removePremium(premium.premiumId as string)
-                          }
-                          disabled={isSaving}
-                          className="text-xs text-slate-400 hover:text-white disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    )}
-                    {premium.status === 'paid' && (
-                      <span className="text-xs text-slate-400">
-                        {fmtMin(premium.appliedMinutes ?? premium.minutes)}
-                      </span>
-                    )}
+                    </p>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => applyPremium(premium.appointmentId)}
-                    disabled={isSaving}
-                    className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
-                  >
-                    Apply +{fmtMoney(premium.premiumPay)}
-                  </button>
-                )}
-              </div>
-            ))}
+                  {premium.applied ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-200">
+                        {premium.status === 'paid' ? 'Paid' : 'Applied'}
+                      </span>
+                      {premium.status !== 'paid' && premium.premiumId && (
+                        <>
+                          <label className="flex items-center gap-2 text-xs text-slate-300">
+                            Minutes
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={
+                                premiumMinutesDraft[premium.premiumId] ??
+                                String(shownMinutes)
+                              }
+                              onChange={(event) =>
+                                setPremiumMinutesDraft((current) => ({
+                                  ...current,
+                                  [premium.premiumId as string]:
+                                    event.target.value,
+                                }))
+                              }
+                              className="w-20 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1 text-xs text-white"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePremium(
+                                premium.premiumId as string,
+                                shownMinutes,
+                              )
+                            }
+                            disabled={isSaving}
+                            className="text-xs text-emerald-200 hover:text-white disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removePremium(premium.premiumId as string)
+                            }
+                            disabled={isSaving}
+                            className="text-xs text-slate-400 hover:text-white disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
+                      {premium.status === 'paid' && (
+                        <span className="text-xs text-slate-400">
+                          {fmtMin(shownMinutes)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="text-[11px] text-slate-400">
+                        Start
+                        <input
+                          aria-label={`${premium.customerName} premium start`}
+                          type="time"
+                          value={startTime}
+                          onChange={(event) =>
+                            setPremiumStartDraft((current) => ({
+                              ...current,
+                              [premium.appointmentId]: event.target.value,
+                            }))
+                          }
+                          className="mt-1 block rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-sm text-white"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          applyPremium(premium.appointmentId, startTime)
+                        }
+                        disabled={isSaving || shownMinutes <= 0}
+                        className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
+                      >
+                        Apply +{fmtMoney(shownPay)}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

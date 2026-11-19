@@ -3,10 +3,10 @@ import {
   mountainLocalDateTimeToIso,
 } from '@/lib/ops/timesheet-pay'
 
-/** Commercial after-hours premium: +$10/hr on worked minutes after 5pm. */
+/** Commercial after-hours premium: +$10/hr on worked minutes after 6pm. */
 export const AFTER_HOURS_PREMIUM_RATE = 10
-/** 5:00 PM Mountain — the cutoff after which the premium applies. */
-export const AFTER_HOURS_CUTOFF_TIME = '17:00'
+/** 6:00 PM Mountain — the cutoff after which the premium applies. */
+export const AFTER_HOURS_CUTOFF_TIME = '18:00'
 
 /** Match the commercial customers whose field work earns the premium. */
 export function isAfterHoursPremiumCustomer(
@@ -40,8 +40,8 @@ export function resolveAfterHoursPremiumStart(
 
 /**
  * Minutes of the resolved work window [start, completedAt] that fall after
- * 5:00 PM Mountain on the day the job started. Returns 0 when the job wrapped
- * before 5pm, the window is empty, or either timestamp is missing.
+ * 6:00 PM Mountain on the day the job started. Returns 0 when the job wrapped
+ * before 6pm, the window is empty, or either timestamp is missing.
  */
 export function computeAfterHoursMinutes(
   jobStartedAt: string | null | undefined,

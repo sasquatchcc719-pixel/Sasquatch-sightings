@@ -58,19 +58,19 @@ describe('resolveAfterHoursPremiumStart', () => {
 })
 
 describe('computeAfterHoursMinutes (America/Denver, June = MDT/UTC-6)', () => {
-  it('counts the whole window when it starts after 5pm (6:00–8:10pm = 130m)', () => {
+  it('counts the whole window when it starts at 6pm (6:00–8:10pm = 130m)', () => {
     // 6:00pm MDT Jun 18 = 00:00Z Jun 19; 8:10pm = 02:10Z Jun 19
     expect(
       computeAfterHoursMinutes('2026-06-19T00:00:00Z', '2026-06-19T02:10:00Z'),
     ).toBe(130)
   })
-  it('counts only the post-5pm portion when straddling (4:30–7:30pm = 150m)', () => {
-    // 4:30pm MDT = 22:30Z Jun 18; 7:30pm = 01:30Z Jun 19; 5pm cutoff = 23:00Z
+  it('counts only the post-6pm portion when straddling (4:30–7:30pm = 90m)', () => {
+    // 4:30pm MDT = 22:30Z Jun 18; 7:30pm = 01:30Z Jun 19; 6pm cutoff = 00:00Z
     expect(
       computeAfterHoursMinutes('2026-06-18T22:30:00Z', '2026-06-19T01:30:00Z'),
-    ).toBe(150)
+    ).toBe(90)
   })
-  it('returns 0 for a job entirely before 5pm (1–3pm)', () => {
+  it('returns 0 for a job entirely before 6pm (1–3pm)', () => {
     expect(
       computeAfterHoursMinutes('2026-06-18T19:00:00Z', '2026-06-18T21:00:00Z'),
     ).toBe(0)

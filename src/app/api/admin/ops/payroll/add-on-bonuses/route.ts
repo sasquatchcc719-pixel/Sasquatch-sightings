@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { loadAddOnBonuses } from '@/lib/ops/add-on-bonuses'
+import { loadPayrollComponentOverrides } from '@/lib/ops/payroll-component-overrides'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -18,13 +19,39 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const summary = await loadAddOnBonuses(createAdminClient(), {
+    const db = createAdminClient()
+    const summary = await loadAddOnBonuses(db, {
       startDate,
       endDate,
       staffUserId,
     })
 
-    return NextResponse.json({ startDate, endDate, ...summary })
+    const overrides = await loadPayrollComponentOverrides(
+      db,
+      'add_on_bonus',
+      summary.rows.map((row) => row.key),
+    )
+    const rows = summary.rows.map((row) => ({
+      ...row,
+      calculatedBonusAmount: row.bonusAmount,
+      overrideAmount: overrides.get(row.key) ?? null,
+      bonusAmount: overrides.get(row.key) ?? row.bonusAmount,
+    }))
+    const total = (status: 'earned' | 'pending') =>
+      Math.round(
+        rows
+          .filter((row) => row.status === status)
+          .reduce((sum, row) => sum + row.bonusAmount, 0) * 100,
+      ) / 100
+
+    return NextResponse.json({
+      startDate,
+      endDate,
+      rows,
+      earnedBonus: total('earned'),
+      pendingBonus: total('pending'),
+      eligibleRevenue: summary.eligibleRevenue,
+    })
   } catch (error) {
     console.error('[payroll/add-on-bonuses][GET]', error)
     const status =

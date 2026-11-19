@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { mountainDateKey } from '@/lib/ops/timesheet-pay'
+import {
+  mountainDateKey,
+  mountainLocalDateTimeToIso,
+} from '@/lib/ops/timesheet-pay'
 import {
   AFTER_HOURS_PREMIUM_RATE,
   computeAfterHoursMinutes,
@@ -16,6 +19,10 @@ function jsonError(message: string, status: number) {
 
 function unwrap<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
+}
+
+function manualStartTimeFromNotes(notes: string | null | undefined) {
+  return /^manual_start_time=(\d{2}:\d{2})$/.exec(notes || '')?.[1] ?? null
 }
 
 type ApprovedTimesheetEndMap = Map<string, string>
@@ -206,12 +213,15 @@ export async function GET(request: NextRequest) {
         status: string
         premium_pay: number
         premium_minutes: number
+        notes: string | null
       }
     >()
     if (appointmentIds.length > 0) {
       const { data: applied } = await supabase
         .from('ops_after_hours_premiums')
-        .select('id, appointment_id, status, premium_pay, premium_minutes')
+        .select(
+          'id, appointment_id, status, premium_pay, premium_minutes, notes',
+        )
         .in('appointment_id', appointmentIds)
       for (const p of applied || []) {
         appliedByAppointment.set(p.appointment_id, {
@@ -219,6 +229,7 @@ export async function GET(request: NextRequest) {
           status: p.status,
           premium_pay: Number(p.premium_pay || 0),
           premium_minutes: Number(p.premium_minutes || 0),
+          notes: p.notes,
         })
       }
     }
@@ -233,6 +244,7 @@ export async function GET(request: NextRequest) {
         // Show the snapshotted pay once applied, the live computation otherwise.
         appliedPay: applied?.premium_pay ?? null,
         appliedMinutes: applied?.premium_minutes ?? null,
+        manualStartTime: manualStartTimeFromNotes(applied?.notes),
       }
     })
 
@@ -260,7 +272,11 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
     const appointmentId = String(body.appointmentId || '')
+    const manualStartTime = String(body.startTime || '').trim()
     if (!appointmentId) return jsonError('appointmentId is required', 400)
+    if (manualStartTime && !/^\d{2}:\d{2}$/.test(manualStartTime)) {
+      return jsonError('startTime must be HH:MM', 400)
+    }
 
     const { data: appt, error } = await supabase
       .from('ops_appointments')
@@ -295,11 +311,19 @@ export async function POST(request: NextRequest) {
     if (!staff || staff.role !== 'tech') {
       return jsonError('Premium applies only to field techs', 400)
     }
-    const premiumStart = resolveAfterHoursPremiumStart(
-      appt.job_started_at,
-      appt.appointment_date,
-      appt.start_time,
-    )
+    const manualStartAt = manualStartTime
+      ? mountainLocalDateTimeToIso(appt.appointment_date, manualStartTime)
+      : null
+    if (manualStartTime && !manualStartAt) {
+      return jsonError('startTime is invalid', 400)
+    }
+    const premiumStart = manualStartAt
+      ? { timestamp: manualStartAt, source: 'manual' as const }
+      : resolveAfterHoursPremiumStart(
+          appt.job_started_at,
+          appt.appointment_date,
+          appt.start_time,
+        )
     if (!premiumStart) {
       return jsonError('Job has no Start Job or scheduled start time', 400)
     }
@@ -321,7 +345,7 @@ export async function POST(request: NextRequest) {
       effectiveCompletedAt,
     )
     if (minutes <= 0) {
-      return jsonError('Job has no worked time after 5pm', 400)
+      return jsonError('Job has no worked time after 6pm', 400)
     }
 
     const { data: premium, error: upsertError } = await supabase
@@ -334,6 +358,9 @@ export async function POST(request: NextRequest) {
           premium_minutes: minutes,
           premium_rate: AFTER_HOURS_PREMIUM_RATE,
           status: 'approved',
+          notes: manualStartTime
+            ? `manual_start_time=${manualStartTime}`
+            : null,
           created_by: access.id,
           updated_at: new Date().toISOString(),
         },

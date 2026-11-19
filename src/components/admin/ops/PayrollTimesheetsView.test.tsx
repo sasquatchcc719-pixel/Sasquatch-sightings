@@ -1,10 +1,17 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PayrollTimesheetsView } from './PayrollTimesheetsView'
 
 const state = vi.hoisted(() => ({
   gratuityError: false,
   premiumPay: 0,
+  premiumApplied: true,
   mixedRates: false,
   addOnRows: false,
 }))
@@ -85,15 +92,16 @@ vi.mock('@tanstack/react-query', () => ({
                 minutes: 60,
                 premiumRate: 10,
                 premiumPay: state.premiumPay,
-                applied: true,
+                applied: state.premiumApplied,
                 premiumId: null,
                 status: 'approved',
                 appliedPay: state.premiumPay,
                 appliedMinutes: 60,
+                manualStartTime: null,
               },
             ]
           : [],
-        totalAppliedPay: state.premiumPay,
+        totalAppliedPay: state.premiumApplied ? state.premiumPay : 0,
       },
       'payroll-add-on-bonuses': {
         rows: state.addOnRows
@@ -110,6 +118,8 @@ vi.mock('@tanstack/react-query', () => ({
                 eligibleRevenue: 100,
                 bonusRate: 0.1,
                 bonusAmount: 10,
+                calculatedBonusAmount: 10,
+                overrideAmount: null,
                 status: 'earned',
               },
             ]
@@ -129,6 +139,8 @@ vi.mock('@tanstack/react-query', () => ({
             customerName: 'Tip customer',
             paymentMethod: 'square',
             amount: 50,
+            calculatedAmount: 50,
+            overrideAmount: null,
             status: 'payable',
           },
         ],
@@ -150,6 +162,7 @@ afterEach(() => {
   cleanup()
   state.gratuityError = false
   state.premiumPay = 0
+  state.premiumApplied = true
   state.mixedRates = false
   state.addOnRows = false
 })
@@ -207,6 +220,19 @@ describe('payroll gratuity display', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/Scheduled start used/)).toBeInTheDocument()
   })
+  it('recalculates an unapplied premium when its start time is edited', () => {
+    state.premiumPay = 10
+    state.premiumApplied = false
+    render(<PayrollTimesheetsView />)
+    const input = screen.getByLabelText(
+      'Saltgrass Colorado Springs premium start',
+    )
+    expect(input).toHaveValue('21:00')
+    fireEvent.change(input, { target: { value: '21:30' } })
+    expect(
+      screen.getByRole('button', { name: 'Apply +$5.00' }),
+    ).toBeInTheDocument()
+  })
   it('shows each saved hourly rate separately rather than inventing an average', () => {
     state.mixedRates = true
     render(<PayrollTimesheetsView />)
@@ -255,5 +281,17 @@ describe('payroll add-on bonus display', () => {
         name: 'David Gonzalez · Bonus customer',
       }),
     ).toHaveAttribute('href', '/admin/operations/invoices/invoice-bonus')
+  })
+  it('allows gratuity and add-on payroll amounts to be edited', () => {
+    state.addOnRows = true
+    render(<PayrollTimesheetsView />)
+    const gratuity = screen.getByLabelText('Tip customer gratuity amount')
+    const addOn = screen.getByLabelText('Bonus customer add-on bonus amount')
+    expect(gratuity).toHaveValue(50)
+    expect(addOn).toHaveValue(10)
+    fireEvent.change(gratuity, { target: { value: '55.25' } })
+    fireEvent.change(addOn, { target: { value: '12.50' } })
+    expect(gratuity).toHaveValue(55.25)
+    expect(addOn).toHaveValue(12.5)
   })
 })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { loadPayrollGratuities } from '@/lib/ops/payroll-gratuities'
+import { loadPayrollComponentOverrides } from '@/lib/ops/payroll-component-overrides'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -19,12 +20,36 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       )
     }
-    const summary = await loadPayrollGratuities(createAdminClient(), {
+    const db = createAdminClient()
+    const summary = await loadPayrollGratuities(db, {
       startDate,
       endDate,
       staffUserId: searchParams.get('staffUserId') || undefined,
     })
-    return NextResponse.json({ startDate, endDate, ...summary })
+    const overrides = await loadPayrollComponentOverrides(
+      db,
+      'gratuity',
+      summary.rows.map((row) => row.invoiceId),
+    )
+    const rows = summary.rows.map((row) => ({
+      ...row,
+      calculatedAmount: row.amount,
+      overrideAmount: overrides.get(row.invoiceId) ?? null,
+      amount: overrides.get(row.invoiceId) ?? row.amount,
+    }))
+    const total = (status: 'payable' | 'pending') =>
+      Math.round(
+        rows
+          .filter((row) => row.status === status)
+          .reduce((sum, row) => sum + row.amount, 0) * 100,
+      ) / 100
+    return NextResponse.json({
+      startDate,
+      endDate,
+      rows,
+      payableGratuity: total('payable'),
+      pendingGratuity: total('pending'),
+    })
   } catch (error) {
     console.error('[payroll/gratuities][GET]', error)
     const status =
