@@ -86,7 +86,7 @@ const call = (
 ) => mocks.tools.get(name)!.handler(input, context)
 describe('commercial MCP workspace registration', () => {
   it('appends the commercial workspace, email queue and preview tools while preserving the prior catalog', () => {
-    expect(MCP_SERVER_VERSION).toBe('1.15.0')
+    expect(MCP_SERVER_VERSION).toBe('1.16.0')
     expect([...mocks.tools.keys()]).toEqual([...MCP_TOOL_NAMES])
     expect(mocks.tools.size).toBe(58)
     const commercial = [...mocks.tools.keys()].filter((name) =>
@@ -115,6 +115,27 @@ describe('commercial MCP workspace registration', () => {
     expect(MCP_SERVER_INSTRUCTIONS).toContain(
       'Never use preview_appointment_create',
     )
+  })
+  it('accepts only one bound identity for an owner lead-intake message preview', () => {
+    const schema = mocks.tools.get('preview_customer_message')!.inputSchema
+    expect(
+      schema.parse({
+        lead_intake: { phone: '(719) 555-0100', name: 'Synthetic Lead' },
+        body: 'Exact introduction',
+        idempotency_key: 'owner-intake-0001',
+      }),
+    ).toMatchObject({
+      lead_intake: { phone: '(719) 555-0100', name: 'Synthetic Lead' },
+      media_ids: [],
+    })
+    expect(() =>
+      schema.parse({
+        lead_id: id,
+        lead_intake: { phone: '(719) 555-0100' },
+        body: 'Must not parse',
+        idempotency_key: 'owner-intake-0002',
+      }),
+    ).toThrow()
   })
   it.each([
     ['get_commercial_playbook', 'get_playbook', {}],

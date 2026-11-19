@@ -314,6 +314,7 @@ export function getCapabilityCatalog(
           'read retained inbound media',
           'save a reply draft',
           'preview and send one customer SMS or MMS',
+          'intake one exact owner-handed-off service lead inside the first-message preview when no record exists',
           'validate persisted missed-call owner-email evidence inside the exact customer-message preview',
           'review attention counts',
         ],
@@ -332,12 +333,14 @@ export function getCapabilityCatalog(
           'business:read for reads; communications:draft for saved drafts; customer:contact for confirmed sends',
         side_effects: [
           'saved draft changes',
+          'confirmed owner-handoff lead creation or exact-phone lead resolution',
           'Twilio customer contact and message history',
         ],
         approval:
           'OAuth owner grant; exact recipient/body/media preview; direct owner instructions and routine factual replies follow the operating policy',
         limitations: [
           'Operational search remains compact; use conversation detail for bodies and short-lived private-media URLs.',
+          'Lead intake is bound to one exact previewed phone and optional name, requires customer:contact, deduplicates saved records, and is not a general raw-number send path.',
           'A missed-call Gmail notice is only a wake-up hint. The CallSid-bound preview must return verified persisted evidence and recheck current suppression before any send.',
           'Email, Telegram control, and call-control actions are not exposed.',
         ],

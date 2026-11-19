@@ -113,6 +113,7 @@ describe('Sasquatch read-only MCP server', () => {
     expect(result.operating_policy.client_confirmation_note).toContain(
       'single control',
     )
+    expect(JSON.stringify(result.capabilities)).toContain('owner-handed-off')
     expect(MCP_SERVER_INSTRUCTIONS).toContain(
       'direct instruction from the authenticated owner',
     )

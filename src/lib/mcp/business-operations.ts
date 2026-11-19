@@ -958,6 +958,7 @@ export async function previewConversationSend(
     conversation_id?: string
     customer_id?: string
     lead_id?: string
+    lead_intake?: { phone: string; name?: string }
     body: string
     media_ids: string[]
     idempotency_key: string
@@ -968,18 +969,22 @@ export async function previewConversationSend(
   const supabase = client(supplied)
   requireScope(actor, 'customer:contact')
   const callSid = missedCallSid(input.idempotency_key)
-  if (callSid && (input.customer_id || input.lead_id))
+  if (callSid && (input.customer_id || input.lead_id || input.lead_intake))
     throw new Error(
       'Missed-call follow-up requires its call-context conversation',
     )
   if (callSid && input.media_ids.length)
     throw new Error('Missed-call follow-up supports text only')
   if (
-    [input.customer_id, input.lead_id, input.conversation_id].filter(Boolean)
-      .length !== 1
+    [
+      input.customer_id,
+      input.lead_id,
+      input.lead_intake,
+      input.conversation_id,
+    ].filter(Boolean).length !== 1
   )
     throw new Error(
-      'Choose exactly one conversation, verified customer, or verified lead',
+      'Choose exactly one conversation, verified customer, verified lead, or owner-authorized lead intake',
     )
   if (input.customer_id) {
     if (input.media_ids.length)
@@ -1094,6 +1099,96 @@ export async function previewConversationSend(
         body: input.body.trim(),
         effects: [
           'Sends this exact text once after a durable owner-authorized claim.',
+          'Creates and links truthful conversation history only after provider acceptance.',
+          'Uncertain outcomes never retry automatically; no booking or promotion changes.',
+        ],
+      },
+      supabase,
+    })
+  }
+  if (input.lead_intake) {
+    if (input.media_ids.length)
+      throw new Error('First contact supports text only')
+    const phone = normalizeOpsPhone(input.lead_intake.phone)
+    if (!/^\+1\d{10}$/.test(phone))
+      throw new Error('Lead intake requires an eligible US phone')
+    const phoneVariants = opsPhoneLookupVariants(phone)
+    const savedCustomer = await supabase
+      .from('ops_customers')
+      .select('id')
+      .in('phone', phoneVariants)
+      .limit(1)
+      .maybeSingle()
+    if (savedCustomer.error) throw savedCustomer.error
+    if (savedCustomer.data)
+      throw new Error(
+        `Saved customer ${savedCustomer.data.id} already uses this phone; use customer_id or conversation_id`,
+      )
+    const existingConversation = await supabase
+      .from('conversations')
+      .select('id')
+      .in('phone_number', phoneVariants)
+      .limit(1)
+      .maybeSingle()
+    if (existingConversation.error) throw existingConversation.error
+    if (existingConversation.data)
+      throw new Error(
+        `Existing conversation ${existingConversation.data.id}; inspect it and use conversation_id`,
+      )
+    const leadMatches = await supabase
+      .from('leads')
+      .select('id,name,phone,source,status,created_at')
+      .in('phone', phoneVariants)
+      .order('created_at', { ascending: false })
+      .limit(2)
+    if (leadMatches.error) throw leadMatches.error
+    if ((leadMatches.data || []).length > 1)
+      throw new Error(
+        'Multiple leads use this phone; resolve the identity before contacting',
+      )
+    const matchedLead = (leadMatches.data || [])[0]
+    if (matchedLead) {
+      if (!['new', 'contacted', 'quoted'].includes(matchedLead.status))
+        throw new Error('Matching lead is not eligible for first contact')
+      return previewConversationSend(
+        {
+          lead_id: matchedLead.id,
+          body: input.body,
+          media_ids: [],
+          idempotency_key: input.idempotency_key,
+        },
+        actor,
+        supabase,
+      )
+    }
+    return storePreview({
+      actor,
+      actionType: 'conversation.send',
+      requiredScope: 'customer:contact',
+      idempotencyKey: input.idempotency_key,
+      payload: {
+        first_contact: {
+          new_lead: {
+            phone,
+            name: input.lead_intake.name?.trim() || null,
+            source: 'owner_handoff',
+          },
+          phone,
+        },
+        body: input.body.trim(),
+        media_ids: [],
+      },
+      preview: {
+        action: 'Create lead and send first SMS',
+        lead_intake: {
+          name: input.lead_intake.name?.trim() || null,
+          source: 'owner_handoff',
+        },
+        to: phone,
+        body: input.body.trim(),
+        effects: [
+          'On confirmed execution, creates or resolves one exact-phone lead and records the owner handoff.',
+          'Sends this exact text once only after the durable lead/phone claim succeeds.',
           'Creates and links truthful conversation history only after provider acceptance.',
           'Uncertain outcomes never retry automatically; no booking or promotion changes.',
         ],

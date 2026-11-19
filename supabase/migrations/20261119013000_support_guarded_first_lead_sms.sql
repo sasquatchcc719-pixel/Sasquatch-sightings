@@ -2,6 +2,12 @@
 -- no saved customer or conversation. Provider acceptance remains the only
 -- point where a conversation/history row is created.
 
+-- The existing lead source check predates authenticated owner handoffs.
+alter table public.leads drop constraint if exists leads_source_check;
+alter table public.leads
+  add constraint leads_source_check
+  check (source in ('contest','partner','missed_call','website','owner_handoff'));
+
 alter table public.mcp_first_message_attempts
   alter column customer_id drop not null,
   add column if not exists lead_id uuid references public.leads(id);
@@ -28,6 +34,9 @@ declare
   target_phone text;
   target_customer uuid;
   target_lead uuid;
+  intake_name text;
+  new_intake boolean := false;
+  create_intake_lead boolean := false;
 begin
   if not exists(
     select 1
@@ -95,6 +104,22 @@ begin
     ) then
       raise exception 'Lead phone now belongs to a saved customer';
     end if;
+  elsif a.action_payload->'first_contact'->'new_lead' is not null then
+    new_intake := true;
+    target_phone := public.gap_outreach_phone(
+      a.action_payload->'first_contact'->'new_lead'->>'phone'
+    );
+    intake_name := nullif(btrim(
+      coalesce(a.action_payload->'first_contact'->'new_lead'->>'name','')
+    ),'');
+    if target_phone is null
+      or length(target_phone)<>12
+      or target_phone<>a.action_payload->'first_contact'->>'phone'
+      or a.action_payload->'first_contact'->'new_lead'->>'source'<>'owner_handoff'
+      or length(coalesce(intake_name,''))>200
+    then
+      raise exception 'Owner lead intake changed or not contactable';
+    end if;
   else
     raise exception 'First-contact identity required';
   end if;
@@ -113,6 +138,43 @@ begin
       'provider_sid',prior.provider_sid,
       'conversation_id',prior.conversation_id
     );
+  end if;
+
+  if new_intake then
+    if exists(
+      select 1 from public.ops_customers x
+      where public.gap_outreach_phone(x.phone)=target_phone
+    ) then
+      raise exception 'Lead phone belongs to a saved customer';
+    end if;
+    if exists(
+      select 1 from public.conversations t
+      where public.gap_outreach_phone(t.phone_number)=target_phone
+    ) then
+      raise exception 'Conversation appeared after preview; inspect it before contacting';
+    end if;
+    perform 1 from public.leads x
+    where public.gap_outreach_phone(x.phone)=target_phone
+    for update;
+    select * into l
+    from public.leads x
+    where public.gap_outreach_phone(x.phone)=target_phone
+    order by x.created_at desc,x.id
+    limit 1;
+    if found then
+      if exists(
+        select 1 from public.leads x
+        where x.id<>l.id and public.gap_outreach_phone(x.phone)=target_phone
+      ) then
+        raise exception 'Ambiguous lead phone';
+      end if;
+      if l.status::text not in ('new','contacted','quoted') then
+        raise exception 'Matching lead is not eligible for first contact';
+      end if;
+      target_lead := l.id;
+    else
+      create_intake_lead := true;
+    end if;
   end if;
 
   if target_customer is not null and exists(
@@ -155,6 +217,16 @@ begin
     or jsonb_array_length(coalesce(a.action_payload->'media_ids','[]'))<>0
   then
     raise exception 'First contact requires exact text only';
+  end if;
+
+  if create_intake_lead then
+    insert into public.leads(source,name,phone,status,notes)
+    values(
+      'owner_handoff',intake_name,target_phone,'new',
+      'Owner-authorized Sightings first-contact intake'
+    )
+    returning * into l;
+    target_lead := l.id;
   end if;
 
   insert into public.mcp_first_message_attempts(

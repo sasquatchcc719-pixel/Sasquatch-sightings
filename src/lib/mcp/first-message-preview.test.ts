@@ -8,7 +8,13 @@ const actor = {
   label: 'Owner',
   scopes: ['business:read', 'customer:contact'],
 }
-function fixture(existing = false, options: { savedCustomer?: boolean } = {}) {
+function fixture(
+  existing = false,
+  options: {
+    savedCustomer?: boolean
+    leadMatches?: Array<Record<string, unknown>>
+  } = {},
+) {
   let payload: Record<string, any> | null = null
   let conversationWrites = 0
   const db = {
@@ -21,6 +27,9 @@ function fixture(existing = false, options: { savedCustomer?: boolean } = {}) {
           return q
         },
         in() {
+          return q
+        },
+        order() {
           return q
         },
         or() {
@@ -80,6 +89,22 @@ function fixture(existing = false, options: { savedCustomer?: boolean } = {}) {
                     },
             error: null,
           }
+        },
+        then<TResult1 = { data: unknown; error: null }, TResult2 = never>(
+          onfulfilled?:
+            | ((value: {
+                data: unknown
+                error: null
+              }) => TResult1 | PromiseLike<TResult1>)
+            | null,
+          onrejected?:
+            | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+            | null,
+        ) {
+          return Promise.resolve({
+            data: table === 'leads' ? options.leadMatches || [] : [],
+            error: null,
+          }).then(onfulfilled, onrejected)
         },
       }
       return q
@@ -152,12 +177,84 @@ describe('first-message preview identity', () => {
     })
     expect(f.conversationWrites).toBe(0)
   })
+  it('previews an exact owner handoff without creating a lead or conversation early', async () => {
+    const f = fixture()
+    const result = await previewConversationSend(
+      {
+        lead_intake: {
+          phone: '(719) 555-0100',
+          name: 'Synthetic New Lead',
+        },
+        body: 'Exact owner-approved introduction',
+        media_ids: [],
+        idempotency_key: 'owner-approved-intake-first',
+      },
+      actor,
+      f.db as never,
+    )
+    expect(result.preview).toMatchObject({
+      action: 'Create lead and send first SMS',
+      lead_intake: {
+        name: 'Synthetic New Lead',
+        source: 'owner_handoff',
+      },
+      to: '+17195550100',
+      body: 'Exact owner-approved introduction',
+    })
+    expect(f.payload?.action_payload).toMatchObject({
+      first_contact: {
+        new_lead: {
+          phone: '+17195550100',
+          name: 'Synthetic New Lead',
+          source: 'owner_handoff',
+        },
+        phone: '+17195550100',
+      },
+    })
+    expect(f.conversationWrites).toBe(0)
+  })
+  it('resolves one matching lead instead of creating a duplicate intake record', async () => {
+    const f = fixture(false, {
+      leadMatches: [
+        {
+          id: lead,
+          name: 'Fixture Lead',
+          phone: '+17195550100',
+          source: 'website',
+          status: 'new',
+          created_at: '2026-11-19T00:55:00Z',
+        },
+      ],
+    })
+    const result = await previewConversationSend(
+      {
+        lead_intake: { phone: '+17195550100' },
+        body: 'Exact scheduling question',
+        media_ids: [],
+        idempotency_key: 'owner-approved-resolved-lead',
+      },
+      actor,
+      f.db as never,
+    )
+    expect(result.preview).toMatchObject({
+      action: 'Send first lead SMS',
+      lead_id: lead,
+      to: '+17195550100',
+    })
+    expect(f.payload?.action_payload).toMatchObject({
+      first_contact: { lead_id: lead },
+    })
+  })
   it('requires one verified identity and forbids cross-conversation attachments', async () => {
     const f = fixture()
     for (const input of [
       {},
       { customer_id: customer, conversation_id: customer },
       { customer_id: customer, lead_id: lead },
+      {
+        customer_id: customer,
+        lead_intake: { phone: '+17195550100' },
+      },
       { customer_id: customer, media_ids: ['unrelated-media'] },
     ])
       await expect(
@@ -188,6 +285,27 @@ describe('first-message preview identity', () => {
         f.db as never,
       ),
     ).rejects.toThrow('Saved customer')
+    expect(f.payload).toBeNull()
+  })
+  it('refuses ambiguous matching leads during owner intake', async () => {
+    const f = fixture(false, {
+      leadMatches: [
+        { id: lead, status: 'new' },
+        { id: '30000000-0000-4000-8000-000000000002', status: 'new' },
+      ],
+    })
+    await expect(
+      previewConversationSend(
+        {
+          lead_intake: { phone: '+17195550100' },
+          body: 'Question',
+          media_ids: [],
+          idempotency_key: 'owner-approved-ambiguous-lead',
+        },
+        actor,
+        f.db as never,
+      ),
+    ).rejects.toThrow('Multiple leads')
     expect(f.payload).toBeNull()
   })
   it('refuses to silently replace an existing conversation or omit contact permission', async () => {
