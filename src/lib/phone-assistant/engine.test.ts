@@ -169,6 +169,85 @@ describe('customer voice preview', () => {
     ).toMatchObject({ error: expect.stringContaining('source') })
     expect(deps.book).not.toHaveBeenCalled()
   })
+  it('finds the first four-hour opening across closed or full days without asking for a date', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-19T20:10:00Z'))
+    try {
+      deps.catalog.mockResolvedValue([
+        { id, name: 'Cleaning', base_price: 684 },
+      ])
+      deps.slots.mockImplementation(async ({ date, requiredMinutes }) =>
+        date === '2026-11-23' && requiredMinutes === 240
+          ? [{ start_time: '11:00:00' }]
+          : [],
+      )
+      const result = await runPhoneTool(
+        'phone_openings',
+        {
+          visit_type: slot.visit_type,
+          zip_code: slot.zip_code,
+          service: {
+            ...service,
+            line_items: [{ service_id: id, quantity: 1 }],
+          },
+        },
+        ctx,
+      )
+      expect(result).toMatchObject({
+        date: '2026-11-23',
+        times: ['11:00'],
+        quote: { total: 684 },
+      })
+      expect(deps.slots.mock.calls[0][0]).toMatchObject({
+        date: '2026-11-19',
+        minStartMinutes: 850,
+      })
+      expect(deps.catalog).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('keeps exact dates and booking validation on the requested day', async () => {
+    deps.slots.mockResolvedValue([])
+    expect(await runPhoneTool('phone_openings', slot, ctx)).toMatchObject({
+      date: slot.appointment_date,
+      times: [],
+    })
+    expect(deps.slots).toHaveBeenCalledTimes(1)
+    expect(
+      await runPhoneTool(
+        'phone_preview_booking',
+        { ...booking, appointment_date: undefined },
+        ctx,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.book).not.toHaveBeenCalled()
+  })
+  it('reports the searched range and resumes from its next day for measuring visits', async () => {
+    const request = {
+      visit_type: 'commercial_measurement',
+      zip_code: '80903',
+      search_from: '2099-12-24',
+    }
+    deps.estimateSlots.mockResolvedValue(null)
+    expect(await runPhoneTool('phone_openings', request, ctx)).toMatchObject({
+      times: [],
+      searched_from: '2099-12-24',
+      searched_through: '2100-01-06',
+      next_search_from: '2100-01-07',
+    })
+    expect(deps.estimateSlots).toHaveBeenCalledTimes(14)
+    deps.estimateSlots.mockResolvedValue({
+      slots: [{ start_time: '11:00:00' }],
+    })
+    expect(
+      await runPhoneTool(
+        'phone_openings',
+        { ...request, search_from: '2100-01-07' },
+        ctx,
+      ),
+    ).toMatchObject({ date: '2100-01-07', times: ['11:00'] })
+  })
   it('requires separate attribution for LSA and returns two conditional totals when unclear', async () => {
     const input = { ...service, lead_source: 'google_lsa' }
     deps.session.mockResolvedValue({
