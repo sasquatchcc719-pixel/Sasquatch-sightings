@@ -317,6 +317,8 @@ export async function sendCustomerSMSWithResult(
   return {
     sid: result.sid,
     to: toPhone,
-    from: sender,
+    // A Messaging Service chooses the actual business number. Preserve the
+    // provider-selected sender when Twilio returns it, not the service SID.
+    from: result.from || sender,
   }
 }

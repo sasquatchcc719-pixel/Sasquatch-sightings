@@ -2,12 +2,13 @@
 import { describe, it, expect } from 'vitest'
 import { previewConversationSend } from './business-operations'
 const customer = '20000000-0000-4000-8000-000000000001'
+const lead = '30000000-0000-4000-8000-000000000001'
 const actor = {
   subject: '10000000-0000-4000-8000-000000000001',
   label: 'Owner',
   scopes: ['business:read', 'customer:contact'],
 }
-function fixture(existing = false) {
+function fixture(existing = false, options: { savedCustomer?: boolean } = {}) {
   let payload: Record<string, any> | null = null
   let conversationWrites = 0
   const db = {
@@ -17,6 +18,9 @@ function fixture(existing = false) {
           return q
         },
         eq() {
+          return q
+        },
+        in() {
           return q
         },
         or() {
@@ -40,7 +44,11 @@ function fixture(existing = false) {
         async maybeSingle() {
           return {
             data:
-              table === 'conversations' && existing ? { id: 'existing' } : null,
+              table === 'conversations' && existing
+                ? { id: 'existing' }
+                : table === 'ops_customers' && options.savedCustomer
+                  ? { id: customer }
+                  : null,
             error: null,
           }
         },
@@ -55,12 +63,21 @@ function fixture(existing = false) {
                     updated_at: '2026-10-26T12:00:00Z',
                     is_internal: false,
                   }
-                : {
-                    id: 'preview',
-                    preview: payload?.preview,
-                    status: 'pending',
-                    expires_at: 'later',
-                  },
+                : table === 'leads'
+                  ? {
+                      id: lead,
+                      name: 'Fixture Lead',
+                      phone: '(719) 555-0100',
+                      source: 'website',
+                      status: 'new',
+                      created_at: '2026-11-19T00:55:00Z',
+                    }
+                  : {
+                      id: 'preview',
+                      preview: payload?.preview,
+                      status: 'pending',
+                      expires_at: 'later',
+                    },
             error: null,
           }
         },
@@ -105,11 +122,42 @@ describe('first-message preview identity', () => {
     })
     expect(f.conversationWrites).toBe(0)
   })
+  it('binds a verified new lead and exact recipient without creating a preview-time shell', async () => {
+    const f = fixture()
+    const result = await previewConversationSend(
+      {
+        lead_id: lead,
+        body: 'Exact lead scheduling question',
+        media_ids: [],
+        idempotency_key: 'owner-approved-lead-first',
+      },
+      actor,
+      f.db as never,
+    )
+    expect(result.preview).toMatchObject({
+      action: 'Send first lead SMS',
+      lead_id: lead,
+      lead_source: 'website',
+      to: '+17195550100',
+      body: 'Exact lead scheduling question',
+    })
+    expect(f.payload?.action_payload).toMatchObject({
+      first_contact: {
+        lead_id: lead,
+        phone: '+17195550100',
+        lead_created_at: '2026-11-19T00:55:00Z',
+        lead_source: 'website',
+        lead_status: 'new',
+      },
+    })
+    expect(f.conversationWrites).toBe(0)
+  })
   it('requires one verified identity and forbids cross-conversation attachments', async () => {
     const f = fixture()
     for (const input of [
       {},
       { customer_id: customer, conversation_id: customer },
+      { customer_id: customer, lead_id: lead },
       { customer_id: customer, media_ids: ['unrelated-media'] },
     ])
       await expect(
@@ -124,6 +172,22 @@ describe('first-message preview identity', () => {
           f.db as never,
         ),
       ).rejects.toThrow()
+    expect(f.payload).toBeNull()
+  })
+  it('refuses a lead phone already owned by a saved customer', async () => {
+    const f = fixture(false, { savedCustomer: true })
+    await expect(
+      previewConversationSend(
+        {
+          lead_id: lead,
+          body: 'Question',
+          media_ids: [],
+          idempotency_key: 'owner-approved-lead-first',
+        },
+        actor,
+        f.db as never,
+      ),
+    ).rejects.toThrow('Saved customer')
     expect(f.payload).toBeNull()
   })
   it('refuses to silently replace an existing conversation or omit contact permission', async () => {

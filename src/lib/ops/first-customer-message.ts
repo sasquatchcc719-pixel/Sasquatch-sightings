@@ -37,22 +37,25 @@ export async function sendFirstCustomerMessage(
   const message = claim.data as {
     phone: string
     body: string
-    customer_id: string
+    customer_id?: string | null
+    lead_id?: string | null
   }
   let sid: string
+  let providerFrom: string
   try {
     const result = await send(
       message.phone,
       message.body,
-      undefined,
+      message.lead_id || undefined,
       'admin_outbound',
       undefined,
       {
-        customerId: message.customer_id,
+        ...(message.customer_id ? { customerId: message.customer_id } : {}),
         sentBy: 'Owner-approved Sightings first contact',
       },
     )
     sid = result.sid
+    providerFrom = result.from
   } catch (error) {
     const status = definitelyRejected(error) ? 'rejected' : 'unknown'
     const settled = await db.rpc('finish_mcp_first_message', {
@@ -86,5 +89,5 @@ export async function sendFirstCustomerMessage(
       warning:
         'Twilio accepted the message, but durable history finalization failed. Do not resend; reconcile this SID.',
     })
-  return { ...finished.data, to: message.phone }
+  return { ...finished.data, to: message.phone, from: providerFrom }
 }

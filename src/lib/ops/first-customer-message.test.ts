@@ -7,7 +7,12 @@ import {
   sendFirstCustomerMessage,
 } from './first-customer-message'
 const sid = `SM${'a'.repeat(32)}`
-function fixture(finishError = false) {
+function fixture(
+  finishError = false,
+  identity: { customer_id?: string; lead_id?: string } = {
+    customer_id: 'customer',
+  },
+) {
   let claimed = false
   const outcomes: string[] = []
   const db = {
@@ -24,7 +29,7 @@ function fixture(finishError = false) {
             claimed: true,
             phone: '+17195550100',
             body: 'Exact approved question',
-            customer_id: 'customer',
+            ...identity,
           },
           error: null,
         }
@@ -47,7 +52,11 @@ function fixture(finishError = false) {
 describe('guarded first customer message', () => {
   it('sends only the claimed exact body and returns provider-confirmed durable history', async () => {
     const f = fixture(),
-      send = vi.fn().mockResolvedValue({ sid })
+      send = vi.fn().mockResolvedValue({
+        sid,
+        to: '+17195550100',
+        from: '+17192498791',
+      })
     const result = await sendFirstCustomerMessage(
       f.db as never,
       'preview',
@@ -63,15 +72,40 @@ describe('guarded first customer message', () => {
       status: 'accepted',
       twilio_sid: sid,
       history_recorded: true,
+      to: '+17195550100',
+      from: '+17192498791',
     })
     await expect(
       sendFirstCustomerMessage(f.db as never, 'preview', 'owner', send),
     ).rejects.toBeInstanceOf(FirstMessageOutcomeError)
     expect(send).toHaveBeenCalledTimes(1)
   })
+  it('passes a lead identity through the shared provider send without inventing a customer', async () => {
+    const f = fixture(false, { lead_id: 'lead' })
+    const send = vi.fn().mockResolvedValue({
+      sid,
+      to: '+17195550100',
+      from: '+17192498791',
+    })
+
+    await sendFirstCustomerMessage(f.db as never, 'preview', 'owner', send)
+
+    expect(send).toHaveBeenCalledWith(
+      '+17195550100',
+      'Exact approved question',
+      'lead',
+      'admin_outbound',
+      undefined,
+      { sentBy: 'Owner-approved Sightings first contact' },
+    )
+  })
   it('concurrent executors make at most one provider call', async () => {
     const f = fixture(),
-      send = vi.fn().mockResolvedValue({ sid })
+      send = vi.fn().mockResolvedValue({
+        sid,
+        to: '+17195550100',
+        from: '+17192498791',
+      })
     const result = await Promise.allSettled([
       sendFirstCustomerMessage(f.db as never, 'preview', 'owner', send),
       sendFirstCustomerMessage(f.db as never, 'preview', 'owner', send),
@@ -108,7 +142,11 @@ describe('guarded first customer message', () => {
   })
   it('preserves accepted SID if atomic history finalization fails and cannot resend', async () => {
     const f = fixture(true),
-      send = vi.fn().mockResolvedValue({ sid })
+      send = vi.fn().mockResolvedValue({
+        sid,
+        to: '+17195550100',
+        from: '+17192498791',
+      })
     await expect(
       sendFirstCustomerMessage(f.db as never, 'preview', 'owner', send),
     ).rejects.toMatchObject({

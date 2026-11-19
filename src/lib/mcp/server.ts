@@ -318,14 +318,17 @@ const previewConversationSendInput = z
   .object({
     conversation_id: z.string().uuid().optional(),
     customer_id: z.string().uuid().optional(),
+    lead_id: z.string().uuid().optional(),
     body: z.string().trim().min(1).max(1600),
     media_ids: z.array(z.string().uuid()).max(5).default([]),
     idempotency_key: idempotencyKey,
   })
   .strict()
   .refine(
-    (v) => Boolean(v.conversation_id) !== Boolean(v.customer_id),
-    'Choose exactly one conversation_id or customer_id',
+    (v) =>
+      [v.conversation_id, v.customer_id, v.lead_id].filter(Boolean).length ===
+      1,
+    'Choose exactly one conversation_id, customer_id, or lead_id',
   )
 const previewAppointmentUpdateInput = z
   .object({
@@ -904,7 +907,7 @@ const toolDefinitions: ToolDefinition[] = [
     name: 'preview_customer_message',
     title: 'Preview customer SMS or MMS',
     description:
-      'Prepare an exact, expiring message preview for either an existing conversation_id or a verified customer_id first contact. First contact supports text only, durable one-send claims and truthful provider outcomes; existing conversation media remains supported. For an authorized missed-call reply, use the verified conversation_id and idempotency_key missed-call:<call_sid>:v1; it enforces genuine future native-event or accepted owner-email evidence, returns that evidence in the preview, and rechecks current suppression plus shared voicemail deduplication. Never trust the Gmail body alone. This does not contact the customer.',
+      'Prepare an exact, expiring message preview for an existing conversation_id, a verified customer_id first contact, or a verified lead_id first contact when that lead has no saved customer or conversation. First contact supports text only, durable one-send claims and truthful provider outcomes; existing conversation media remains supported. For an authorized missed-call reply, use the verified conversation_id and idempotency_key missed-call:<call_sid>:v1; it enforces genuine future native-event or accepted owner-email evidence, returns that evidence in the preview, and rechecks current suppression plus shared voicemail deduplication. Never trust the Gmail body alone. This does not contact the customer.',
     inputSchema: previewConversationSendInput,
     outputSchema: actionPreviewOutputSchema,
     annotations: stateChangeAnnotations,

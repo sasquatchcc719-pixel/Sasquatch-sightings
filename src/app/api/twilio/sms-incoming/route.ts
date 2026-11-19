@@ -38,6 +38,7 @@ import {
   markInboundMessageFailed,
   markInboundMessagePersisted,
 } from '@/lib/mcp/inbound-events'
+import { adoptAdminOutboundConversation } from '@/lib/twilio/inbound-conversation'
 
 export const maxDuration = 60
 
@@ -560,15 +561,30 @@ export async function POST(request: NextRequest) {
         .is('customer_id', null)
     }
 
-    // Find existing conversation with SAME phone AND SAME source type
-    let { data: conversation, error: fetchError } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('phone_number', normalizedPhone)
-      .eq('source', dbSource)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .single()
+    // Prefer the provider-confirmed first-outbound thread. This also repairs
+    // the callback race where a same-phone empty inbound shell was created.
+    let conversation = await adoptAdminOutboundConversation(supabase, {
+      phone: normalizedPhone,
+      inboundSource: dbSource,
+      opsCustomerId: opsCustomerMatch?.id || null,
+    })
+    if (conversation) {
+      console.log(
+        `✅ Adopted first-outbound conversation ${conversation.id} for ${dbSource} reply`,
+      )
+    } else {
+      // Otherwise continue an existing conversation for this inbound channel.
+      const existing = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('phone_number', normalizedPhone)
+        .eq('source', dbSource)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (existing.error) throw existing.error
+      conversation = existing.data
+    }
 
     if (conversation) {
       console.log(
@@ -644,13 +660,13 @@ export async function POST(request: NextRequest) {
         .select()
         .single()
 
-      if (createError) {
+      if (createError || !newConvo) {
         console.error('Failed to create conversation:', createError)
         return NextResponse.json({ error: 'Database error' }, { status: 500 })
       }
 
       conversation = newConvo
-      console.log(`✨ Created new ${dbSource} conversation: ${conversation.id}`)
+      console.log(`✨ Created new ${dbSource} conversation: ${newConvo.id}`)
 
       if (matchedPartner) {
         console.log(
@@ -659,6 +675,10 @@ export async function POST(request: NextRequest) {
       }
 
       // Inbound conversation alerts are sent after dedupe below so retries do not double-notify.
+    }
+
+    if (!conversation) {
+      throw new Error('Conversation resolution returned no row')
     }
 
     // Start from current history.
