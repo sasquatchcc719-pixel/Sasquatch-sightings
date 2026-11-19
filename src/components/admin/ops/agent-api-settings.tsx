@@ -233,7 +233,7 @@ export function AgentApiSettings() {
           <div className="flex items-center gap-2">
             <Gift className="h-4 w-4 text-white/70" />
             <span className="text-sm font-medium text-white/70">
-              AI Agent Promo
+              Requested Voice Promo
             </span>
           </div>
           <button
@@ -254,8 +254,8 @@ export function AgentApiSettings() {
         {settings?.ai_agent_promo_enabled ? (
           <div className="space-y-3">
             <p className="text-xs text-white/40">
-              AI agents advertise this discount to customers who book through
-              them.
+              Rabecca may apply this discount only when the customer explicitly
+              asks for it.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -294,7 +294,7 @@ export function AgentApiSettings() {
           </div>
         ) : (
           <p className="text-xs text-white/40">
-            Promo is off. AI agents will not advertise any discount.
+            Promo is off. Rabecca will not apply this discount.
           </p>
         )}
       </div>

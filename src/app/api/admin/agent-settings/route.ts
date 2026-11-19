@@ -31,7 +31,7 @@ export async function GET() {
         ai_agent_api_enabled:
           settingsResult.data?.ai_agent_api_enabled ?? false,
         ai_agent_promo_enabled:
-          settingsResult.data?.ai_agent_promo_enabled ?? true,
+          settingsResult.data?.ai_agent_promo_enabled ?? false,
         ai_agent_promo_discount: Number(
           settingsResult.data?.ai_agent_promo_discount ?? 20,
         ),

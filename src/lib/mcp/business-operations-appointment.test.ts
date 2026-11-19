@@ -75,6 +75,29 @@ const lsaPlan = {
   },
 }
 
+const standardPlan = {
+  ...lsaPlan,
+  subtotal: 230,
+  total: 230,
+  line_items: [
+    {
+      service_catalog_item_id: '10000000-0000-4000-8000-000000000001',
+      name_snapshot: 'Carpet cleaning',
+      quantity: 1,
+      unit_price: 230,
+      line_total: 230,
+      duration_minutes: 120,
+      pricing_unit: 'fixed',
+    },
+  ],
+  lead_source: {
+    lead_source: 'Google Search / Maps',
+    lead_source_key: 'google_search',
+    lead_source_detail: null,
+    original_lead_source: null,
+  },
+}
+
 type Action = Record<string, unknown>
 
 class Query {
@@ -137,7 +160,7 @@ class Query {
   }
 }
 
-function fixture() {
+function fixture(totals = { subtotal: 340, discount_applied: 0, total: 340 }) {
   const state = {
     action: null as Action | null,
     rpcPlan: null as Action | null,
@@ -157,9 +180,7 @@ function fixture() {
             appointment_id: '70000000-0000-4000-8000-000000000001',
             invoice_id: '80000000-0000-4000-8000-000000000001',
             appointment_status: 'booked',
-            subtotal: 340,
-            discount_applied: 0,
-            total: 340,
+            ...totals,
           },
           error: null,
         }
@@ -245,5 +266,76 @@ describe('MCP LSA appointment confirmation', () => {
       line_items: lsaPlan.line_items,
     })
     expect(result).toMatchObject({ subtotal: 340, total: 340 })
+  })
+
+  it('keeps a default $230 preview, execution plan, and invoice total at $230', async () => {
+    mocks.booking.mockResolvedValue(standardPlan)
+    const { client, state } = fixture({
+      subtotal: 230,
+      discount_applied: 0,
+      total: 230,
+    })
+    const preview = await previewAppointmentCreate(
+      {
+        customer: {
+          first_name: 'Synthetic',
+          last_name: 'Customer',
+          email: 'synthetic@example.com',
+          phone: '+17195550123',
+        },
+        address: {
+          street_1: '123 Main St',
+          city: 'Colorado Springs',
+          state: 'CO',
+          zip_code: '80903',
+        },
+        appointment_date: '2026-11-20',
+        start_time: '15:00',
+        line_items: [
+          {
+            service_id: '10000000-0000-4000-8000-000000000001',
+            quantity: 1,
+          },
+        ],
+        lead_source: 'google_search',
+        accepted_minimum_charge: false,
+        notify_customer: false,
+        notify_internal: false,
+        sync_quickbooks: false,
+        idempotency_key: 'synthetic-standard-booking',
+      },
+      actor,
+      client as never,
+    )
+
+    expect(preview.preview).toMatchObject({
+      subtotal: 230,
+      discount: 0,
+      total: 230,
+    })
+
+    const result = await executePreparedAction(
+      {
+        confirmation_id: preview.confirmation_id,
+        confirmed: true,
+        expected_action_type: 'appointment.create',
+      },
+      actor,
+      client as never,
+    )
+
+    expect(mocks.booking).toHaveBeenCalledTimes(2)
+    expect(state.rpcPlan).toMatchObject({
+      subtotal: 230,
+      discount_applied: 0,
+      total: 230,
+      line_items: standardPlan.line_items,
+    })
+    expect(result).toMatchObject({
+      invoice_id: '80000000-0000-4000-8000-000000000001',
+      subtotal: 230,
+      discount_applied: 0,
+      total: 230,
+    })
   })
 })

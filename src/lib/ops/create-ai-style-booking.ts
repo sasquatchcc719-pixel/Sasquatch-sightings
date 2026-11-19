@@ -246,7 +246,7 @@ export function calculateAiStyleBookingDiscount(params: {
   discount_requested?: boolean
 }): number {
   if (
-    params.booking_channel === 'retell_rabecca' &&
+    params.booking_channel !== 'retell_rabecca' ||
     !params.discount_requested
   ) {
     return 0

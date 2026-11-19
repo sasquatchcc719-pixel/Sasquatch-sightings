@@ -5,7 +5,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 const CORS = {
@@ -90,27 +89,12 @@ export async function GET(request: NextRequest) {
       0,
     )
 
-    const promo = await getAgentPromoSettings()
-    let promotionApplied: { code: string; discount: number } | null = null
-    let total = subtotal
-
-    if (promo.enabled && subtotal >= promo.minimum) {
-      promotionApplied = { code: 'AI20', discount: promo.discount }
-      total = subtotal - promo.discount
-    }
-
     return NextResponse.json(
       {
         line_items: lineItems,
         subtotal,
-        ...(promotionApplied ? { promotion_applied: promotionApplied } : {}),
-        total,
+        total: subtotal,
         estimated_duration_minutes: totalDuration,
-        note: promotionApplied
-          ? `$${promo.discount} AI discount applied!`
-          : promo.enabled && subtotal < promo.minimum
-            ? `Add $${(promo.minimum - subtotal).toFixed(2)} more to qualify for a $${promo.discount} discount.`
-            : undefined,
       },
       { headers: CORS },
     )

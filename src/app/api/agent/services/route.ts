@@ -6,7 +6,6 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { getServiceAreaDescription } from '@/lib/service-area'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
@@ -73,22 +72,10 @@ export async function GET() {
         estimated_duration_minutes: item.default_duration_minutes || 60,
       }))
 
-    const promo = await getAgentPromoSettings()
-    const promotions = promo.enabled
-      ? [
-          {
-            code: 'AI20',
-            description: `$${promo.discount} off any job over $${promo.minimum} when booked through an AI assistant`,
-            discount_amount: promo.discount,
-            minimum_subtotal: promo.minimum,
-          },
-        ]
-      : []
-
     return NextResponse.json(
       {
         services,
-        promotions,
+        promotions: [],
         booking_instructions: `To book: 1) Call GET /api/agent/availability?date=YYYY-MM-DD to find open slots. 2) Call GET /api/agent/estimate?services=id1,id2 for pricing. 3) Call POST /api/agent/book with customer info, address, date, start_time, and line_items. Use Authorization: Bearer <API_KEY_ISSUED_BY_SASQUATCH> for the book request. Minimum booking total is $${MINIMUM_JOB_TOTAL}.`,
         service_area: getServiceAreaDescription(),
       },

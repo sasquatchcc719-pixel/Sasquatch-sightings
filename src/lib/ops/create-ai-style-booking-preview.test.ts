@@ -30,7 +30,10 @@ vi.mock('@/lib/service-area', () => ({
 import { createAiStyleBooking } from './create-ai-style-booking'
 
 class ReadQuery {
-  constructor(private readonly table: string) {}
+  constructor(
+    private readonly table: string,
+    private readonly basePrice = 300,
+  ) {}
   select() {
     return this
   }
@@ -45,7 +48,7 @@ class ReadQuery {
             id: '10000000-0000-4000-8000-000000000001',
             name: 'Carpet cleaning',
             slug: 'carpet-cleaning',
-            base_price: 300,
+            base_price: this.basePrice,
             default_duration_minutes: 120,
             pricing_unit: 'fixed',
           },
@@ -95,9 +98,9 @@ describe('AI-style booking preview', () => {
     ])
     mocks.getUnionedSlots.mockResolvedValue([])
     mocks.getAgentPromoSettings.mockResolvedValue({
-      enabled: false,
-      discount: 0,
-      minimum: 0,
+      enabled: true,
+      discount: 20,
+      minimum: 220,
     })
     mocks.normalizeLeadSourceForWrite.mockResolvedValue({
       ok: true,
@@ -115,13 +118,13 @@ describe('AI-style booking preview', () => {
     })
   })
 
-  it('uses exact pricing and staff availability without writing records', async () => {
+  it('keeps a $230 connector booking at $230 without writing records', async () => {
     const client = {
       from(table: string) {
         if (!['service_catalog_items', 'staff_users'].includes(table)) {
           throw new Error(`Preview attempted mutation table ${table}`)
         }
-        return new ReadQuery(table)
+        return new ReadQuery(table, 230)
       },
     }
 
@@ -165,8 +168,9 @@ describe('AI-style booking preview', () => {
       preview_only: true,
       appointment_status: 'booked',
       assigned_staff_user_id: '20000000-0000-4000-8000-000000000001',
-      subtotal: 300,
-      total: 300,
+      subtotal: 230,
+      discount_applied: 0,
+      total: 230,
       side_effects: {
         customer_notification: false,
         internal_notifications: true,

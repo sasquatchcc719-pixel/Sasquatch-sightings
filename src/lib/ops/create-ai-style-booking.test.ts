@@ -74,13 +74,13 @@ describe('calculateAiStyleBookingDiscount', () => {
     ).toBe(20)
   })
 
-  it('keeps the existing automatic promo behavior for non-Rabecca channels', () => {
+  it('does not auto-apply the promo to other booking channels', () => {
     expect(
       calculateAiStyleBookingDiscount({
         booking_channel: 'ai_agent',
-        subtotal: 300,
+        subtotal: 230,
         promo,
       }),
-    ).toBe(20)
+    ).toBe(0)
   })
 })

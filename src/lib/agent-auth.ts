@@ -123,7 +123,7 @@ export async function getAgentPromoSettings(): Promise<{
     .maybeSingle()
 
   return {
-    enabled: data?.ai_agent_promo_enabled ?? true,
+    enabled: data?.ai_agent_promo_enabled ?? false,
     discount: Number(data?.ai_agent_promo_discount ?? 20),
     minimum: Number(data?.ai_agent_promo_minimum ?? 220),
   }
