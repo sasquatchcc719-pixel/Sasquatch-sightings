@@ -3,6 +3,7 @@ import {
   computeAfterHoursMinutes,
   computePremiumPay,
   isAfterHoursPremiumCustomer,
+  resolveAfterHoursPremiumStart,
 } from './after-hours-premium'
 
 describe('isAfterHoursPremiumCustomer', () => {
@@ -20,6 +21,39 @@ describe('isAfterHoursPremiumCustomer', () => {
     expect(isAfterHoursPremiumCustomer('Saltgrass Denver')).toBe(false)
     expect(isAfterHoursPremiumCustomer(null)).toBe(false)
     expect(isAfterHoursPremiumCustomer(undefined)).toBe(false)
+  })
+})
+
+describe('resolveAfterHoursPremiumStart', () => {
+  it('prefers the recorded Start Job timestamp', () => {
+    expect(
+      resolveAfterHoursPremiumStart(
+        '2026-11-17T04:12:00Z',
+        '2026-11-16',
+        '21:00:00',
+      ),
+    ).toEqual({
+      timestamp: '2026-11-17T04:12:00Z',
+      source: 'job_started',
+    })
+  })
+
+  it('uses the scheduled start for a completed legacy job missing Start Job', () => {
+    const start = resolveAfterHoursPremiumStart(null, '2026-11-16', '21:00:00')
+    expect(start).toEqual({
+      timestamp: '2026-11-17T04:00:00.000Z',
+      source: 'scheduled',
+    })
+    const minutes = computeAfterHoursMinutes(
+      start?.timestamp,
+      '2026-11-17T07:01:59.757Z',
+    )
+    expect(minutes).toBe(182)
+    expect(computePremiumPay(minutes)).toBe(30.33)
+  })
+
+  it('returns null when neither start is usable', () => {
+    expect(resolveAfterHoursPremiumStart(null, '2026-11-16', null)).toBeNull()
   })
 })
 

@@ -17,8 +17,29 @@ export function isAfterHoursPremiumCustomer(
   )
 }
 
+export type AfterHoursPremiumStart = {
+  timestamp: string
+  source: 'job_started' | 'scheduled'
+}
+
+export function resolveAfterHoursPremiumStart(
+  jobStartedAt: string | null | undefined,
+  appointmentDate: string,
+  scheduledStartTime: string | null | undefined,
+): AfterHoursPremiumStart | null {
+  if (jobStartedAt && Number.isFinite(new Date(jobStartedAt).getTime())) {
+    return { timestamp: jobStartedAt, source: 'job_started' }
+  }
+
+  const scheduled = mountainLocalDateTimeToIso(
+    appointmentDate,
+    String(scheduledStartTime || '').slice(0, 5),
+  )
+  return scheduled ? { timestamp: scheduled, source: 'scheduled' } : null
+}
+
 /**
- * Minutes of the real worked window [jobStartedAt, completedAt] that fall after
+ * Minutes of the resolved work window [start, completedAt] that fall after
  * 5:00 PM Mountain on the day the job started. Returns 0 when the job wrapped
  * before 5pm, the window is empty, or either timestamp is missing.
  */

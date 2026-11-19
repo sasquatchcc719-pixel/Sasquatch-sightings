@@ -78,8 +78,18 @@ vi.mock('@tanstack/react-query', () => ({
                 staffUserId: 'david',
                 staffName: 'David Gonzalez',
                 workDate: '2026-10-14',
+                jobStartedAt: '2026-10-15T03:00:00Z',
+                startSource: 'scheduled',
+                completedAt: '2026-10-15T04:00:00Z',
+                customerName: 'Saltgrass Colorado Springs',
+                minutes: 60,
+                premiumRate: 10,
+                premiumPay: state.premiumPay,
                 applied: true,
+                premiumId: null,
+                status: 'approved',
                 appliedPay: state.premiumPay,
+                appliedMinutes: 60,
               },
             ]
           : [],
@@ -195,6 +205,7 @@ describe('payroll gratuity display', () => {
         within(summary).getByText('Total gross pay').parentElement!,
       ).getByText('$1,518.80'),
     ).toBeInTheDocument()
+    expect(screen.getByText(/Scheduled start used/)).toBeInTheDocument()
   })
   it('shows each saved hourly rate separately rather than inventing an average', () => {
     state.mixedRates = true

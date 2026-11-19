@@ -239,6 +239,7 @@ type PremiumRow = {
   staffUserId: string
   staffName: string
   jobStartedAt: string
+  startSource: 'job_started' | 'scheduled'
   completedAt: string
   customerName: string
   minutes: number
@@ -1595,8 +1596,9 @@ export function PayrollTimesheetsView() {
               Recovery Village &amp; Saltgrass after-hours premiums
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">
-              +$10/hr on worked time after 5 PM (Start Job → Complete). Apply to
-              add it to this pay period.
+              +$10/hr on worked time after 5 PM (Start Job → Complete). A saved
+              scheduled start is used when a completed legacy job is missing
+              Start Job. Apply to add it to this pay period.
             </p>
           </div>
           <div className="divide-y divide-white/5">
@@ -1621,6 +1623,12 @@ export function PayrollTimesheetsView() {
                           : premium.premiumPay,
                       )}
                     </span>
+                    {premium.startSource === 'scheduled' && (
+                      <span className="text-amber-200">
+                        {' '}
+                        · Scheduled start used
+                      </span>
+                    )}
                   </p>
                 </div>
                 {premium.applied ? (

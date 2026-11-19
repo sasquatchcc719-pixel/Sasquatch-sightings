@@ -7,6 +7,7 @@ import {
   computeAfterHoursMinutes,
   computePremiumPay,
   isAfterHoursPremiumCustomer,
+  resolveAfterHoursPremiumStart,
 } from '@/lib/ops/after-hours-premium'
 
 function jsonError(message: string, status: number) {
@@ -74,6 +75,7 @@ type QualifyingJob = {
   staffUserId: string
   staffName: string
   jobStartedAt: string
+  startSource: 'job_started' | 'scheduled'
   completedAt: string
   customerName: string
   minutes: number
@@ -96,6 +98,7 @@ async function findQualifyingJobs(
       `
         id,
         appointment_date,
+        start_time,
         job_started_at,
         completed_at,
         assigned_staff_user_id,
@@ -108,7 +111,6 @@ async function findQualifyingJobs(
     .eq('status', 'completed')
     .gte('appointment_date', startDate)
     .lte('appointment_date', endDate)
-    .not('job_started_at', 'is', null)
     .not('completed_at', 'is', null)
     .not('assigned_staff_user_id', 'is', null)
 
@@ -144,7 +146,13 @@ async function findQualifyingJobs(
     // Premium is for the field tech, never the owner doing the job himself.
     if (!staff || staff.role !== 'tech') continue
 
-    const workDate = mountainDateKey(row.job_started_at as string)
+    const premiumStart = resolveAfterHoursPremiumStart(
+      row.job_started_at,
+      row.appointment_date,
+      row.start_time,
+    )
+    if (!premiumStart) continue
+    const workDate = mountainDateKey(premiumStart.timestamp)
     const effectiveCompletedAt = capToApprovedTimesheetEnd(
       row.completed_at,
       approvedEnds.get(
@@ -152,7 +160,7 @@ async function findQualifyingJobs(
       ),
     )
     const minutes = computeAfterHoursMinutes(
-      row.job_started_at,
+      premiumStart.timestamp,
       effectiveCompletedAt,
     )
     if (minutes <= 0) continue
@@ -162,7 +170,8 @@ async function findQualifyingJobs(
       workDate,
       staffUserId: row.assigned_staff_user_id as string,
       staffName: staff.display_name,
-      jobStartedAt: row.job_started_at as string,
+      jobStartedAt: premiumStart.timestamp,
+      startSource: premiumStart.source,
       completedAt: effectiveCompletedAt as string,
       customerName:
         customer?.business_name?.trim() ||
@@ -257,7 +266,7 @@ export async function POST(request: NextRequest) {
       .from('ops_appointments')
       .select(
         `
-          id, appointment_date, status, job_started_at, completed_at,
+          id, appointment_date, start_time, status, job_started_at, completed_at,
           assigned_staff_user_id,
           ops_customers!ops_appointments_customer_id_fkey ( business_name )
         `,
@@ -286,7 +295,15 @@ export async function POST(request: NextRequest) {
     if (!staff || staff.role !== 'tech') {
       return jsonError('Premium applies only to field techs', 400)
     }
-    const workDate = mountainDateKey(appt.job_started_at as string)
+    const premiumStart = resolveAfterHoursPremiumStart(
+      appt.job_started_at,
+      appt.appointment_date,
+      appt.start_time,
+    )
+    if (!premiumStart) {
+      return jsonError('Job has no Start Job or scheduled start time', 400)
+    }
+    const workDate = mountainDateKey(premiumStart.timestamp)
     const approvedEnds = await loadApprovedTimesheetEnds(
       supabase,
       [appt.assigned_staff_user_id],
@@ -300,7 +317,7 @@ export async function POST(request: NextRequest) {
       ),
     )
     const minutes = computeAfterHoursMinutes(
-      appt.job_started_at,
+      premiumStart.timestamp,
       effectiveCompletedAt,
     )
     if (minutes <= 0) {
