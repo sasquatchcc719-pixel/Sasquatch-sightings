@@ -4,6 +4,7 @@ import {
   enqueuePersistedInboundEvents,
 } from '@/lib/mcp/inbound-events'
 import { deliverPendingMissedCallEmails } from '@/lib/mcp/missed-call-email-bridge'
+import { deliverPendingVoiceSummaries } from '@/lib/phone-assistant/summary-email'
 import { createAdminClient } from '@/supabase/server'
 
 export const maxDuration = 60
@@ -18,14 +19,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
-    const [nativeEvents, missedCallEmails] = await Promise.allSettled([
-      (async () => {
-        const enqueued = await enqueuePersistedInboundEvents(supabase)
-        const delivered = await deliverPendingMcpEvents({ supabase })
-        return { enqueued, delivered }
-      })(),
-      deliverPendingMissedCallEmails({ db: supabase }),
-    ])
+    const [nativeEvents, missedCallEmails, voiceSummaries] =
+      await Promise.allSettled([
+        (async () => {
+          const enqueued = await enqueuePersistedInboundEvents(supabase)
+          const delivered = await deliverPendingMcpEvents({ supabase })
+          return { enqueued, delivered }
+        })(),
+        deliverPendingMissedCallEmails({ db: supabase }),
+        deliverPendingVoiceSummaries(supabase),
+      ])
     if (nativeEvents.status === 'rejected')
       console.error(
         '[mcp-events] native delivery worker failed:',
@@ -36,7 +39,13 @@ export async function GET(request: NextRequest) {
         '[missed-call-email] owner notification worker failed:',
         missedCallEmails.reason,
       )
+    if (voiceSummaries.status === 'rejected')
+      console.error(
+        '[phone-assistant] summary worker failed:',
+        voiceSummaries.reason,
+      )
     if (
+      voiceSummaries.status === 'rejected' ||
       nativeEvents.status === 'rejected' ||
       missedCallEmails.status === 'rejected'
     )

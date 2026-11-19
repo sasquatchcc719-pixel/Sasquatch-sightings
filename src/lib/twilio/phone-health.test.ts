@@ -77,6 +77,33 @@ beforeEach(() => {
   mocks.send.mockResolvedValue(true)
 })
 describe('provider evidence checks', () => {
+  it('recognizes the configured SIP destination and strips invite headers from provider alerts', () => {
+    vi.stubEnv('HARRY_VOICE_PROJECT_ID', 'proj_fixture')
+    try {
+      const check = (to: string, status: string) =>
+        inspect(parent, [{ ...child, to, status }], [], {
+          outcome: 'completed',
+          recording_url: null,
+          caller_screening_status: 'pending',
+        }).issues
+      const sip =
+        'sip:proj_fixture@sip.api.openai.com;transport=tls?X-Sightings-Invite=test-token'
+      expect(check(sip, 'completed')).toEqual([])
+      expect(check(sip, 'failed').map((i) => i.issue)).toEqual([
+        'Phone assistant connection failed',
+      ])
+      const unexpected = check(
+        sip.replace('proj_fixture', 'proj_other'),
+        'failed',
+      )
+      expect(unexpected.map((i) => i.issue)).toContain(
+        'Unexpected forwarding destination',
+      )
+      expect(JSON.stringify(unexpected)).not.toContain('test-token')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
   it('recognizes queued callers without requiring a separate dial per caller', () => {
     expect(
       inspect(parent, [], [], {

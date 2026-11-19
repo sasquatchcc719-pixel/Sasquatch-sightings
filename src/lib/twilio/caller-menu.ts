@@ -24,3 +24,17 @@ export function buildCallerMenu({
   </Gather>
 </Response>`
 }
+
+export type HarryMenuContext = 'harry-preview' | 'harry-public'
+
+export function buildHarryDirectory(
+  baseUrl: string,
+  context: HarryMenuContext,
+  confirmFlood = false,
+) {
+  const url = `${baseUrl}/api/twilio/ivr-menu?context=${context}${confirmFlood ? '&flood=confirm' : ''}`
+  const prompt = confirmFlood
+    ? 'If water is actively flooding the property, press 1 to reach the emergency line. Otherwise, stay on the line to leave a message.'
+    : 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. For cleaning questions or scheduling, press 1 to speak with Harry, our virtual assistant. For active flooding, press 2. To leave a message, stay on the line.'
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Gather action="${escapeTwiml(url)}" method="POST" input="dtmf" numDigits="1" timeout="10" actionOnEmptyResult="true"><Say>${prompt}</Say></Gather></Response>`
+}

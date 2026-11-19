@@ -403,6 +403,14 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     homeSection: 'ai',
   },
   {
+    id: 'phone-assistant-calls',
+    name: 'After-hours Calls',
+    href: '/admin/phone-assistant',
+    description: 'Phone assistant transcripts and call summaries',
+    icon: 'phone-call',
+    homeSection: 'ai',
+  },
+  {
     id: 'ai-chats',
     name: 'AI Chats',
     href: '/admin/conversations?source=ai_chats',

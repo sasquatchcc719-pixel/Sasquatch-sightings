@@ -55,7 +55,9 @@ export async function GET(request: NextRequest) {
 
     const summary = {
       total: calls.length,
-      answered: calls.filter((r) => r.outcome === 'answered').length,
+      answered: calls.filter((r) =>
+        ['answered', 'assistant-answered'].includes(r.outcome),
+      ).length,
       voicemail: calls.filter((r) => r.outcome === 'voicemail').length,
       missed: calls.filter((r) => r.outcome === 'no-answer').length,
       blacklisted: calls.filter((r) => r.outcome === 'blacklisted').length,

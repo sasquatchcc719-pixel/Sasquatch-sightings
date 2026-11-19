@@ -80,6 +80,11 @@ const OUTCOME_CONFIG: Record<
     icon: React.ComponentType<{ className?: string }>
   }
 > = {
+  'assistant-answered': {
+    label: 'Phone assistant',
+    className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    icon: PhoneCall,
+  },
   answered: {
     label: 'Answered',
     className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',

@@ -14,6 +14,7 @@ export type CallLogRow = {
   outcome: string
   duration_seconds: number | null
   raw_dial_status: string | null
+  voice_assistant_answered?: boolean
   recording_url: string | null
   transcription: string | null
   created_at: string
@@ -37,6 +38,7 @@ export function resolveCallHistory(
   recordings: Recording[],
   existing?: Pick<CallLogRow, 'recording_url' | 'transcription'> &
     Partial<Pick<CallLogRow, 'duration_seconds'>> & {
+      voice_assistant_answered?: boolean
       forwarding_required?: boolean
       forwarding_accepted_at?: string | null
       queue_worker_sid?: string | null
@@ -76,9 +78,11 @@ export function resolveCallHistory(
   const outcome =
     recording || existing?.recording_url || existing?.transcription
       ? 'voicemail'
-      : answered.length || queueAnswered
-        ? 'answered'
-        : 'no-answer'
+      : existing?.voice_assistant_answered
+        ? 'assistant-answered'
+        : answered.length || queueAnswered
+          ? 'answered'
+          : 'no-answer'
   return {
     outcome,
     duration_seconds: recording
@@ -132,7 +136,10 @@ export async function writeCallLog(
     .eq('call_sid', row.call_sid)
     .neq('outcome', 'blacklisted')
   if (row.outcome !== 'voicemail') update = update.neq('outcome', 'voicemail')
-  if (row.outcome === 'no-answer') update = update.neq('outcome', 'answered')
+  if (row.outcome === 'no-answer')
+    update = update
+      .neq('outcome', 'answered')
+      .neq('outcome', 'assistant-answered')
   const { error } = await update
   if (error) throw error
 }
@@ -149,7 +156,7 @@ export async function reconcileEndedCall(
     db
       .from('call_logs')
       .select(
-        'recording_url,transcription,outcome,duration_seconds,forwarding_required,forwarding_accepted_at,queue_worker_sid',
+        'recording_url,transcription,outcome,duration_seconds,forwarding_required,forwarding_accepted_at,queue_worker_sid,voice_assistant_answered,voice_preview',
       )
       .eq('call_sid', callSid)
       .maybeSingle(),
@@ -175,6 +182,7 @@ export async function reconcileEndedCall(
   return {
     callSid,
     phone: parent.from,
+    preview: Boolean(stored.data?.voice_preview),
     outcome: result.outcome,
     startedAt: parent.startTime?.toISOString() ?? null,
     endedAt: parent.endTime?.toISOString() ?? null,

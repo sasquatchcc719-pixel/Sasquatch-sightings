@@ -45,6 +45,15 @@ describe('call history evidence', () => {
       })?.outcome,
     ).toBe('no-answer')
   })
+  it('preserves a bound phone assistant call in provider history repairs', () => {
+    expect(
+      resolveCallHistory(parent, [], [], {
+        recording_url: null,
+        transcription: null,
+        voice_assistant_answered: true,
+      })?.outcome,
+    ).toBe('assistant-answered')
+  })
   it('counts a long IVR call with no connection or recording as missed', () => {
     expect(resolveCallHistory(parent, [], [])).toMatchObject({
       outcome: 'no-answer',
@@ -156,6 +165,7 @@ describe('call log callback persistence', () => {
       ['outcome', 'blacklisted'],
       ['outcome', 'voicemail'],
       ['outcome', 'answered'],
+      ['outcome', 'assistant-answered'],
     ])
   })
 

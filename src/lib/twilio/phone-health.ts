@@ -154,8 +154,20 @@ export function inspectPhoneCall(
       },
     )
   for (const child of children) {
+    // SIP headers may carry the short-lived assistant invite. Keep them out of alerts.
+    const sip = /^sips?:/i.test(child.to)
+    const target = sip ? child.to.split(/[;?]/, 1)[0] : child.to
+    const assistant =
+      Boolean(process.env.HARRY_VOICE_PROJECT_ID) &&
+      target ===
+        `sip:${process.env.HARRY_VOICE_PROJECT_ID?.trim()}@sip.api.openai.com`
+    if (assistant) {
+      if (child.status === 'failed')
+        add('Phone assistant connection failed', { childSid: child.sid })
+      continue
+    }
     if (child.status === 'failed')
-      add('Forwarding leg failed', { childSid: child.sid, target: child.to })
+      add('Forwarding leg failed', { childSid: child.sid, target })
     if (
       !targets.includes(child.to) &&
       child.to !== config.failoverForwardNumber &&
@@ -164,7 +176,7 @@ export function inspectPhoneCall(
     )
       add('Unexpected forwarding destination', {
         childSid: child.sid,
-        target: child.to,
+        target,
       })
   }
   const primary = actual.find((c) => c.to === targets[0])

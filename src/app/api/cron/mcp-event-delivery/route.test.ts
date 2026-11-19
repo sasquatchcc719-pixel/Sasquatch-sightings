@@ -14,6 +14,9 @@ vi.mock('@/lib/mcp/inbound-events', () => ({
 vi.mock('@/lib/mcp/missed-call-email-bridge', () => ({
   deliverPendingMissedCallEmails: deliverEmails,
 }))
+vi.mock('@/lib/phone-assistant/summary-email', () => ({
+  deliverPendingVoiceSummaries: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('@/supabase/server', () => ({ createAdminClient: () => db }))
 import { GET } from './route'
 

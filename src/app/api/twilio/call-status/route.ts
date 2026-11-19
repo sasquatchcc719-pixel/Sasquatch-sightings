@@ -5,6 +5,8 @@ import { reconcileEndedCall } from '@/lib/twilio/call-history'
 import { enqueueMissedCallEvent } from '@/lib/mcp/missed-call-events'
 import { enqueueMissedCallEmailBridge } from '@/lib/mcp/missed-call-email-bridge'
 
+import { finalizeVoiceSession } from '@/lib/phone-assistant/records'
+
 export const maxDuration = 60
 
 // Configured as the business number's call-ended callback. This still fires
@@ -37,12 +39,13 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 204 })
   try {
     const db = createAdminClient()
+    const assistantAnswered = await finalizeVoiceSession(params.CallSid, db)
     const result = await reconcileEndedCall(
       db,
       twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
       params.CallSid,
     )
-    if (result) {
+    if (result && !assistantAnswered && !result.preview) {
       try {
         await Promise.all([
           enqueueMissedCallEvent(db, result),

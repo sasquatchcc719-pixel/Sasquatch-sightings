@@ -2,11 +2,15 @@ import { NextRequest } from 'next/server'
 import twilio from 'twilio'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { reconcile, enqueue, enqueueEmail, db } = vi.hoisted(() => ({
+const { reconcile, enqueue, enqueueEmail, finalize, db } = vi.hoisted(() => ({
   reconcile: vi.fn(),
+  finalize: vi.fn(),
   enqueue: vi.fn(),
   enqueueEmail: vi.fn(),
   db: {},
+}))
+vi.mock('@/lib/phone-assistant/records', () => ({
+  finalizeVoiceSession: finalize,
 }))
 vi.mock('@/lib/mcp/missed-call-events', () => ({
   enqueueMissedCallEvent: enqueue,
@@ -38,6 +42,7 @@ describe('call-ended callback', () => {
   beforeEach(() => {
     vi.stubEnv('TWILIO_ACCOUNT_SID', account)
     vi.stubEnv('TWILIO_AUTH_TOKEN', 'test-token')
+    finalize.mockReset().mockResolvedValue(false)
     reconcile.mockReset().mockResolvedValue(undefined)
     enqueue.mockReset().mockResolvedValue(0)
     enqueueEmail.mockReset().mockResolvedValue(false)
@@ -63,6 +68,23 @@ describe('call-ended callback', () => {
     expect((await POST(request())).status).toBe(204)
     expect(enqueue).toHaveBeenCalledWith(db, call)
     expect(enqueueEmail).toHaveBeenCalledWith(db, call)
+  })
+  it('finalizes a voice call on hangup without sending a missed-call alert', async () => {
+    finalize.mockResolvedValue(true)
+    reconcile.mockResolvedValue({ callSid: sid, outcome: 'no-answer' })
+    expect((await POST(request())).status).toBe(204)
+    expect(finalize).toHaveBeenCalledWith(sid, db)
+    expect(enqueueEmail).not.toHaveBeenCalled()
+  })
+  it('suppresses missed alerts for a private preview abandoned at the menu', async () => {
+    reconcile.mockResolvedValue({
+      callSid: sid,
+      preview: true,
+      outcome: 'no-answer',
+    })
+    expect((await POST(request())).status).toBe(204)
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(enqueueEmail).not.toHaveBeenCalled()
   })
   it('returns a retryable error if durably enqueueing fails', async () => {
     reconcile.mockResolvedValue({ callSid: sid })

@@ -1,15 +1,20 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getCallRoutingConfigMock, admin, update, push, auth } = vi.hoisted(
-  () => ({
+const { getCallRoutingConfigMock, admin, update, push, auth, access } =
+  vi.hoisted(() => ({
     admin: vi.fn(),
     update: vi.fn(),
     push: vi.fn(),
+    access: vi.fn(),
     auth: vi.fn(),
     getCallRoutingConfigMock: vi.fn(),
-  }),
-)
+  }))
+
+vi.mock('@/lib/twilio/harry-access', () => ({
+  getHarryAccess: access,
+  isHarryMainNumber: (number: string) => number === '+17195550000',
+}))
 
 vi.mock('@/lib/twilio/call-routing-config', () => ({
   getCallRoutingConfig: getCallRoutingConfigMock,
@@ -37,15 +42,21 @@ const routingConfig = {
 
 function twilioRequest(
   digits: string,
-  { context, attempt }: { context?: string; attempt?: string } = {},
+  {
+    context,
+    attempt,
+    flood,
+  }: { context?: string; attempt?: string; flood?: string } = {},
 ): NextRequest {
   const body = new URLSearchParams()
   body.set('CallSid', 'CA123')
   body.set('Digits', digits)
   body.set('From', '+17195550123')
+  body.set('To', '+17195550000')
 
   const query = new URLSearchParams()
   if (context) query.set('context', context)
+  if (flood) query.set('flood', flood)
   if (attempt) query.set('attempt', attempt)
   const search = query.size ? `?${query}` : ''
 
@@ -63,6 +74,7 @@ describe('POST /api/twilio/ivr-menu', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     auth.mockReturnValue(true)
+    access.mockResolvedValue({ preview: false, publicEnabled: false })
     push.mockResolvedValue(undefined)
     update.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
     admin.mockReturnValue({ from: vi.fn(() => ({ update })) })
@@ -161,5 +173,42 @@ describe('POST /api/twilio/ivr-menu', () => {
     expect((await POST(twilioRequest('1'))).status).toBe(403)
     expect(update).not.toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
+  })
+  it('requires an active caller preview and valid digit before reaching the assistant', async () => {
+    const request = () => twilioRequest('1', { context: 'harry-preview' })
+    expect(await (await POST(request())).text()).toContain('<Hangup')
+    access.mockResolvedValue({ preview: true, publicEnabled: false })
+    expect(await (await POST(request())).text()).toContain(
+      'harry-voice?step=start&amp;preview=1',
+    )
+    expect(push).not.toHaveBeenCalled()
+    auth.mockReturnValue(false)
+    expect((await POST(request())).status).toBe(403)
+  })
+
+  it('simulates emergency transfer and voicemail in preview without live side effects', async () => {
+    access.mockResolvedValue({ preview: true, publicEnabled: false })
+    const xml = async (digit: string, flood?: string) =>
+      (
+        await POST(twilioRequest(digit, { context: 'harry-preview', flood }))
+      ).text()
+    expect(await xml('2')).toContain('flood=confirm')
+    expect(await xml('1', 'confirm')).toContain('simulated')
+    for (const digit of ['', '9']) expect(await xml(digit)).toContain('<Hangup')
+    expect(admin).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('preserves the advertised public number assignments through a switch change', async () => {
+    const xml = async (digit: string, flood?: string) =>
+      (
+        await POST(twilioRequest(digit, { context: 'harry-public', flood }))
+      ).text()
+    expect(await xml('1')).toContain('call-after-hours')
+    expect(await xml('2')).toContain('flood=confirm')
+    expect(await xml('9', 'confirm')).toContain('call-after-hours')
+    expect(await xml('1', 'confirm')).toContain('stage=secondary')
+    access.mockResolvedValue({ preview: false, publicEnabled: true })
+    expect(await xml('1')).toContain('harry-voice?step=start&amp;preview=0')
   })
 })

@@ -5,7 +5,8 @@ import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
 import { buildForwardDial } from '@/lib/twilio/forward-twiml'
-import { buildCallerMenu } from '@/lib/twilio/caller-menu'
+import { getHarryAccess, isHarryMainNumber } from '@/lib/twilio/harry-access'
+import { buildCallerMenu, buildHarryDirectory } from '@/lib/twilio/caller-menu'
 
 const SETTINGS = {
   // Static fallback values. Dynamic values come from phone_settings.
@@ -57,7 +58,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const routingConfig = await getCallRoutingConfig()
+    const [routingConfig, harry] = await Promise.all([
+      getCallRoutingConfig(),
+      isHarryMainNumber(String(formData.get('To') || ''))
+        ? getHarryAccess(callerPhone)
+        : { preview: false, publicEnabled: false },
+    ])
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)
 
@@ -69,14 +75,26 @@ export async function POST(request: NextRequest) {
         call_sid: formData.get('CallSid') as string,
         caller_phone: callerPhone,
         outcome: 'inbound',
-        forwarding_required: true,
-        caller_screening_status: routingConfig.temporaryOpenLineMode
-          ? 'bypassed'
-          : 'pending',
+        forwarding_required: !harry.preview,
+        ...(harry.preview ? { voice_preview: true } : {}),
+        caller_screening_status:
+          !harry.preview && routingConfig.temporaryOpenLineMode
+            ? 'bypassed'
+            : 'pending',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'call_sid', ignoreDuplicates: true },
     )
+    if (logError && harry.preview) {
+      console.error(
+        '[Call Router] Could not mark private preview:',
+        logError.code,
+      )
+      return new NextResponse(
+        '<Response><Say>The private preview is temporarily unavailable.</Say><Hangup/></Response>',
+        { headers: { 'Content-Type': 'text/xml' } },
+      )
+    }
     if (logError)
       console.error('[Call Router] Could not save inbound call:', logError)
 
@@ -114,7 +132,9 @@ export async function POST(request: NextRequest) {
     let twimlResponse
 
     const baseUrl = getBaseUrl()
-    if (routingConfig.temporaryOpenLineMode) {
+    if (harry.preview) {
+      twimlResponse = buildHarryDirectory(baseUrl, 'harry-preview')
+    } else if (routingConfig.temporaryOpenLineMode) {
       // Fire push notification immediately (don't await — must not delay TwiML)
       const displayPhone = callerPhone.replace(
         /^\+1(\d{3})(\d{3})(\d{4})$/,
@@ -140,6 +160,8 @@ export async function POST(request: NextRequest) {
         baseUrl,
         mode: 'open-line',
       })
+    } else if (!isBusinessHours && harry.publicEnabled) {
+      twimlResponse = buildHarryDirectory(baseUrl, 'harry-public')
     } else {
       console.log('[Call Router] Caller spam screening menu', {
         afterHours: !isBusinessHours,

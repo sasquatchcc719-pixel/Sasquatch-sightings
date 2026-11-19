@@ -6,6 +6,8 @@ export async function proxy(request: NextRequest) {
   // Keep cookie/session refresh completely outside these namespaces.
   if (
     request.nextUrl.pathname.startsWith('/api/v1/') ||
+    request.nextUrl.pathname.startsWith('/api/phone-assistant/') ||
+    request.nextUrl.pathname === '/api/twilio/harry-voice' ||
     request.nextUrl.pathname === '/api/integrations/outreach/measurements' ||
     request.nextUrl.pathname === '/mcp' ||
     request.nextUrl.pathname.startsWith('/mcp/') ||

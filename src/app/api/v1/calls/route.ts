@@ -25,8 +25,29 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
+    const calls = data || []
+    const voiceSids = calls
+      .filter((call) => call.outcome === 'assistant-answered')
+      .map((call) => call.call_sid)
+    if (voiceSids.length) {
+      const transcripts = await supabase.rpc(
+        'phone_assistant_transcripts_for_calls',
+        { p_sids: voiceSids },
+      )
+      if (transcripts.error) throw transcripts.error
+      const byCall = new Map<string, string>(
+        (transcripts.data || []).map(
+          (row: { call_sid: string; transcription: string }) => [
+            row.call_sid,
+            row.transcription,
+          ],
+        ),
+      )
+      for (const call of calls)
+        call.transcription = byCall.get(call.call_sid) ?? call.transcription
+    }
     return NextResponse.json({
-      data: data || [],
+      data: calls,
       since,
       pagination: paginationPayload(pagination, count),
     })

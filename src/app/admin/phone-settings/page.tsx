@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { HarryPhoneSettings } from '@/components/admin/harry-phone-settings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -205,7 +206,7 @@ export default function PhoneSettingsPage() {
             >
               {settings.temporary_open_line_mode
                 ? 'ON - Direct Ring Active'
-                : 'OFF - Normal Harry Routing'}
+                : 'OFF - Normal Caller Directory'}
             </Button>
           </div>
         </Card>
@@ -257,6 +258,8 @@ export default function PhoneSettingsPage() {
             </div>
           </div>
         </Card>
+
+        <HarryPhoneSettings />
 
         {/* Business Hours */}
         <Card className="p-6">

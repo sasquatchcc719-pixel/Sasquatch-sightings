@@ -83,7 +83,11 @@ export async function middleware(request: NextRequest) {
 
   // If not logged in on a protected route, redirect to login
   if (!user) {
-    return NextResponse.redirect(new URL('/auth/login', request.url))
+    const login = new URL('/auth/login', request.url)
+    if (pathname === '/admin/phone-assistant') {
+      login.searchParams.set('next', pathname + request.nextUrl.search)
+    }
+    return NextResponse.redirect(login)
   }
 
   // Role-based access control happens in the layouts (admin/layout.tsx,

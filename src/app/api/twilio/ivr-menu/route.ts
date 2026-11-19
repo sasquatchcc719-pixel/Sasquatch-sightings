@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
-import { buildForwardDial } from '@/lib/twilio/forward-twiml'
-import { buildCallerMenu } from '@/lib/twilio/caller-menu'
+import { buildForwardDial, escapeTwiml } from '@/lib/twilio/forward-twiml'
+import { getHarryAccess, isHarryMainNumber } from '@/lib/twilio/harry-access'
+import {
+  buildCallerMenu,
+  buildHarryDirectory,
+  type HarryMenuContext,
+} from '@/lib/twilio/caller-menu'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { validateTwilioInboundRequest } from '@/lib/twilio/inbound-auth'
@@ -16,6 +21,74 @@ function getBaseUrl(): string {
   return url.startsWith('http') ? url : `https://${url}`
 }
 
+async function harryMenuResponse(
+  request: NextRequest,
+  form: FormData,
+  context: HarryMenuContext,
+) {
+  const baseUrl = getBaseUrl()
+  const callerPhone = String(form.get('From') || '')
+  const digits = String(form.get('Digits') || '')
+  const callSid = String(form.get('CallSid') || '')
+  const preview = context === 'harry-preview'
+  const flood = request.nextUrl.searchParams.get('flood')
+  const twiml = (body: string) =>
+    new NextResponse(body, { headers: { 'Content-Type': 'text/xml' } })
+  const end = (message: string) =>
+    twiml(`<Response><Say>${message}</Say><Hangup/></Response>`)
+  const redirect = (url: string) =>
+    twiml(
+      `<Response><Redirect method="POST">${escapeTwiml(url)}</Redirect></Response>`,
+    )
+  const voicemail = () =>
+    preview
+      ? end(
+          'This is where a caller could leave a message. Your private preview has ended.',
+        )
+      : redirect(`${baseUrl}/api/twilio/call-after-hours`)
+  if (!isHarryMainNumber(String(form.get('To') || '')))
+    return end('This directory is unavailable.')
+  const access = await getHarryAccess(callerPhone)
+  if (preview && !access.preview) return end('Your private preview has ended.')
+  if (flood === 'prompt' || (!flood && digits === '2')) {
+    return twiml(buildHarryDirectory(baseUrl, context, true))
+  }
+  if (flood === 'confirm' && digits === '1') {
+    if (preview)
+      return end(
+        'The emergency transfer was simulated. Your private preview has ended.',
+      )
+    const config = await getCallRoutingConfig()
+    const { error } = await createAdminClient()
+      .from('call_logs')
+      .update({
+        caller_screening_status: 'passed',
+        forwarding_required: true,
+      })
+      .eq('call_sid', callSid)
+    if (error)
+      console.error(
+        '[Harry Directory] Could not log confirmed emergency:',
+        error.code,
+      )
+    return twiml(
+      buildForwardDial({
+        config,
+        callerPhone,
+        callSid,
+        baseUrl,
+        mode: 'water-damage',
+        secondary: true,
+      }),
+    )
+  }
+  if (flood || digits !== '1' || (!preview && !access.publicEnabled))
+    return voicemail()
+  return redirect(
+    `${baseUrl}/api/twilio/harry-voice?step=start&preview=${preview ? '1' : '0'}`,
+  )
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -28,6 +101,10 @@ export async function POST(request: NextRequest) {
       })
     )
       return new NextResponse('Forbidden', { status: 403 })
+    const context = request.nextUrl.searchParams.get('context')
+    if (context === 'harry-preview' || context === 'harry-public') {
+      return await harryMenuResponse(request, formData, context)
+    }
     const digits = formData.get('Digits') as string
     const callSid = String(formData.get('CallSid') || '')
     const attempt = request.nextUrl.searchParams.get('attempt') === '1' ? 1 : 0

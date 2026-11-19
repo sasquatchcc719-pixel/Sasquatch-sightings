@@ -7,12 +7,19 @@ const {
   isBlacklistedMock,
   sendOneSignalNotificationMock,
   validateTwilioMock,
+  harryAccess,
 } = vi.hoisted(() => ({
   createAdminClientMock: vi.fn(),
   validateTwilioMock: vi.fn(),
+  harryAccess: vi.fn(),
   getCallRoutingConfigMock: vi.fn(),
   isBlacklistedMock: vi.fn(),
   sendOneSignalNotificationMock: vi.fn(),
+}))
+
+vi.mock('@/lib/twilio/harry-access', () => ({
+  getHarryAccess: harryAccess,
+  isHarryMainNumber: (number: string) => number === '+17195550000',
 }))
 
 vi.mock('@/lib/twilio/inbound-auth', () => ({
@@ -55,6 +62,7 @@ function twilioRequest(): NextRequest {
   const body = new URLSearchParams()
   body.set('CallSid', 'CA123')
   body.set('From', '+17195550123')
+  body.set('To', '+17195550000')
 
   return new NextRequest(
     'https://sightings.sasquatchcarpet.com/api/twilio/call-router',
@@ -70,6 +78,7 @@ describe('POST /api/twilio/call-router', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     validateTwilioMock.mockReturnValue(true)
+    harryAccess.mockResolvedValue({ preview: false, publicEnabled: false })
     getCallRoutingConfigMock.mockResolvedValue(routingConfig)
     isBlacklistedMock.mockResolvedValue(false)
     sendOneSignalNotificationMock.mockResolvedValue(undefined)
@@ -162,5 +171,38 @@ describe('POST /api/twilio/call-router', () => {
     expect(twiml).toContain('/api/twilio/ivr-menu?context=after-hours')
     expect(twiml).toContain('actionOnEmptyResult="true"')
     expect(twiml).not.toContain('<Dial')
+  })
+  it('isolates the armed cell even during business hours or direct ring mode', async () => {
+    harryAccess.mockResolvedValue({ preview: true, publicEnabled: false })
+    const save = vi.fn().mockResolvedValue({ error: null })
+    createAdminClientMock.mockReturnValue({ from: () => ({ upsert: save }) })
+    const xml = await (await POST(twilioRequest())).text()
+    expect(xml).toContain('context=harry-preview')
+    expect(xml).not.toMatch(/<Dial|<Enqueue/)
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voice_preview: true,
+        forwarding_required: false,
+      }),
+      expect.anything(),
+    )
+    expect(sendOneSignalNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it('offers the public Harry menu only outside normal hours when enabled', async () => {
+    harryAccess.mockResolvedValue({ preview: false, publicEnabled: true })
+    getCallRoutingConfigMock.mockResolvedValue({
+      ...routingConfig,
+      temporaryOpenLineMode: false,
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-07T16:00:00Z'))
+    expect(await (await POST(twilioRequest())).text()).toContain(
+      'context=business-hours',
+    )
+    vi.setSystemTime(new Date('2026-09-08T03:00:00Z'))
+    expect(await (await POST(twilioRequest())).text()).toContain(
+      'context=harry-public',
+    )
   })
 })
