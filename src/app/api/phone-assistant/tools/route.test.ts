@@ -4,9 +4,14 @@ import { issueCallToken } from '@/lib/phone-assistant/call-token'
 const m = vi.hoisted(() => ({
   read: vi.fn(),
   sequence: vi.fn(),
+  tools: vi.fn(),
   claim: vi.fn(),
   run: vi.fn(),
   update: vi.fn(),
+}))
+vi.mock('@/supabase/server', () => ({ createAdminClient: () => ({}) }))
+vi.mock('@/lib/ops/bookable-catalog', () => ({
+  loadBookableCatalog: async () => [],
 }))
 vi.mock('@/lib/phone-assistant/records', () => ({
   getVoiceSessionDetails: m.read,
@@ -15,14 +20,16 @@ vi.mock('@/lib/phone-assistant/records', () => ({
 }))
 vi.mock('@/lib/phone-assistant/engine', async () => {
   const { z } = await import('zod')
+  const tools = [
+    {
+      name: 'lookup',
+      description: 'Get price',
+      inputSchema: z.object({ name: z.string() }),
+    },
+  ]
   return {
-    phoneTools: [
-      {
-        name: 'lookup',
-        description: 'Get price',
-        inputSchema: z.object({ name: z.string() }),
-      },
-    ],
+    phoneTools: tools,
+    previewPhoneTools: () => m.tools() ?? tools,
     runPhoneTool: m.run,
   }
 })
@@ -150,4 +157,40 @@ it('releases an undispatched command if the caller corrects it', async () => {
   await send('tools/call', { name: 'end_call', arguments: {} })
   expect(m.claim).toHaveBeenLastCalledWith(sid, true)
   expect(m.update).not.toHaveBeenCalled()
+})
+
+it('passes canonical service IDs through the actual private MCP handler', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  const { previewPhoneTools } = await vi.importActual<
+    typeof import('@/lib/phone-assistant/engine')
+  >('@/lib/phone-assistant/engine')
+  const id = '8472f279-3dc3-44f3-85a4-c36166fdbe88'
+  m.tools.mockReturnValue(
+    previewPhoneTools([
+      {
+        id,
+        name: 'Love Seat',
+        slug: 'love-seat',
+        category: 'Upholstery',
+        pricing_unit: 'fixed',
+        base_price: 100,
+      },
+    ]),
+  )
+  m.run.mockResolvedValue({ total: 190 })
+  const payload = await rpcResult(
+    await send('tools/call', {
+      name: 'phone_quote',
+      arguments: {
+        zip_code: '80918',
+        line_items: [{ service_id: 'love-seat', quantity: 1 }],
+      },
+    }),
+  )
+  expect(payload.result.isError).not.toBe(true)
+  expect(m.run).toHaveBeenCalledWith(
+    'phone_quote',
+    { zip_code: '80918', line_items: [{ service_id: id, quantity: 1 }] },
+    expect.anything(),
+  )
 })

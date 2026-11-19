@@ -93,3 +93,31 @@ it('rejects production and cross-environment callback destinations', () => {
   expect(previewCallbacksLocal(prod, prod)).toBe(false)
   expect(previewCallbacksLocal(staging + '/incoming', staging)).toBe(true)
 })
+
+it('distinguishes a coupon never submitted from a rejection', async () => {
+  const { previewToolResult } = await import('./preview-profile')
+  const price = { total: 240, coupon: { code: null, amount: 0 } }
+  expect(previewToolResult('phone_quote', price)).toMatchObject({
+    ...price,
+    price_guidance: expect.stringContaining('No coupon was submitted'),
+  })
+  expect(
+    previewToolResult('phone_quote', {
+      total: 205,
+      coupon: { code: 'THANKS35', amount: 35 },
+    }),
+  ).toMatchObject({
+    total: 205,
+    price_guidance: expect.stringContaining('returned coupon decision'),
+  })
+})
+it('attaches the date of the verified slot and preserves actual failures', async () => {
+  const { previewToolResult } = await import('./preview-profile')
+  const wed = { date: '2099-12-02', times: ['14:30'] }
+  expect(previewToolResult('phone_quoted_openings', wed)).toMatchObject({
+    verified_opening: { date: wed.date, time: '14:30' },
+  })
+  expect(previewToolResult('phone_openings', { error: 'timeout' })).toEqual({
+    error: 'timeout',
+  })
+})

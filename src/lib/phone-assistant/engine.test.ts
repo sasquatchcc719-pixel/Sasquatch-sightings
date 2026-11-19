@@ -426,3 +426,45 @@ describe('customer voice preview', () => {
     )
   })
 })
+
+it('converts private catalog codes to real service IDs in quote, availability, and booking inputs', async () => {
+  const { previewPhoneTools } = await import('./engine')
+  const item = {
+    id,
+    slug: 'love-seat',
+    name: 'Love Seat',
+    category: 'Upholstery',
+    pricing_unit: 'fixed',
+    base_price: 100,
+  }
+  const tools = previewPhoneTools([item])
+  const lines = {
+    ...service,
+    line_items: [{ service_id: 'love-seat', quantity: 1 }],
+  }
+  for (const [name, args] of [
+    ['phone_quote', lines],
+    ['phone_openings', { ...slot, service: lines }],
+    ['phone_preview_booking', { ...booking, service: lines }],
+  ] as const) {
+    const schema = tools.find((t) => t.name === name)!.inputSchema
+    expect(JSON.stringify(z.toJSONSchema(schema))).toContain('love-seat')
+    const parsed = schema.parse(args)
+    expect(JSON.stringify(parsed)).toContain(id)
+    expect(JSON.stringify(parsed)).not.toContain('love-seat')
+  }
+  expect(
+    phoneTools
+      .find((t) => t.name === 'phone_quote')!
+      .inputSchema.safeParse(lines).success,
+  ).toBe(false)
+  const duplicated = previewPhoneTools([
+    item,
+    { ...item, id: '67420f5e-4ea3-4bea-b8ba-80e385cc8f93' },
+  ])
+  expect(
+    duplicated
+      .find((t) => t.name === 'phone_quote')!
+      .inputSchema.safeParse(lines).success,
+  ).toBe(false)
+})

@@ -6,8 +6,17 @@ import {
 import { z } from 'zod'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { verifyCallToken } from '@/lib/phone-assistant/call-token'
-import { phoneTools, runPhoneTool } from '@/lib/phone-assistant/engine'
-import { testProfile } from '@/lib/phone-assistant/preview-profile'
+import {
+  previewPhoneTools,
+  phoneTools,
+  runPhoneTool,
+} from '@/lib/phone-assistant/engine'
+import { createAdminClient } from '@/supabase/server'
+import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
+import {
+  testProfile,
+  previewToolResult,
+} from '@/lib/phone-assistant/preview-profile'
 import {
   getVoiceSessionDetails,
   latestPreviewCallerTurn,
@@ -70,13 +79,21 @@ export async function POST(request: Request) {
     callerPhone: session.callerPhone,
     preview: session.pilot,
   }
+  const availableTools = guarded
+    ? previewPhoneTools(
+        await loadBookableCatalog(
+          createAdminClient(),
+          AbortSignal.timeout(600),
+        ).catch(() => []),
+      )
+    : phoneTools
   const handler = createMcpHandler(
     () => {
       const server = new McpServer({
         name: 'sasquatch-phone',
         version: '1.0.0',
       })
-      for (const tool of phoneTools) {
+      for (const tool of availableTools) {
         server.registerTool(
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema },
@@ -90,7 +107,12 @@ export async function POST(request: Request) {
                 )
                 return {
                   content: [
-                    { type: 'text' as const, text: JSON.stringify(result) },
+                    {
+                      type: 'text' as const,
+                      text: JSON.stringify(
+                        guarded ? previewToolResult(tool.name, result) : result,
+                      ),
+                    },
                   ],
                 }
               } catch {
