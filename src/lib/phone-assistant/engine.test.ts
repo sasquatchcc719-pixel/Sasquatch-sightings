@@ -131,6 +131,44 @@ describe('customer voice preview', () => {
       ),
     ).toMatchObject({ total: 155, minimum_charge_applied: false })
   })
+  it('quotes and finds times before attribution, then requires it before confirming', async () => {
+    const items = { zip_code: service.zip_code, line_items: service.line_items }
+    const estimate = { status: 'standard_estimate', total: 300, lsa_fee: 0 }
+    expect(await runPhoneTool('phone_quote', items, ctx)).toMatchObject(
+      estimate,
+    )
+    expect(
+      await runPhoneTool('phone_openings', { ...slot, service: items }, ctx),
+    ).toMatchObject({
+      times: ['09:00'],
+      quote: estimate,
+    })
+    expect(
+      await runPhoneTool(
+        'phone_preview_booking',
+        { ...booking, service: items },
+        ctx,
+      ),
+    ).toMatchObject({ error: expect.stringContaining('source') })
+    expect(deps.book).not.toHaveBeenCalled()
+  })
+  it('can show openings for an unclear Google source without confirming that price', async () => {
+    const items = { ...service, lead_source: 'google_unsure' }
+    expect(
+      await runPhoneTool('phone_openings', { ...slot, service: items }, ctx),
+    ).toMatchObject({
+      times: ['09:00'],
+      quote: { status: 'standard_estimate', total: 300 },
+    })
+    expect(
+      await runPhoneTool(
+        'phone_preview_booking',
+        { ...booking, service: items },
+        ctx,
+      ),
+    ).toMatchObject({ error: expect.stringContaining('source') })
+    expect(deps.book).not.toHaveBeenCalled()
+  })
   it('requires separate attribution for LSA and returns two conditional totals when unclear', async () => {
     const input = { ...service, lead_source: 'google_lsa' }
     deps.session.mockResolvedValue({
