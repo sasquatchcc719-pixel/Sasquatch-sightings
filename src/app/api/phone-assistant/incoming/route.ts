@@ -11,8 +11,13 @@ import {
   markVoiceAnswered,
   getVoiceSessionDetails,
 } from '@/lib/phone-assistant/records'
-import { phoneGreeting, phoneInstructions } from '@/lib/phone-assistant/engine'
+import {
+  phoneGreeting,
+  phoneInstructions,
+  phoneTools,
+} from '@/lib/phone-assistant/engine'
 import { coachingInstructions } from '@/lib/phone-assistant/coaching'
+import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
 import { createAdminClient } from '@/supabase/server'
 import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
 
@@ -20,6 +25,7 @@ import {
   dispatcherDelivery,
   previewCallbacksLocal,
   previewOpening,
+  previewQuoteIntake,
   testProfile,
   testVoice,
   turnDetector,
@@ -105,11 +111,7 @@ export async function POST(request: Request) {
         coachingInstructions(createAdminClient()),
       ])
     : [null, '']
-  if (
-    !session ||
-    session.status !== 'active' ||
-    !(await bindVoiceProviderCall(session.callSid, providerId))
-  ) {
+  if (!session || session.status !== 'active') {
     await client.realtime.calls.reject(providerId, { status_code: 403 })
     return new Response(null, { status: 204 })
   }
@@ -125,9 +127,25 @@ export async function POST(request: Request) {
     return new Response(null, { status: 204 })
   }
   const dispatcher = profile.startsWith('dispatcher-')
+  // Fetch public unit rates alongside the existing binding. A slow catalog
+  // falls back to the normal tool and does not hold up answering the phone.
+  const [bound, catalog] = await Promise.all([
+    bindVoiceProviderCall(session.callSid, providerId),
+    dispatcher
+      ? loadBookableCatalog(
+          createAdminClient(),
+          AbortSignal.timeout(600),
+        ).catch(() => [])
+      : [],
+  ])
+  if (!bound) {
+    await client.realtime.calls.reject(providerId, { status_code: 403 })
+    return new Response(null, { status: 204 })
+  }
   const instructions =
     phoneInstructions(session.pilot, dispatcher) +
     coaching +
+    (dispatcher ? previewQuoteIntake(catalog) : '') +
     '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
   const accept = (detector: ReturnType<typeof turnDetector>, key: string) =>
     client.realtime.calls.accept(
@@ -149,6 +167,21 @@ export async function POST(request: Request) {
             server_url: queueBaseUrl() + '/api/phone-assistant/tools',
             authorization: issueCallToken(session.callSid, 'tools'),
             require_approval: 'never',
+            ...(catalog.length &&
+            catalog.every(
+              (row) =>
+                row.base_price !== null && Number.isFinite(row.base_price),
+            )
+              ? {
+                  allowed_tools: [
+                    ...phoneTools
+                      .filter((tool) => tool.name !== 'phone_catalog')
+                      .map((tool) => tool.name),
+                    'request_flood_confirmation',
+                    'end_call',
+                  ],
+                }
+              : {}),
           },
         ],
       },

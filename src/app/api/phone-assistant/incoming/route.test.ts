@@ -3,6 +3,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 const m = vi.hoisted(() => ({
   unwrap: vi.fn(),
+  catalog: vi.fn(),
   accept: vi.fn(),
   reject: vi.fn(),
   get: vi.fn(),
@@ -10,6 +11,9 @@ const m = vi.hoisted(() => ({
   claim: vi.fn(),
   mark: vi.fn(),
   after: vi.fn(),
+}))
+vi.mock('@/lib/ops/bookable-catalog', () => ({
+  loadBookableCatalog: m.catalog,
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: () => ({}) }))
 vi.mock('@/lib/phone-assistant/coaching', () => ({
@@ -32,6 +36,7 @@ vi.mock('@/lib/phone-assistant/records', () => ({
 vi.mock('@/lib/phone-assistant/engine', () => ({
   phoneInstructions: () => 'Business rules',
   phoneGreeting: 'Test greeting',
+  phoneTools: [{ name: 'phone_catalog' }, { name: 'phone_quote' }],
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
   queueBaseUrl: () => 'https://example.com',
@@ -58,6 +63,7 @@ beforeEach(() => {
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'mock-secret')
   vi.stubEnv('OPENAI_API_KEY', 'mock-key')
   m.unwrap.mockResolvedValue(incoming(issueCallToken(sid, 'invite')))
+  m.catalog.mockResolvedValue([])
   m.bind.mockResolvedValue(true)
   m.get.mockResolvedValue({ callSid: sid, status: 'active', pilot: true })
   m.accept.mockResolvedValue(undefined)
@@ -125,4 +131,42 @@ it('assigns the one-shot greeting to just one delivery', async () => {
   await send()
   await send()
   expect(m.after).toHaveBeenCalledOnce()
+})
+
+it('answers private item pricing from current catalog data and asks for ZIP before quoting', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.catalog.mockResolvedValue([
+    {
+      id: 'sofa-id',
+      category: 'Upholstery',
+      name: 'Sofa 3 Seat',
+      base_price: 151,
+      pricing_unit: 'fixed',
+    },
+  ])
+  await send()
+  expect(m.accept.mock.calls[0][1].instructions).toContain(
+    '["sofa-id","Upholstery","Sofa 3 Seat",151,"fixed"]',
+  )
+  expect(m.accept.mock.calls[0][1].instructions).toContain(
+    'If the work is described and ZIP is missing',
+  )
+  expect(m.accept.mock.calls[0][1].tools[0].allowed_tools).toEqual([
+    'phone_quote',
+    'request_flood_confirmation',
+    'end_call',
+  ])
+  vi.stubEnv('VERCEL_ENV', 'production')
+  await send()
+  expect(m.catalog).toHaveBeenCalledTimes(1)
+  expect(m.accept.mock.calls[1][1].instructions).not.toContain('sofa-id')
+})
+it('keeps live lookup available when the preview catalog is unavailable', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.catalog.mockRejectedValue(Error('timeout'))
+  expect((await send()).status).toBe(204)
+  expect(m.accept.mock.calls[0][1].instructions).not.toContain(
+    'Current public catalog rows',
+  )
+  expect(m.accept.mock.calls[0][1].tools[0].allowed_tools).toBeUndefined()
 })
