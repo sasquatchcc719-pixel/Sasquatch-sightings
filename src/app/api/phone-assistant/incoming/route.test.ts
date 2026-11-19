@@ -25,6 +25,7 @@ vi.mock('@/lib/phone-assistant/records', () => ({
 }))
 vi.mock('@/lib/phone-assistant/engine', () => ({
   phoneInstructions: () => 'Business rules',
+  phoneGreeting: 'Test greeting',
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
   queueBaseUrl: () => 'https://example.com',
@@ -71,6 +72,7 @@ it('accepts an authenticated call with interruptible audio and call-scoped tools
     'rtc_1',
     expect.objectContaining({
       audio: expect.objectContaining({
+        output: { voice: 'cedar', speed: 0.97 },
         input: {
           turn_detection: expect.objectContaining({ interrupt_response: true }),
         },

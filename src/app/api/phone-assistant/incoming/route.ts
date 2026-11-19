@@ -10,7 +10,7 @@ import {
   markVoiceAnswered,
   getVoiceSession,
 } from '@/lib/phone-assistant/records'
-import { phoneInstructions } from '@/lib/phone-assistant/engine'
+import { phoneGreeting, phoneInstructions } from '@/lib/phone-assistant/engine'
 import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
 
 export const maxDuration = 30
@@ -33,8 +33,7 @@ async function greet(providerId: string) {
         JSON.stringify({
           type: 'response.create',
           response: {
-            instructions:
-              'Greet the caller warmly as Harry, the virtual assistant for Sasquatch Carpet Cleaning, and ask how you can help. Keep it to one short sentence.',
+            instructions: phoneGreeting,
           },
         }),
       ),
@@ -88,7 +87,7 @@ export async function POST(request: Request) {
   }
   const instructions =
     phoneInstructions(session.pilot) +
-    '\nYou are speaking live. Use a warm American voice. Pause for corrections. Ask one question at a time. When a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
+    '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
   try {
     await client.realtime.calls.accept(
       providerId,
@@ -106,7 +105,7 @@ export async function POST(request: Request) {
               create_response: true,
             },
           },
-          output: { voice: 'cedar' },
+          output: { voice: 'cedar', speed: 0.97 },
         },
         tools: [
           {
