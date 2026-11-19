@@ -79,7 +79,10 @@ it('accepts an authenticated call with interruptible audio and call-scoped tools
       audio: expect.objectContaining({
         output: { voice: 'cedar', speed: 0.97 },
         input: {
-          turn_detection: expect.objectContaining({ interrupt_response: true }),
+          turn_detection: expect.objectContaining({
+            interrupt_response: true,
+            silence_duration_ms: 500,
+          }),
         },
       }),
       tools: [

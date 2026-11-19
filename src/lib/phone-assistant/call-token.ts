@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 
 type Purpose = 'invite' | 'tools'
 
-function signature(payload: string, purpose: Purpose) {
+function signature(payload: string, purpose: Purpose | 'quote-duration') {
   const key = process.env.HARRY_VOICE_WEBHOOK_SECRET
   if (!key) throw new Error('Missing phone assistant signing configuration')
   return createHmac('sha256', key)
@@ -27,5 +27,24 @@ export function verifyCallToken(
   const expected = signature(match[1] + '.' + match[2], purpose)
   return timingSafeEqual(Buffer.from(expected), Buffer.from(match[3]))
     ? match[1]
+    : null
+}
+
+// This reference attests only to a job length for a read-only calendar search.
+// The separate booking tool always reprices and checks the full service request.
+export function issueQuoteRef(callSid: string, minutes: number) {
+  const tag = signature(callSid + '.' + minutes, 'quote-duration').slice(0, 16)
+  return minutes + '.' + tag
+}
+
+export function quotedMinutes(callSid: string, ref: string): number | null {
+  const match = /^([1-9]\d{0,2})\.[A-Za-z0-9_-]{16}$/.exec(ref)
+  if (!match) return null
+  const minutes = Number(match[1])
+  return timingSafeEqual(
+    Buffer.from(ref),
+    Buffer.from(issueQuoteRef(callSid, minutes)),
+  )
+    ? minutes
     : null
 }

@@ -73,7 +73,7 @@ export async function beginVoiceSession(input: {
   callSid: string
   callerPhone: string
   pilot: boolean
-}): Promise<VoiceSession> {
+}): Promise<void> {
   const db = createAdminClient()
   const { error } = await db.rpc('begin_phone_assistant_session', {
     p_sid: input.callSid,
@@ -81,9 +81,6 @@ export async function beginVoiceSession(input: {
     p_pilot: input.pilot,
   })
   if (error) throw error
-  const session = await getVoiceSession(input.callSid, db)
-  if (!session) throw new Error('Voice session could not be loaded')
-  return session
 }
 
 export async function appendVoiceTranscript(input: {

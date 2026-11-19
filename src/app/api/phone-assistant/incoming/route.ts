@@ -78,7 +78,12 @@ export async function POST(request: Request) {
     ''
   if (!invite) return new Response(null, { status: 204 })
   const callSid = verifyCallToken(invite, 'invite')
-  const session = callSid && (await getVoiceSessionDetails(callSid))
+  const [session, coaching] = callSid
+    ? await Promise.all([
+        getVoiceSessionDetails(callSid),
+        coachingInstructions(createAdminClient()),
+      ])
+    : [null, '']
   if (
     !session ||
     session.status !== 'active' ||
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
   }
   const instructions =
     phoneInstructions(session.pilot) +
-    (await coachingInstructions(createAdminClient())) +
+    coaching +
     '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
   try {
     await client.realtime.calls.accept(
@@ -102,7 +107,7 @@ export async function POST(request: Request) {
           input: {
             turn_detection: {
               type: 'server_vad',
-              silence_duration_ms: 650,
+              silence_duration_ms: 500,
               idle_timeout_ms: 12000,
               interrupt_response: true,
               create_response: true,

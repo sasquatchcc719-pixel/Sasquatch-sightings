@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 const deps = vi.hoisted(() => ({
   db: vi.fn(),
@@ -54,7 +54,9 @@ const booking = {
   customer_confirmed: true,
   accepted_minimum_charge: false,
 }
+afterEach(() => vi.unstubAllEnvs())
 beforeEach(() => {
+  vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'test-key')
   vi.resetAllMocks()
   deps.db.mockReturnValue({})
   deps.catalog.mockResolvedValue([
@@ -67,7 +69,7 @@ beforeEach(() => {
 })
 describe('customer voice preview', () => {
   it('publishes only valid read and simulation tool schemas', () => {
-    expect(phoneTools).toHaveLength(6)
+    expect(phoneTools).toHaveLength(7)
     for (const t of phoneTools)
       expect(z.toJSONSchema(t.inputSchema).type).toBe('object')
   })
@@ -247,6 +249,55 @@ describe('customer voice preview', () => {
         ctx,
       ),
     ).toMatchObject({ date: '2100-01-07', times: ['11:00'] })
+  })
+  it('uses the verified duration for a quoted availability lookup without repricing', async () => {
+    const q = (await runPhoneTool('phone_quote', service, ctx)) as {
+      quote_ref: string
+    }
+    expect(q.quote_ref).toBeTruthy()
+    const request = {
+      quote_ref: q.quote_ref,
+      appointment_date: slot.appointment_date,
+    }
+    expect(
+      await runPhoneTool('phone_quoted_openings', request, ctx),
+    ).toMatchObject({ times: ['09:00'] })
+    expect(deps.catalog).toHaveBeenCalledTimes(1)
+    expect(deps.slots.mock.calls[0][0]).toMatchObject({ requiredMinutes: 120 })
+    expect(
+      await runPhoneTool('phone_quoted_openings', request, {
+        ...ctx,
+        callSid: 'different',
+      }),
+    ).toHaveProperty('error')
+    expect(
+      await runPhoneTool(
+        'phone_quoted_openings',
+        { ...request, quote_ref: q.quote_ref.replace('120.', '240.') },
+        ctx,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.slots).toHaveBeenCalledTimes(1)
+  })
+  it('only trusts an opening after all earlier dates in its batch were checked', async () => {
+    const request = {
+      visit_type: slot.visit_type,
+      zip_code: slot.zip_code,
+      search_from: slot.appointment_date,
+      service,
+    }
+    deps.slots.mockRejectedValueOnce(Error('calendar unavailable'))
+    expect(await runPhoneTool('phone_openings', request, ctx)).toHaveProperty(
+      'error',
+    )
+    deps.slots
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ start_time: '11:00:00' }])
+      .mockRejectedValueOnce(Error('later day unavailable'))
+    expect(await runPhoneTool('phone_openings', request, ctx)).toMatchObject({
+      date: '2099-07-02',
+      times: ['11:00'],
+    })
   })
   it('requires separate attribution for LSA and returns two conditional totals when unclear', async () => {
     const input = { ...service, lead_source: 'google_lsa' }
