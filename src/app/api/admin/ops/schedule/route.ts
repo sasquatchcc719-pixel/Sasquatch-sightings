@@ -12,7 +12,9 @@ const APPOINTMENT_SELECT = `
     last_name,
     business_name,
     email,
-    phone
+    phone,
+    is_commercial,
+    billing_mode
   ),
   ops_service_addresses (
     id,
@@ -45,7 +47,11 @@ const APPOINTMENT_SELECT = `
     sync_status,
     subtotal,
     total,
-    quickbooks_invoice_id
+    quickbooks_invoice_id,
+    ops_invoice_email_deliveries (
+      status,
+      sent_at
+    )
   ),
   tomorrow_fill_recipients!ops_appointments_tomorrow_fill_recipient_id_fkey (
     id,

@@ -116,11 +116,15 @@ export type Appointment = {
         full_name: string
         business_name: string | null
         phone: string | null
+        is_commercial?: boolean | null
+        billing_mode?: string | null
       }
     | Array<{
         full_name: string
         business_name: string | null
         phone: string | null
+        is_commercial?: boolean | null
+        billing_mode?: string | null
       }>
     | null
   ops_service_addresses:
@@ -165,6 +169,11 @@ export type Appointment = {
         total?: number
         payment_status?: string
         payment_method?: string | null
+        quickbooks_invoice_id?: string | null
+        ops_invoice_email_deliveries?:
+          | { status: string; sent_at: string | null }
+          | Array<{ status: string; sent_at: string | null }>
+          | null
       }
     | Array<{
         id: string
@@ -172,6 +181,11 @@ export type Appointment = {
         total?: number
         payment_status?: string
         payment_method?: string | null
+        quickbooks_invoice_id?: string | null
+        ops_invoice_email_deliveries?:
+          | { status: string; sent_at: string | null }
+          | Array<{ status: string; sent_at: string | null }>
+          | null
       }>
     | null
 }

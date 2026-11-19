@@ -53,7 +53,7 @@ type OpsStats = {
   totalRevenue: number
   averageTicket: number
   statusCounts: Record<string, number>
-  paymentStatusCounts: Record<string, number>
+  invoicesSentCount: number
   leadSourceCounts: Record<string, number>
 }
 
@@ -2950,13 +2950,13 @@ export default function StatsPage() {
               <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
                 <div className="mb-1 flex items-center gap-2 text-amber-400/80">
                   <Target className="h-4 w-4" />
-                  <p className="text-sm font-medium">Unpaid</p>
+                  <p className="text-sm font-medium">Invoices Sent</p>
                 </div>
                 <p className="stat-value text-2xl font-bold text-amber-300">
-                  {opsStats.paymentStatusCounts['unpaid'] ?? 0}
+                  {opsStats.invoicesSentCount}
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  invoices outstanding
+                  verified email sends
                 </p>
               </Card>
             </div>

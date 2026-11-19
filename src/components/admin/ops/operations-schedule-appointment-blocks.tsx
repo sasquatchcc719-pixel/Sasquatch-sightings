@@ -104,7 +104,49 @@ function paymentMethodChip(appointment: Appointment) {
       </span>
     )
   }
+  const customer = unwrapRelation(appointment.ops_customers)
   const invoice = unwrapRelation(appointment.ops_invoices)
+  const isCommercial = Boolean(
+    customer?.is_commercial || customer?.business_name?.trim(),
+  )
+  if (isCommercial) {
+    if (customer?.billing_mode === 'monthly_consolidated') {
+      return (
+        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+          Monthly billing
+        </span>
+      )
+    }
+    if (!invoice) {
+      return (
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800">
+          Invoice pending
+        </span>
+      )
+    }
+    const deliveries = Array.isArray(invoice.ops_invoice_email_deliveries)
+      ? invoice.ops_invoice_email_deliveries
+      : invoice.ops_invoice_email_deliveries
+        ? [invoice.ops_invoice_email_deliveries]
+        : []
+    const wasSent =
+      invoice.status === 'sent' ||
+      deliveries.some(
+        (delivery) => delivery.status === 'sent' && delivery.sent_at,
+      )
+    if (wasSent) {
+      return (
+        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+          Invoice sent
+        </span>
+      )
+    }
+    return (
+      <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">
+        Invoiced
+      </span>
+    )
+  }
   if (!invoice) return null
   const raw = invoice.payment_method?.trim().toLowerCase()
   const isPaid = invoice.payment_status?.trim().toLowerCase() === 'paid'

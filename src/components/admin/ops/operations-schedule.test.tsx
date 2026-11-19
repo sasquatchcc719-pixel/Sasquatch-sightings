@@ -472,6 +472,70 @@ describe('collapsible weekend schedule', () => {
     expect(within(ordinaryCard).getByText('Lead: Google')).toBeVisible()
     expect(within(ordinaryCard).getByText('Booked: Admin')).toBeVisible()
   })
+
+  it('shows invoice workflow labels instead of payment status for commercial work', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    )
+    mockSchedule(1, [
+      {
+        ...saturdayJob,
+        id: 'saltgrass-job',
+        kind: 'service',
+        restoration_project_id: null,
+        visit_type: null,
+        status: 'completed',
+        assigned_staff_user_id: 'staff-0',
+        ops_customers: {
+          full_name: 'Saltgrass Billing',
+          business_name: 'Saltgrass Colorado Springs',
+          is_commercial: true,
+          billing_mode: 'immediate',
+        },
+        ops_invoices: {
+          id: 'saltgrass-invoice',
+          status: 'ready',
+          payment_status: 'unpaid',
+          payment_method: null,
+          total: 1049.94,
+          quickbooks_invoice_id: '7229',
+          ops_invoice_email_deliveries: {
+            status: 'sent',
+            sent_at: '2026-09-13T01:00:00Z',
+          },
+        },
+      },
+      {
+        ...saturdayJob,
+        id: 'recovery-village-job',
+        kind: 'service',
+        restoration_project_id: null,
+        visit_type: null,
+        start_time: '11:00:00',
+        end_time: '12:00:00',
+        status: 'completed',
+        assigned_staff_user_id: 'staff-0',
+        ops_customers: {
+          full_name: 'Recovery Village Billing',
+          business_name: 'Recovery Village',
+          is_commercial: true,
+          billing_mode: 'monthly_consolidated',
+        },
+        ops_invoices: null,
+      },
+    ])
+
+    render(<OperationsSchedule />)
+
+    expect(await screen.findByText('Invoice sent')).toBeInTheDocument()
+    expect(screen.getByText('Monthly billing')).toBeInTheDocument()
+    expect(screen.queryByText('Unpaid')).not.toBeInTheDocument()
+  })
 })
 
 describe('commercial estimate scheduling', () => {

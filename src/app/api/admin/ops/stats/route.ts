@@ -42,7 +42,8 @@ export async function GET() {
         quoted_total,
         ops_invoices (
           total,
-          payment_status,
+          status,
+          ops_invoice_email_deliveries ( status, sent_at ),
           ops_invoice_line_items ( line_total )
         )
       `,
@@ -58,7 +59,7 @@ export async function GET() {
     // Revenue: sum invoice totals (only jobs that have an invoice)
     let totalRevenue = 0
     let invoicedJobCount = 0
-    const paymentStatusCounts: Record<string, number> = {}
+    let invoicesSentCount = 0
 
     for (const appt of rows) {
       const invoices = Array.isArray(appt.ops_invoices)
@@ -85,8 +86,19 @@ export async function GET() {
           kind: (appt as { kind?: string | null }).kind,
         })
         invoicedJobCount++
-        const ps = String(inv.payment_status || 'unpaid')
-        paymentStatusCounts[ps] = (paymentStatusCounts[ps] ?? 0) + 1
+        const deliveries = Array.isArray(inv.ops_invoice_email_deliveries)
+          ? inv.ops_invoice_email_deliveries
+          : inv.ops_invoice_email_deliveries
+            ? [inv.ops_invoice_email_deliveries]
+            : []
+        if (
+          inv.status === 'sent' ||
+          deliveries.some(
+            (delivery) => delivery.status === 'sent' && delivery.sent_at,
+          )
+        ) {
+          invoicesSentCount++
+        }
       }
     }
 
@@ -132,7 +144,7 @@ export async function GET() {
       totalRevenue,
       averageTicket,
       statusCounts,
-      paymentStatusCounts,
+      invoicesSentCount,
       leadSourceCounts,
     })
   } catch (error) {
