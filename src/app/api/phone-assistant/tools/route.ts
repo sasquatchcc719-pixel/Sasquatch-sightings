@@ -1,9 +1,18 @@
-import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
+import {
+  createMcpHandler,
+  McpServer,
+  type ServerContext,
+} from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { verifyCallToken } from '@/lib/phone-assistant/call-token'
 import { phoneTools, runPhoneTool } from '@/lib/phone-assistant/engine'
-import { getVoiceSessionDetails } from '@/lib/phone-assistant/records'
+import { testProfile } from '@/lib/phone-assistant/preview-profile'
+import {
+  getVoiceSessionDetails,
+  latestPreviewCallerTurn,
+  previewExitClaim,
+} from '@/lib/phone-assistant/records'
 import { queueBaseUrl, queueClient } from '@/lib/twilio/appointment-queue'
 
 export async function POST(request: Request) {
@@ -16,6 +25,46 @@ export async function POST(request: Request) {
   if (!session || session.status !== 'active' || !session.providerCallId)
     return new Response('Call is inactive', { status: 403 })
 
+  const authorizedSid = callSid
+  const guarded = testProfile(session.pilot).startsWith('dispatcher-')
+  const discard = () => ({
+    content: [
+      {
+        type: 'text' as const,
+        text: 'Obsolete tool turn. Discard this result silently and follow the latest caller request.',
+      },
+    ],
+  })
+  async function fresh(
+    signal: AbortSignal,
+    run: () => Promise<{ content: { type: 'text'; text: string }[] }>,
+    exit = false,
+  ) {
+    if (!guarded) return run()
+    const cancelled = () => signal.aborted || request.signal.aborted
+    if (cancelled()) return discard()
+    const start = await latestPreviewCallerTurn(authorizedSid)
+    if (cancelled()) return discard()
+    if (exit) {
+      if (!(await previewExitClaim(authorizedSid))) return discard()
+      if (
+        (await latestPreviewCallerTurn(authorizedSid)) !== start ||
+        cancelled()
+      ) {
+        await previewExitClaim(authorizedSid, true)
+        return discard()
+      }
+      return run()
+    }
+    const result = await run()
+    if (
+      (await latestPreviewCallerTurn(authorizedSid)) !== start ||
+      (await getVoiceSessionDetails(authorizedSid))?.status !== 'active' ||
+      cancelled()
+    )
+      return discard()
+    return result
+  }
   const context = {
     callSid,
     callerPhone: session.callerPhone,
@@ -31,35 +80,36 @@ export async function POST(request: Request) {
         server.registerTool(
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema },
-          async (input: unknown) => {
-            try {
-              const result = await runPhoneTool(
-                tool.name,
-                input as Record<string, unknown>,
-                context,
-              )
-              return {
-                content: [
-                  { type: 'text' as const, text: JSON.stringify(result) },
-                ],
+          async (input: unknown, extra: ServerContext) =>
+            fresh(extra.mcpReq.signal, async () => {
+              try {
+                const result = await runPhoneTool(
+                  tool.name,
+                  input as Record<string, unknown>,
+                  context,
+                )
+                return {
+                  content: [
+                    { type: 'text' as const, text: JSON.stringify(result) },
+                  ],
+                }
+              } catch {
+                console.error(
+                  '[Phone assistant] Customer tool unavailable',
+                  callSid,
+                  tool.name,
+                )
+                return {
+                  isError: true,
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: 'Lookup failed. Offer to take a message. Never confirm an unverified price or booking.',
+                    },
+                  ],
+                }
               }
-            } catch {
-              console.error(
-                '[Phone assistant] Customer tool unavailable',
-                callSid,
-                tool.name,
-              )
-              return {
-                isError: true,
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'Lookup failed. Offer to take a message. Never confirm an unverified price or booking.',
-                  },
-                ],
-              }
-            }
-          },
+            }),
         )
       }
       server.registerTool(
@@ -69,30 +119,35 @@ export async function POST(request: Request) {
             'For an active flood or water actively entering a property, ask the caller to confirm with the emergency keypad. Only that explicit confirmation can ring staff. A request for a person is a callback message.',
           inputSchema: z.object({}),
         },
-        async () => {
-          const menu = session.pilot ? 'harry-preview' : 'harry-public'
-          await queueClient()
-            .calls(callSid)
-            .update({
-              twiml:
-                '<Response><Stop><Transcription name="harry"/></Stop><Redirect method="POST">' +
-                escapeTwiml(
-                  queueBaseUrl() +
-                    '/api/twilio/ivr-menu?context=' +
-                    menu +
-                    '&flood=prompt',
-                ) +
-                '</Redirect></Response>',
-            })
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'Emergency keypad confirmation requested.',
-              },
-            ],
-          }
-        },
+        async (_input, extra) =>
+          fresh(
+            extra.mcpReq.signal,
+            async () => {
+              const menu = session.pilot ? 'harry-preview' : 'harry-public'
+              await queueClient()
+                .calls(callSid)
+                .update({
+                  twiml:
+                    '<Response><Stop><Transcription name="harry"/></Stop><Redirect method="POST">' +
+                    escapeTwiml(
+                      queueBaseUrl() +
+                        '/api/twilio/ivr-menu?context=' +
+                        menu +
+                        '&flood=prompt',
+                    ) +
+                    '</Redirect></Response>',
+                })
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Emergency keypad confirmation requested.',
+                  },
+                ],
+              }
+            },
+            true,
+          ),
       )
       server.registerTool(
         'end_call',
@@ -101,12 +156,17 @@ export async function POST(request: Request) {
             'End this call after saying goodbye, including after politely declining a sales pitch.',
           inputSchema: z.object({}),
         },
-        async () => {
-          await queueClient()
-            .calls(callSid)
-            .update({ twiml: '<Response><Hangup/></Response>' })
-          return { content: [{ type: 'text', text: 'Call ended.' }] }
-        },
+        async (_input, extra) =>
+          fresh(
+            extra.mcpReq.signal,
+            async () => {
+              await queueClient()
+                .calls(callSid)
+                .update({ twiml: '<Response><Hangup/></Response>' })
+              return { content: [{ type: 'text', text: 'Call ended.' }] }
+            },
+            true,
+          ),
       )
       return server
     },

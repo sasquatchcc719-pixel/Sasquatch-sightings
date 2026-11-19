@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   reject: vi.fn(),
   get: vi.fn(),
   bind: vi.fn(),
+  claim: vi.fn(),
   mark: vi.fn(),
   after: vi.fn(),
 }))
@@ -25,6 +26,7 @@ vi.mock('next/server', () => ({ after: m.after }))
 vi.mock('@/lib/phone-assistant/records', () => ({
   getVoiceSessionDetails: m.get,
   bindVoiceProviderCall: m.bind,
+  claimPreviewOpening: m.claim,
   markVoiceAnswered: m.mark,
 }))
 vi.mock('@/lib/phone-assistant/engine', () => ({
@@ -100,4 +102,27 @@ it('does not classify a failed connection as answered', async () => {
   m.accept.mockRejectedValueOnce(Error('provider unavailable'))
   expect((await send()).status).toBe(503)
   expect(m.mark).not.toHaveBeenCalled()
+})
+it('only retries explicit semantic detector validation failures', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'detector-medium')
+  m.accept.mockRejectedValueOnce(
+    Object.assign(Error('unsupported turn_detection'), { status: 422 }),
+  )
+  expect((await send()).status).toBe(204)
+  expect(
+    m.accept.mock.calls.map(([, body]) => body.audio.input.turn_detection.type),
+  ).toEqual(['semantic_vad', 'server_vad'])
+  expect(m.accept.mock.calls[1][2].headers['Idempotency-Key']).toBe(
+    'evt_test-server-vad',
+  )
+  m.accept.mockReset().mockRejectedValueOnce(Error('timeout'))
+  expect((await send()).status).toBe(503)
+  expect(m.accept).toHaveBeenCalledOnce()
+})
+it('assigns the one-shot greeting to just one delivery', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.claim.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+  await send()
+  await send()
+  expect(m.after).toHaveBeenCalledOnce()
 })

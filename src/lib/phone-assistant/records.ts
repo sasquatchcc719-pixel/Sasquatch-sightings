@@ -151,3 +151,51 @@ export async function markVoiceAnswered(
   if (error) throw error
   return data === true
 }
+
+// Claim before scheduling the one-off candidate greeting. The normal answered
+// RPC still handles call-log bookkeeping, including when a webhook is replayed.
+export async function claimPreviewOpening(callSid: string, providerId: string) {
+  const { data, error } = await createAdminClient()
+    .from(recordTable)
+    .update({ answered_at: new Date().toISOString() })
+    .eq('call_sid', callSid)
+    .eq('provider_call_id', providerId)
+    .eq('pilot', true)
+    .is('answered_at', null)
+    .is('ended_at', null)
+    .select('call_sid')
+    .maybeSingle()
+  if (error) throw error
+  return !!data
+}
+
+export async function latestPreviewCallerTurn(callSid: string) {
+  const { data, error } = await createAdminClient()
+    .from('phone_assistant_transcript')
+    .select('sequence')
+    .eq('call_sid', callSid)
+    .eq('role', 'user')
+    .order('sequence', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data?.sequence ?? null
+}
+
+// The two Twilio commands both end the assistant leg. One concurrent request
+// may take it out of assistant-answered; normal call reconciliation records
+// the actual final outcome. Never retry an ambiguous provider dispatch.
+export async function previewExitClaim(callSid: string, release = false) {
+  const pending = 'assistant-preview-exit-requested'
+  const { data, error } = await createAdminClient()
+    .from('call_logs')
+    .update({ outcome: release ? 'assistant-answered' : pending })
+    .eq('call_sid', callSid)
+    .eq('voice_preview', true)
+    .eq('voice_assistant_answered', true)
+    .eq('outcome', release ? pending : 'assistant-answered')
+    .select('call_sid')
+    .maybeSingle()
+  if (error) throw error
+  return !!data
+}

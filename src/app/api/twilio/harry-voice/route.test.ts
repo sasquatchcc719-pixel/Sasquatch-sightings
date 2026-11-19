@@ -114,3 +114,13 @@ it('stores final words with their speaker and sequence only', async () => {
     content: 'Three bedrooms.',
   })
 })
+it('retains the transcription notice before SIP on the dispatcher preview', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  expect(await (await send('start&preview=1')).text()).toContain(
+    '<Say>This call is transcribed.</Say><Start>',
+  )
+  vi.stubEnv('VERCEL_ENV', 'production')
+  expect(await (await send('start&preview=1')).text()).toContain(
+    'Bookings and transfers are simulated.',
+  )
+})

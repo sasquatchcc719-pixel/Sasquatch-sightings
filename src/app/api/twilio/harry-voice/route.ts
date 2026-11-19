@@ -10,6 +10,10 @@ import {
   isHarryPreviewCall,
   isHarryMainNumber,
 } from '@/lib/twilio/harry-access'
+import {
+  testProfile,
+  previewCallbacksLocal,
+} from '@/lib/phone-assistant/preview-profile'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import {
   appendVoiceTranscript,
@@ -99,6 +103,12 @@ export async function POST(request: NextRequest) {
     const project = process.env.HARRY_VOICE_PROJECT_ID?.trim()
     if (!project || !/^proj_[a-zA-Z0-9_-]+$/.test(project))
       throw new Error('Missing project')
+    const profile = testProfile(pilot)
+    if (
+      profile !== 'current' &&
+      !previewCallbacksLocal(request.url, queueBaseUrl())
+    )
+      throw new Error('Invalid preview callback origin')
     const invite = issueCallToken(callSid, 'invite')
     const base = queueBaseUrl() + '/api/twilio/harry-voice'
     const sip =
@@ -107,9 +117,11 @@ export async function POST(request: NextRequest) {
       '@sip.api.openai.com;transport=tls;secure=true?X-Sightings-Invite=' +
       invite
     await beginVoiceSession({ callSid, callerPhone, pilot })
-    const notice = pilot
-      ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
-      : 'This call with our virtual assistant is transcribed.'
+    const notice = profile.startsWith('dispatcher-')
+      ? 'This call is transcribed.'
+      : pilot
+        ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
+        : 'This call with our virtual assistant is transcribed.'
     return xml(
       '<Say>' +
         notice +

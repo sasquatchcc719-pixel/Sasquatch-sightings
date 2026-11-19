@@ -1,9 +1,17 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
-const m = vi.hoisted(() => ({ read: vi.fn(), run: vi.fn(), update: vi.fn() }))
+const m = vi.hoisted(() => ({
+  read: vi.fn(),
+  sequence: vi.fn(),
+  claim: vi.fn(),
+  run: vi.fn(),
+  update: vi.fn(),
+}))
 vi.mock('@/lib/phone-assistant/records', () => ({
   getVoiceSessionDetails: m.read,
+  latestPreviewCallerTurn: m.sequence,
+  previewExitClaim: m.claim,
 }))
 vi.mock('@/lib/phone-assistant/engine', async () => {
   const { z } = await import('zod')
@@ -107,4 +115,39 @@ it('denies an invite token or a closed session before calling tools', async () =
   m.read.mockResolvedValue({ status: 'ended', providerCallId: 'rtc_1' })
   expect((await send('tools/list', {})).status).toBe(403)
   expect(m.run).not.toHaveBeenCalled()
+})
+it('withholds old lookup details after a correction or disconnect', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.sequence.mockResolvedValueOnce(1).mockResolvedValueOnce(2)
+  m.run.mockResolvedValue({ slot: 'Thursday' })
+  const lookup = () =>
+    send('tools/call', { name: 'lookup', arguments: { name: 'Cleaning' } })
+  expect((await rpcResult(await lookup())).result.content[0].text).toContain(
+    'Discard',
+  )
+  m.sequence.mockResolvedValue(2)
+  m.run.mockImplementationOnce(async () => {
+    m.read.mockResolvedValueOnce({ status: 'ended' })
+    return { slot: 'Thursday' }
+  })
+  expect((await rpcResult(await lookup())).result.content[0].text).toContain(
+    'Discard',
+  )
+})
+it('dispatches at most one terminal command across retries', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.sequence.mockResolvedValue(1)
+  m.claim.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+  for (const name of ['request_flood_confirmation', 'end_call']) {
+    await send('tools/call', { name, arguments: {} })
+  }
+  expect(m.update).toHaveBeenCalledOnce()
+})
+it('releases an undispatched command if the caller corrects it', async () => {
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  m.sequence.mockResolvedValueOnce(1).mockResolvedValueOnce(2)
+  m.claim.mockResolvedValue(true)
+  await send('tools/call', { name: 'end_call', arguments: {} })
+  expect(m.claim).toHaveBeenLastCalledWith(sid, true)
+  expect(m.update).not.toHaveBeenCalled()
 })
