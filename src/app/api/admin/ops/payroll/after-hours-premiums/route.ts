@@ -6,7 +6,7 @@ import {
   AFTER_HOURS_PREMIUM_RATE,
   computeAfterHoursMinutes,
   computePremiumPay,
-  isRecoveryVillage,
+  isAfterHoursPremiumCustomer,
 } from '@/lib/ops/after-hours-premium'
 
 function jsonError(message: string, status: number) {
@@ -82,7 +82,7 @@ type QualifyingJob = {
 }
 
 /**
- * Find completed Recovery Village jobs, assigned to a field tech, whose real
+ * Find completed premium-eligible commercial jobs, assigned to a field tech, whose real
  * worked window (Start Job -> Complete) ran past 5pm, within a date range.
  */
 async function findQualifyingJobs(
@@ -138,7 +138,7 @@ async function findQualifyingJobs(
   const jobs: QualifyingJob[] = []
   for (const row of rows) {
     const customer = unwrap(row.ops_customers)
-    if (!isRecoveryVillage(customer?.business_name)) continue
+    if (!isAfterHoursPremiumCustomer(customer?.business_name)) continue
 
     const staff = staffById.get(row.assigned_staff_user_id as string)
     // Premium is for the field tech, never the owner doing the job himself.
@@ -272,8 +272,8 @@ export async function POST(request: NextRequest) {
       return jsonError('Job is not completed', 400)
     }
     const customer = unwrap(appt.ops_customers)
-    if (!isRecoveryVillage(customer?.business_name)) {
-      return jsonError('Job is not a Recovery Village job', 400)
+    if (!isAfterHoursPremiumCustomer(customer?.business_name)) {
+      return jsonError('Job is not eligible for an after-hours premium', 400)
     }
     if (!appt.assigned_staff_user_id) {
       return jsonError('Job has no assigned tech', 400)

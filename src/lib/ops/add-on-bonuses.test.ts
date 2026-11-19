@@ -149,6 +149,7 @@ describe('loadAddOnBonuses', () => {
       })
       expect(summary.earnedBonus).toBe(6.6)
       expect(summary.rows).toHaveLength(1)
+      expect(summary.rows[0].invoiceId).toBe(`invoice-${bonusAppointment}`)
       expect(filters.every((filter) => filter.ids.length <= 50)).toBe(true)
       expect(
         filters
@@ -190,6 +191,7 @@ describe('loadAddOnBonuses', () => {
       })
       expect(summary.rows).toHaveLength(1)
       expect(summary.rows[0]).toMatchObject({
+        invoiceId: expect.stringMatching(/^invoice-/),
         category: 'invoice_growth',
         eligibleRevenue: 100,
         bonusAmount: 10,

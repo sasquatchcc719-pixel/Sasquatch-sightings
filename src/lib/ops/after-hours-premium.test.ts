@@ -2,19 +2,24 @@ import { describe, it, expect } from 'vitest'
 import {
   computeAfterHoursMinutes,
   computePremiumPay,
-  isRecoveryVillage,
+  isAfterHoursPremiumCustomer,
 } from './after-hours-premium'
 
-describe('isRecoveryVillage', () => {
-  it('matches despite trailing space / case', () => {
-    expect(isRecoveryVillage('Recovery Village ')).toBe(true)
-    expect(isRecoveryVillage('recovery village')).toBe(true)
-    expect(isRecoveryVillage('Recovery Village')).toBe(true)
+describe('isAfterHoursPremiumCustomer', () => {
+  it('matches Recovery Village and Saltgrass despite trailing space / case', () => {
+    expect(isAfterHoursPremiumCustomer('Recovery Village ')).toBe(true)
+    expect(isAfterHoursPremiumCustomer('recovery village')).toBe(true)
+    expect(isAfterHoursPremiumCustomer('Recovery Village')).toBe(true)
+    expect(isAfterHoursPremiumCustomer('Saltgrass Colorado Springs')).toBe(true)
+    expect(isAfterHoursPremiumCustomer('SALTGRASS COLORADO SPRINGS ')).toBe(
+      true,
+    )
   })
   it('rejects other customers', () => {
-    expect(isRecoveryVillage('Levis Custom Clean')).toBe(false)
-    expect(isRecoveryVillage(null)).toBe(false)
-    expect(isRecoveryVillage(undefined)).toBe(false)
+    expect(isAfterHoursPremiumCustomer('Levis Custom Clean')).toBe(false)
+    expect(isAfterHoursPremiumCustomer('Saltgrass Denver')).toBe(false)
+    expect(isAfterHoursPremiumCustomer(null)).toBe(false)
+    expect(isAfterHoursPremiumCustomer(undefined)).toBe(false)
   })
 })
 

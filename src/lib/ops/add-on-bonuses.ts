@@ -19,6 +19,7 @@ export const ADD_ON_BONUS_CATEGORY_LABELS: Record<AddOnBonusCategory, string> =
 export type AddOnBonusRow = {
   key: string
   appointmentId: string
+  invoiceId: string | null
   appointmentDate: string
   staffUserId: string
   staffName: string
@@ -467,6 +468,7 @@ export async function loadAddOnBonuses(
     rows.push({
       key,
       appointmentId: group.appointmentId,
+      invoiceId: invoice?.id ?? null,
       appointmentDate: appointment.appointment_date,
       staffUserId: group.staffUserId,
       staffName: staffById.get(group.staffUserId) || 'Unknown technician',
@@ -497,6 +499,7 @@ export async function loadAddOnBonuses(
     rows.push({
       key: `${appointment.id}:${staffUserId}:invoice_growth`,
       appointmentId: appointment.id,
+      invoiceId: invoice.id,
       appointmentDate: appointment.appointment_date,
       staffUserId,
       staffName: staffById.get(staffUserId) || 'Unknown technician',

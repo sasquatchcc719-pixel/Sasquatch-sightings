@@ -254,6 +254,7 @@ type PremiumRow = {
 type AddOnBonusRow = {
   key: string
   appointmentId: string
+  invoiceId: string | null
   appointmentDate: string
   staffUserId: string
   staffName: string
@@ -1389,8 +1390,8 @@ export function PayrollTimesheetsView() {
 
       {premiumsQuery.isError && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Recovery Village premium check failed. Refresh payroll after the issue
-          is fixed so after-hours bonuses can be reviewed.
+          Commercial premium check failed. Refresh payroll after the issue is
+          fixed so after-hours bonuses can be reviewed.
         </div>
       )}
 
@@ -1546,9 +1547,18 @@ export function PayrollTimesheetsView() {
                   className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">
-                      {bonus.staffName} · {bonus.customerName}
-                    </p>
+                    {bonus.invoiceId ? (
+                      <a
+                        href={`/admin/operations/invoices/${bonus.invoiceId}`}
+                        className="text-sm font-medium text-white underline-offset-2 hover:underline"
+                      >
+                        {bonus.staffName} · {bonus.customerName}
+                      </a>
+                    ) : (
+                      <p className="text-sm font-medium text-white">
+                        {bonus.staffName} · {bonus.customerName}
+                      </p>
+                    )}
                     <p className="text-xs text-slate-400">
                       {fmtDate(bonus.appointmentDate)} · {bonus.categoryLabel} ·{' '}
                       {fmtMoney(bonus.eligibleRevenue)} ×{' '}
@@ -1582,7 +1592,7 @@ export function PayrollTimesheetsView() {
         <div className="overflow-hidden rounded-2xl border border-emerald-400/25 bg-emerald-500/5">
           <div className="border-b border-white/10 bg-slate-900/70 px-4 py-3">
             <h3 className="font-semibold text-white">
-              Recovery Village after-hours premiums
+              Recovery Village &amp; Saltgrass after-hours premiums
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">
               +$10/hr on worked time after 5 PM (Start Job → Complete). Apply to

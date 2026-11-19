@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   gratuityError: false,
   premiumPay: 0,
   mixedRates: false,
+  addOnRows: false,
 }))
 vi.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
@@ -85,7 +86,24 @@ vi.mock('@tanstack/react-query', () => ({
         totalAppliedPay: state.premiumPay,
       },
       'payroll-add-on-bonuses': {
-        rows: [],
+        rows: state.addOnRows
+          ? [
+              {
+                key: 'appointment:tech:invoice_growth',
+                appointmentId: 'appointment',
+                invoiceId: 'invoice-bonus',
+                appointmentDate: '2026-10-14',
+                staffUserId: 'david',
+                staffName: 'David Gonzalez',
+                customerName: 'Bonus customer',
+                categoryLabel: 'Above original invoice',
+                eligibleRevenue: 100,
+                bonusRate: 0.1,
+                bonusAmount: 10,
+                status: 'earned',
+              },
+            ]
+          : [],
         earnedBonus: 14.22,
         pendingBonus: 0,
         eligibleRevenue: 100,
@@ -123,6 +141,7 @@ afterEach(() => {
   state.gratuityError = false
   state.premiumPay = 0
   state.mixedRates = false
+  state.addOnRows = false
 })
 
 describe('payroll gratuity display', () => {
@@ -213,5 +232,17 @@ describe('payroll gratuity display', () => {
         'No gratuity recorded for David in this date range and staff selection.',
       ),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('payroll add-on bonus display', () => {
+  it('links each bonus row to its source invoice', () => {
+    state.addOnRows = true
+    render(<PayrollTimesheetsView />)
+    expect(
+      screen.getByRole('link', {
+        name: 'David Gonzalez · Bonus customer',
+      }),
+    ).toHaveAttribute('href', '/admin/operations/invoices/invoice-bonus')
   })
 })

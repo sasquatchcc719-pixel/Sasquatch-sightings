@@ -390,6 +390,7 @@ describe('loadTechPerformance', () => {
     const base = {
       key: 'bonus',
       appointmentId: 'appointment',
+      invoiceId: 'invoice',
       appointmentDate: '2026-10-06',
       staffUserId: '01d0d46b-29ac-4a27-b953-f5fbc30cf2cd',
       staffName: 'David Gonzalez',

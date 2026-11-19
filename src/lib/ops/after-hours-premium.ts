@@ -3,16 +3,18 @@ import {
   mountainLocalDateTimeToIso,
 } from '@/lib/ops/timesheet-pay'
 
-/** Recovery Village after-hours premium: +$10/hr on worked minutes after 5pm. */
+/** Commercial after-hours premium: +$10/hr on worked minutes after 5pm. */
 export const AFTER_HOURS_PREMIUM_RATE = 10
 /** 5:00 PM Mountain — the cutoff after which the premium applies. */
 export const AFTER_HOURS_CUTOFF_TIME = '17:00'
 
-/** Tolerant Recovery Village match (the stored business_name has a trailing space). */
-export function isRecoveryVillage(
+/** Match the commercial customers whose field work earns the premium. */
+export function isAfterHoursPremiumCustomer(
   businessName: string | null | undefined,
 ): boolean {
-  return (businessName || '').trim().toLowerCase() === 'recovery village'
+  return ['recovery village', 'saltgrass colorado springs'].includes(
+    (businessName || '').trim().toLowerCase(),
+  )
 }
 
 /**
