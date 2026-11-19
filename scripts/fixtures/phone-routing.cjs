@@ -76,6 +76,14 @@ const prompt =
   previewQuoteIntake(catalog) +
   '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
 const cases = {
+  complete: [
+    [
+      "I'd like your first available appointment. It's a three-seat fabric couch and one 350-square-foot carpeted living room. My ZIP is eight zero one three three. My name is Jamie Tester and my address is one Example Lane.",
+    ],
+    [
+      'The ZIP is eight zero one three three. Please book the first opening for one three-seat sofa and one 350-square-foot living room. What would it cost and when can you come?',
+    ],
+  ],
   couch: [
     [
       'How much to clean my couch?',
@@ -177,6 +185,17 @@ function fixture(call) {
       minimum_charge_applied: false,
       quote_ref: '120.fixture',
       duration_minutes: 120,
+    }
+  }
+  if (name === 'phone_openings' && args.visit_type === 'residential_service') {
+    if (!args.service) return { error: 'Residential service details required' }
+    const quote = fixture({ name: 'phone_quote', args: args.service })
+    if (quote.error) return quote
+    return {
+      date: openingDate,
+      times: ['11:00'],
+      timezone: 'America/Denver',
+      quote,
     }
   }
   if (['phone_openings', 'phone_quoted_openings'].includes(name))
@@ -320,6 +339,37 @@ function evaluate(row) {
           'No audible sales decline',
         )
       check(calls('end_call').length === 1, 'Missing or duplicated hangup')
+      break
+    }
+    case 'complete': {
+      only('phone_openings')
+      const lookups = calls('phone_openings')
+      const lookup = lookups[0]
+      check(
+        lookups.length === 1 &&
+          lookup.args.visit_type === 'residential_service' &&
+          lookup.args.zip_code === '80133' &&
+          !lookup.args.appointment_date &&
+          !lookup.args.search_from &&
+          matchesQuote(
+            {
+              args: lookup.args.service ?? {},
+              result: lookup.result.quote ?? {},
+            },
+            '80133',
+            [
+              ['sofa', 1],
+              ['large-room', 1],
+            ],
+            205,
+          ),
+        'Expected one combined price and earliest-opening lookup for the stated job',
+      )
+      check(
+        /205|two hundred (?:and )?five/i.test(speech(0)) &&
+          /11|eleven/i.test(speech(0)),
+        'Missing verified amount or first time before caller had to speak again',
+      )
       break
     }
     case 'couch':
