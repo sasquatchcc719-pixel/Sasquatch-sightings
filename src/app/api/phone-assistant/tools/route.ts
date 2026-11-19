@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { verifyCallToken } from '@/lib/phone-assistant/call-token'
 import { phoneTools, runPhoneTool } from '@/lib/phone-assistant/engine'
-import { getVoiceSession } from '@/lib/phone-assistant/records'
+import { getVoiceSessionDetails } from '@/lib/phone-assistant/records'
 import { queueBaseUrl, queueClient } from '@/lib/twilio/appointment-queue'
 
 export async function POST(request: Request) {
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     ?.match(/^Bearer (\S+)$/i)?.[1]
   const callSid = bearer && verifyCallToken(bearer, 'tools')
   if (!callSid) return new Response('Unauthorized', { status: 401 })
-  const session = await getVoiceSession(callSid)
+  const session = await getVoiceSessionDetails(callSid)
   if (!session || session.status !== 'active' || !session.providerCallId)
     return new Response('Call is inactive', { status: 403 })
 

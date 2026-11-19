@@ -91,6 +91,46 @@ describe('customer voice preview', () => {
     expect(query.get('subtotal')).toBe('300')
     expect(deps.book).not.toHaveBeenCalled()
   })
+  it.each([
+    [362, 362, false],
+    [175, 175, false],
+    [120, 175, true],
+  ])(
+    'distinguishes a $%i service from a minimum charge',
+    async (price, total, applied) => {
+      deps.catalog.mockResolvedValue([
+        { id, name: 'Cleaning', base_price: price },
+      ])
+      const result = await runPhoneTool(
+        'phone_quote',
+        {
+          ...service,
+          line_items: [{ service_id: id, quantity: 1 }],
+        },
+        ctx,
+      )
+      expect(result).toMatchObject({ total, minimum_charge_applied: applied })
+      if (applied) expect(result).toHaveProperty('minimum_charge', 175)
+      else expect(result).not.toHaveProperty('minimum_charge')
+    },
+  )
+  it('does not ask for minimum acceptance when a coupon alone takes the total below the floor', async () => {
+    deps.catalog.mockResolvedValue([{ id, name: 'Cleaning', base_price: 190 }])
+    deps.promo.mockResolvedValue(
+      Response.json({ discount_amount: 35, applied: true }),
+    )
+    expect(
+      await runPhoneTool(
+        'phone_quote',
+        {
+          ...service,
+          line_items: [{ service_id: id, quantity: 1 }],
+          coupon_code: 'EXAMPLE',
+        },
+        ctx,
+      ),
+    ).toMatchObject({ total: 155, minimum_charge_applied: false })
+  })
   it('requires separate attribution for LSA and returns two conditional totals when unclear', async () => {
     const input = { ...service, lead_source: 'google_lsa' }
     deps.session.mockResolvedValue({

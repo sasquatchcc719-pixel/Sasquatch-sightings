@@ -8,7 +8,7 @@ import {
 import {
   bindVoiceProviderCall,
   markVoiceAnswered,
-  getVoiceSession,
+  getVoiceSessionDetails,
 } from '@/lib/phone-assistant/records'
 import { phoneGreeting, phoneInstructions } from '@/lib/phone-assistant/engine'
 import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     ''
   if (!invite) return new Response(null, { status: 204 })
   const callSid = verifyCallToken(invite, 'invite')
-  const session = callSid && (await getVoiceSession(callSid))
+  const session = callSid && (await getVoiceSessionDetails(callSid))
   if (
     !session ||
     session.status !== 'active' ||

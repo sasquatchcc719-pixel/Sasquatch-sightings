@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 const m = vi.hoisted(() => ({ read: vi.fn(), run: vi.fn(), update: vi.fn() }))
-vi.mock('@/lib/phone-assistant/records', () => ({ getVoiceSession: m.read }))
+vi.mock('@/lib/phone-assistant/records', () => ({
+  getVoiceSessionDetails: m.read,
+}))
 vi.mock('@/lib/phone-assistant/engine', async () => {
   const { z } = await import('zod')
   return {

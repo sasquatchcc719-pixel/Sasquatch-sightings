@@ -19,7 +19,7 @@ vi.mock('openai', () => ({
 }))
 vi.mock('next/server', () => ({ after: m.after }))
 vi.mock('@/lib/phone-assistant/records', () => ({
-  getVoiceSession: m.get,
+  getVoiceSessionDetails: m.get,
   bindVoiceProviderCall: m.bind,
   markVoiceAnswered: m.mark,
 }))

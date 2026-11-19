@@ -16,10 +16,10 @@ export type VoiceSession = {
 }
 const recordTable = 'phone_assistant_sessions'
 
-export async function getVoiceSession(
+export async function getVoiceSessionDetails(
   callSid: string,
   db = createAdminClient(),
-): Promise<VoiceSession | null> {
+): Promise<Omit<VoiceSession, 'turns'> | null> {
   const { data, error } = await db
     .from(recordTable)
     .select(
@@ -29,6 +29,25 @@ export async function getVoiceSession(
     .maybeSingle()
   if (error) throw error
   if (!data) return null
+  return {
+    callSid: data.call_sid,
+    callerPhone: data.caller_phone,
+    providerCallId: data.provider_call_id,
+    pilot: data.pilot,
+    startedAt: data.started_at,
+    answeredAt: data.answered_at,
+    endedAt: data.ended_at,
+    status: data.ended_at ? 'ended' : 'active',
+    summary: data.summary,
+  }
+}
+
+export async function getVoiceSession(
+  callSid: string,
+  db = createAdminClient(),
+): Promise<VoiceSession | null> {
+  const session = await getVoiceSessionDetails(callSid, db)
+  if (!session) return null
   // PostgREST caps each response. Long calls still need every final turn.
   const turns: VoiceTurn[] = []
   const pageSize = 500
@@ -43,18 +62,7 @@ export async function getVoiceSession(
     turns.push(...(page.data as VoiceTurn[]))
     if (page.data.length < pageSize) break
   }
-  return {
-    callSid: data.call_sid,
-    callerPhone: data.caller_phone,
-    providerCallId: data.provider_call_id,
-    pilot: data.pilot,
-    startedAt: data.started_at,
-    answeredAt: data.answered_at,
-    endedAt: data.ended_at,
-    status: data.ended_at ? 'ended' : 'active',
-    turns,
-    summary: data.summary,
-  }
+  return { ...session, turns }
 }
 
 export async function beginVoiceSession(input: {
