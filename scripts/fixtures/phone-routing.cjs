@@ -1,10 +1,7 @@
 const { z } = require('zod')
+const { previewPhoneTools } = require('../../src/lib/phone-assistant/engine.ts')
 const {
-  phoneInstructions,
-  previewPhoneTools,
-} = require('../../src/lib/phone-assistant/engine.ts')
-const {
-  previewQuoteIntake,
+  dispatcherInstructions,
 } = require('../../src/lib/phone-assistant/preview-profile.ts')
 const room = '85d2909f-7574-4ac5-928c-e61c91a3758c'
 const catalog = [
@@ -71,10 +68,7 @@ for (const [name, description] of [
     description,
     parameters: { type: 'object', properties: {} },
   })
-const prompt =
-  phoneInstructions(true, true) +
-  previewQuoteIntake(catalog) +
-  '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
+const prompt = dispatcherInstructions(catalog)
 const cases = {
   complete: [
     [

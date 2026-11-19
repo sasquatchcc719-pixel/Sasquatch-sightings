@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { openingGuard } from './preview-opening'
 import {
+  dispatcherInstructions,
   previewOpening,
   previewCallbacksLocal,
   testProfile,
@@ -50,9 +51,9 @@ it('uses disjoint server and semantic schemas and holds voice fixed for detector
 })
 it('reserves the exact opening for its one-shot trigger', () => {
   expect(previewOpening).toContain('nothing will be booked')
-  expect(phoneInstructions(true, true)).not.toContain(previewOpening)
-  expect(phoneInstructions(true, true)).toContain('Never repeat the opening')
-  expect(phoneInstructions(false)).not.toContain('Never repeat the opening')
+  expect(dispatcherInstructions([])).not.toContain(previewOpening)
+  expect(dispatcherInstructions([])).toContain('The opening plays once')
+  expect(phoneInstructions(false)).not.toContain('The opening plays once')
 })
 it.each([
   'input_audio_buffer.speech_started',
@@ -119,5 +120,19 @@ it('attaches the date of the verified slot and preserves actual failures', async
   })
   expect(previewToolResult('phone_openings', { error: 'timeout' })).toEqual({
     error: 'timeout',
+  })
+})
+
+it('keeps a verified coupon distinct from a final price when attribution is missing', async () => {
+  const { previewToolResult } = await import('./preview-profile')
+  expect(
+    previewToolResult('phone_quote', {
+      status: 'standard_estimate',
+      total: 205,
+      coupon: { code: 'THANKS35', amount: 35 },
+    }),
+  ).toMatchObject({
+    total: 205,
+    price_guidance: expect.stringContaining('Standard estimate only'),
   })
 })

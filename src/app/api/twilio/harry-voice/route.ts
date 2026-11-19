@@ -14,6 +14,11 @@ import {
   testProfile,
   previewCallbacksLocal,
 } from '@/lib/phone-assistant/preview-profile'
+import {
+  liveInviteHeader,
+  liveInvitePurpose,
+  livePreviewEnabled,
+} from '@/lib/phone-assistant/live-preview'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import {
   appendVoiceTranscript,
@@ -109,19 +114,27 @@ export async function POST(request: NextRequest) {
       !previewCallbacksLocal(request.url, queueBaseUrl())
     )
       throw new Error('Invalid preview callback origin')
-    const invite = issueCallToken(callSid, 'invite')
+    const live = livePreviewEnabled(pilot, request.url, queueBaseUrl())
+    const invite = issueCallToken(
+      callSid,
+      live ? liveInvitePurpose(queueBaseUrl()) : 'invite',
+    )
     const base = queueBaseUrl() + '/api/twilio/harry-voice'
     const sip =
       'sip:' +
       project +
-      '@sip.api.openai.com;transport=tls;secure=true?X-Sightings-Invite=' +
+      '@sip.api.openai.com;transport=tls;secure=true?' +
+      (live ? liveInviteHeader : 'X-Sightings-Invite') +
+      '=' +
       invite
     await beginVoiceSession({ callSid, callerPhone, pilot })
-    const notice = profile.startsWith('dispatcher-')
-      ? 'This call is transcribed.'
-      : pilot
-        ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
-        : 'This call with our virtual assistant is transcribed.'
+    const notice = live
+      ? 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. This is a transcribed test call with Harry, our virtual assistant. Bookings and transfers are simulated.'
+      : profile.startsWith('dispatcher-')
+        ? 'This call is transcribed.'
+        : pilot
+          ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
+          : 'This call with our virtual assistant is transcribed.'
     return xml(
       '<Say>' +
         notice +

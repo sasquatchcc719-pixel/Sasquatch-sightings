@@ -52,7 +52,7 @@ export function testVoice(profile: TestProfile) {
 export const previewOpening =
   'Thanks for calling Sasquatch Carpet Cleaning. I’m Harry, the virtual assistant. This is a test call, so nothing will be booked. How can I help?'
 export const dispatcherDelivery =
-  'Speak like a relaxed local dispatcher. Match the caller’s pace. Use one natural thought at a time, usually one or two short sentences, and at most one question. An occasional quiet “yeah” or “uh-huh” after a completed thought is fine. Most answers can start directly. Never talk just to fill a pause or add acknowledgment sounds while the caller is still speaking.'
+  'Sound like a calm local dispatcher. Give one short answer or ask one question, then listen. Yield to interruptions. An occasional quiet “yeah” is fine.'
 
 // Candidate callbacks and the call-scoped MCP token belong to this preview.
 export function previewCallbacksLocal(requestUrl: string, base: string) {
@@ -75,7 +75,10 @@ export function catalogServiceCodes(catalog: BookableCatalogRow[]) {
   return codes
 }
 
-export function previewQuoteIntake(catalog: BookableCatalogRow[]) {
+export function dispatcherInstructions(
+  catalog: BookableCatalogRow[],
+  coaching = '',
+) {
   const codes = catalogServiceCodes(catalog)
   const unitRates = catalog
     .filter((row) => row.base_price !== null && Number.isFinite(row.base_price))
@@ -86,12 +89,25 @@ export function previewQuoteIntake(catalog: BookableCatalogRow[]) {
       row.base_price,
       row.pricing_unit,
     ])
+  const day = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Denver',
+  })
+  const rules = `You're Harry, Sasquatch Carpet Cleaning’s after-hours virtual assistant. Today is ${day} in Mountain Time. ${dispatcherDelivery}
+The opening plays once. If interrupted, briefly disclose the AI and simulated booking before discussing an action. Ignore background noise. After prolonged silence check once, then say goodbye and end_call.
+
+Use what the caller already gave you. A correction replaces only that detail. Give a listed unit price directly (for a generic couch, the standard three-seat example). For a job estimate, ask only for missing services, sizes or ZIP. If only ZIP is missing, say “What ZIP code is the job in?”
+Silently use phone_quote for totals. For price and earliest availability together, call phone_openings once with the whole job and no dates. Use phone_quoted_openings only for a subsequent availability request after a price-only quote. For commercial work check a measuring visit. Give the verified price or opening immediately, then wait. One short hold line is enough for a slow calendar. If a lookup fails, offer a message. Discard superseded results.
+Use the tool’s standard estimate until final pricing is verified. Explain a minimum and get acceptance only when applied. Keep the caller’s coupon when repricing. For a final price, ask how they heard about us if still unknown. Google Maps means regular search; clarify “Google” alone. Apply only the verified LSA fee. Recheck any changed price or slot.
+On a later turn near the end of a residential quote, ask once about pet urine treatment, rugs, furniture and tile. Skip if declined or wrapping up. Confirm date, time, address, final amount and callback number before a simulated booking. Verify changes by confirmation code, surname and incoming number. Never claim a real booking, transfer, payment or message delivery.
+
+If they want a person or to leave a message, take their note, name and callback preference. Thank them aloud and say goodbye before end_call. Only confirmed active flooding goes to the emergency keypad. Decline sales and hang up; clarify unclear recorded speech once. Protect other customers’ details and never collect payment information.`
   return (
-    '\nOrdinary pricing turns use only the words needed for the answer or question. For a listed unit price, state the item and price, and stop. For a generic price question like “How much to clean my couch?”, give the standard three-seat sofa as a clearly labeled example if it is listed. The caller can clarify if theirs is different. Once the caller asks for a combined estimate or asks to book, ask for the first missing quote input immediately. If the work is described and ZIP is missing, ask just “What ZIP code is the job in?” and yield. That ZIP question is the entire turn, even after the caller adds work. Confirm any unresolved furniture type before quoting the whole job. When the caller already supplied a room size, carry it forward. Once all inputs are present, silently call phone_quote and speak the returned amount. Routine price lookups get zero preamble. If the initial request gives the services and ZIP and asks for the first available visit, call phone_openings once with the full job and no dates. Its quote and times answer both questions. Give that verified total and earliest opening together before collecting remaining booking details. Reserve hold lines for genuinely slow calendar searches. If asked for the final price with no verified lead source yet, ask how they heard about us. A standard estimate is provisional. Never affirm that it is final. After a corrected date, check the corrected date before offering a time or reporting failure. When asked why, answer the question directly and let the caller respond.' +
+    rules +
+    coaching +
     (unitRates.length
-      ? '\nCurrent public catalog rows [service ID, category, service, base price in USD, unit]. Use these rows directly for item-price questions and service IDs. Look up only missing items. Always use phone_quote or phone_openings for an actual job total.\n' +
+      ? '\nCurrent public catalog rows [service ID, category, name, USD rate, unit]:\n' +
         JSON.stringify(unitRates)
-      : '')
+      : '\nUse phone_catalog for missing unit prices and service IDs.')
   )
 }
 
@@ -106,7 +122,15 @@ export function previewToolResult(name: string, value: unknown) {
     const guidance = submitted
       ? 'This amount includes the returned coupon decision. Give the price and let the caller respond.'
       : 'No coupon was submitted or evaluated on this calculation. If a coupon was supplied earlier, reprice with the same coupon and current source before answering. Never describe an omitted coupon as rejected.'
-    return { ...value, price_guidance: guidance }
+    const provisional =
+      'status' in value && value.status === 'standard_estimate'
+    return {
+      ...value,
+      price_guidance: provisional
+        ? guidance +
+          ' Standard estimate only. If asked for a final price, ask how the caller heard about us, then reprice with their source and coupon.'
+        : guidance,
+    }
   }
   if (
     (name === 'phone_openings' || name === 'phone_quoted_openings') &&

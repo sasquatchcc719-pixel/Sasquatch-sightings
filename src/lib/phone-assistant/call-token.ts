@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-type Purpose = 'invite' | 'tools'
+type Purpose = 'invite' | 'tools' | `live-invite:${string}`
 
 function signature(payload: string, purpose: Purpose | 'quote-duration') {
   const key = process.env.HARRY_VOICE_WEBHOOK_SECRET
@@ -12,9 +12,13 @@ function signature(payload: string, purpose: Purpose | 'quote-duration') {
 
 // A different signature scope prevents a SIP invite from granting tool access.
 // Keep the invite compact enough for Twilio's 255-character SIP URI limit.
-export function issueCallToken(callSid: string, purpose: Purpose) {
-  const ttl = purpose === 'invite' ? 120 : 3600
-  const payload = callSid + '.' + (Math.floor(Date.now() / 1000) + ttl)
+export function issueCallToken(
+  callSid: string,
+  purpose: Purpose,
+  issuedAt = Date.now(),
+) {
+  const ttl = purpose === 'tools' ? 3600 : 120
+  const payload = callSid + '.' + (Math.floor(issuedAt / 1000) + ttl)
   return payload + '.' + signature(payload, purpose)
 }
 

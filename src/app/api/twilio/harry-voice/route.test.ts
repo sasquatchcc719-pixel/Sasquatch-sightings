@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { verifyCallToken } from '@/lib/phone-assistant/call-token'
 import { NextRequest } from 'next/server'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({
@@ -122,5 +123,23 @@ it('retains the transcription notice before SIP on the dispatcher preview', asyn
   vi.stubEnv('VERCEL_ENV', 'production')
   expect(await (await send('start&preview=1')).text()).toContain(
     'Bookings and transfers are simulated.',
+  )
+})
+it('gives Live pilots a signed origin-bound invite and full disclosure before connecting audio', async () => {
+  vi.stubEnv('VERCEL_ENV', 'preview')
+  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
+  vi.stubEnv('HARRY_VOICE_TEST_TRANSPORT', 'live')
+  const twiml = await (await send('start&preview=1')).text()
+  const token = twiml.match(/X-Sightings-Live-Invite=([\w.-]+)/)?.[1] ?? ''
+  expect(verifyCallToken(token, 'live-invite:https://example.com')).toBe(sid)
+  expect(verifyCallToken(token, 'invite')).toBeNull()
+  expect(twiml).toMatch(
+    /<Say>[^<]*transcribed[^<]*virtual assistant[^<]*Bookings and transfers are simulated\.<\/Say><Start>/,
+  )
+  expect(twiml).toContain('Sasquatch Carpet Cleaning after-hours directory')
+  expect(twiml).not.toMatch(/How can I help|X-Sightings-Invite=/)
+  vi.stubEnv('VERCEL_ENV', 'production')
+  expect(await (await send('start&preview=1')).text()).toContain(
+    'X-Sightings-Invite=',
   )
 })

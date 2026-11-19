@@ -1,4 +1,6 @@
 import OpenAI from 'openai'
+import { handleLiveIncoming } from './live'
+import { liveInviteHeader } from '@/lib/phone-assistant/live-preview'
 import { after } from 'next/server'
 import WebSocket from 'ws'
 import {
@@ -25,7 +27,7 @@ import {
   dispatcherDelivery,
   previewCallbacksLocal,
   previewOpening,
-  previewQuoteIntake,
+  dispatcherInstructions,
   testProfile,
   testVoice,
   turnDetector,
@@ -97,9 +99,17 @@ export async function POST(request: Request) {
   } catch {
     return new Response('Invalid signature', { status: 403 })
   }
+  if ((event as { type: string }).type === 'live.transport.incoming')
+    return handleLiveIncoming(event, request.url, client)
   if (event.type !== 'realtime.call.incoming')
     return new Response(null, { status: 204 })
   const { call_id: providerId, sip_headers: headers } = event.data
+  if (
+    headers.some(
+      (header) => header.name.toLowerCase() === liveInviteHeader.toLowerCase(),
+    )
+  )
+    return new Response(null, { status: 204 })
   const invite =
     headers.find((h) => h.name.toLowerCase() === 'x-sightings-invite')?.value ??
     ''
@@ -142,11 +152,11 @@ export async function POST(request: Request) {
     await client.realtime.calls.reject(providerId, { status_code: 403 })
     return new Response(null, { status: 204 })
   }
-  const instructions =
-    phoneInstructions(session.pilot, dispatcher) +
-    coaching +
-    (dispatcher ? previewQuoteIntake(catalog) : '') +
-    '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
+  const instructions = dispatcher
+    ? dispatcherInstructions(catalog, coaching)
+    : phoneInstructions(session.pilot) +
+      coaching +
+      '\nWhen a call is over, say goodbye before calling end_call. Offer the flood confirmation tool only for active water intrusion. Other requests for a person are callback messages. If the line goes silent, check once whether the caller is still there. If silence continues, say goodbye and end the call.'
   const accept = (detector: ReturnType<typeof turnDetector>, key: string) =>
     client.realtime.calls.accept(
       providerId,
