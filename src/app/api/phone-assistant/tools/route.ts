@@ -6,11 +6,7 @@ import {
 import { z } from 'zod'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { verifyCallToken } from '@/lib/phone-assistant/call-token'
-import {
-  previewPhoneTools,
-  phoneTools,
-  runPhoneTool,
-} from '@/lib/phone-assistant/engine'
+import { previewPhoneTools, runPhoneTool } from '@/lib/phone-assistant/engine'
 import { createAdminClient } from '@/supabase/server'
 import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
 import { previewToolResult } from '@/lib/phone-assistant/preview-profile'
@@ -74,14 +70,12 @@ export async function POST(request: Request) {
     callerPhone: session.callerPhone,
     preview: session.pilot,
   }
-  const availableTools = session.pilot
-    ? previewPhoneTools(
-        await loadBookableCatalog(
-          createAdminClient(),
-          AbortSignal.timeout(600),
-        ).catch(() => []),
-      )
-    : phoneTools
+  const availableTools = previewPhoneTools(
+    await loadBookableCatalog(
+      createAdminClient(),
+      AbortSignal.timeout(600),
+    ).catch(() => []),
+  )
   const handler = createMcpHandler(
     () => {
       const server = new McpServer({

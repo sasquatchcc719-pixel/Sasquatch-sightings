@@ -180,6 +180,53 @@ describe('AI-style booking preview', () => {
     })
   })
 
+  it('carries a verified phone coupon into the exact invoice preview', async () => {
+    const result = await createAiStyleBooking({
+      supabase: { from: (table: string) => new ReadQuery(table) } as never,
+      customer: {
+        first_name: 'Test',
+        last_name: 'Customer',
+        email: 'test@example.com',
+        phone: '+17195550123',
+      },
+      address: {
+        street_1: '123 Main St',
+        city: 'Colorado Springs',
+        state: 'CO',
+        zip_code: '80903',
+      },
+      appointment_date: '2026-10-20',
+      start_time: '09:00',
+      line_items: [
+        {
+          service_id: '10000000-0000-4000-8000-000000000001',
+          quantity: 1,
+        },
+      ],
+      booking_mode: 'direct',
+      booking_channel: 'ai_agent',
+      source_label: 'Harry after-hours phone',
+      lead_source: 'google',
+      actor_label: 'Harry after-hours phone',
+      admin_heading: 'Harry phone booking',
+      verified_discount: {
+        promo_id: '30000000-0000-4000-8000-000000000001',
+        code: 'THANKS35',
+        amount: 35,
+      },
+      preview_only: true,
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      subtotal: 300,
+      discount_applied: 35,
+      total: 265,
+      discount_metadata: {
+        promo: { code: 'THANKS35', amount: 35 },
+      },
+    })
+  })
+
   it.each(['ai_agent', 'lsa_sms'] as const)(
     'adds one server-calculated LSA fee for %s bookings',
     async (bookingChannel) => {

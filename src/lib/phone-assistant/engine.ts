@@ -1,4 +1,5 @@
 import { catalogServiceCodes } from './preview-profile'
+import { createHash } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createAdminClient } from '@/supabase/server'
@@ -12,7 +13,10 @@ import {
   createAiStyleBooking,
   GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
 } from '@/lib/ops/create-ai-style-booking'
-import { commercialEstimateCalendarMinutes } from '@/lib/ops/create-ai-style-estimate'
+import {
+  commercialEstimateCalendarMinutes,
+  createAiStyleEstimate,
+} from '@/lib/ops/create-ai-style-estimate'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
@@ -27,7 +31,7 @@ import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { shiftDateKey } from '@/lib/tech/day-schedule'
 import { checkServiceArea } from '@/lib/service-area'
 import { issueQuoteRef, quotedMinutes } from './call-token'
-import { getVoiceSession } from './records'
+import { claimVoiceAction, finishVoiceAction, getVoiceSession } from './records'
 
 type Context = {
   callSid: string
@@ -135,6 +139,10 @@ const bookingSchema = appointmentSchema.extend({
   customer_confirmed: z.boolean(),
   customer_ref: z.uuid().optional(),
   service_address_ref: z.uuid().optional(),
+  business_name: textField.optional(),
+  job_description: z.string().trim().max(1000).optional(),
+  lead_source: sourceInput.optional(),
+  lead_detail: textField.optional(),
 })
 const changeSchema = z.object({
   confirmation: z.string().regex(/^(SC|EST)-[0-9a-f]{8}$/i),
@@ -183,13 +191,13 @@ export const phoneTools = [
   {
     name: 'phone_preview_booking',
     description:
-      'Revalidate a selected upcoming visit and simulate it for the owner test. This tool never creates a real appointment or invoice.',
+      'After the caller confirms the complete visit, revalidate the price and opening. Private test calls return a simulation; live after-hours calls create the appointment or commercial walkthrough and return its confirmation.',
     inputSchema: bookingSchema,
   },
   {
     name: 'phone_preview_change',
     description:
-      'Check an existing future booking against the inbound caller, last name and confirmation code, then simulate a cancellation or proposed reschedule. No changes are saved.',
+      'Check an existing future booking against the inbound caller, last name and confirmation code. Private tests simulate the request; live callers leave a verified office message because direct changes are not enabled.',
     inputSchema: changeSchema,
   },
 ]
@@ -670,15 +678,21 @@ async function searchOpenings(
   }
 }
 
-async function previewBooking(
+function bookingActionKey(input: z.infer<typeof bookingSchema>) {
+  return (
+    'booking_' +
+    createHash('sha256')
+      .update(JSON.stringify(input))
+      .digest('hex')
+      .slice(0, 40)
+  )
+}
+
+async function bookVisit(
   input: z.infer<typeof bookingSchema>,
   ctx: Context,
   db: DB,
 ) {
-  if (!ctx.preview)
-    throw new CallerInputError(
-      'Live booking is unavailable. Take a message for the office.',
-    )
   if (!input.customer_confirmed)
     throw new CallerInputError(
       'Read back the exact visit and get confirmation first.',
@@ -725,32 +739,36 @@ async function previewBooking(
     throw new CallerInputError(
       'That opening is no longer available. Check other times.',
     )
-  if (
-    input.visit_type === 'residential_service' &&
-    input.service &&
-    available.quote
-  ) {
-    const source = available.quote.lsa_fee
-      ? 'google_lsa'
-      : input.service.lead_source
-    if (!source || source === 'google_unsure')
-      throw new CallerInputError(
-        'Confirm the lead source and final price before booking.',
+  if (input.visit_type === 'commercial_measurement') {
+    if (ctx.preview)
+      return {
+        status: 'simulated',
+        created: false,
+        visit_type: input.visit_type,
+        date: input.appointment_date,
+        time: input.start_time,
+        message:
+          'This is a test only. No commercial walkthrough was scheduled.',
+      }
+    const actionKey = bookingActionKey(input)
+    const claim = await claimVoiceAction(ctx.callSid, actionKey, db)
+    if (!claim.claimed)
+      return (
+        claim.result || {
+          error:
+            'This booking request is already processing. Do not retry it; take a message for office verification.',
+        }
       )
-    if (
-      available.quote.minimum_charge_applied &&
-      !input.accepted_minimum_charge
-    )
-      throw new CallerInputError(
-        'Obtain acceptance of the quoted service minimum.',
-      )
-    const checked = await createAiStyleBooking({
+    const result = await createAiStyleEstimate({
       supabase: db,
+      customer_id: storedCustomer?.id,
+      service_address_id: storedAddress?.id,
       customer: {
         first_name: storedCustomer?.first_name || input.first_name,
         last_name: storedCustomer?.last_name || input.last_name,
         email: storedCustomer?.email || input.email,
         phone: ctx.callerPhone,
+        business_name: input.business_name,
       },
       address: {
         street_1: storedAddress?.street_1 || input.street,
@@ -759,43 +777,172 @@ async function previewBooking(
         state: 'CO',
         zip_code: storedAddress?.zip_code || input.zip_code,
       },
-      existing_customer_id: storedCustomer?.id,
-      existing_service_address_id: storedAddress?.id,
       appointment_date: input.appointment_date,
       start_time: input.start_time,
-      line_items: input.service.line_items,
-      booking_mode: 'direct',
+      visit_duration_minutes: 60,
+      job_description: input.job_description,
       booking_channel: 'ai_agent',
-      source_label: 'After-hours phone preview',
-      lead_source: source,
-      lead_source_detail: input.service.lead_detail,
-      actor_label: 'After-hours phone preview',
-      admin_heading: 'Private preview',
-      accepted_minimum_charge: input.accepted_minimum_charge,
-      preview_only: true,
-      notify_internal: false,
-      notify_customer: false,
-      sync_quickbooks: false,
+      source_label: 'After-hours phone',
+      lead_source: input.lead_source,
+      lead_source_detail: input.lead_detail,
+      actor_label: 'Harry after-hours phone',
+      admin_heading: 'Harry commercial walkthrough',
     })
-    if (!checked.ok)
-      throw new CallerInputError(
-        'Sightings could not validate the requested booking. Check the service, source, address and time or offer office follow-up.',
-      )
-    if (Math.abs(checked.subtotal - available.quote.subtotal) > 0.01)
-      throw new CallerInputError(
-        'Booking validation returned different pricing. Ask the office to review.',
-      )
+    const response: Record<string, unknown> = result.ok
+      ? {
+          status: 'confirmed',
+          created: true,
+          confirmation_number: result.confirmation_number,
+          visit_type: input.visit_type,
+          date: result.appointment_date,
+          time: result.start_time,
+          message: result.message,
+        }
+      : { error: result.error }
+    await finishVoiceAction(
+      ctx.callSid,
+      actionKey,
+      result.ok ? 'succeeded' : 'failed',
+      response,
+      db,
+    ).catch((error) =>
+      console.error('[Phone assistant] Could not finalize action claim', error),
+    )
+    return response
   }
-  return {
-    status: 'simulated',
-    created: false,
-    visit_type: input.visit_type,
-    date: input.appointment_date,
-    time: input.start_time,
-    quote: available.quote,
-    message:
-      'This is a test only. No appointment or invoice was created and no confirmation was sent.',
+
+  if (!input.service || !available.quote)
+    throw new CallerInputError('Residential service details are required.')
+  const source = available.quote.lsa_fee
+    ? 'google_lsa'
+    : input.service.lead_source
+  if (!source || source === 'google_unsure')
+    throw new CallerInputError(
+      'Confirm the lead source and final price before booking.',
+    )
+  if (available.quote.minimum_charge_applied && !input.accepted_minimum_charge)
+    throw new CallerInputError(
+      'Obtain acceptance of the quoted service minimum.',
+    )
+
+  let verifiedDiscount:
+    | { promo_id: string; code: string; amount: number }
+    | undefined
+  if (available.quote.coupon.applied && available.quote.coupon.code) {
+    const promo = await db
+      .from('promo_codes')
+      .select('id,code')
+      .eq('code', available.quote.coupon.code)
+      .eq('active', true)
+      .maybeSingle()
+    if (promo.error || !promo.data)
+      throw new CallerInputError(
+        'The coupon changed during booking. Recheck the price or take a message.',
+      )
+    verifiedDiscount = {
+      promo_id: promo.data.id,
+      code: promo.data.code,
+      amount: available.quote.coupon.amount,
+    }
   }
+
+  const common = {
+    supabase: db,
+    customer: {
+      first_name: storedCustomer?.first_name || input.first_name,
+      last_name: storedCustomer?.last_name || input.last_name,
+      email: storedCustomer?.email || input.email,
+      phone: ctx.callerPhone,
+    },
+    address: {
+      street_1: storedAddress?.street_1 || input.street,
+      street_2: storedAddress?.street_2 || undefined,
+      city: storedAddress?.city || input.city,
+      state: 'CO',
+      zip_code: storedAddress?.zip_code || input.zip_code,
+    },
+    existing_customer_id: storedCustomer?.id,
+    existing_service_address_id: storedAddress?.id,
+    appointment_date: input.appointment_date,
+    start_time: input.start_time,
+    line_items: input.service.line_items,
+    booking_mode: 'direct' as const,
+    booking_channel: 'ai_agent' as const,
+    lead_source: source,
+    lead_source_detail: input.service.lead_detail,
+    accepted_minimum_charge: input.accepted_minimum_charge,
+    verified_discount: verifiedDiscount,
+  }
+  const checked = await createAiStyleBooking({
+    ...common,
+    source_label: 'After-hours phone preview',
+    actor_label: 'After-hours phone preview',
+    admin_heading: 'Private preview',
+    preview_only: true,
+    notify_internal: false,
+    notify_customer: false,
+    sync_quickbooks: false,
+  })
+  if (!checked.ok)
+    throw new CallerInputError(
+      'Sightings could not validate the requested booking. Check the service, source, address and time or offer office follow-up.',
+    )
+  if (
+    Math.abs(checked.subtotal - available.quote.subtotal) > 0.01 ||
+    Math.abs(checked.total - available.quote.total) > 0.01
+  )
+    throw new CallerInputError(
+      'Booking validation returned different pricing. Ask the office to review.',
+    )
+  if (ctx.preview)
+    return {
+      status: 'simulated',
+      created: false,
+      visit_type: input.visit_type,
+      date: input.appointment_date,
+      time: input.start_time,
+      quote: available.quote,
+      message:
+        'This is a test only. No appointment or invoice was created and no confirmation was sent.',
+    }
+
+  const actionKey = bookingActionKey(input)
+  const claim = await claimVoiceAction(ctx.callSid, actionKey, db)
+  if (!claim.claimed)
+    return (
+      claim.result || {
+        error:
+          'This booking request is already processing. Do not retry it; take a message for office verification.',
+      }
+    )
+  const booked = await createAiStyleBooking({
+    ...common,
+    source_label: 'Harry after-hours phone',
+    actor_label: 'Harry after-hours phone',
+    admin_heading: 'Harry phone booking',
+  })
+  const response: Record<string, unknown> = booked.ok
+    ? {
+        status: booked.appointment_status,
+        created: true,
+        confirmation_number: booked.confirmation_number,
+        visit_type: input.visit_type,
+        date: booked.appointment_date,
+        time: booked.start_time,
+        total: booked.total,
+        message: booked.message,
+      }
+    : { error: booked.error }
+  await finishVoiceAction(
+    ctx.callSid,
+    actionKey,
+    booked.ok ? 'succeeded' : 'failed',
+    response,
+    db,
+  ).catch((error) =>
+    console.error('[Phone assistant] Could not finalize action claim', error),
+  )
+  return response
 }
 
 async function previewChange(
@@ -927,7 +1074,7 @@ export async function runPhoneTool(
       case 'phone_openings':
         return await openings(openingsSchema.parse(args), ctx, db)
       case 'phone_preview_booking':
-        return await previewBooking(bookingSchema.parse(args), ctx, db)
+        return await bookVisit(bookingSchema.parse(args), ctx, db)
       case 'phone_preview_change':
         return await previewChange(changeSchema.parse(args), ctx, db)
       default:

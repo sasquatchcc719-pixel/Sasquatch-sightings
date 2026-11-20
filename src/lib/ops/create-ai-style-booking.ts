@@ -81,6 +81,12 @@ export type CreateAiStyleBookingInput = {
   assigned_staff_user_id?: string | null
   /** Validate and calculate the exact booking without writing any records. */
   preview_only?: boolean
+  /** A discount already verified against the live promo rules by a trusted caller. */
+  verified_discount?: {
+    promo_id: string
+    code: string
+    amount: number
+  }
   /** Existing callers default to true. MCP can make customer contact explicit. */
   notify_customer?: boolean
   /** Existing callers default to true. Controls SMS/push/Telegram staff alerts. */
@@ -293,6 +299,7 @@ export async function createAiStyleBooking(
     admin_heading: adminHeading,
     discount_requested: discountRequested = false,
     accepted_minimum_charge: acceptedMinimumCharge = false,
+    verified_discount: verifiedDiscount,
   } = input
 
   const firstName = customer.first_name.trim()
@@ -499,15 +506,28 @@ export async function createAiStyleBooking(
     }
   }
 
+  if (
+    verifiedDiscount &&
+    (!/^[0-9a-f-]{36}$/i.test(verifiedDiscount.promo_id) ||
+      !/^[A-Z0-9_-]{1,32}$/.test(verifiedDiscount.code) ||
+      !Number.isFinite(verifiedDiscount.amount) ||
+      verifiedDiscount.amount <= 0 ||
+      verifiedDiscount.amount > subtotal ||
+      input.gap_offer_id)
+  )
+    return { ok: false, error: 'The verified promotion is invalid.' }
+
   const promo = await getAgentPromoSettings()
   let discountAmount = input.gap_offer_id
     ? 0
-    : calculateAiStyleBookingDiscount({
-        booking_channel: bookingChannel,
-        subtotal,
-        promo,
-        discount_requested: discountRequested,
-      })
+    : verifiedDiscount
+      ? verifiedDiscount.amount
+      : calculateAiStyleBookingDiscount({
+          booking_channel: bookingChannel,
+          subtotal,
+          promo,
+          discount_requested: discountRequested,
+        })
   let total = Math.max(0, subtotal - discountAmount)
 
   // Calculate duration based on dollar amount (simple tier system)
@@ -521,7 +541,14 @@ export async function createAiStyleBooking(
   }
   const endTotal = sh * 60 + sm + buffered
   const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
-  let discountMetadata: Record<string, unknown> | undefined
+  let discountMetadata: Record<string, unknown> | undefined = verifiedDiscount
+    ? {
+        promo: {
+          code: verifiedDiscount.code,
+          amount: Number(verifiedDiscount.amount.toFixed(2)),
+        },
+      }
+    : undefined
   if (input.gap_offer_id) {
     if (!input.preview_only)
       return {
@@ -735,6 +762,7 @@ export async function createAiStyleBooking(
       appointment_id: appointment.id,
       subtotal,
       discount_amount: discountAmount,
+      ...(discountMetadata ? { discount_metadata: discountMetadata } : {}),
       total,
       status: 'draft',
       sync_status: 'pending',
@@ -893,6 +921,20 @@ export async function createAiStyleBooking(
       leadSource: resolvedLeadSource.source.lead_source,
       notes: leadNotes,
     })
+  }
+
+  if (verifiedDiscount) {
+    void supabase
+      .rpc('increment_promo_use_count', {
+        promo_id: verifiedDiscount.promo_id,
+      })
+      .then(({ error }) => {
+        if (error)
+          console.error(
+            '[createAiStyleBooking] promo use_count increment failed:',
+            error,
+          )
+      })
   }
 
   // Schedule 30-minute job reminder

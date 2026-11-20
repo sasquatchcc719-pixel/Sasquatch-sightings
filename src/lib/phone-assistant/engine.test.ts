@@ -6,10 +6,13 @@ const deps = vi.hoisted(() => ({
   promo: vi.fn(),
   catalog: vi.fn(),
   book: vi.fn(),
+  estimate: vi.fn(),
   slots: vi.fn(),
   staffSlots: vi.fn(),
   estimateSlots: vi.fn(),
   session: vi.fn(),
+  claim: vi.fn(),
+  finish: vi.fn(),
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: deps.db }))
 vi.mock('@/app/api/public/promo-preview/route', () => ({ GET: deps.promo }))
@@ -22,13 +25,18 @@ vi.mock('@/lib/ops/create-ai-style-booking', () => ({
 }))
 vi.mock('@/lib/ops/create-ai-style-estimate', () => ({
   commercialEstimateCalendarMinutes: () => 120,
+  createAiStyleEstimate: deps.estimate,
 }))
 vi.mock('@/lib/ops/staff-availability', () => ({
   getUnionedSlots: deps.slots,
   getSlotsForStaff: deps.staffSlots,
   getStaffPrioritizedSlots: deps.estimateSlots,
 }))
-vi.mock('./records', () => ({ getVoiceSession: deps.session }))
+vi.mock('./records', () => ({
+  getVoiceSession: deps.session,
+  claimVoiceAction: deps.claim,
+  finishVoiceAction: deps.finish,
+}))
 import { phoneTools, runPhoneTool } from './engine'
 const ctx = { callSid: 'test', callerPhone: '+15550100000', preview: true }
 const id = '8fa3ee90-2ef6-4a7e-af0a-e67b5758f883'
@@ -75,7 +83,20 @@ beforeEach(() => {
   deps.slots.mockResolvedValue([{ start_time: '09:00:00' }])
   deps.estimateSlots.mockResolvedValue({ slots: [{ start_time: '11:00:00' }] })
   deps.session.mockResolvedValue({ turns: [] })
-  deps.book.mockResolvedValue({ ok: true, subtotal: 300 })
+  deps.book.mockResolvedValue({ ok: true, subtotal: 300, total: 300 })
+  deps.estimate.mockResolvedValue({
+    ok: true,
+    confirmation_number: 'EST-12345678',
+    appointment_date: '2099-07-01',
+    start_time: '11:00',
+    message: 'Walkthrough booked.',
+  })
+  deps.claim.mockResolvedValue({
+    claimed: true,
+    status: 'pending',
+    result: null,
+  })
+  deps.finish.mockResolvedValue(true)
 })
 describe('customer voice preview', () => {
   it('publishes only valid read and simulation tool schemas', () => {
@@ -439,13 +460,7 @@ describe('customer voice preview', () => {
     ).toHaveProperty('error')
     expect(deps.slots).not.toHaveBeenCalled()
   })
-  it('refuses unconfirmed, unavailable and public writes and uses pure preview for a recognized slot', async () => {
-    expect(
-      await runPhoneTool('phone_preview_booking', booking, {
-        ...ctx,
-        preview: false,
-      }),
-    ).toHaveProperty('error')
+  it('refuses unconfirmed and unavailable writes and uses pure preview for a recognized slot', async () => {
     expect(
       await runPhoneTool(
         'phone_preview_booking',
@@ -473,6 +488,66 @@ describe('customer voice preview', () => {
         customer: expect.objectContaining({ phone: ctx.callerPhone }),
       }),
     )
+  })
+  it('creates one real after-hours booking only after the same final validation', async () => {
+    deps.book
+      .mockResolvedValueOnce({ ok: true, subtotal: 300, total: 300 })
+      .mockResolvedValueOnce({
+        ok: true,
+        appointment_status: 'booked',
+        confirmation_number: 'SC-12345678',
+        appointment_date: booking.appointment_date,
+        start_time: booking.start_time,
+        total: 300,
+        message: 'Booking confirmed.',
+      })
+    const result = await runPhoneTool('phone_preview_booking', booking, {
+      ...ctx,
+      preview: false,
+    })
+    expect(result).toMatchObject({
+      status: 'booked',
+      created: true,
+      confirmation_number: 'SC-12345678',
+    })
+    expect(deps.book).toHaveBeenCalledTimes(2)
+    expect(deps.book.mock.calls[0][0]).toMatchObject({
+      preview_only: true,
+      notify_customer: false,
+      notify_internal: false,
+      sync_quickbooks: false,
+    })
+    expect(deps.book.mock.calls[1][0]).toMatchObject({
+      source_label: 'Harry after-hours phone',
+      actor_label: 'Harry after-hours phone',
+    })
+    expect(deps.book.mock.calls[1][0]).not.toHaveProperty('preview_only')
+    expect(deps.finish).toHaveBeenCalledWith(
+      ctx.callSid,
+      expect.stringMatching(/^booking_[0-9a-f]{40}$/),
+      'succeeded',
+      expect.objectContaining({ confirmation_number: 'SC-12345678' }),
+      expect.anything(),
+    )
+  })
+  it('returns a prior confirmed booking instead of repeating a live write', async () => {
+    deps.claim.mockResolvedValue({
+      claimed: false,
+      status: 'succeeded',
+      result: {
+        status: 'booked',
+        created: true,
+        confirmation_number: 'SC-EXISTING',
+      },
+    })
+    const result = await runPhoneTool('phone_preview_booking', booking, {
+      ...ctx,
+      preview: false,
+    })
+    expect(result).toMatchObject({ confirmation_number: 'SC-EXISTING' })
+    expect(deps.book).toHaveBeenCalledOnce()
+    expect(deps.book.mock.calls[0][0]).toHaveProperty('preview_only', true)
+    expect(deps.finish).not.toHaveBeenCalled()
   })
   it('requires a known inbound caller to be selected and reuses the selected saved record', async () => {
     const customerId = '11111111-1111-4111-8111-111111111111'
@@ -573,6 +648,35 @@ describe('customer voice preview', () => {
     )
     expect(deps.catalog).not.toHaveBeenCalled()
     expect(deps.book).not.toHaveBeenCalled()
+  })
+  it('schedules a real commercial walkthrough on a public after-hours call', async () => {
+    const result = await runPhoneTool(
+      'phone_preview_booking',
+      {
+        ...booking,
+        visit_type: 'commercial_measurement',
+        service: undefined,
+        start_time: '11:00',
+        business_name: 'Example Offices',
+        job_description: 'Hallways and common areas',
+      },
+      { ...ctx, preview: false },
+    )
+    expect(result).toMatchObject({
+      status: 'confirmed',
+      created: true,
+      confirmation_number: 'EST-12345678',
+    })
+    expect(deps.estimate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        booking_channel: 'ai_agent',
+        source_label: 'After-hours phone',
+        customer: expect.objectContaining({
+          business_name: 'Example Offices',
+          phone: ctx.callerPhone,
+        }),
+      }),
+    )
   })
   it('rejects an unverified existing appointment without looking up other customers', async () => {
     const customerQuery = {

@@ -65,7 +65,7 @@ Ask only for missing job details. If the only missing detail is ZIP, ask “What
         model: 'gpt-6-luna',
         instructions:
           dispatcherInstructions(catalog, coaching, pilot) +
-          '\nYou handle delegated business work. Return the verified fact, missing detail, or simulated result concisely to Harry. Never guess or treat an interrupted request as current.',
+          `\nYou handle delegated business work. Return the verified fact, missing detail, or ${pilot ? 'simulated result' : 'tool-confirmed result'} concisely to Harry. Never guess or treat an interrupted request as current.`,
         tool_choice: 'auto',
         parallel_tool_calls: false,
         tools: [

@@ -18,6 +18,12 @@ export type VoiceSession = {
   turns: VoiceTurn[]
   summary: string | null
 }
+
+export type VoiceActionClaim = {
+  claimed: boolean
+  status: 'pending' | 'succeeded' | 'failed'
+  result: Record<string, unknown> | null
+}
 const recordTable = 'phone_assistant_sessions'
 
 export async function getVoiceSessionDetails(
@@ -198,4 +204,54 @@ export async function previewExitClaim(callSid: string, release = false) {
     .maybeSingle()
   if (error) throw error
   return !!data
+}
+
+export async function claimVoiceAction(
+  callSid: string,
+  actionKey: string,
+  db: SupabaseClient = createAdminClient(),
+): Promise<VoiceActionClaim> {
+  const inserted = await db
+    .from('phone_assistant_actions')
+    .insert({ call_sid: callSid, action_key: actionKey })
+    .select('status,result')
+    .maybeSingle()
+  if (!inserted.error && inserted.data)
+    return { claimed: true, status: 'pending', result: null }
+  if (inserted.error?.code !== '23505') throw inserted.error
+  const existing = await db
+    .from('phone_assistant_actions')
+    .select('status,result')
+    .eq('call_sid', callSid)
+    .eq('action_key', actionKey)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data) throw new Error('Voice action claim disappeared')
+  return {
+    claimed: false,
+    status: existing.data.status,
+    result:
+      existing.data.result && typeof existing.data.result === 'object'
+        ? existing.data.result
+        : null,
+  }
+}
+
+export async function finishVoiceAction(
+  callSid: string,
+  actionKey: string,
+  status: 'succeeded' | 'failed',
+  result: Record<string, unknown>,
+  db: SupabaseClient = createAdminClient(),
+) {
+  const saved = await db
+    .from('phone_assistant_actions')
+    .update({ status, result, completed_at: new Date().toISOString() })
+    .eq('call_sid', callSid)
+    .eq('action_key', actionKey)
+    .eq('status', 'pending')
+    .select('call_sid')
+    .maybeSingle()
+  if (saved.error) throw saved.error
+  return Boolean(saved.data)
 }
