@@ -67,3 +67,13 @@ it('keeps a verified coupon provisional when attribution is missing', () => {
     price_guidance: expect.stringContaining('Standard estimate only'),
   })
 })
+
+it('turns a missing final source into one recoverable question', () => {
+  expect(
+    previewToolResult('phone_preview_booking', {
+      error: 'Confirm the lead source and final price before booking.',
+    }),
+  ).toMatchObject({
+    required_next_step: expect.stringContaining('How did you hear about us?'),
+  })
+})

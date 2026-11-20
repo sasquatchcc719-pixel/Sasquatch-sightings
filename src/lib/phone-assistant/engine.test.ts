@@ -610,8 +610,11 @@ describe('customer voice preview', () => {
         'phone_preview_booking',
         {
           ...booking,
-          zip_code: '80133',
-          service: { ...service, zip_code: '80133' },
+          zip_code: '80132',
+          service: {
+            zip_code: '80132',
+            line_items: service.line_items,
+          },
           customer_ref: customerId,
           service_address_ref: addressId,
         },
@@ -626,8 +629,32 @@ describe('customer voice preview', () => {
           first_name: 'Saved',
           email: 'saved@example.com',
         }),
-        address: expect.objectContaining({ street_1: '740 Saved Lane' }),
+        address: expect.objectContaining({
+          street_1: '740 Saved Lane',
+          zip_code: '80133',
+        }),
+        lead_source: 'repeat_customer',
       }),
+    )
+  })
+  it('accepts a final top-level lead source and reprices with it', async () => {
+    const noSource = {
+      zip_code: service.zip_code,
+      line_items: service.line_items,
+    }
+    expect(
+      await runPhoneTool(
+        'phone_preview_booking',
+        {
+          ...booking,
+          service: noSource,
+          lead_source: 'referral',
+        },
+        ctx,
+      ),
+    ).toMatchObject({ status: 'simulated' })
+    expect(deps.book).toHaveBeenCalledWith(
+      expect.objectContaining({ lead_source: 'referral' }),
     )
   })
   it('validates commercial measuring times without executing a booking or residential quote', async () => {

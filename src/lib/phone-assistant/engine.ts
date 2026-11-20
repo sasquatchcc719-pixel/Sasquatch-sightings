@@ -191,7 +191,7 @@ export const phoneTools = [
   {
     name: 'phone_preview_booking',
     description:
-      'After the caller confirms the complete visit, revalidate the price and opening. Private test calls return a simulation; live after-hours calls create the appointment or commercial walkthrough and return its confirmation.',
+      'After the caller confirms the complete visit, revalidate the price and opening. A verified saved customer defaults to repeat_customer when no newer source was supplied. Private test calls return a simulation; live after-hours calls create the appointment or commercial walkthrough and return its confirmation.',
     inputSchema: bookingSchema,
   },
   {
@@ -734,7 +734,29 @@ async function bookVisit(
       'This incoming number already has customer records. Use phone_caller_lookup and confirm the caller name before booking so a duplicate is not created.',
     )
   }
-  const available = await openings(input, ctx, db)
+  // Once the caller confirms a saved location, its stored ZIP is the source of
+  // truth. A caller may guess a nearby ZIP before the street is resolved; do
+  // not let that stale answer poison the final quote or calendar recheck.
+  const finalSource =
+    input.service?.lead_source ||
+    input.lead_source ||
+    (storedCustomer ? 'repeat_customer' : undefined)
+  const finalLeadDetail =
+    input.service?.lead_detail || input.lead_detail || undefined
+  const finalService = input.service
+    ? {
+        ...input.service,
+        zip_code: storedAddress?.zip_code || input.service.zip_code,
+        lead_source: finalSource,
+        lead_detail: finalLeadDetail,
+      }
+    : undefined
+  const finalInput = {
+    ...input,
+    zip_code: storedAddress?.zip_code || input.zip_code,
+    service: finalService,
+  }
+  const available = await openings(finalInput, ctx, db)
   if (!available.times.includes(input.start_time))
     throw new CallerInputError(
       'That opening is no longer available. Check other times.',
@@ -811,11 +833,11 @@ async function bookVisit(
     return response
   }
 
-  if (!input.service || !available.quote)
+  if (!finalService || !available.quote)
     throw new CallerInputError('Residential service details are required.')
   const source = available.quote.lsa_fee
     ? 'google_lsa'
-    : input.service.lead_source
+    : finalSource
   if (!source || source === 'google_unsure')
     throw new CallerInputError(
       'Confirm the lead source and final price before booking.',
@@ -865,11 +887,11 @@ async function bookVisit(
     existing_service_address_id: storedAddress?.id,
     appointment_date: input.appointment_date,
     start_time: input.start_time,
-    line_items: input.service.line_items,
+    line_items: finalService.line_items,
     booking_mode: 'direct' as const,
     booking_channel: 'ai_agent' as const,
     lead_source: source,
-    lead_source_detail: input.service.lead_detail,
+    lead_source_detail: finalService.lead_detail,
     accepted_minimum_charge: input.accepted_minimum_charge,
     verified_discount: verifiedDiscount,
   }
@@ -1081,12 +1103,30 @@ export async function runPhoneTool(
         return { error: 'Unknown phone tool.' }
     }
   } catch (error) {
-    if (error instanceof z.ZodError)
+    if (error instanceof z.ZodError) {
+      console.warn('[Phone assistant] Tool validation rejected', {
+        callSid: ctx.callSid,
+        tool: name,
+        fields: error.issues.map((issue) => issue.path.join('.')),
+      })
       return {
         error: 'Required details are missing or invalid.',
         fields: error.issues.map((issue) => issue.path.join('.')),
       }
-    if (error instanceof CallerInputError) return { error: error.message }
+    }
+    if (error instanceof CallerInputError) {
+      console.warn('[Phone assistant] Tool request rejected', {
+        callSid: ctx.callSid,
+        tool: name,
+        reason: error.message,
+      })
+      return { error: error.message }
+    }
+    console.error('[Phone assistant] Tool request failed', {
+      callSid: ctx.callSid,
+      tool: name,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
     return { error: 'Could not verify that request. Offer to take a message.' }
   }
 }
