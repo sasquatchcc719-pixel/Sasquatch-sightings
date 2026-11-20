@@ -11,13 +11,9 @@ import {
   isHarryMainNumber,
 } from '@/lib/twilio/harry-access'
 import {
-  testProfile,
-  previewCallbacksLocal,
-} from '@/lib/phone-assistant/preview-profile'
-import {
   liveInviteHeader,
   liveInvitePurpose,
-  livePreviewEnabled,
+  liveVoiceEnabled,
 } from '@/lib/phone-assistant/live-preview'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import {
@@ -108,34 +104,21 @@ export async function POST(request: NextRequest) {
     const project = process.env.HARRY_VOICE_PROJECT_ID?.trim()
     if (!project || !/^proj_[a-zA-Z0-9_-]+$/.test(project))
       throw new Error('Missing project')
-    const profile = testProfile(pilot)
-    const live = livePreviewEnabled(pilot, request.url, queueBaseUrl())
-    if (
-      profile !== 'current' &&
-      !live &&
-      !previewCallbacksLocal(request.url, queueBaseUrl())
-    )
-      throw new Error('Invalid preview callback origin')
-    const invite = issueCallToken(
-      callSid,
-      live ? liveInvitePurpose(queueBaseUrl()) : 'invite',
-    )
+    if (!liveVoiceEnabled(pilot, request.url, queueBaseUrl()))
+      throw new Error('Invalid Live callback origin')
+    const invite = issueCallToken(callSid, liveInvitePurpose(queueBaseUrl()))
     const base = queueBaseUrl() + '/api/twilio/harry-voice'
     const sip =
       'sip:' +
       project +
       '@sip.api.openai.com;transport=tls;secure=true?' +
-      (live ? liveInviteHeader : 'X-Sightings-Invite') +
+      liveInviteHeader +
       '=' +
       invite
     await beginVoiceSession({ callSid, callerPhone, pilot })
-    const notice = live
+    const notice = pilot
       ? 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. This is a transcribed test call with Harry, our virtual assistant. Bookings and transfers are simulated.'
-      : profile.startsWith('dispatcher-')
-        ? 'This call is transcribed.'
-        : pilot
-          ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
-          : 'This call with our virtual assistant is transcribed.'
+      : 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. This transcribed call is handled by Harry, our virtual assistant.'
     return xml(
       '<Say>' +
         notice +

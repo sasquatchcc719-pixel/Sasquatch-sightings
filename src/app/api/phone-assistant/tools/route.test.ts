@@ -76,6 +76,8 @@ beforeEach(() => {
     pilot: true,
     callerPhone: '+15551231234',
   })
+  m.sequence.mockResolvedValue(1)
+  m.claim.mockResolvedValue(true)
 })
 afterEach(() => vi.unstubAllEnvs())
 it('lists only customer-scoped tools through the real MCP transport', async () => {
@@ -124,7 +126,6 @@ it('denies an invite token or a closed session before calling tools', async () =
   expect(m.run).not.toHaveBeenCalled()
 })
 it('withholds old lookup details after a correction or disconnect', async () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
   m.sequence.mockResolvedValueOnce(1).mockResolvedValueOnce(2)
   m.run.mockResolvedValue({ slot: 'Thursday' })
   const lookup = () =>
@@ -142,7 +143,6 @@ it('withholds old lookup details after a correction or disconnect', async () => 
   )
 })
 it('dispatches at most one terminal command across retries', async () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
   m.sequence.mockResolvedValue(1)
   m.claim.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
   for (const name of ['request_flood_confirmation', 'end_call']) {
@@ -151,7 +151,6 @@ it('dispatches at most one terminal command across retries', async () => {
   expect(m.update).toHaveBeenCalledOnce()
 })
 it('releases an undispatched command if the caller corrects it', async () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
   m.sequence.mockResolvedValueOnce(1).mockResolvedValueOnce(2)
   m.claim.mockResolvedValue(true)
   await send('tools/call', { name: 'end_call', arguments: {} })
@@ -160,7 +159,6 @@ it('releases an undispatched command if the caller corrects it', async () => {
 })
 
 it('passes canonical service IDs through the actual private MCP handler', async () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
   const { previewPhoneTools } = await vi.importActual<
     typeof import('@/lib/phone-assistant/engine')
   >('@/lib/phone-assistant/engine')

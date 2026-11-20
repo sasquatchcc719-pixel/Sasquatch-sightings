@@ -10,8 +10,8 @@ import { phoneTools, recognizePhoneCaller } from '@/lib/phone-assistant/engine'
 import {
   liveInviteHeader,
   liveInvitePurpose,
-  livePreviewEnabled,
-  livePreviewSession,
+  liveVoiceEnabled,
+  liveVoiceSession,
 } from '@/lib/phone-assistant/live-preview'
 import {
   bindVoiceProviderCall,
@@ -42,7 +42,7 @@ export async function handleLiveIncoming(
   const parsed = liveIncoming.safeParse(event)
   if (!parsed.success) return ignored()
   const base = queueBaseUrl()
-  if (!livePreviewEnabled(true, url, base)) return ignored()
+  if (!liveVoiceEnabled(true, url, base)) return ignored()
   const { session_id: providerId, sip_headers: headers } = parsed.data.data
   const invites = headers.filter(
     (h) => h.name.toLowerCase() === liveInviteHeader.toLowerCase(),
@@ -55,8 +55,10 @@ export async function handleLiveIncoming(
   const sid = verifyCallToken(invites[0].value, liveInvitePurpose(base))
   if (!sid) return ignored()
   const session = await getVoiceSessionDetails(sid)
-  // Never decide a public, stale or foreign call. Its own handler may be receiving a competing event.
-  if (!session?.pilot || session.status !== 'active') return ignored()
+  // Never decide a stale or foreign call. The signed session was created only
+  // after the private-preview or public-answering access check succeeded.
+  if (!session || session.status !== 'active') return ignored()
+  if (!liveVoiceEnabled(session.pilot, url, base)) return ignored()
   if (session.providerCallId === providerId && session.answeredAt)
     return ignored()
   const path = '/live/sessions/' + encodeURIComponent(providerId)
@@ -84,7 +86,7 @@ export async function handleLiveIncoming(
   const names = phoneTools
     .filter((tool) => !completeCatalog || tool.name !== 'phone_catalog')
     .map((tool) => tool.name)
-  const config = livePreviewSession(
+  const config = liveVoiceSession(
     catalog,
     coaching,
     {
@@ -97,6 +99,7 @@ export async function handleLiveIncoming(
       allowed_tools: [...names, 'request_flood_confirmation', 'end_call'],
     },
     caller,
+    session.pilot,
   )
   try {
     await client

@@ -13,10 +13,7 @@ import {
 } from '@/lib/phone-assistant/engine'
 import { createAdminClient } from '@/supabase/server'
 import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
-import {
-  testProfile,
-  previewToolResult,
-} from '@/lib/phone-assistant/preview-profile'
+import { previewToolResult } from '@/lib/phone-assistant/preview-profile'
 import {
   getVoiceSessionDetails,
   latestPreviewCallerTurn,
@@ -35,7 +32,6 @@ export async function POST(request: Request) {
     return new Response('Call is inactive', { status: 403 })
 
   const authorizedSid = callSid
-  const guarded = testProfile(session.pilot).startsWith('dispatcher-')
   const discard = () => ({
     content: [
       {
@@ -49,7 +45,6 @@ export async function POST(request: Request) {
     run: () => Promise<{ content: { type: 'text'; text: string }[] }>,
     exit = false,
   ) {
-    if (!guarded) return run()
     const cancelled = () => signal.aborted || request.signal.aborted
     if (cancelled()) return discard()
     const start = await latestPreviewCallerTurn(authorizedSid)
@@ -79,7 +74,7 @@ export async function POST(request: Request) {
     callerPhone: session.callerPhone,
     preview: session.pilot,
   }
-  const availableTools = guarded
+  const availableTools = session.pilot
     ? previewPhoneTools(
         await loadBookableCatalog(
           createAdminClient(),
@@ -110,7 +105,7 @@ export async function POST(request: Request) {
                     {
                       type: 'text' as const,
                       text: JSON.stringify(
-                        guarded ? previewToolResult(tool.name, result) : result,
+                        previewToolResult(tool.name, result),
                       ),
                     },
                   ],

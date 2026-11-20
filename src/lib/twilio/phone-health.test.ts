@@ -87,7 +87,7 @@ describe('provider evidence checks', () => {
           caller_screening_status: 'pending',
         }).issues
       const sip =
-        'sip:proj_fixture@sip.api.openai.com;transport=tls?X-Sightings-Invite=test-token'
+        'sip:proj_fixture@sip.api.openai.com;transport=tls?X-Sightings-Live-Invite=test-token'
       expect(check(sip, 'completed')).toEqual([])
       expect(check(sip, 'failed').map((i) => i.issue)).toEqual([
         'Phone assistant connection failed',

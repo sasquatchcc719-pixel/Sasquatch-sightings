@@ -57,9 +57,7 @@ const { loadBookableCatalog } = local('./src/lib/ops/bookable-catalog.ts')
 const { runPhoneTool, previewPhoneTools } = local(
   './src/lib/phone-assistant/engine.ts',
 )
-const { livePreviewSession } = local(
-  './src/lib/phone-assistant/live-preview.ts',
-)
+const { liveVoiceSession } = local('./src/lib/phone-assistant/live-preview.ts')
 const { coachingTopics } = local('./src/lib/phone-assistant/coaching.ts')
 const { catalogServiceCodes, previewToolResult } = local(
   './src/lib/phone-assistant/preview-profile.ts',
@@ -474,7 +472,7 @@ async function run(id, synthetic, schema, session) {
   const coaching =
     '\nConversation reminders from recent call reviews:\n' +
     reminders.join('\n')
-  const session = livePreviewSession(rows, coaching, {
+  const session = liveVoiceSession(rows, coaching, {
     server_url: 'https://unused.invalid',
     authorization: '',
     allowed_tools: ['phone_openings'],

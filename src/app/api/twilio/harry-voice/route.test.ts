@@ -54,11 +54,12 @@ beforeEach(() => {
   m.base.mockReturnValue('https://example.com')
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'test-key')
   vi.stubEnv('HARRY_VOICE_PROJECT_ID', 'proj_test')
+  vi.stubEnv('VERCEL_ENV', 'production')
 })
 afterEach(() => vi.unstubAllEnvs())
 it('starts native SIP and both-track transcription for the authorized preview', async () => {
   const result = await (await send('start&preview=1')).text()
-  expect(result).toContain('secure=true?X-Sightings-Invite=')
+  expect(result).toContain('secure=true?X-Sightings-Live-Invite=')
   expect(result).toContain('track="both_tracks"')
   expect(result).toContain('simulated')
   expect(m.start).toHaveBeenCalledWith({
@@ -117,20 +118,12 @@ it('stores final words with their speaker and sequence only', async () => {
     content: 'Three bedrooms.',
   })
 })
-it('retains the transcription notice before SIP on the dispatcher preview', async () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
-  expect(await (await send('start&preview=1')).text()).toContain(
-    '<Say>This call is transcribed.</Say><Start>',
-  )
-  vi.stubEnv('VERCEL_ENV', 'production')
+it('keeps full test disclosure before connecting GPT Live', async () => {
   expect(await (await send('start&preview=1')).text()).toContain(
     'Bookings and transfers are simulated.',
   )
 })
 it('gives Live pilots a signed origin-bound invite and full disclosure before connecting audio', async () => {
-  vi.stubEnv('VERCEL_ENV', 'preview')
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
-  vi.stubEnv('HARRY_VOICE_TEST_TRANSPORT', 'live')
   const twiml = await (await send('start&preview=1')).text()
   const token = twiml.match(/X-Sightings-Live-Invite=([\w.-]+)/)?.[1] ?? ''
   expect(verifyCallToken(token, 'live-invite:https://example.com')).toBe(sid)
@@ -140,10 +133,6 @@ it('gives Live pilots a signed origin-bound invite and full disclosure before co
   )
   expect(twiml).toContain('Sasquatch Carpet Cleaning after-hours directory')
   expect(twiml).not.toMatch(/How can I help|X-Sightings-Invite=/)
-  vi.stubEnv('VERCEL_ENV', 'production')
-  expect(await (await send('start&preview=1')).text()).toContain(
-    'X-Sightings-Live-Invite=',
-  )
   m.base.mockReturnValue('https://sightings.sasquatchcarpet.com')
   const production = await (await send('start&preview=1')).text()
   expect(production).toContain('X-Sightings-Live-Invite=')

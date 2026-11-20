@@ -1,108 +1,34 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { openingGuard } from './preview-opening'
-import {
-  dispatcherInstructions,
-  previewOpening,
-  previewCallbacksLocal,
-  testProfile,
-  testVoice,
-  turnDetector,
-} from './preview-profile'
-import { phoneInstructions } from './engine'
+import { liveVoiceEnabled } from './live-preview'
+import { dispatcherInstructions, previewToolResult } from './preview-profile'
 
-afterEach(() => {
-  vi.useRealTimers()
-  vi.unstubAllEnvs()
-})
+afterEach(() => vi.unstubAllEnvs())
 
-it('requires an isolated environment and a pilot call', () => {
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-medium')
+it('uses GPT Live for matching production calls and private preview calls only', () => {
+  const base = 'https://sightings.example.com'
   vi.stubEnv('VERCEL_ENV', 'production')
-  expect(testProfile(true)).toBe('current')
-  vi.stubEnv('HARRY_VOICE_TEST_TRANSPORT', 'live')
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-server')
-  expect(testProfile(false)).toBe('current')
-  expect(testProfile(true)).toBe('dispatcher-server')
-  vi.stubEnv('HARRY_VOICE_TEST_TRANSPORT', '')
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'dispatcher-medium')
+  expect(liveVoiceEnabled(false, base + '/incoming', base)).toBe(true)
+  expect(liveVoiceEnabled(true, base + '/incoming', base)).toBe(true)
+  expect(
+    liveVoiceEnabled(true, 'https://elsewhere.example/incoming', base),
+  ).toBe(false)
+
   vi.stubEnv('VERCEL_ENV', 'preview')
-  expect(testProfile(false)).toBe('current')
-  expect(testProfile(true)).toBe('dispatcher-medium')
-  vi.stubEnv('HARRY_VOICE_TEST_PROFILE', 'invalid')
-  expect(testProfile(true)).toBe('current')
-})
-it('uses disjoint server and semantic schemas and holds voice fixed for detector trials', () => {
-  const common = { create_response: true, interrupt_response: true }
-  expect(turnDetector('dispatcher-server')).toEqual({
-    ...common,
-    type: 'server_vad',
-    silence_duration_ms: 500,
-    idle_timeout_ms: 12000,
-  })
-  expect(turnDetector('detector-medium')).toEqual({
-    ...common,
-    type: 'semantic_vad',
-    eagerness: 'medium',
-  })
-  expect(turnDetector('detector-low')).toEqual({
-    ...common,
-    type: 'semantic_vad',
-    eagerness: 'low',
-  })
-  vi.stubEnv('HARRY_VOICE_TEST_VOICE', 'echo')
-  expect(testVoice('detector-medium')).toBe('cedar')
-  expect(testVoice('dispatcher-server')).toBe('echo')
-  vi.stubEnv('HARRY_VOICE_TEST_VOICE', 'unknown')
-  expect(testVoice('dispatcher-low')).toBe('cedar')
-})
-it('reserves the exact opening for its one-shot trigger', () => {
-  expect(previewOpening).toContain('nothing will be booked')
-  expect(dispatcherInstructions([])).not.toContain(previewOpening)
-  expect(dispatcherInstructions([])).toContain('The opening plays once')
-  expect(phoneInstructions(false)).not.toContain('The opening plays once')
-})
-it.each([
-  'input_audio_buffer.speech_started',
-  'input_audio_buffer.committed',
-  'response.created',
-])('yields the opening to %s', (type) => {
-  vi.useFakeTimers()
-  const send = vi.fn(),
-    finish = vi.fn()
-  const guard = openingGuard(send, finish)
-  guard.event('connected')
-  vi.advanceTimersByTime(220)
-  guard.event(type)
-  guard.event('session.updated')
-  vi.runAllTimers()
-  expect(send).not.toHaveBeenCalled()
-  expect(finish).toHaveBeenCalledOnce()
-})
-it('opens once after the grace period, and disposes on disconnect', () => {
-  vi.useFakeTimers()
-  const send = vi.fn()
-  for (const disconnected of [true, false]) {
-    const guard = openingGuard(send, vi.fn())
-    guard.event('connected')
-    guard.event('session.created')
-    if (disconnected) guard.dispose()
-    vi.runAllTimers()
-    guard.event('session.updated')
-    vi.runAllTimers()
-  }
-  expect(send).toHaveBeenCalledOnce()
+  expect(liveVoiceEnabled(true, base + '/incoming', base)).toBe(true)
+  expect(liveVoiceEnabled(false, base + '/incoming', base)).toBe(false)
 })
 
-it('rejects production and cross-environment callback destinations', () => {
-  const prod = 'https://sightings.sasquatchcarpet.com'
-  const staging = 'https://test.example.com'
-  expect(previewCallbacksLocal(staging, prod)).toBe(false)
-  expect(previewCallbacksLocal(prod, prod)).toBe(false)
-  expect(previewCallbacksLocal(staging + '/incoming', staging)).toBe(true)
+it('keeps simulated and future public action claims distinct', () => {
+  expect(dispatcherInstructions([], '', true)).toContain('simulated booking')
+  expect(dispatcherInstructions([], '', false)).not.toContain(
+    'simulated booking',
+  )
+  expect(dispatcherInstructions([], '', false)).toContain(
+    'unless the tool confirms it succeeded',
+  )
 })
 
-it('distinguishes a coupon never submitted from a rejection', async () => {
-  const { previewToolResult } = await import('./preview-profile')
+it('distinguishes a coupon never submitted from a rejection', () => {
   const price = { total: 240, coupon: { code: null, amount: 0 } }
   expect(previewToolResult('phone_quote', price)).toMatchObject({
     ...price,
@@ -118,8 +44,8 @@ it('distinguishes a coupon never submitted from a rejection', async () => {
     price_guidance: expect.stringContaining('returned coupon decision'),
   })
 })
-it('attaches the date of the verified slot and preserves actual failures', async () => {
-  const { previewToolResult } = await import('./preview-profile')
+
+it('attaches the verified slot date and preserves actual failures', () => {
   const wed = { date: '2099-12-02', times: ['14:30'] }
   expect(previewToolResult('phone_quoted_openings', wed)).toMatchObject({
     verified_opening: { date: wed.date, time: '14:30' },
@@ -129,8 +55,7 @@ it('attaches the date of the verified slot and preserves actual failures', async
   })
 })
 
-it('keeps a verified coupon distinct from a final price when attribution is missing', async () => {
-  const { previewToolResult } = await import('./preview-profile')
+it('keeps a verified coupon provisional when attribution is missing', () => {
   expect(
     previewToolResult('phone_quote', {
       status: 'standard_estimate',
