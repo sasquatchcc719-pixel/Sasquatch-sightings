@@ -271,6 +271,81 @@ describe('Book Job residential estimate mode', () => {
     ).toHaveValue(0)
   })
 
+  it('keeps duplicated areas independent in the quote and estimate preview', async () => {
+    render(<NewJobWorkspace />)
+    await screen.findByRole('button', { name: 'Hard Surface, 1 service' })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Hard Surface, 1 service' }),
+    )
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Strip and Wax VCT quantity' }),
+      {
+        target: { value: '500' },
+      },
+    )
+    fireEvent.change(screen.getByLabelText('Display Name'), {
+      target: { value: 'VCT cleaning — Lobby' },
+    })
+    fireEvent.change(screen.getByLabelText('Unit Price'), {
+      target: { value: '1.5' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Line' }))
+    expect(
+      screen
+        .getAllByLabelText('Display Name')
+        .map((input) => (input as HTMLInputElement).value),
+    ).toEqual(['VCT cleaning — Lobby', 'VCT cleaning — Lobby'])
+    fireEvent.change(screen.getAllByLabelText('Display Name')[1], {
+      target: { value: 'VCT cleaning — Training room' },
+    })
+    fireEvent.change(screen.getAllByLabelText('Quantity', { exact: true })[1], {
+      target: { value: '250' },
+    })
+    fireEvent.change(screen.getAllByLabelText('Unit Price')[1], {
+      target: { value: '2' },
+    })
+    const pickerQuantity = screen.getByRole('spinbutton', {
+      name: 'Strip and Wax VCT quantity',
+    })
+    expect(pickerQuantity).toBeDisabled()
+    expect(pickerQuantity).toHaveValue(750)
+    expect(screen.getByText('Running line total: $1250.00')).toBeInTheDocument()
+    expect(screen.getByText('$1250.00 quote')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Send estimate to *'), {
+      target: { value: 'neighbor@example.com' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Preview estimate email' }),
+    )
+    await screen.findByRole('button', { name: 'Send estimate email' })
+    expect(postRequests()[0].body).toMatchObject({
+      line_items: [
+        {
+          service_catalog_item_id: 'strip-wax',
+          name_snapshot: 'VCT cleaning — Lobby',
+          quantity: 500,
+          unit_price: 1.5,
+        },
+        {
+          service_catalog_item_id: 'strip-wax',
+          name_snapshot: 'VCT cleaning — Training room',
+          quantity: 250,
+          unit_price: 2,
+        },
+      ],
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove Line' })[0])
+    expect(screen.getByLabelText('Display Name')).toHaveValue(
+      'VCT cleaning — Training room',
+    )
+    expect(pickerQuantity).toBeEnabled()
+    expect(pickerQuantity).toHaveValue(250)
+    fireEvent.change(pickerQuantity, { target: { value: '300' } })
+    expect(screen.getByLabelText('Quantity', { exact: true })).toHaveValue(300)
+    expect(screen.getByLabelText('Unit Price')).toHaveValue(2)
+    expect(screen.getByText('$600.00 quote')).toBeInTheDocument()
+  })
+
   it('shows every available coupon as a one-tap calculation button', async () => {
     render(<NewJobWorkspace />)
 

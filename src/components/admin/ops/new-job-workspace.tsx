@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Check,
   ChevronDown,
+  Copy,
   Loader2,
   Minus,
   Plus,
@@ -752,12 +753,6 @@ export function NewJobWorkspace() {
     )
   }, [services, selectedCategory])
 
-  const lineItemByServiceId = useMemo(() => {
-    return new Map(
-      lineItems.map((item) => [item.service_catalog_item_id, item]),
-    )
-  }, [lineItems])
-
   const isStaffOpenForPreviewDate = useCallback(
     (staffId: string, dateKey: string): boolean => {
       const override = schedulePreview.dailyAvailability.find(
@@ -1213,9 +1208,11 @@ export function NewJobWorkspace() {
     nextQuantity: number,
   ) => {
     setLineItems((current) => {
-      const existing = current.find(
+      const matchingLines = current.filter(
         (item) => item.service_catalog_item_id === service.id,
       )
+      if (matchingLines.length > 1) return current
+      const existing = matchingLines[0]
       if (nextQuantity <= 0) {
         return current.filter(
           (item) => item.service_catalog_item_id !== service.id,
@@ -1688,12 +1685,21 @@ export function NewJobWorkspace() {
               >
                 <div className="grid gap-2">
                   {servicesInSelectedCategory.map((service) => {
-                    const quantity =
-                      Number(
-                        lineItemByServiceId.get(service.id)?.quantity || '0',
-                      ) || 0
-                    const lineSubtotal =
-                      Number(service.base_price || 0) * quantity
+                    const matchingLines = lineItems.filter(
+                      (item) => item.service_catalog_item_id === service.id,
+                    )
+                    const hasSeparateLines = matchingLines.length > 1
+                    const quantity = matchingLines.reduce(
+                      (sum, item) => sum + Number(item.quantity || 0),
+                      0,
+                    )
+                    const lineSubtotal = matchingLines.reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.unit_price || 0) *
+                          Number(item.quantity || 0),
+                      0,
+                    )
                     return (
                       <div
                         key={service.id}
@@ -1712,6 +1718,11 @@ export function NewJobWorkspace() {
                                 ? `$${Number(service.base_price).toFixed(2)} ${isAreaUnit(service.pricing_unit) ? 'per sq ft' : 'each'}`
                                 : 'Set price manually'}
                             </div>
+                            {hasSeparateLines ? (
+                              <p className="text-muted-foreground text-xs">
+                                Edit each area in the lines below.
+                              </p>
+                            ) : null}
                             {quantity > 0 ? (
                               <div className="text-xs font-semibold">
                                 Running line total: ${lineSubtotal.toFixed(2)}
@@ -1727,6 +1738,7 @@ export function NewJobWorkspace() {
                             onClick={() =>
                               upsertLineItemQuantity(service, quantity - 1)
                             }
+                            disabled={hasSeparateLines}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
@@ -1736,6 +1748,7 @@ export function NewJobWorkspace() {
                             step="1"
                             value={String(quantity)}
                             aria-label={`${service.name} quantity`}
+                            disabled={hasSeparateLines}
                             className="h-9 w-20 text-center font-semibold tabular-nums"
                             onChange={(event) => {
                               const nextQuantity = Number(
@@ -1756,6 +1769,7 @@ export function NewJobWorkspace() {
                             onClick={() =>
                               upsertLineItemQuantity(service, quantity + 1)
                             }
+                            disabled={hasSeparateLines}
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -1857,8 +1871,32 @@ export function NewJobWorkspace() {
                           </div>
                         </div>
                       </div>
-                      {lineItems.length > 1 ? (
-                        <div className="mt-3">
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setLineItems((current) => {
+                              const sourceIndex = current.findIndex(
+                                (line) => line.client_id === item.client_id,
+                              )
+                              const copy = {
+                                ...current[sourceIndex],
+                                client_id: crypto.randomUUID(),
+                              }
+                              return [
+                                ...current.slice(0, sourceIndex + 1),
+                                copy,
+                                ...current.slice(sourceIndex + 1),
+                              ]
+                            })
+                          }
+                        >
+                          <Copy className="mr-2 h-4 w-4" />
+                          Duplicate Line
+                        </Button>
+                        {lineItems.length > 1 ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -1874,8 +1912,8 @@ export function NewJobWorkspace() {
                             <Trash2 className="mr-2 h-4 w-4" />
                             Remove Line
                           </Button>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   )
                 })}
