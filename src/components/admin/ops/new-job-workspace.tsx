@@ -38,6 +38,7 @@ import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 import { getWarrantyWorkDurationMinutes } from '@/lib/ops/warranty-appointment'
+import { isAreaUnit } from '@/lib/ops/estimates'
 import { ResidentialEstimatePanel } from './residential-estimate-panel'
 
 type ServiceItem = {
@@ -533,7 +534,14 @@ export function NewJobWorkspace() {
         if (!response.ok) {
           throw new Error(result.error || 'Failed to load services')
         }
-        const fetchedServices = (result.services || []) as ServiceItem[]
+        // The customer checkout offers this same catalog item as an upsell.
+        const fetchedServices = ((result.services || []) as ServiceItem[]).map(
+          (service) =>
+            service.slug === 'free-uv-inspection' &&
+            service.category === 'Checkout Upsells'
+              ? { ...service, category: 'Carpet Cleaning' }
+              : service,
+        )
         setServices(fetchedServices)
         if (fetchedServices.length > 0) {
           const discoveredCategories = [
@@ -886,7 +894,11 @@ export function NewJobWorkspace() {
   )
   const unpricedLineItems = lineItems.filter(
     (item) =>
-      Number(item.quantity || 0) > 0 && Number(item.unit_price || 0) <= 0,
+      Number(item.quantity || 0) > 0 &&
+      (item.unit_price === '' ||
+        Number(item.unit_price) < 0 ||
+        (Number(item.unit_price) === 0 &&
+          servicesById.get(item.service_catalog_item_id)?.base_price !== 0)),
   ).length
   const selectedLeadSource = leadSourceOptions.find(
     (option) => option.key === leadSource,
@@ -1697,7 +1709,7 @@ export function NewJobWorkspace() {
                             <div className="font-medium">{service.name}</div>
                             <div className="text-muted-foreground text-xs">
                               {service.base_price !== null
-                                ? `$${Number(service.base_price).toFixed(2)} each`
+                                ? `$${Number(service.base_price).toFixed(2)} ${isAreaUnit(service.pricing_unit) ? 'per sq ft' : 'each'}`
                                 : 'Set price manually'}
                             </div>
                             {quantity > 0 ? (

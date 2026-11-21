@@ -44,11 +44,27 @@ beforeEach(() => {
             {
               id: 'carpet-room',
               name: 'Room Carpet Cleaning',
-              category: 'Residential',
+              category: 'Carpet Cleaning',
               base_price: 50,
               pricing_unit: 'each',
               default_duration_minutes: 30,
               buffer_minutes: 0,
+            },
+            {
+              id: 'uv',
+              slug: 'free-uv-inspection',
+              name: 'Free UV Inspection',
+              category: 'Checkout Upsells',
+              base_price: 0,
+              pricing_unit: 'fixed',
+            },
+            {
+              id: 'strip-wax',
+              slug: 'strip-and-wax-vct',
+              name: 'Strip and Wax VCT',
+              category: 'Hard Surface',
+              base_price: 2,
+              pricing_unit: 'per_sq_ft',
             },
             {
               id: 'stairs',
@@ -218,7 +234,7 @@ describe('Book Job residential estimate mode', () => {
     ).not.toBeInTheDocument()
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'Residential, 1 service' }),
+      screen.getByRole('button', { name: 'Carpet Cleaning, 2 services' }),
     )
     expect(
       screen.getByRole('spinbutton', { name: 'Room Carpet Cleaning quantity' }),
@@ -229,6 +245,30 @@ describe('Book Job residential estimate mode', () => {
       }),
     ).not.toBeInTheDocument()
     expect(postRequests()).toEqual([])
+  })
+
+  it('quotes VCT by square footage and keeps the carpet UV inspection free', async () => {
+    navigation.params = new URLSearchParams()
+    render(<NewJobWorkspace />)
+    const inspection = await screen.findByRole('spinbutton', {
+      name: 'Free UV Inspection quantity',
+    })
+    fireEvent.change(inspection, { target: { value: '1' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Hard Surface, 1 service' }),
+    )
+    expect(screen.getByText('$2.00 per sq ft')).toBeInTheDocument()
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Strip and Wax VCT quantity' }),
+      {
+        target: { value: '500' },
+      },
+    )
+    expect(screen.getByText('$1000.00 quote')).toBeInTheDocument()
+    expect(screen.queryByText(/no price yet/)).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText('Unit Price', { selector: '#price-0' }),
+    ).toHaveValue(0)
   })
 
   it('shows every available coupon as a one-tap calculation button', async () => {

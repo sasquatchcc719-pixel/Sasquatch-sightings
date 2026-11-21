@@ -26,6 +26,7 @@ export const BOOKING_EXCLUDED_SLUGS = [
   'heat-transfer-red-drink-dye-from-carpet',
   'mileage-travel',
   'warranty-re-clean',
+  'strip-and-wax-vct',
   'commercial-carpet-cleaning',
   'low-moisture-encapsulation-cleaning-lvmbonnet',
 ]
@@ -41,6 +42,7 @@ export const BOOKING_EXCLUDED_NAMES = [
   'Heat transfer Red drink dye from carpet.',
   'Mileage/ Travel',
   'Warranty Re-Clean',
+  'Strip and Wax VCT',
   'Commercial carpet cleaning',
   'Low Moisture Encapsulation Cleaning LVM/Bonnet',
   'Commercial Deodorizer (Per Sqft)',

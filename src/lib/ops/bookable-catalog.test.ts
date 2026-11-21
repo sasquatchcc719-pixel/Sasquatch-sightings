@@ -24,6 +24,13 @@ describe('isExcludedFromBooking', () => {
     ).toBe(true)
   })
 
+  it('keeps commercial strip and wax in staff booking', () => {
+    expect(
+      isExcludedFromBooking({ slug: 'strip-and-wax-vct', name: 'VCT floors' }),
+    ).toBe(true)
+    expect(isExcludedFromBooking({ name: 'Strip and Wax VCT' })).toBe(true)
+  })
+
   it('keeps real bookable services', () => {
     expect(
       isExcludedFromBooking({
