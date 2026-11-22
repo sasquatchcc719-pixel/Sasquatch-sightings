@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'mock-secret')
   m.read.mockResolvedValue({
     callSid: sid,
-    providerCallId: 'rtc_1',
+    providerCallId: 'live_1',
     status: 'active',
     pilot: true,
     callerPhone: '+15551231234',
@@ -129,9 +129,15 @@ it('sends emergency requests to the pilot keypad and never accepts a transfer nu
 })
 it('denies an invite token or a closed session before calling tools', async () => {
   expect(
-    (await send('tools/list', {}, issueCallToken(sid, 'invite'))).status,
+    (
+      await send(
+        'tools/list',
+        {},
+        issueCallToken(sid, 'live-invite:https://example.com'),
+      )
+    ).status,
   ).toBe(401)
-  m.read.mockResolvedValue({ status: 'ended', providerCallId: 'rtc_1' })
+  m.read.mockResolvedValue({ status: 'ended', providerCallId: 'live_1' })
   expect((await send('tools/list', {})).status).toBe(403)
   expect(m.run).not.toHaveBeenCalled()
 })

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-type Purpose = 'invite' | 'tools' | `live-invite:${string}`
+type Purpose = 'tools' | `live-invite:${string}`
 
 function signature(payload: string, purpose: Purpose | 'quote-duration') {
   const key = process.env.HARRY_VOICE_WEBHOOK_SECRET

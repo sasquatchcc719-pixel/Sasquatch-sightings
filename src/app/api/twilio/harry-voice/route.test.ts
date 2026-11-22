@@ -127,7 +127,7 @@ it('gives Live pilots a signed origin-bound invite and full disclosure before co
   const twiml = await (await send('start&preview=1')).text()
   const token = twiml.match(/X-Sightings-Live-Invite=([\w.-]+)/)?.[1] ?? ''
   expect(verifyCallToken(token, 'live-invite:https://example.com')).toBe(sid)
-  expect(verifyCallToken(token, 'invite')).toBeNull()
+  expect(verifyCallToken(token, 'tools')).toBeNull()
   expect(twiml).toMatch(
     /<Say>[^<]*transcribed[^<]*virtual assistant[^<]*Bookings and transfers are simulated\.<\/Say><Start>/,
   )

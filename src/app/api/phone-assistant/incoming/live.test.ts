@@ -84,13 +84,39 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllEnvs())
 
-it('requires a valid provider signature and ignores Realtime events without an old invite', async () => {
+it('requires a valid provider signature', async () => {
   m.unwrap.mockRejectedValueOnce(Error('not signed'))
   expect((await send()).status).toBe(403)
-  m.unwrap.mockResolvedValueOnce({ type: 'realtime.call.incoming' })
-  expect((await send()).status).toBe(204)
   expect(m.livePost).not.toHaveBeenCalled()
   expect(m.bind).not.toHaveBeenCalled()
+})
+
+it('ignores a provider-signed retired call even with its original valid invite', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-11-22T18:00:00Z'))
+    // Captured test credential, signed by mock-secret and valid until 18:02 UTC.
+    m.unwrap.mockResolvedValueOnce({
+      id: 'evt_retired',
+      type: 'realtime.call.incoming',
+      data: {
+        call_id: 'rtc_fixture',
+        sip_headers: [
+          {
+            name: 'X-Sightings-Invite',
+            value:
+              'CAbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.1795370520.TxqzrPNp8_3KYiU3oG9sUHspopdHBjSgeCRTOU9sbx8',
+          },
+        ],
+      },
+    })
+    expect((await send()).status).toBe(204)
+    expect(m.get).not.toHaveBeenCalled()
+    expect(m.bind).not.toHaveBeenCalled()
+    expect(m.livePost).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('accepts a signed GPT Live pilot with scoped tools and caller recognition', async () => {
@@ -139,7 +165,7 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
   expect(config.delegation.responses.instructions).toContain('Active coaching')
   const token = config.delegation.responses.tools[0].authorization
   expect(verifyCallToken(token, 'tools')).toBe(sid)
-  expect(verifyCallToken(token, 'invite')).toBeNull()
+  expect(verifyCallToken(token, 'live-invite:https://example.com')).toBeNull()
 })
 
 it('uses the neutral GPT Live opening for an unknown caller', async () => {
@@ -152,7 +178,7 @@ it('uses the neutral GPT Live opening for an unknown caller', async () => {
 
 it('rejects unscoped, wrong-origin, inactive, and public preview sessions', async () => {
   for (const token of [
-    issueCallToken(sid, 'invite'),
+    'invalid',
     issueCallToken(sid, 'tools'),
     issueCallToken(sid, 'live-invite:https://elsewhere.example'),
   ]) {

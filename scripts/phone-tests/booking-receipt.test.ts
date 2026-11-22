@@ -119,7 +119,7 @@ function isolatedCall(pilot = false) {
     call_sid: sid,
     caller_phone: '+13035550141',
     pilot,
-    provider_call_id: 'rtc_test',
+    provider_call_id: 'live_test',
     started_at: new Date().toISOString(),
     answered_at: new Date().toISOString(),
     ended_at: null as string | null,
