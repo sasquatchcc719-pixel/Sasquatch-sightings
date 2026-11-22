@@ -211,8 +211,6 @@ it('keeps a verified booking number out of an unsolicited spoken confirmation', 
     expect(prompt).toContain(
       'After a verified booking, confirm the saved day and time',
     )
-    expect(prompt).toContain(
-      'Keep the confirmation number internal unless the caller explicitly asks for the number',
-    )
+    expect(prompt).toContain('The office finds appointments by customer name')
   }
 })

@@ -639,7 +639,7 @@ describe('phone transport through booking and owner recap', () => {
     })
     expect(receipt).toMatchObject({
       status: 'booked',
-      appointment_id: appointmentId,
+      date: appointmentDate,
     })
     expect(fixture.appointments).toMatchObject([
       { customer_id: profile.id, service_address_id: site.id },
@@ -740,7 +740,7 @@ describe('phone transport through booking and owner recap', () => {
     const receipt = await call('phone_book_service', book)
     expect(receipt).toMatchObject({
       status: 'booked',
-      appointment_id: appointmentId,
+      date: appointmentDate,
     })
     expect(await call('phone_book_service', book)).toEqual(receipt)
     expect(fixture.appointments).toMatchObject([
@@ -938,10 +938,10 @@ describe('phone transport through booking and owner recap', () => {
       }),
     ).toMatchObject({ date: appointmentDate, times: ['15:00'] })
     const receipt = await call('phone_book_service', accepted)
-    expect(receipt).toMatchObject({
+    expect(receipt).toEqual({
       status: 'booked',
-      appointment_id: appointmentId,
-      confirmation_number: 'SC-DEED0001',
+      date: appointmentDate,
+      time: '15:00',
       total: 378,
     })
     deps.openSlots.mockResolvedValue([])
@@ -953,7 +953,7 @@ describe('phone transport through booking and owner recap', () => {
     ])
     const email = await ownerEmail(fixture)
     expect(email.subject).toContain('Booking verified')
-    expect(email.text).toContain(receipt.confirmation_number)
+    expect(email.text).toContain('SC-DEED0001')
   })
   it.each([false, true])(
     'books and replays a commercial measuring visit without a residential invoice (returning %s)',
@@ -1020,10 +1020,10 @@ describe('phone transport through booking and owner recap', () => {
         customer_confirmed: true,
       }
       const receipt = await call('phone_book_measurement', measurement)
-      expect(receipt).toMatchObject({
+      expect(receipt).toEqual({
         status: 'booked',
-        confirmation_number: 'EST-DEED0001',
-        appointment_id: appointmentId,
+        date: appointmentDate,
+        time: measurement.start_time,
       })
       if (returning) {
         expect(fixture.measurementPlans[0]).toMatchObject({

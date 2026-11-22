@@ -187,11 +187,31 @@ it('returns a committed booking receipt even when a later turn interrupts delive
     status: 'booked',
     appointment_id: 'unique-job-id',
     confirmation_number: 'SC-01234567',
+    date: '2099-11-24',
+    time: '14:00',
   }
   m.run.mockResolvedValue(receipt)
   const result = await rpcResult(
     await send('tools/call', { name: 'phone_book_service', arguments: {} }),
   )
-  expect(JSON.parse(result.result.content[0].text)).toEqual(receipt)
+  expect(JSON.parse(result.result.content[0].text)).toEqual({
+    status: 'booked',
+    date: receipt.date,
+    time: receipt.time,
+  })
   expect(result.result).not.toHaveProperty('committed')
+})
+
+it('withholds confirmation when a booking result lacks its internal receipt', async () => {
+  m.run.mockResolvedValue({
+    status: 'booked',
+    date: '2099-11-24',
+    time: '14:00',
+    appointment_id: 'test',
+  })
+  const response = await rpcResult(
+    await send('tools/call', { name: 'phone_book_service', arguments: {} }),
+  )
+  expect(response.result.isError).toBe(true)
+  expect(response.result.content[0].text).not.toContain('"status":"booked"')
 })

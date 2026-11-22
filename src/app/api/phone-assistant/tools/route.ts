@@ -18,6 +18,14 @@ import {
 } from '@/lib/phone-assistant/records'
 import { queueBaseUrl, queueClient } from '@/lib/twilio/appointment-queue'
 
+const verifiedReceipt = z.object({
+  appointment_id: z.string().min(1),
+  confirmation_number: z.string().min(1),
+  date: z.string().min(1),
+  time: z.string().min(1),
+  total: z.number().optional(),
+})
+
 export const maxDuration = 120
 
 export async function POST(request: Request) {
@@ -113,19 +121,28 @@ export async function POST(request: Request) {
                   input as Record<string, unknown>,
                   { ...context, ...freshness },
                 )
+                if (
+                  (tool.name === 'phone_book_service' ||
+                    tool.name === 'phone_book_measurement') &&
+                  result &&
+                  typeof result === 'object' &&
+                  'status' in result &&
+                  result.status === 'booked'
+                ) {
+                  // Validate the internal receipt before exposing only the caller's booking details.
+                  const { date, time, total } = verifiedReceipt.parse(result)
+                  const confirmation = { status: 'booked', date, time, total }
+                  return {
+                    committed: true,
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: JSON.stringify(confirmation),
+                      },
+                    ],
+                  }
+                }
                 return {
-                  committed: Boolean(
-                    (tool.name === 'phone_book_service' ||
-                      tool.name === 'phone_book_measurement') &&
-                    result &&
-                    typeof result === 'object' &&
-                    'status' in result &&
-                    result.status === 'booked' &&
-                    'appointment_id' in result &&
-                    result.appointment_id &&
-                    'confirmation_number' in result &&
-                    result.confirmation_number,
-                  ),
                   ...(result && typeof result === 'object' && 'error' in result
                     ? { isError: true }
                     : {}),

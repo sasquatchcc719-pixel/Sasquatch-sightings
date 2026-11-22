@@ -261,7 +261,7 @@ export const phoneTools = [
 const liveBookingTool = {
   name: 'phone_book_service',
   description:
-    'Save a live residential appointment and its invoice after the caller accepts the exact job, price and time. For a verified returning caller, reuse customer_ref and service_address_ref with the confirmed first name and street. Omit unknown surname, city and ZIP. New callers must supply them. Only a booked receipt with a confirmation number means success. A quote, availability, caller agreement, missing details or an error does not reserve anything.',
+    'Save a live residential appointment and its invoice after the caller accepts the exact job, price and time. For a verified returning caller, reuse customer_ref and service_address_ref with the confirmed first name and street. Omit unknown surname, city and ZIP. New callers must supply them. Only a verified booked result means success. A quote, availability, caller agreement, missing details or an error does not reserve anything.',
   inputSchema: liveBookingSchema,
 }
 const measurementTool = {

@@ -257,7 +257,7 @@ it('supplies live scheduling tools and verified customer, receipt, pricing and a
     'conditional prices',
     'repeat_customer',
     'confirmed_total',
-    'appointment_id and confirmation_number',
+    'status booked with the saved day and time',
     'office callback request',
     'phone_book_measurement',
   ])
