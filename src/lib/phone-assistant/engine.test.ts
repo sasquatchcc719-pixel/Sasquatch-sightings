@@ -6,10 +6,14 @@ const deps = vi.hoisted(() => ({
   promo: vi.fn(),
   catalog: vi.fn(),
   book: vi.fn(),
+  commit: vi.fn(),
   slots: vi.fn(),
   staffSlots: vi.fn(),
   estimateSlots: vi.fn(),
   session: vi.fn(),
+}))
+vi.mock('@/lib/ops/commit-planned-booking', () => ({
+  commitPlannedBooking: deps.commit,
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: deps.db }))
 vi.mock('@/app/api/public/promo-preview/route', () => ({ GET: deps.promo }))
@@ -29,7 +33,7 @@ vi.mock('@/lib/ops/staff-availability', () => ({
   getStaffPrioritizedSlots: deps.estimateSlots,
 }))
 vi.mock('./records', () => ({ getVoiceSession: deps.session }))
-import { phoneTools, runPhoneTool } from './engine'
+import { phoneTools, phoneToolsForCall, runPhoneTool } from './engine'
 const ctx = { callSid: 'test', callerPhone: '+15550100000', preview: true }
 const id = '8fa3ee90-2ef6-4a7e-af0a-e67b5758f883'
 const service = {
@@ -424,5 +428,145 @@ describe('customer voice preview', () => {
       'phone',
       expect.arrayContaining([ctx.callerPhone]),
     )
+  })
+})
+
+describe('live residential phone booking', () => {
+  const live = { ...ctx, preview: false }
+  const treatment = '8fa3ee90-2ef6-4a7e-af0a-e67b5758f884'
+  const sofa = '8fa3ee90-2ef6-4a7e-af0a-e67b5758f885'
+  const agreed = {
+    ...booking,
+    start_time: '15:00',
+    email_confirmed: true,
+    confirmed_total: 378,
+    service: {
+      ...service,
+      line_items: [
+        { service_id: id, quantity: 3 },
+        { service_id: treatment, quantity: 3 },
+        { service_id: sofa, quantity: 1 },
+      ],
+    },
+  }
+  const receipt = {
+    status: 'booked',
+    appointment_id: id,
+    confirmation_number: 'SC-8FA3EE90',
+    appointment_date: booking.appointment_date,
+    start_time: '15:00',
+    total: 378,
+  }
+  const prior = vi.fn()
+  beforeEach(() => {
+    deps.db.mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: prior }) }) }),
+    })
+    prior.mockResolvedValue({ data: null })
+    deps.slots.mockResolvedValue([{ start_time: '15:00:00' }])
+    deps.catalog.mockResolvedValue([
+      { id, name: 'Regular Size Room', base_price: 46 },
+      { id: treatment, name: 'Urine Eliminator Treatment', base_price: 30 },
+      { id: sofa, name: 'Sofa / Couch 3 Seat', base_price: 150 },
+    ])
+    deps.book.mockResolvedValue({ ok: true, subtotal: 378, total: 378 })
+    deps.commit.mockResolvedValue(receipt)
+  })
+  it('exposes the real write only to public calls and simulations only to private calls', () => {
+    expect(phoneToolsForCall(false).map((t) => t.name)).toContain(
+      'phone_book_service',
+    )
+    expect(phoneToolsForCall(false).map((t) => t.name)).not.toContain(
+      'phone_preview_booking',
+    )
+    expect(phoneToolsForCall(true).map((t) => t.name)).not.toContain(
+      'phone_book_service',
+    )
+  })
+  it('requires a saved appointment receipt for the exact accepted job', async () => {
+    const result = await runPhoneTool('phone_book_service', agreed, live)
+    expect(result).toMatchObject({
+      status: 'booked',
+      appointment_id: id,
+      confirmation_number: receipt.confirmation_number,
+      total: 378,
+    })
+    expect(deps.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: expect.objectContaining({ phone: ctx.callerPhone }),
+        line_items: agreed.service.line_items,
+        notify_customer: true,
+        notify_internal: true,
+      }),
+      expect.objectContaining({ total: 378 }),
+      null,
+      expect.objectContaining({
+        callSid: ctx.callSid,
+        requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    )
+  })
+  it.each([
+    ['private test', agreed, ctx],
+    ['unconfirmed total', { ...agreed, confirmed_total: 300 }, live],
+    ['missing consent', { ...agreed, customer_confirmed: false }, live],
+    ['unverified email', { ...agreed, email_confirmed: false }, live],
+    ['missing email', { ...agreed, email: undefined }, live],
+    ['unavailable slot', { ...agreed, start_time: '16:00' }, live],
+    ['commercial', { ...agreed, visit_type: 'commercial_measurement' }, live],
+  ])('cannot write during %s', async (_, args, context) => {
+    expect(
+      await runPhoneTool(
+        'phone_book_service',
+        args as typeof agreed,
+        context as typeof live,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.commit).not.toHaveBeenCalled()
+  })
+  it.each([
+    { ...receipt, status: 'simulated' },
+    { ...receipt, appointment_id: null },
+    { ...receipt, start_time: '16:00' },
+    { ...receipt, confirmation_number: null },
+  ])('does not confirm a missing or mismatched receipt', async (invalid) => {
+    deps.commit.mockResolvedValue(invalid)
+    expect(
+      await runPhoneTool('phone_book_service', agreed, live),
+    ).toHaveProperty('error')
+  })
+  it('recovers an exact retry after the opening disappears and rejects a different job on the same call', async () => {
+    await runPhoneTool('phone_book_service', agreed, live)
+    const { requestHash } = deps.commit.mock.calls[0][3]
+    prior.mockResolvedValue({
+      data: {
+        id,
+        status: 'booked',
+        appointment_date: agreed.appointment_date,
+        start_time: '15:00:00',
+        quoted_total: 378,
+        phone_assistant_request_hash: requestHash,
+      },
+    })
+    deps.slots.mockResolvedValue([])
+    expect(
+      await runPhoneTool('phone_book_service', agreed, live),
+    ).toMatchObject({ status: 'booked', appointment_id: id })
+    expect(
+      await runPhoneTool(
+        'phone_book_service',
+        { ...agreed, street: 'A different address' },
+        live,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.commit).toHaveBeenCalledTimes(1)
+  })
+  it('returns an office handoff when a conflicting customer match prevents commitment', async () => {
+    deps.commit.mockRejectedValue(
+      new Error('Customer details require office review'),
+    )
+    expect(await runPhoneTool('phone_book_service', agreed, live)).toEqual({
+      error: expect.stringMatching(/message/i),
+    })
   })
 })

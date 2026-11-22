@@ -8,7 +8,7 @@ vi.mock('@/lib/phone-assistant/records', () => ({
 vi.mock('@/lib/phone-assistant/engine', async () => {
   const { z } = await import('zod')
   return {
-    phoneTools: [
+    phoneToolsForCall: () => [
       {
         name: 'lookup',
         description: 'Get price',
@@ -107,4 +107,13 @@ it('denies an invite token or a closed session before calling tools', async () =
   m.read.mockResolvedValue({ status: 'ended', providerCallId: 'rtc_1' })
   expect((await send('tools/list', {})).status).toBe(403)
   expect(m.run).not.toHaveBeenCalled()
+})
+
+it('marks tool-level business failures as MCP errors', async () => {
+  m.run.mockResolvedValue({ error: 'Could not verify the booking.' })
+  const r = await send('tools/call', {
+    name: 'lookup',
+    arguments: { name: 'Cleaning' },
+  })
+  expect((await rpcResult(r)).result).toMatchObject({ isError: true })
 })

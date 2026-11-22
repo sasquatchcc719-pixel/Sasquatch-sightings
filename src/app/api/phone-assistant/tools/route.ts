@@ -2,9 +2,12 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { escapeTwiml } from '@/lib/twilio/forward-twiml'
 import { verifyCallToken } from '@/lib/phone-assistant/call-token'
-import { phoneTools, runPhoneTool } from '@/lib/phone-assistant/engine'
+import { phoneToolsForCall, runPhoneTool } from '@/lib/phone-assistant/engine'
 import { getVoiceSessionDetails } from '@/lib/phone-assistant/records'
 import { queueBaseUrl, queueClient } from '@/lib/twilio/appointment-queue'
+
+// Booking confirmations and QuickBooks run after the live caller receives the receipt.
+export const maxDuration = 120
 
 export async function POST(request: Request) {
   const bearer = request.headers
@@ -27,7 +30,7 @@ export async function POST(request: Request) {
         name: 'sasquatch-phone',
         version: '1.0.0',
       })
-      for (const tool of phoneTools) {
+      for (const tool of phoneToolsForCall(session.pilot)) {
         server.registerTool(
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema },
@@ -39,6 +42,9 @@ export async function POST(request: Request) {
                 context,
               )
               return {
+                ...(result && typeof result === 'object' && 'error' in result
+                  ? { isError: true }
+                  : {}),
                 content: [
                   { type: 'text' as const, text: JSON.stringify(result) },
                 ],
