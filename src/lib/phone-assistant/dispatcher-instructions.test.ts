@@ -191,3 +191,28 @@ it.each([true, false])(
     }
   },
 )
+
+it('keeps a verified booking number out of an unsolicited spoken confirmation', () => {
+  const session = liveVoiceSession(
+    [],
+    '',
+    {
+      server_url: 'https://example.com/tools',
+      authorization: 'test',
+      allowed_tools: ['phone_book_service'],
+    },
+    null,
+    false,
+  )
+  for (const prompt of [
+    session.instructions,
+    session.delegation.responses.instructions,
+  ]) {
+    expect(prompt).toContain(
+      'After a verified booking, confirm the saved day and time',
+    )
+    expect(prompt).toContain(
+      'Keep the confirmation number internal unless the caller explicitly asks for the number',
+    )
+  }
+})
