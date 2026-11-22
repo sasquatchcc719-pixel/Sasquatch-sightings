@@ -9,6 +9,8 @@ import { bookPhoneMeasurement } from './commercial-measurement'
 import {
   callerLookupSchema,
   lookupPhoneCaller,
+  proposeUsualAddress,
+  usualAddressSchema,
   verifiedCallerLocation,
 } from './caller'
 import { catalogServiceCodes } from './dispatcher-instructions'
@@ -142,22 +144,37 @@ const bookingSchema = appointmentSchema.extend({
     ),
   customer_confirmed: z.boolean(),
 })
-const contactSchema = bookingSchema.extend({
-  customer_ref: z.uuid().optional(),
-  service_address_ref: z.uuid().optional(),
-  use_saved_email: z
-    .boolean()
-    .optional()
-    .describe(
-      'True only with explicit permission after a verified caller lookup.',
-    ),
-  email: z.email().toLowerCase().refine(isDeliverableCustomerEmail).optional(),
-  lead_source: sourceInput.optional(),
-  lead_detail: textField.optional(),
+// The model may omit these fields only when the server can bind both saved IDs.
+const newContactDetails = bookingSchema.pick({
+  last_name: true,
+  city: true,
+  zip_code: true,
 })
+const bookingService = serviceSchema.partial({ zip_code: true })
+const contactSchema = bookingSchema
+  .partial({ last_name: true, city: true, zip_code: true })
+  .extend({
+    service: bookingService.optional(),
+    unit: callerLookupSchema.shape.unit,
+    customer_ref: z.uuid().optional(),
+    service_address_ref: z.uuid().optional(),
+    use_saved_email: z
+      .boolean()
+      .optional()
+      .describe(
+        'True only with explicit permission after a verified caller lookup.',
+      ),
+    email: z
+      .email()
+      .toLowerCase()
+      .refine(isDeliverableCustomerEmail)
+      .optional(),
+    lead_source: sourceInput.optional(),
+    lead_detail: textField.optional(),
+  })
 const liveBookingSchema = contactSchema.extend({
   visit_type: z.literal('residential_service'),
-  service: serviceSchema,
+  service: bookingService,
   confirmed_total: z
     .number()
     .nonnegative()
@@ -171,6 +188,7 @@ const liveBookingSchema = contactSchema.extend({
 const measurementSchema = contactSchema
   .omit({ accepted_minimum_charge: true, service: true })
   .extend({
+    ...newContactDetails.shape,
     visit_type: z.literal('commercial_measurement'),
     email_confirmed: z.literal(true),
     business_name: textField,
@@ -186,9 +204,15 @@ const changeSchema = z.object({
 
 export const phoneTools = [
   {
+    name: 'phone_usual_address',
+    description:
+      'After the caller confirms the recognized first name, check for one saved residential street to offer. Ask if that is the service location. If the result has no offer or the caller declines, ask for the house number and street. Use phone_caller_lookup to verify the address the caller confirms.',
+    inputSchema: usualAddressSchema,
+  },
+  {
     name: 'phone_caller_lookup',
     description:
-      'Verify the incoming number, caller-supplied full name and street including unit. For a business, include its caller-supplied name. Returns saved contact references and whether email is available. Follow the spelling or disambiguation instruction if no match; never guess.',
+      'Verify the confirmed first name and either the saved street the caller just accepted or the house number and street they supplied or corrected. Pass any unit, city and ZIP from the accepted address offer. Ask for a unit or surname only if the lookup requests it. For a business include the caller-supplied business name and contact surname. Returns references for the verified location.',
     inputSchema: callerLookupSchema,
   },
   {
@@ -237,7 +261,7 @@ export const phoneTools = [
 const liveBookingTool = {
   name: 'phone_book_service',
   description:
-    'Save a live residential appointment and its invoice after the caller accepts the exact job, price and time. Only a booked receipt with a confirmation number means success. A quote, availability, caller agreement, missing details or an error does not reserve anything.',
+    'Save a live residential appointment and its invoice after the caller accepts the exact job, price and time. For a verified returning caller, reuse customer_ref and service_address_ref with the confirmed first name and street. Omit unknown surname, city and ZIP. New callers must supply them. Only a booked receipt with a confirmation number means success. A quote, availability, caller agreement, missing details or an error does not reserve anything.',
   inputSchema: liveBookingSchema,
 }
 const measurementTool = {
@@ -280,9 +304,11 @@ export function phoneToolsForCall(
       .extend({ service: service.optional(), ...searchDates })
       .refine(oneSearchMode, searchModeError),
     phone_preview_booking: contactSchema.extend({
-      service: service.optional(),
+      service: service.partial({ zip_code: true }).optional(),
     }),
-    phone_book_service: liveBookingSchema.extend({ service }),
+    phone_book_service: liveBookingSchema.extend({
+      service: service.partial({ zip_code: true }),
+    }),
   }
   return tools.map((t) => ({
     ...t,
@@ -549,7 +575,13 @@ async function resolveContact<
       throw new CallerInputError(
         'Ask for the email and confirm the spelling, or take an office message.',
       )
-    return { ...input, email: input.email, verifiedCustomer: false }
+    return {
+      ...input,
+      ...newContactDetails.parse(input),
+      unit: input.unit || undefined,
+      email: input.email,
+      verifiedCustomer: false,
+    }
   }
   const saved = await verifiedCallerLocation(ctx.callerPhone, input, db)
   if (
@@ -572,7 +604,7 @@ async function resolveContact<
     first_name: saved.customer.first_name,
     last_name: saved.customer.last_name,
     street: saved.address.street_1,
-    unit: saved.address.street_2 ?? undefined,
+    unit: saved.address.street_2?.trim() || undefined,
     city: saved.address.city,
     zip_code: saved.address.zip_code,
     email,
@@ -865,6 +897,12 @@ export async function runPhoneTool(
   try {
     const db = createAdminClient()
     switch (name) {
+      case 'phone_usual_address':
+        return await proposeUsualAddress(
+          ctx.callerPhone,
+          usualAddressSchema.parse(args),
+          db,
+        )
       case 'phone_caller_lookup':
         return await lookupPhoneCaller(
           ctx.callerPhone,
@@ -932,6 +970,14 @@ export async function runPhoneTool(
             'Read back the exact visit and get confirmation first.',
           )
         const resolved = await resolveContact(parsed, ctx, db)
+        if (
+          resolved.verifiedCustomer &&
+          parsed.service?.zip_code &&
+          parsed.service.zip_code !== resolved.zip_code
+        )
+          throw new CallerInputError(
+            'The quoted ZIP differs from the verified service address. Recheck the location and quote.',
+          )
         const input = {
           ...resolved,
           service: resolved.service && {
@@ -947,7 +993,7 @@ export async function runPhoneTool(
           },
         }
         return await checkOrBook(
-          input,
+          bookingSchema.parse(input),
           ctx,
           db,
           isLive ? liveBookingSchema.parse(input) : undefined,

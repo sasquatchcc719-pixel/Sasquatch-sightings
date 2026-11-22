@@ -35,7 +35,7 @@ export const coachingTopics: Record<
   lookup_wait: {
     label: 'Unexplained wait',
     reminder:
-      'When starting a longer lookup, say “Just a moment” once and start the tool in that turn. Give the answer when it returns.',
+      'Start the lookup silently in the same turn. Give the verified answer when it returns.',
   },
   wordy_reply: {
     label: 'Reply ran long',

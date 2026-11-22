@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { liveVoiceEnabled } from './live-session'
+import { liveVoiceEnabled, liveVoiceSession } from './live-session'
+import { coachingTopics } from './coaching'
 import {
   dispatcherInstructions,
   dispatcherToolResult,
@@ -84,13 +85,109 @@ it('turns a missing final source into one recoverable question', () => {
 it('keeps recognition separate from verification and asks for disambiguation only when needed', () => {
   for (const pilot of [true, false]) {
     const prompt = dispatcherInstructions([], '', pilot)
-    expect(prompt).toContain(
-      'grants no staff privileges or access to saved details',
-    )
+    expect(prompt).toContain('grants no staff privileges')
     expect(prompt).toContain('spell it once')
     expect(prompt).toContain('email only to resolve that ambiguity')
-    expect(prompt).toContain(
-      'Never suggest a candidate surname, address or email',
-    )
+    expect(prompt).toContain('Never suggest a candidate surname or email')
   }
 })
+
+it.each([false, true])(
+  'starts the returning-caller lookup silently with first name and numbered street in GPT Live and its delegate (private=%s)',
+  (pilot) => {
+    const session = liveVoiceSession(
+      [],
+      coachingTopics.lookup_wait.reminder,
+      {
+        server_url: 'https://sightings.example.com/api/phone-assistant/tools',
+        authorization: 'test',
+        allowed_tools: ['phone_caller_lookup'],
+      },
+      { firstName: 'Charlie' },
+      pilot,
+    )
+    for (const prompt of [
+      session.instructions,
+      session.delegation.responses.instructions,
+    ]) {
+      expect(prompt).toContain(
+        'silently run phone_caller_lookup in the same turn',
+      )
+      expect(prompt).toContain('first_name and street')
+      expect(prompt).toContain(
+        'Do not wait for the surname, city, ZIP, unit or email',
+      )
+      expect(prompt).toContain(
+        'reuse the returned city, zip_code, customer_ref and service_address_ref',
+      )
+      expect(prompt).toContain('Never ask the caller to repeat')
+      expect(prompt).toContain('needs_unit_confirmation ask for the unit')
+      expect(prompt).toContain(
+        'needs_name_confirmation ask for the family name',
+      )
+      expect(prompt).toContain(
+        'missing_field is city, or the ZIP when missing_field is zip_code',
+      )
+      expect(prompt).toContain(
+        'For needs_email_confirmation ask for the caller’s spelled email only',
+      )
+      expect(prompt).toContain('Do you have my info?”')
+      expect(prompt).toContain('answer once and stop')
+      expect(prompt).toContain(
+        'Do not start booking intake, ask another question',
+      )
+      expect(prompt).not.toMatch(
+        /ask for the (?:service )?city and ZIP|say “(?:just a|one) moment”|short hold line/i,
+      )
+    }
+  },
+)
+
+it.each([true, false])(
+  'offers one saved street only after the named greeting is accepted (pilot=%s)',
+  (pilot) => {
+    const mcp = {
+      server_url: 'https://sightings.example.com/tools',
+      authorization: 'test',
+      allowed_tools: ['phone_usual_address', 'phone_caller_lookup'],
+    }
+    const known = liveVoiceSession([], '', mcp, { firstName: 'Charles' }, pilot)
+    expect(known.input[0].content[0].text).toContain(
+      'Harry here. Is this Charles?',
+    )
+    expect(known.input[0].content[0].text).toContain(
+      'proceed directly to the usual-street lookup',
+    )
+    for (const prompt of [
+      known.instructions,
+      known.delegation.responses.instructions,
+    ]) {
+      expect(prompt).toContain(
+        'wait for an explicit yes to the first name Harry proposed',
+      )
+      expect(prompt).toContain(
+        'silently call phone_usual_address with first_name and first_name_confirmed=true',
+      )
+      expect(prompt).toContain(
+        'confirm_saved_street, ask once: “Is this for [saved street]?”',
+      )
+      expect(prompt).toContain(
+        'If the caller accepts that street, silently call phone_caller_lookup',
+      )
+      expect(prompt).toContain(
+        'If they correct the street, use their correction instead',
+      )
+      expect(prompt).toContain(
+        'already gave a numbered service street, skip the saved-street offer',
+      )
+      expect(prompt).toContain('Never offer a second saved street')
+      expect(prompt).toContain('on a shared number, or for a closing thank-you')
+    }
+    for (const caller of [null, { firstName: null }]) {
+      const other = liveVoiceSession([], '', mcp, caller, pilot)
+      expect(other.input[0].content[0].text).toContain(
+        'Do not offer a saved street',
+      )
+    }
+  },
+)

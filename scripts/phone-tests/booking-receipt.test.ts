@@ -4,6 +4,7 @@ import { handleLiveIncoming } from '@/app/api/phone-assistant/incoming/live'
 import { createClient } from '@supabase/supabase-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { POST } from '@/app/api/phone-assistant/tools/route'
+import { recognizePhoneCaller } from '@/lib/phone-assistant/caller'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import { getVoiceSession } from '@/lib/phone-assistant/records'
 import {
@@ -143,6 +144,15 @@ function isolatedCall(pilot = false) {
   const addresses: Record<string, unknown>[] = []
   const measurementPlans: Record<string, unknown>[] = []
   const appointments: Record<string, unknown>[] = []
+  const history: {
+    appointment_date: string
+    customer_id: string
+    service_address_id: string
+    status: string
+    kind: string
+    parked_at: string | null
+  }[] = []
+  let historyReads = 0
   const invoices: Record<string, unknown>[] = []
   const fail = { commit: false }
   const db = createClient('https://phone-fixture.invalid', 'fixture', {
@@ -189,7 +199,9 @@ function isolatedCall(pilot = false) {
           expect(p_sid).toBe(sid)
           expect(p_version).toBe('calendar-version')
           expect(p_plan).toMatchObject({
-            expected_caller_sequence: 3,
+            expected_caller_sequence: transcript
+              .filter((turn) => turn.role === 'user')
+              .at(-1)?.sequence,
             date: appointmentDate,
             time: '15:00',
             customer: { business_name: 'Example Office' },
@@ -228,7 +240,9 @@ function isolatedCall(pilot = false) {
           expect(p_plan).toMatchObject({
             customer: { phone: session.caller_phone, email: accepted.email },
             address: { street_1: accepted.street, zip_code: service.zip_code },
-            expected_caller_sequence: 3,
+            expected_caller_sequence: transcript
+              .filter((turn) => turn.role === 'user')
+              .at(-1)?.sequence,
             calendar_version: 'calendar-version',
             appointment_status: 'booked',
             subtotal: 378,
@@ -263,10 +277,9 @@ function isolatedCall(pilot = false) {
             appointment_date: p_plan.appointment_date,
             start_time: p_plan.start_time,
             invoice_id: 'synthetic-invoice',
-            customer_id: 'synthetic-customer',
-            address_id: 'synthetic-address',
-            appointment_date: p_plan.appointment_date,
-            start_time: p_plan.start_time,
+            customer_id: p_plan.verified_customer_id ?? 'synthetic-customer',
+            address_id:
+              p_plan.verified_service_address_id ?? 'synthetic-address',
             total: p_plan.total,
             subtotal: p_plan.subtotal,
             discount_applied: 0,
@@ -287,6 +300,41 @@ function isolatedCall(pilot = false) {
                 : transcript
             break
           case 'ops_appointments':
+            if (url.searchParams.has('customer_id')) {
+              historyReads++
+              const selected = (field: string, id: string) =>
+                (url.searchParams.get(field) || '')
+                  .replace(/^in\.\((.*)\)$/, '$1')
+                  .split(',')
+                  .includes(id)
+              rows = history.filter(
+                (job) =>
+                  (!url.searchParams.has('service_address_id') ||
+                    selected('service_address_id', job.service_address_id)) &&
+                  (!url.searchParams.has('appointment_date') ||
+                    job.appointment_date <=
+                      (url.searchParams.get('appointment_date') || '').slice(
+                        4,
+                      )) &&
+                  selected('customer_id', job.customer_id) &&
+                  url.searchParams.get('status') === 'eq.' + job.status &&
+                  url.searchParams.get('parked_at') === 'is.null' &&
+                  job.parked_at === null &&
+                  url.searchParams.get('kind') === 'eq.' + job.kind,
+              )
+              if (
+                url.searchParams.get('order')?.includes('appointment_date.desc')
+              ) {
+                rows = (rows as typeof history).sort((left, right) =>
+                  right.appointment_date.localeCompare(left.appointment_date),
+                )
+                rows = rows.slice(
+                  0,
+                  Number(url.searchParams.get('limit') || rows.length),
+                )
+              }
+              break
+            }
             rows = appointments.filter(
               (a) =>
                 url.searchParams.get('phone_assistant_call_sid') ===
@@ -320,6 +368,9 @@ function isolatedCall(pilot = false) {
   return {
     db,
     session,
+    history,
+    historyReads: () => historyReads,
+    transcript,
     appointments,
     invoices,
     fail,
@@ -327,6 +378,58 @@ function isolatedCall(pilot = false) {
     addresses,
     measurementPlans,
   }
+}
+// The same CRM customer owns conflicting city variants. Only one has a completed cleaning.
+function returningCallerWithHistory() {
+  const fixture = isolatedCall()
+  const customer = {
+    id: 'a0c5b218-ec8d-44fd-9cef-a752f40ae54b',
+    first_name: accepted.first_name,
+    last_name: accepted.last_name,
+    full_name: accepted.first_name + ' ' + accepted.last_name,
+    phone: fixture.session.caller_phone,
+    email: accepted.email,
+    business_name: null,
+    is_commercial: false,
+  }
+  const other = { ...customer, id: '0b592361-cb75-4c86-93a2-c9f3b9450807' }
+  const site = {
+    id: '17a7532e-5829-4874-b828-0c137308c237',
+    customer_id: customer.id,
+    street_1: accepted.street,
+    city: accepted.city,
+    state: 'CO',
+    zip_code: accepted.zip_code,
+  }
+  const imported = {
+    ...site,
+    id: 'c7dfad7f-c05a-4cbe-a71f-1569ba2bfc04',
+    customer_id: customer.id,
+    street_1: '1 Example Ct.',
+    city: 'Palmer Lake',
+  }
+  fixture.customers.push(customer)
+  fixture.addresses.push(imported, site)
+  const completed = {
+    appointment_date: '2025-02-01',
+    customer_id: customer.id,
+    service_address_id: site.id,
+    status: 'completed',
+    kind: 'service',
+    parked_at: null,
+  }
+  fixture.history.push(
+    completed,
+    { ...completed, service_address_id: imported.id, status: 'cancelled' },
+    { ...completed, service_address_id: imported.id, kind: 'estimate' },
+    {
+      ...completed,
+      service_address_id: imported.id,
+      parked_at: '2026-01-15T00:00:00Z',
+    },
+  )
+  const request = { first_name: customer.first_name, street: '1 Example Ct.' }
+  return { fixture, customer, other, site, imported, completed, request }
 }
 async function mcp(method: string, params: object) {
   const result = await POST(
@@ -542,6 +645,282 @@ describe('phone transport through booking and owner recap', () => {
       { customer_id: profile.id, service_address_id: site.id },
     ])
   })
+  it('offers only the usual saved street after a name confirmation, then books the accepted address without restatement', async () => {
+    const { fixture, customer, site } = returningCallerWithHistory()
+    fixture.transcript.splice(
+      0,
+      fixture.transcript.length,
+      { sequence: 1, role: 'assistant', content: 'Is this Jamie?' },
+      { sequence: 2, role: 'user', content: 'Yes.' },
+    )
+    expect(
+      await recognizePhoneCaller(
+        fixture.session.caller_phone,
+        fixture.db,
+        AbortSignal.timeout(1000),
+      ),
+    ).toMatchObject({ firstName: customer.first_name })
+    const offer = await call('phone_usual_address', {
+      first_name: customer.first_name,
+      first_name_confirmed: true,
+    })
+    expect(offer).toMatchObject({
+      status: 'confirm_saved_street',
+      street: site.street_1,
+    })
+    expect(
+      Object.keys(offer).filter(
+        (k) =>
+          ![
+            'status',
+            'street',
+            'unit',
+            'city',
+            'zip_code',
+            'guidance',
+          ].includes(k),
+      ),
+    ).toEqual([])
+    if (offer.city) expect(offer.city).toBe(site.city)
+    if (offer.zip_code) expect(offer.zip_code).toBe(site.zip_code)
+    for (const secret of [customer.email, customer.id, site.id])
+      expect(JSON.stringify(offer)).not.toContain(secret)
+    const request = { first_name: customer.first_name, street: offer.street }
+    fixture.transcript.push(
+      {
+        sequence: 3,
+        role: 'assistant',
+        content: 'Still at ' + offer.street + '?',
+      },
+      { sequence: 4, role: 'user', content: 'Yes.' },
+    )
+    const match = await call('phone_caller_lookup', {
+      ...request,
+      city: offer.city,
+      zip_code: offer.zip_code,
+    })
+    expect(await call('phone_caller_lookup', request)).toEqual(match)
+    expect(match).toMatchObject({
+      status: 'verified_location',
+      customer_ref: customer.id,
+      service_address_ref: site.id,
+      city: site.city,
+      zip_code: site.zip_code,
+      saved_email_available: true,
+    })
+    expect(JSON.stringify(match)).not.toContain(customer.email)
+    expect(fixture.historyReads()).toBeGreaterThan(0)
+    const book = {
+      ...request,
+      visit_type: accepted.visit_type,
+      appointment_date: accepted.appointment_date,
+      start_time: accepted.start_time,
+      service: { ...accepted.service, zip_code: match.zip_code },
+      confirmed_total: accepted.confirmed_total,
+      customer_confirmed: true,
+      email_confirmed: true,
+      accepted_minimum_charge: false,
+      use_saved_email: true,
+      customer_ref: match.customer_ref,
+      service_address_ref: match.service_address_ref,
+    }
+    fixture.transcript.push(
+      {
+        sequence: 5,
+        role: 'assistant',
+        content: 'Confirm the quoted visit and use your email on file?',
+      },
+      { sequence: 6, role: 'user', content: 'Yes, please book it.' },
+    )
+    expect(
+      fixture.transcript
+        .filter((turn) => turn.role === 'user')
+        .map((turn) => turn.content),
+    ).toEqual(['Yes.', 'Yes.', 'Yes, please book it.'])
+    const receipt = await call('phone_book_service', book)
+    expect(receipt).toMatchObject({
+      status: 'booked',
+      appointment_id: appointmentId,
+    })
+    expect(await call('phone_book_service', book)).toEqual(receipt)
+    expect(fixture.appointments).toMatchObject([
+      { customer_id: customer.id, service_address_id: site.id },
+    ])
+    expect(fixture.invoices).toHaveLength(1)
+    expect(fixture.customers).toHaveLength(1)
+    expect(fixture.addresses).toHaveLength(2)
+  })
+  it('discards a rejected street offer and withholds the old references when the caller gives a new address', async () => {
+    const { fixture, customer, site } = returningCallerWithHistory()
+    const offered = await call('phone_usual_address', {
+      first_name: customer.first_name,
+      first_name_confirmed: true,
+    })
+    expect(offered).toMatchObject({
+      status: 'confirm_saved_street',
+      street: site.street_1,
+    })
+    const corrected = {
+      first_name: customer.first_name,
+      street: '72 New Place',
+    }
+    fixture.transcript.push({
+      sequence: 5,
+      role: 'user',
+      content: 'No, this visit is at 72 New Place.',
+    })
+    const match = await call('phone_caller_lookup', corrected)
+    expect(match.status).toBe('no_verified_location')
+    expect(match).not.toHaveProperty('service_address_ref')
+    expect(match).not.toHaveProperty('customer_ref')
+    expect(fixture.appointments).toHaveLength(0)
+  })
+  it('offers the most recent completed service street and omits all other contact details', async () => {
+    const { fixture, customer, site, imported, completed } =
+      returningCallerWithHistory()
+    imported.street_1 = '24 Other Court'
+    fixture.history.push(
+      {
+        ...completed,
+        service_address_id: imported.id,
+        appointment_date: '2024-07-15',
+      },
+      {
+        ...completed,
+        service_address_id: imported.id,
+        appointment_date: '2099-07-15',
+      },
+    )
+    const offer = await call('phone_usual_address', {
+      first_name: customer.first_name,
+      first_name_confirmed: true,
+    })
+    expect(offer).toMatchObject({
+      status: 'confirm_saved_street',
+      street: site.street_1,
+    })
+    for (const field of [
+      'email',
+      'customer_ref',
+      'service_address_ref',
+      'city',
+      'zip_code',
+    ])
+      expect(offer).not.toHaveProperty(field)
+    for (const value of [
+      customer.id,
+      site.id,
+      customer.email,
+      imported.street_1,
+    ])
+      expect(JSON.stringify(offer)).not.toContain(value)
+    expect(fixture.appointments).toHaveLength(0)
+  })
+  it.each([
+    'wrong first name',
+    'shared email destinations',
+    'two most recent sites',
+    'no name confirmation',
+    'declined name confirmation',
+  ] as const)('withholds the saved-street offer for %s', async (reason) => {
+    const { fixture, customer, other, site, imported, completed } =
+      returningCallerWithHistory()
+    if (reason === 'shared email destinations')
+      fixture.customers.push({ ...other, email: 'second@example.test' })
+    if (reason === 'two most recent sites') {
+      imported.street_1 = '24 Other Court'
+      fixture.history.push({ ...completed, service_address_id: imported.id })
+    }
+    const result = await call('phone_usual_address', {
+      first_name:
+        reason === 'wrong first name' ? 'Someone' : customer.first_name,
+      ...(reason !== 'no name confirmation' && {
+        first_name_confirmed: reason !== 'declined name confirmation',
+      }),
+    })
+    if (
+      reason === 'no name confirmation' ||
+      reason === 'declined name confirmation'
+    )
+      expect(
+        result.status === 'ask_for_street' || typeof result.error === 'string',
+      ).toBe(true)
+    else expect(result).toMatchObject({ status: 'ask_for_street' })
+    expect(result).not.toHaveProperty('street')
+    for (const secret of [
+      customer.email,
+      customer.id,
+      site.street_1,
+      imported.street_1,
+      site.id,
+      imported.id,
+      site.city,
+      site.zip_code,
+    ])
+      expect(JSON.stringify(result)).not.toContain(secret)
+    expect(fixture.appointments).toHaveLength(0)
+    expect(fixture.invoices).toHaveLength(0)
+  })
+  it.each(['different surnames', 'two completed sites'] as const)(
+    'requests only the necessary detail and withholds references for %s',
+    async (reason) => {
+      const { fixture, customer, other, site, imported, completed, request } =
+        returningCallerWithHistory()
+      if (reason === 'different surnames') {
+        fixture.customers.push(other)
+        imported.customer_id = other.id
+        other.last_name = 'Another'
+        other.full_name = other.first_name + ' ' + other.last_name
+        expect(
+          await recognizePhoneCaller(
+            fixture.session.caller_phone,
+            fixture.db,
+            AbortSignal.timeout(1000),
+          ),
+        ).toMatchObject({ firstName: null })
+      } else {
+        fixture.history.push({
+          ...completed,
+          customer_id: customer.id,
+          service_address_id: imported.id,
+        })
+      }
+      const match = await call('phone_caller_lookup', request)
+      expect(match).toMatchObject(
+        reason === 'different surnames'
+          ? { status: 'needs_name_confirmation' }
+          : { status: 'needs_location_confirmation', missing_field: 'city' },
+      )
+      for (const sensitive of [
+        customer.id,
+        other.id,
+        site.id,
+        imported.id,
+        customer.email,
+        site.city,
+        imported.city,
+      ])
+        expect(JSON.stringify(match)).not.toContain(sensitive)
+      expect(match).not.toHaveProperty('customer_ref')
+      expect(match).not.toHaveProperty('service_address_ref')
+      if (reason === 'different surnames')
+        expect(fixture.historyReads()).toBe(0)
+      const unsafe = await call('phone_book_service', {
+        ...accepted,
+        last_name: undefined,
+        city: undefined,
+        zip_code: undefined,
+        email: undefined,
+        ...request,
+        customer_ref: customer.id,
+        service_address_ref: site.id,
+        use_saved_email: true,
+      })
+      expect(unsafe).toHaveProperty('error')
+      expect(fixture.appointments).toHaveLength(0)
+      expect(fixture.invoices).toHaveLength(0)
+    },
+  )
   it('turns the accepted quote into one schedule entry, invoice and verifiable receipt', async () => {
     const fixture = isolatedCall()
     const tools = (await mcp('tools/list', {})).tools.map(

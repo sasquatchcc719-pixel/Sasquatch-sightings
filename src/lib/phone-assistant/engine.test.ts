@@ -8,6 +8,7 @@ const deps = vi.hoisted(() => ({
   book: vi.fn(),
   commit: vi.fn(),
   verifiedCaller: vi.fn(),
+  usualAddress: vi.fn(),
   measurement: vi.fn(),
   slots: vi.fn(),
   staffSlots: vi.fn(),
@@ -17,6 +18,7 @@ const deps = vi.hoisted(() => ({
 vi.mock('./caller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./caller')>()),
   verifiedCallerLocation: deps.verifiedCaller,
+  proposeUsualAddress: deps.usualAddress,
 }))
 vi.mock('./commercial-measurement', () => ({
   bookPhoneMeasurement: deps.measurement,
@@ -82,9 +84,38 @@ beforeEach(() => {
 })
 describe('customer voice preview', () => {
   it('publishes only valid read and simulation tool schemas', () => {
-    expect(phoneTools).toHaveLength(8)
+    expect(phoneTools).toHaveLength(9)
     for (const t of phoneTools)
       expect(z.toJSONSchema(t.inputSchema).type).toBe('object')
+  })
+  it('binds the usual-address offer to the current incoming number and affirmative name confirmation', async () => {
+    const input = { first_name: 'Example', first_name_confirmed: true }
+    const offer = { status: 'confirm_saved_street', street: '1 Sample Street' }
+    deps.usualAddress.mockResolvedValue(offer)
+    expect(phoneToolsForCall(false).map((tool) => tool.name)).toContain(
+      'phone_usual_address',
+    )
+    expect(
+      await runPhoneTool(
+        'phone_usual_address',
+        { ...input, phone: '+12025559876' },
+        ctx,
+      ),
+    ).toEqual(offer)
+    expect(deps.usualAddress).toHaveBeenCalledWith(
+      ctx.callerPhone,
+      input,
+      expect.anything(),
+    )
+    expect(
+      await runPhoneTool(
+        'phone_usual_address',
+        { first_name: 'Example', first_name_confirmed: false },
+        ctx,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.usualAddress).toHaveBeenCalledTimes(1)
+    expect(deps.commit).not.toHaveBeenCalled()
   })
   it('accepts unambiguous catalog slugs in live quote, openings, and booking tools', () => {
     const catalog = [
@@ -560,6 +591,18 @@ describe('live residential phone booking', () => {
     ['missing consent', { ...agreed, customer_confirmed: false }, live],
     ['unverified email', { ...agreed, email_confirmed: false }, live],
     ['missing email', { ...agreed, email: undefined }, live],
+    ['new caller missing surname', { ...agreed, last_name: undefined }, live],
+    ['new caller missing city', { ...agreed, city: undefined }, live],
+    [
+      'new caller missing service ZIP',
+      { ...agreed, zip_code: undefined },
+      live,
+    ],
+    [
+      'new caller missing quote ZIP',
+      { ...agreed, service: { ...agreed.service, zip_code: undefined } },
+      live,
+    ],
     ['unavailable slot', { ...agreed, start_time: '16:00' }, live],
     ['commercial', { ...agreed, visit_type: 'commercial_measurement' }, live],
   ])('cannot write during %s', async (_, args, context) => {
@@ -628,21 +671,61 @@ describe('live residential phone booking', () => {
     })
     const repeat = {
       ...agreed,
-      service: { ...agreed.service, lead_source: undefined, zip_code: '11111' },
-      zip_code: '11111',
+      last_name: undefined,
+      unit: '',
+      city: undefined,
+      zip_code: undefined,
+      service: {
+        ...agreed.service,
+        lead_source: undefined,
+        zip_code: undefined,
+      },
       customer_ref: id,
       service_address_ref: a,
       email: undefined,
       use_saved_email: true,
     }
-    expect(
-      await runPhoneTool('phone_book_service', repeat, live),
-    ).toMatchObject({ status: 'booked' })
+    const registry = phoneToolsForCall(false, [
+      {
+        id,
+        name: 'Regular room',
+        slug: 'regular-room',
+        base_price: 46,
+        category: 'Carpet Cleaning',
+        pricing_unit: 'each',
+      },
+    ])
+    const offeredTool = registry.find(
+      (tool) => tool.name === 'phone_book_service',
+    )!
+    expect(offeredTool.inputSchema.safeParse(repeat).success).toBe(true)
+    const result = await runPhoneTool('phone_book_service', repeat, live)
+    expect(result).toMatchObject({ status: 'booked', total: 378 })
+    expect(JSON.stringify(result)).not.toContain('private@example.org')
+    expect(deps.verifiedCaller).toHaveBeenCalledWith(
+      ctx.callerPhone,
+      expect.objectContaining({
+        first_name: agreed.first_name,
+        street: agreed.street,
+        unit: '',
+        customer_ref: id,
+        service_address_ref: a,
+      }),
+      expect.anything(),
+    )
     expect(deps.commit).toHaveBeenCalledWith(
       expect.objectContaining({
         lead_source: 'repeat_customer',
-        address: expect.objectContaining({ zip_code: service.zip_code }),
-        customer: expect.objectContaining({ email: 'private@example.org' }),
+        address: expect.objectContaining({
+          street_1: agreed.street,
+          city: agreed.city,
+          zip_code: service.zip_code,
+        }),
+        customer: expect.objectContaining({
+          first_name: agreed.first_name,
+          last_name: agreed.last_name,
+          email: 'private@example.org',
+        }),
       }),
       expect.anything(),
       null,
@@ -653,6 +736,16 @@ describe('live residential phone booking', () => {
       }),
     )
     deps.commit.mockClear()
+    expect(
+      await runPhoneTool(
+        'phone_book_service',
+        {
+          ...repeat,
+          service: { ...repeat.service, zip_code: '80133' },
+        },
+        live,
+      ),
+    ).toHaveProperty('error')
     expect(
       await runPhoneTool(
         'phone_book_service',

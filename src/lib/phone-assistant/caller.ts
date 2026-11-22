@@ -6,11 +6,20 @@ import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 const text = z.string().trim().min(1).max(150)
 export const callerLookupSchema = z.object({
   first_name: text,
-  last_name: text,
-  street: text,
-  unit: text
+  last_name: text
     .optional()
-    .describe('Unit or suite the caller gave. Omit if there is none.'),
+    .describe(
+      'Omit for a recognized residential caller unless volunteered or the lookup asks for it.',
+    ),
+  street: text,
+  unit: z
+    .string()
+    .trim()
+    .max(150)
+    .optional()
+    .describe(
+      'Use only a unit the caller gave. Omit if unknown. Use an empty string only when the caller explicitly confirms there is no unit.',
+    ),
   business_name: text
     .optional()
     .describe(
@@ -103,6 +112,152 @@ export async function recognizePhoneCaller(
   return { firstName: first }
 }
 
+export const usualAddressSchema = z.object({
+  first_name: text,
+  first_name_confirmed: z
+    .literal(true)
+    .describe('The caller just affirmed the first name in Harry’s greeting.'),
+})
+
+const addressColumns = 'id,customer_id,street_1,street_2,city,state,zip_code'
+const matchLimit = 100
+
+function currentMountainDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+}
+
+function completedServicesAt(
+  db: SupabaseClient,
+  customers: string[],
+  sites: string[],
+) {
+  return db
+    .from('ops_appointments')
+    .select('customer_id,service_address_id,appointment_date')
+    .in('customer_id', customers)
+    .in('service_address_id', sites)
+    .eq('kind', 'service')
+    .eq('status', 'completed')
+    .is('parked_at', null)
+    .lte('appointment_date', currentMountainDate())
+    .order('appointment_date', { ascending: false })
+    .order('id')
+    .limit(matchLimit + 1)
+}
+
+export async function proposeUsualAddress(
+  callerPhone: string,
+  input: z.infer<typeof usualAddressSchema>,
+  db: SupabaseClient,
+) {
+  const fallback = {
+    status: 'ask_for_street' as const,
+    guidance: 'Ask only for the street for this visit.',
+  }
+  const phone = normalizeOpsPhone(callerPhone)
+  if (!input.first_name_confirmed || !/^\+1\d{10}$/.test(phone)) return fallback
+  const { data: profiles, error } = await db
+    .from('ops_customers')
+    .select(
+      'id,first_name,last_name,full_name,business_name,email,is_commercial',
+    )
+    .in('phone', opsPhoneLookupVariants(phone))
+    .limit(matchLimit + 1)
+  if (error) throw error
+  if (!profiles?.length || profiles.length > matchLimit) return fallback
+  const first = profiles[0]
+  if (
+    profiles.some(
+      (p) =>
+        p.is_commercial ||
+        p.business_name ||
+        words(p.first_name) !== words(input.first_name),
+    )
+  )
+    return fallback
+  // A household or business number must never select another person's address.
+  if (
+    profiles.length > 1 &&
+    (!words(first.last_name) ||
+      !isDeliverableCustomerEmail(first.email) ||
+      profiles.some(
+        (p) =>
+          words(p.last_name) !== words(first.last_name) ||
+          p.email?.trim().toLowerCase() !== first.email.trim().toLowerCase(),
+      ))
+  )
+    return fallback
+  const ids = profiles.map((p) => p.id)
+  const { data: rows, error: siteError } = await db
+    .from('ops_service_addresses')
+    .select(addressColumns)
+    .in('customer_id', ids)
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .order('id')
+    .limit(matchLimit + 1)
+  if (siteError) throw siteError
+  if (!rows?.length || rows.length > matchLimit) return fallback
+  const sites = rows.filter(
+    (a) =>
+      ids.includes(a.customer_id) &&
+      a.state?.toUpperCase() === 'CO' &&
+      a.city &&
+      /^\d{5}$/.test(a.zip_code) &&
+      /^\d+[a-z]?\s+\S/iu.test(street(a.street_1)),
+  )
+  if (!sites.length) return fallback
+  const place = (a: (typeof sites)[number]) =>
+    JSON.stringify([
+      street(a.street_1),
+      unit(a.street_2),
+      words(a.city),
+      a.zip_code,
+    ])
+  let site = sites[0]
+  if (new Set(sites.map(place)).size > 1) {
+    const history = await completedServicesAt(
+      db,
+      ids,
+      sites.map((a) => a.id),
+    )
+    if (history.error || !history.data?.length) return fallback
+    const jobs = history.data
+    const latest = jobs[0].appointment_date
+    if (
+      jobs.length > matchLimit &&
+      jobs[jobs.length - 1].appointment_date === latest
+    )
+      return fallback
+    const visited = sites.filter((a) =>
+      jobs.some(
+        (j) =>
+          j.appointment_date === latest &&
+          j.customer_id === a.customer_id &&
+          j.service_address_id === a.id,
+      ),
+    )
+    if (!visited.length || new Set(visited.map(place)).size !== 1)
+      return fallback
+    site = visited[0]
+  }
+  const sameStreet = sites.filter(
+    (a) =>
+      street(a.street_1) === street(site.street_1) &&
+      unit(a.street_2) === unit(site.street_2),
+  )
+  const distinguishTown = sameStreet.some(
+    (a) => words(a.city) !== words(site.city) || a.zip_code !== site.zip_code,
+  )
+  return {
+    status: 'confirm_saved_street' as const,
+    street: site.street_1,
+    ...(site.street_2 && { unit: site.street_2 }),
+    ...(distinguishTown && { city: site.city, zip_code: site.zip_code }),
+    guidance:
+      'Ask one question confirming this service address. If confirmed, use it in phone_caller_lookup with the first name and any returned locality. If corrected, use the caller’s new address instead.',
+  }
+}
+
 // Search all profiles on the incoming line before deciding whether the supplied
 // identity and service location identify a single destination for the email.
 async function matchCallerLocation(
@@ -111,9 +266,17 @@ async function matchCallerLocation(
   db: SupabaseClient,
 ) {
   const noMatch = { status: 'no_verified_location' as const }
-  const phones = opsPhoneLookupVariants(callerPhone)
-  if (!phones.length) return noMatch
-  const limit = 100
+  const phone = normalizeOpsPhone(callerPhone)
+  if (!/^\+1\d{10}$/.test(phone)) return noMatch
+  const phones = opsPhoneLookupVariants(phone)
+  const streetKey = street(input.street)
+  if (
+    !input.last_name &&
+    (input.business_name || !/^\d+[a-z]?\s+\S/iu.test(streetKey))
+  ) {
+    return { status: 'needs_name_confirmation' as const }
+  }
+  const limit = matchLimit
   const customers = await db
     .from('ops_customers')
     .select('id,first_name,last_name,business_name,is_commercial,email')
@@ -126,14 +289,15 @@ async function matchCallerLocation(
   const candidates = customers.data.filter(
     (c) =>
       words(c.first_name) === words(input.first_name) &&
-      words(c.last_name) === words(input.last_name) &&
+      (input.last_name === undefined ||
+        words(c.last_name) === words(input.last_name)) &&
       words(c.business_name) === words(input.business_name) &&
       (Boolean(input.business_name) || !c.is_commercial),
   )
   if (!candidates.length) return noMatch
   const addresses = await db
     .from('ops_service_addresses')
-    .select('id,customer_id,street_1,street_2,city,state,zip_code')
+    .select(addressColumns)
     .in(
       'customer_id',
       candidates.map((c) => c.id),
@@ -149,8 +313,9 @@ async function matchCallerLocation(
         (a) =>
           a.customer_id === customer.id &&
           a.street_1 &&
-          street(a.street_1) === street(input.street) &&
-          unit(a.street_2) === unit(input.unit) &&
+          street(a.street_1) === streetKey &&
+          (!input.city || words(a.city) === words(input.city)) &&
+          (!input.zip_code || a.zip_code === input.zip_code) &&
           a.state?.toUpperCase() === 'CO' &&
           /^\d{5}$/.test(a.zip_code) &&
           a.city,
@@ -158,26 +323,61 @@ async function matchCallerLocation(
       .map((address) => ({ customer, address })),
   )
   if (!matches.length) return noMatch
-  const places = new Set(
-    matches.map((m) => words(m.address.city) + ':' + m.address.zip_code),
-  )
-  const located =
-    places.size > 1
-      ? matches.filter(
-          ({ address }) =>
-            (!input.zip_code || address.zip_code === input.zip_code) &&
-            (!input.city || words(address.city) === words(input.city)),
-        )
-      : matches
-  if (!located.length) return noMatch
   if (
-    located.some(
-      (m) =>
-        words(m.address.city) !== words(located[0].address.city) ||
-        m.address.zip_code !== located[0].address.zip_code,
-    )
+    !input.last_name &&
+    (matches.some((m) => !words(m.customer.last_name)) ||
+      new Set(matches.map((m) => words(m.customer.last_name))).size !== 1)
+  ) {
+    return { status: 'needs_name_confirmation' as const }
+  }
+  if (
+    input.unit === undefined &&
+    matches.some((m) => unit(m.address.street_2))
+  ) {
+    return { status: 'needs_unit_confirmation' as const }
+  }
+  let located = matches.filter(
+    (m) => unit(m.address.street_2) === unit(input.unit),
   )
-    return { status: 'needs_location_confirmation' as const }
+  if (!located.length) return noMatch
+  const zips = new Set(located.map((m) => m.address.zip_code))
+  if (zips.size > 1)
+    return {
+      status: 'needs_location_confirmation' as const,
+      missing_field: 'zip_code' as const,
+    }
+  if (new Set(located.map((m) => words(m.address.city))).size > 1) {
+    // Legacy rows can disagree on a town label within one ZIP. Only actual
+    // completed service for this customer at this exact street/unit can settle it.
+    const customerIds = [...new Set(located.map((m) => m.customer.id))]
+    if (customerIds.length === 1) {
+      const history = await completedServicesAt(
+        db,
+        customerIds,
+        located.map((m) => m.address.id),
+      )
+      if (!history.error && history.data && history.data.length <= limit) {
+        const serviced = new Set(
+          history.data
+            .filter((j) => j.customer_id === customerIds[0])
+            .map((j) => j.service_address_id),
+        )
+        const cities = new Set(
+          located
+            .filter((m) => serviced.has(m.address.id))
+            .map((m) => words(m.address.city)),
+        )
+        if (cities.size === 1)
+          located = located.filter((m) => cities.has(words(m.address.city)))
+      }
+    }
+    if (new Set(located.map((m) => words(m.address.city))).size > 1) {
+      return {
+        status: 'needs_location_confirmation' as const,
+        missing_field: 'city' as const,
+      }
+    }
+  }
   const emailKey = (v: string | null) => (v ?? '').trim().toLowerCase()
   const first = located[0]
   const multiple = located.some((m) => m.customer.id !== first.customer.id)
@@ -220,13 +420,25 @@ export async function lookupPhoneCaller(
   if (match.status !== 'verified_location') {
     const guidance = {
       no_verified_location:
-        'Ask the caller to spell their last name and confirm the street and unit, then retry once. Never suggest an identity or address. If still unmatched, use caller-provided information.',
+        'The supplied details do not match a saved location. Confirm only the disputed detail or use the new-address flow if the caller is giving a different location.',
+      needs_name_confirmation:
+        'Ask only for the surname, then retry with the existing street. Do not ask for the rest of the address.',
+      needs_unit_confirmation:
+        'Ask only for the apartment or suite. If the caller explicitly confirms no unit, pass unit as an empty string and retry.',
       needs_location_confirmation:
-        'Confirm the service city and ZIP, then retry with city and zip_code. If the location remains ambiguous, take an office callback.',
+        'missing_field' in match && match.missing_field === 'city'
+          ? 'Ask only for the city. The ZIP is already known.'
+          : 'Ask only for the ZIP code. Keep the supplied street.',
       needs_email_confirmation:
         'Ask the caller to spell the full email they use for this address, then retry with email. For booking pass that confirmed email and both references with use_saved_email false. Never reveal candidate emails.',
     }[match.status]
-    return { status: match.status, guidance }
+    return {
+      status: match.status,
+      ...(match.status === 'needs_location_confirmation' && {
+        missing_field: match.missing_field,
+      }),
+      guidance,
+    }
   }
   const { customer, address } = match.record
   const hasEmail =
@@ -240,7 +452,7 @@ export async function lookupPhoneCaller(
     zip_code: address.zip_code,
     saved_email_available: hasEmail,
     guidance: hasEmail
-      ? 'Reuse the verified ZIP. With the caller’s permission, use the saved email without reading it aloud. Keep both references for booking. If the caller spelled an email to resolve ambiguity, pass that confirmed email and use_saved_email false.'
+      ? 'Use the saved city and ZIP for pricing, availability and booking. Do not ask for the address again. If the caller only asked whether their information is on file, confirm and stop. When booking, with the caller’s permission, use the saved email without reading it aloud. Keep both references for booking. If the caller spelled an email to resolve ambiguity, pass that confirmed email and use_saved_email false.'
       : 'Reuse the verified ZIP. Ask the caller to spell and confirm an email; there is no usable saved email.',
   }
 }

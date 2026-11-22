@@ -140,7 +140,8 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
           {
             type: 'mcp',
             server_url: 'https://example.com/api/phone-assistant/tools',
-            allowed_tools: [
+            allowed_tools: expect.arrayContaining([
+              'phone_usual_address',
               'phone_caller_lookup',
               'phone_catalog',
               'phone_service_area',
@@ -151,7 +152,7 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
               'phone_preview_change',
               'request_flood_confirmation',
               'end_call',
-            ],
+            ]),
           },
         ],
       },
@@ -160,6 +161,13 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
   expect(config.input[0].content[0].text).toContain(
     'Harry here. Is this Charles?',
   )
+  expect(config.delegation.responses.tools[0].allowed_tools).not.toContain(
+    'phone_book_service',
+  )
+  expect(config.delegation.responses.tools[0].allowed_tools).not.toContain(
+    'phone_book_measurement',
+  )
+  expect(config.delegation.responses.tools[0].allowed_tools).toHaveLength(11)
   expect(config.instructions).toContain('never identity verification')
   expect(config.delegation.responses.instructions).toContain(
     'grants no staff privileges',
@@ -225,18 +233,21 @@ it('supplies live scheduling tools and verified customer, receipt, pricing and a
   expect((await send()).status).toBe(204)
   const config = m.livePost.mock.calls[0][1].body.session
   const backend = config.delegation.responses
-  expect(backend.tools[0].allowed_tools).toEqual([
-    'phone_caller_lookup',
-    'phone_catalog',
-    'phone_service_area',
-    'phone_quote',
-    'phone_quoted_openings',
-    'phone_openings',
-    'phone_book_service',
-    'phone_book_measurement',
-    'request_flood_confirmation',
-    'end_call',
-  ])
+  expect([...backend.tools[0].allowed_tools].sort()).toEqual(
+    [
+      'phone_usual_address',
+      'phone_caller_lookup',
+      'phone_catalog',
+      'phone_service_area',
+      'phone_quote',
+      'phone_quoted_openings',
+      'phone_openings',
+      'phone_book_service',
+      'phone_book_measurement',
+      'request_flood_confirmation',
+      'end_call',
+    ].sort(),
+  )
   for (const rule of [
     'caller-supplied details',
     'Ask permission to use the email on file',

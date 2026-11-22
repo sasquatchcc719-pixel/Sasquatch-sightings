@@ -187,6 +187,30 @@ describe('phone caller verification', () => {
       guidance: expect.stringContaining('spell'),
     })
   })
+  it('asks for just the unit when multiple suites remain, and accepts an explicit no-unit answer', async () => {
+    const plain = { ...address, id: 'no-unit', street_2: null }
+    const { client } = db([customer], [address, plain])
+    const lean = { first_name: customer.first_name, street: '123 Oak Lane' }
+    expect(await lookupPhoneCaller(phone, lean, client)).toMatchObject({
+      status: 'needs_unit_confirmation',
+    })
+    expect(
+      await lookupPhoneCaller(phone, { ...lean, unit: '' }, client),
+    ).toMatchObject({
+      status: 'verified_location',
+      service_address_ref: plain.id,
+    })
+  })
+  it('respects an explicit correction to the location even when only one street matches', async () => {
+    const { client } = db([customer], [address])
+    expect(
+      await lookupPhoneCaller(
+        phone,
+        { ...provided, city: 'Elsewhere' },
+        client,
+      ),
+    ).toMatchObject({ status: 'no_verified_location' })
+  })
   it.each([
     ['wrong last name', { ...provided, last_name: 'Other' }, [customer]],
     [
@@ -199,7 +223,6 @@ describe('phone caller verification', () => {
       { ...provided, street: '123 Different Lane' },
       [customer],
     ],
-    ['missing unit', { ...provided, unit: undefined }, [customer]],
     ['another unit', { ...provided, unit: '3' }, [customer]],
     [
       'wrong company',
