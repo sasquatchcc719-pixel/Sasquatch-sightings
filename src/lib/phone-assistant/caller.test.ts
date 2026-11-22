@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { lookupPhoneCaller, recognizePhoneCaller } from './caller'
+import { lookupPhoneCaller } from './caller'
 
 const phone = '+15555550100'
 const customer = {
@@ -13,6 +13,7 @@ const customer = {
 }
 const address = {
   id: '31d29174-a3e6-4567-8714-d2ccd3f89108',
+  customer_id: customer.id,
   street_1: '123 Oak Lane',
   street_2: 'Apartment 2',
   city: 'Monument',
@@ -48,13 +49,6 @@ function db(customers: object[], addresses: object[]) {
 }
 
 describe('phone caller verification', () => {
-  it('recognizes only the presence of a prior record at greeting time', async () => {
-    const { client, from } = db([customer], [])
-    expect(
-      await recognizePhoneCaller(phone, client, new AbortController().signal),
-    ).toBe(true)
-    expect(from.mock.results[0].value.select).toHaveBeenCalledWith('id')
-  })
   it('resolves caller-supplied name, exact street and unit, returning only a ZIP and references for that location', async () => {
     const { client } = db(
       [customer],
@@ -72,6 +66,127 @@ describe('phone caller verification', () => {
       /private|Rivera|Oak Lane|Apartment/,
     )
   })
+  const second = { ...customer, id: '7a8751fa-b464-4911-991c-05d848ada532' }
+  const otherAddress = {
+    ...address,
+    id: '31d29174-a3e6-4567-8714-d2ccd3f89109',
+    customer_id: second.id,
+  }
+  it('resolves equivalent same-name, same-address, same-email duplicates behind other household records', async () => {
+    const { client } = db(
+      [
+        { ...customer, id: 'other', first_name: 'Other' },
+        customer,
+        { ...second, email: 'PRIVATE@example.org' },
+      ],
+      [
+        otherAddress,
+        address,
+        { ...address, id: 'another', street_1: '123 Oak Ln.' },
+      ],
+    )
+    expect(await lookupPhoneCaller(phone, provided, client)).toMatchObject({
+      status: 'verified_location',
+      customer_ref: customer.id,
+      service_address_ref: address.id,
+      saved_email_available: true,
+    })
+  })
+  it('asks for a caller-supplied email only when verified locations lead to different mailboxes', async () => {
+    const { client } = db(
+      [customer, { ...second, email: 'different@example.org' }],
+      [address, otherAddress],
+    )
+    const unresolved = await lookupPhoneCaller(phone, provided, client)
+    expect(unresolved.status).toBe('needs_email_confirmation')
+    expect(JSON.stringify(unresolved)).not.toContain('@')
+    expect(
+      await lookupPhoneCaller(
+        phone,
+        { ...provided, email: 'DIFFERENT@example.org' },
+        client,
+      ),
+    ).toMatchObject({
+      customer_ref: second.id,
+      service_address_ref: otherAddress.id,
+    })
+    expect(
+      (
+        await lookupPhoneCaller(
+          phone,
+          { ...provided, email: 'wrong@example.org' },
+          client,
+        )
+      ).status,
+    ).toBe('no_verified_location')
+  })
+  it('asks for ZIP when identical streets are in different towns and matches the supplied ZIP', async () => {
+    const { client } = db(
+      [customer, second],
+      [
+        address,
+        { ...otherAddress, zip_code: '80903', city: 'Colorado Springs' },
+      ],
+    )
+    expect((await lookupPhoneCaller(phone, provided, client)).status).toBe(
+      'needs_location_confirmation',
+    )
+    expect(
+      await lookupPhoneCaller(
+        phone,
+        { ...provided, zip_code: '80903' },
+        client,
+      ),
+    ).toMatchObject({ customer_ref: second.id })
+  })
+  it('distinguishes a shared ZIP by the city the caller supplied', async () => {
+    const { client } = db(
+      [customer, second],
+      [address, { ...otherAddress, city: 'Another City' }],
+    )
+    expect(
+      (
+        await lookupPhoneCaller(
+          phone,
+          { ...provided, zip_code: address.zip_code },
+          client,
+        )
+      ).status,
+    ).toBe('needs_location_confirmation')
+    expect(
+      await lookupPhoneCaller(
+        phone,
+        { ...provided, city: address.city, zip_code: address.zip_code },
+        client,
+      ),
+    ).toMatchObject({ customer_ref: customer.id })
+  })
+  it('keeps personal and commercial profiles separate on a shared number', async () => {
+    const { client } = db(
+      [customer, { ...second, business_name: 'Sample Business' }],
+      [address, otherAddress],
+    )
+    expect(await lookupPhoneCaller(phone, provided, client)).toMatchObject({
+      customer_ref: customer.id,
+    })
+    expect(
+      await lookupPhoneCaller(
+        phone,
+        { ...provided, business_name: 'Sample Business' },
+        client,
+      ),
+    ).toMatchObject({ customer_ref: second.id })
+  })
+  it('asks for fresh contact information for an imported placeholder email', async () => {
+    const { client } = db(
+      [{ ...customer, email: 'unknown@import.local' }],
+      [address],
+    )
+    expect(await lookupPhoneCaller(phone, provided, client)).toMatchObject({
+      saved_email_available: false,
+      guidance: expect.stringContaining('spell'),
+    })
+  })
   it.each([
     ['wrong last name', { ...provided, last_name: 'Other' }, [customer]],
     [
@@ -86,7 +201,11 @@ describe('phone caller verification', () => {
     ],
     ['missing unit', { ...provided, unit: undefined }, [customer]],
     ['another unit', { ...provided, unit: '3' }, [customer]],
-    ['shared number', provided, [customer, { ...customer, id: 'other' }]],
+    [
+      'wrong company',
+      { ...provided, business_name: 'Other Business' },
+      [customer],
+    ],
     ['unknown caller', provided, []],
   ])('does not reveal any saved details for %s', async (_, details, rows) => {
     const { client } = db(rows as object[], [address])

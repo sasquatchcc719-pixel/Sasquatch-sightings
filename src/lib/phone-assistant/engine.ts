@@ -188,7 +188,7 @@ export const phoneTools = [
   {
     name: 'phone_caller_lookup',
     description:
-      'Verify the actual incoming number, caller-supplied full name and street (including unit) before reusing a saved service ZIP. Never guess names or locations.',
+      'Verify the incoming number, caller-supplied full name and street including unit. For a business, include its caller-supplied name. Returns saved contact references and whether email is available. Follow the spelling or disambiguation instruction if no match; never guess.',
     inputSchema: callerLookupSchema,
   },
   {
@@ -560,7 +560,9 @@ async function resolveContact<
     throw new CallerInputError(
       'The saved contact or location could not be verified. Use caller-supplied details or take an office message.',
     )
-  const email = input.use_saved_email ? saved.customer.email : input.email
+  const email = (
+    input.use_saved_email ? saved.customer.email : input.email
+  )?.trim()
   if (!isDeliverableCustomerEmail(email) || !z.email().safeParse(email).success)
     throw new CallerInputError(
       'Ask for a verified email address or take an office message.',
@@ -607,6 +609,10 @@ async function checkOrBook(
           ...bookingSchema.parse(input),
           confirmed_total: live.confirmed_total,
           email_confirmed: live.email_confirmed,
+          ...(live.customer_ref && {
+            verified_customer_id: live.customer_ref,
+            verified_service_address_id: live.service_address_ref,
+          }),
         }),
       )
       .digest('hex')
@@ -737,6 +743,9 @@ async function checkOrBook(
           callSid: ctx.callSid,
           requestHash,
           calendarVersion,
+          verifiedCustomerId: live.customer_ref,
+          verifiedServiceAddressId: live.service_address_ref,
+          useSavedEmail: live.use_saved_email === true,
           coupon: available.quote.coupon.applied
             ? available.quote.coupon.code
             : null,
@@ -976,6 +985,16 @@ export async function runPhoneTool(
           appointmentDate: input.appointment_date,
           startTime: input.start_time,
           businessName: input.business_name,
+          savedContact:
+            input.verifiedCustomer &&
+            input.customer_ref &&
+            input.service_address_ref
+              ? {
+                  customerId: input.customer_ref,
+                  addressId: input.service_address_ref,
+                  useSavedEmail: input.use_saved_email === true,
+                }
+              : undefined,
           jobDescription: input.job_description,
           leadSource: input.lead_source,
           leadDetail: input.lead_detail,

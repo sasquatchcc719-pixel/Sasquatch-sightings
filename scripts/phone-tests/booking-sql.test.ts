@@ -134,6 +134,8 @@ beforeAll(async () => {
     'phone_booking_calendar_lock',
     'queue_phone_booking_confirmations',
     'atomic_phone_measurement',
+    'verified_phone_booking_contacts',
+    'bind_saved_phone_measurement',
   ]) {
     const names = readdirSync('supabase/migrations').filter((name) =>
       name.endsWith('_' + migration + '.sql'),
@@ -160,6 +162,133 @@ afterEach(async () => {
 })
 afterAll(async () => {
   await db.close()
+})
+
+describe('residential booking for verified shared-phone profiles', () => {
+  const selectedId = '84000000-0000-4000-8000-000000000002'
+  const siblingId = '84000000-0000-4000-8000-000000000001'
+  const selectedSite = '85000000-0000-4000-8000-000000000002'
+  const siblingSite = '85000000-0000-4000-8000-000000000001'
+  const verified = {
+    verified_customer_id: selectedId,
+    verified_service_address_id: selectedSite,
+    use_saved_email: true,
+    address: { ...address, street_2: 'Apt 2' },
+  }
+  // Canonical selection belongs to caller verification. Deliberately make its chosen
+  // record different from the first UUID or most recently updated record.
+  beforeEach(async () => {
+    await db.query(
+      `insert into ops_customers(id,first_name,last_name,full_name,phone,email,updated_at)
+      values ($1,'Fixture','Caller','Fixture Caller','(202) 555-0101',$3,now()-interval '1 day'),
+             ($2,'Fixture','Caller','Fixture Caller',$4,$3,now())`,
+      [selectedId, siblingId, contact.email, contact.phone],
+    )
+    await db.query(
+      `insert into ops_service_addresses(id,customer_id,street_1,street_2,city,state,zip_code)
+      values ($1,$2,'1 Sample Street','Unit 2','Monument','CO','80132'),
+             ($3,$4,'1 Sample St','Apt 2','Monument','CO','80132')`,
+      [selectedSite, selectedId, siblingSite, siblingId],
+    )
+  })
+  async function profiles() {
+    return {
+      customers: (await db.query('select * from ops_customers order by id'))
+        .rows,
+      addresses: (
+        await db.query('select * from ops_service_addresses order by id')
+      ).rows,
+    }
+  }
+  it('saves on the verified pair, preserves both profiles, queues one email and replays on the same job', async () => {
+    const before = await profiles()
+    const booked = await save(sid, verified)
+    expect(booked).toMatchObject({
+      customer_id: selectedId,
+      address_id: selectedSite,
+    })
+    expect(await save(sid, verified)).toMatchObject({
+      appointment_id: booked.appointment_id,
+      replayed: true,
+    })
+    expect(await profiles()).toEqual(before)
+    expect(
+      (
+        await db.query(
+          'select customer_id,service_address_id from ops_appointments',
+        )
+      ).rows,
+    ).toEqual([{ customer_id: selectedId, service_address_id: selectedSite }])
+    expect(
+      (
+        await db.query(
+          'select customer_id,payload from ops_communication_queue',
+        )
+      ).rows[0],
+    ).toMatchObject({ customer_id: selectedId, payload: { to: contact.email } })
+    expect(await counts()).toEqual({ jobs: 1, invoices: 1, emails: 1 })
+  })
+  it('replaces a legacy placeholder only after spelling a new email for that verified profile', async () => {
+    await db.query('update ops_customers set email=$1 where id=$2', [
+      'legacy@import.local',
+      selectedId,
+    ])
+    await db.query('update ops_customers set email=$1 where id=$2', [
+      'sibling@example.test',
+      siblingId,
+    ])
+    await db.exec('savepoint refused')
+    await expect(save(sid, verified)).rejects.toThrow(/Saved email/)
+    await db.exec('rollback to savepoint refused')
+    await save(sid, { ...verified, use_saved_email: false })
+    expect(
+      (await db.query('select email from ops_customers order by id')).rows,
+    ).toEqual([{ email: 'sibling@example.test' }, { email: contact.email }])
+  })
+  it('requires a spoken email to disambiguate two valid recipients at the same location', async () => {
+    await db.query('update ops_customers set email=$1 where id=$2', [
+      'other@example.test',
+      siblingId,
+    ])
+    const before = await profiles()
+    await db.exec('savepoint refused')
+    await expect(save(sid, verified)).rejects.toThrow(/Saved email/)
+    await db.exec('rollback to savepoint refused')
+    expect(await counts()).toEqual({ jobs: 0, invoices: 0, emails: 0 })
+    expect(
+      await save(sid, { ...verified, use_saved_email: false }),
+    ).toMatchObject({ customer_id: selectedId, address_id: selectedSite })
+    expect(await profiles()).toEqual(before)
+  })
+  it.each([
+    { verified_service_address_id: siblingSite },
+    { verified_customer_id: null },
+    { address: { ...address, street_2: 'Unit 9' } },
+    { customer: { ...contact, last_name: 'Other' } },
+    { customer: { ...contact, email: 'unconfirmed@example.test' } },
+    { customer: { ...contact, phone: '+12025550199' } },
+  ])(
+    'refuses mismatched proof without editing either contact or sending an email',
+    async (change) => {
+      const before = await profiles()
+      await db.exec('savepoint refused')
+      await expect(save(sid, { ...verified, ...change })).rejects.toThrow()
+      await db.exec('rollback to savepoint refused')
+      expect(await profiles()).toEqual(before)
+      expect(await counts()).toEqual({ jobs: 0, invoices: 0, emails: 0 })
+    },
+  )
+  it('checks existing jobs on equivalent profiles and leaves ambiguous unverified callers unbooked', async () => {
+    await db.exec('savepoint refused')
+    await expect(save()).rejects.toThrow(/office review/)
+    await db.exec('rollback to savepoint refused')
+    await db.query(
+      `insert into ops_appointments(customer_id,service_address_id,appointment_date,start_time,end_time)
+        values ($1,$2,$3,'15:00','16:00')`,
+      [siblingId, siblingSite, plan.appointment_date],
+    )
+    await expect(save(sid, verified)).rejects.toThrow(/overlapping appointment/)
+  })
 })
 
 describe('real phone booking transactions', () => {
@@ -283,5 +412,129 @@ describe('real phone booking transactions', () => {
     await db.exec('rollback to savepoint rejected')
     expect(await counts()).toEqual({ jobs: 0, invoices: 0, emails: 0 })
     expect((await db.query('select id from ops_customers')).rows).toEqual([])
+  })
+})
+
+describe('returning commercial measuring contacts', () => {
+  async function site(
+    email = contact.email,
+    company: string | null = 'Fixture Offices',
+    street = address.street_1,
+  ) {
+    const {
+      rows: [record],
+    } = await db.query<{ id: string }>(
+      'insert into ops_customers(first_name,last_name,full_name,business_name,phone,email) values ($1,$2,$3,$4,$5,$6) returning id',
+      [
+        contact.first_name,
+        contact.last_name,
+        'Fixture Caller',
+        company,
+        contact.phone,
+        email,
+      ],
+    )
+    const {
+      rows: [location],
+    } = await db.query<{ id: string }>(
+      'insert into ops_service_addresses(customer_id,street_1,street_2,city,state,zip_code) values($1,$2,$3,$4,$5,$6) returning id',
+      [
+        record.id,
+        street,
+        'Suite 6',
+        address.city,
+        address.state,
+        address.zip_code,
+      ],
+    )
+    return {
+      customer_id: record.id,
+      address_id: location.id,
+      use_saved_email: true,
+    }
+  }
+  const supplied = {
+    ...address,
+    street_1: '1 Sample Street',
+    street_2: 'unit 6',
+  }
+  it('binds the selected pair, replays without side effects and detects a pending visit on the equivalent duplicate', async () => {
+    const first = await site()
+    const duplicate = await site(
+      contact.email.toUpperCase(),
+      'Fixture Offices',
+      '1 Sample Street',
+    )
+    const args = { address: supplied, saved_contact: first }
+    const stamp = await version()
+    const receipt = await measure(stamp, args)
+    expect(await measure(stamp, args)).toMatchObject({
+      ...receipt,
+      created: false,
+    })
+    const { rows } = await db.query(
+      'select customer_id,service_address_id from ops_appointments',
+    )
+    expect(rows).toEqual([
+      { customer_id: first.customer_id, service_address_id: first.address_id },
+    ])
+    await db.exec('savepoint another')
+    await expect(
+      db.query('select create_phone_measurement($1,$2,$3,$4)', [
+        secondSid,
+        'd'.repeat(64),
+        { ...measurement, address: supplied, saved_contact: duplicate },
+        await version(),
+      ]),
+    ).rejects.toThrow(/already scheduled/)
+    await db.exec('rollback to savepoint another')
+    expect(await counts()).toEqual({ jobs: 1, invoices: 0, emails: 0 })
+  })
+  it('rejects a business or unit mismatch, a foreign address, and a personal contact on the same inbound line', async () => {
+    const selected = await site()
+    const personal = await site(contact.email, null)
+    const stamp = await version()
+    for (const changes of [
+      { saved_contact: personal, address: supplied },
+      {
+        saved_contact: selected,
+        address: supplied,
+        expected_caller_sequence: null,
+      },
+      {
+        saved_contact: selected,
+        address: supplied,
+        customer: { ...measurement.customer, business_name: 'Another Company' },
+      },
+      {
+        saved_contact: selected,
+        address: { ...supplied, street_2: 'Suite 10' },
+      },
+      {
+        saved_contact: { ...selected, address_id: personal.address_id },
+        address: supplied,
+      },
+    ]) {
+      await db.exec('savepoint denied')
+      await expect(measure(stamp, changes)).rejects.toThrow()
+      await db.exec('rollback to savepoint denied')
+    }
+    expect(await counts()).toEqual({ jobs: 0, invoices: 0, emails: 0 })
+  })
+  it('requires a caller-supplied email when otherwise identical commercial profiles disagree', async () => {
+    const selected = await site()
+    await site('office2@example.test')
+    const stamp = await version()
+    await db.exec('savepoint denied')
+    await expect(
+      measure(stamp, { address: supplied, saved_contact: selected }),
+    ).rejects.toThrow(/spell and confirm/)
+    await db.exec('rollback to savepoint denied')
+    const receipt = await measure(stamp, {
+      address: supplied,
+      saved_contact: { ...selected, use_saved_email: false },
+    })
+    expect(receipt.confirmation_number).toMatch(/^EST-/)
+    expect(await counts()).toEqual({ jobs: 1, invoices: 0, emails: 0 })
   })
 })

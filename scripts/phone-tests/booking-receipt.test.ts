@@ -139,6 +139,9 @@ function isolatedCall(pilot = false) {
       content: "I'll finalize that now and make sure everything matches.",
     },
   ]
+  const customers: Record<string, unknown>[] = []
+  const addresses: Record<string, unknown>[] = []
+  const measurementPlans: Record<string, unknown>[] = []
   const appointments: Record<string, unknown>[] = []
   const invoices: Record<string, unknown>[] = []
   const fail = { commit: false }
@@ -182,6 +185,7 @@ function isolatedCall(pilot = false) {
           resource === 'rpc/create_phone_measurement'
         ) {
           const { p_sid, p_hash, p_version, p_plan } = await request.json()
+          measurementPlans.push(p_plan)
           expect(p_sid).toBe(sid)
           expect(p_version).toBe('calendar-version')
           expect(p_plan).toMatchObject({
@@ -238,6 +242,8 @@ function isolatedCall(pilot = false) {
           })
           appointments.push({
             id: appointmentId,
+            customer_id: p_plan.verified_customer_id,
+            service_address_id: p_plan.verified_service_address_id,
             status: p_plan.appointment_status,
             appointment_date: p_plan.appointment_date,
             start_time: p_plan.start_time,
@@ -293,8 +299,13 @@ function isolatedCall(pilot = false) {
           case 'staff_users':
             rows = [{ display_name: 'Test technician' }]
             break
-          case 'lead_source_options':
           case 'ops_customers':
+            rows = customers
+            break
+          case 'ops_service_addresses':
+            rows = addresses
+            break
+          case 'lead_source_options':
           case 'settings':
             rows = []
             break
@@ -306,7 +317,16 @@ function isolatedCall(pilot = false) {
     },
   })
   deps.db.mockReturnValue(db)
-  return { db, session, appointments, invoices, fail }
+  return {
+    db,
+    session,
+    appointments,
+    invoices,
+    fail,
+    customers,
+    addresses,
+    measurementPlans,
+  }
 }
 async function mcp(method: string, params: object) {
   const result = await POST(
@@ -345,6 +365,7 @@ async function ownerEmail(fixture: ReturnType<typeof isolatedCall>) {
 beforeEach(() => {
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'synthetic-only')
   deps.after.mockReset()
+  deps.measurementSlots.mockReset()
   deps.openSlots.mockReset().mockResolvedValue([{ start_time: '15:00:00' }])
   deps.staffSlots
     .mockReset()
@@ -462,6 +483,65 @@ describe('phone transport through booking and owner recap', () => {
       expect(fixture.appointments).toHaveLength(0)
     },
   )
+  it('books a returning residential caller on the verified profile and site without asking for the saved email', async () => {
+    const fixture = isolatedCall()
+    const profile = {
+      id: '09eaa7bc-8436-4cb2-be7d-c00ab0782eed',
+      first_name: accepted.first_name,
+      last_name: accepted.last_name,
+      email: accepted.email,
+      phone: fixture.session.caller_phone,
+    }
+    const site = {
+      id: '17a7532e-5829-4874-b828-0c137308c237',
+      customer_id: profile.id,
+      street_1: accepted.street,
+      city: accepted.city,
+      state: 'CO',
+      zip_code: accepted.zip_code,
+    }
+    const otherId = '0b592361-cb75-4c86-93a2-c9f3b9450807'
+    fixture.customers.push(
+      {
+        ...profile,
+        id: 'a0c5b218-ec8d-44fd-9cef-a752f40ae54b',
+        first_name: 'Other',
+      },
+      profile,
+      { ...profile, id: otherId },
+    )
+    fixture.addresses.push(site, {
+      ...site,
+      id: 'c7dfad7f-c05a-4cbe-a71f-1569ba2bfc04',
+      customer_id: otherId,
+    })
+    const match = await call('phone_caller_lookup', {
+      first_name: accepted.first_name,
+      last_name: accepted.last_name,
+      street: '1 Example Ct.',
+    })
+    expect(match).toMatchObject({
+      status: 'verified_location',
+      saved_email_available: true,
+      customer_ref: profile.id,
+      service_address_ref: site.id,
+    })
+    expect(JSON.stringify(match)).not.toContain(accepted.email)
+    const receipt = await call('phone_book_service', {
+      ...accepted,
+      email: undefined,
+      use_saved_email: true,
+      customer_ref: match.customer_ref,
+      service_address_ref: match.service_address_ref,
+    })
+    expect(receipt).toMatchObject({
+      status: 'booked',
+      appointment_id: appointmentId,
+    })
+    expect(fixture.appointments).toMatchObject([
+      { customer_id: profile.id, service_address_id: site.id },
+    ])
+  })
   it('turns the accepted quote into one schedule entry, invoice and verifiable receipt', async () => {
     const fixture = isolatedCall()
     const tools = (await mcp('tools/list', {})).tools.map(
@@ -496,42 +576,96 @@ describe('phone transport through booking and owner recap', () => {
     expect(email.subject).toContain('Booking verified')
     expect(email.text).toContain(receipt.confirmation_number)
   })
-  it('books and replays the commercial measuring visit without a residential invoice', async () => {
-    const fixture = isolatedCall()
-    deps.measurementSlots.mockResolvedValue({
-      staffUserId: staffId,
-      slots: [{ start_time: '15:00:00' }],
-    })
-    const measurement = {
-      visit_type: 'commercial_measurement',
-      business_name: 'Example Office',
-      job_description: 'Measure office carpeting.',
-      appointment_date: appointmentDate,
-      start_time: '15:00',
-      first_name: accepted.first_name,
-      last_name: accepted.last_name,
-      email: accepted.email,
-      email_confirmed: true,
-      street: accepted.street,
-      city: accepted.city,
-      zip_code: accepted.zip_code,
-      customer_confirmed: true,
-    }
-    const receipt = await call('phone_book_measurement', measurement)
-    expect(receipt).toMatchObject({
-      status: 'booked',
-      confirmation_number: 'EST-DEED0001',
-      appointment_id: appointmentId,
-    })
-    deps.measurementSlots.mockResolvedValue(null)
-    expect(await call('phone_book_measurement', measurement)).toEqual(receipt)
-    expect(deps.measurementSlots).toHaveBeenCalledTimes(1)
-    expect(fixture.appointments).toHaveLength(1)
-    expect(fixture.invoices).toHaveLength(0)
-    const email = await ownerEmail(fixture)
-    expect(email.subject).toContain('Measuring visit verified')
-    expect(email.text).toContain('commercial measuring visit EST-DEED0001')
-  })
+  it.each([false, true])(
+    'books and replays a commercial measuring visit without a residential invoice (returning %s)',
+    async (returning) => {
+      const fixture = isolatedCall()
+      deps.measurementSlots.mockResolvedValue({
+        staffUserId: staffId,
+        slots: [{ start_time: '15:00:00' }],
+      })
+      const business = {
+        id: '12345678-0000-4000-8000-000000000001',
+        first_name: accepted.first_name,
+        last_name: accepted.last_name,
+        email: accepted.email,
+        business_name: 'Example Office',
+        is_commercial: true,
+        phone: fixture.session.caller_phone,
+      }
+      const siteId = '12345678-0000-4000-8000-000000000002'
+      let refs = {}
+      if (returning) {
+        fixture.customers.push(business)
+        fixture.addresses.push({
+          id: siteId,
+          customer_id: business.id,
+          street_1: accepted.street,
+          street_2: null,
+          city: accepted.city,
+          state: 'CO',
+          zip_code: accepted.zip_code,
+        })
+        const match = await call('phone_caller_lookup', {
+          first_name: accepted.first_name,
+          last_name: accepted.last_name,
+          business_name: business.business_name,
+          street: accepted.street,
+        })
+        expect(match).toMatchObject({
+          status: 'verified_location',
+          customer_ref: business.id,
+          service_address_ref: siteId,
+          saved_email_available: true,
+        })
+        expect(JSON.stringify(match)).not.toContain(accepted.email)
+        refs = {
+          customer_ref: match.customer_ref,
+          service_address_ref: match.service_address_ref,
+          use_saved_email: true,
+        }
+      }
+      const measurement = {
+        visit_type: 'commercial_measurement',
+        business_name: 'Example Office',
+        job_description: 'Measure office carpeting.',
+        appointment_date: appointmentDate,
+        start_time: '15:00',
+        first_name: accepted.first_name,
+        last_name: accepted.last_name,
+        ...(returning ? refs : { email: accepted.email }),
+        email_confirmed: true,
+        street: accepted.street,
+        city: accepted.city,
+        zip_code: accepted.zip_code,
+        customer_confirmed: true,
+      }
+      const receipt = await call('phone_book_measurement', measurement)
+      expect(receipt).toMatchObject({
+        status: 'booked',
+        confirmation_number: 'EST-DEED0001',
+        appointment_id: appointmentId,
+      })
+      if (returning) {
+        expect(fixture.measurementPlans[0]).toMatchObject({
+          saved_contact: {
+            customer_id: business.id,
+            address_id: siteId,
+            use_saved_email: true,
+          },
+          customer: { email: accepted.email },
+        })
+      }
+      deps.measurementSlots.mockResolvedValue(null)
+      expect(await call('phone_book_measurement', measurement)).toEqual(receipt)
+      expect(deps.measurementSlots).toHaveBeenCalledTimes(1)
+      expect(fixture.appointments).toHaveLength(1)
+      expect(fixture.invoices).toHaveLength(0)
+      const email = await ownerEmail(fixture)
+      expect(email.subject).toContain('Measuring visit verified')
+      expect(email.text).toContain('commercial measuring visit EST-DEED0001')
+    },
+  )
   it('flags the accepted request for follow-up when saving fails after pricing and availability checks', async () => {
     const fixture = isolatedCall()
     fixture.fail.commit = true

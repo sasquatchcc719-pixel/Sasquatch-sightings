@@ -646,7 +646,11 @@ describe('live residential phone booking', () => {
       }),
       expect.anything(),
       null,
-      expect.anything(),
+      expect.objectContaining({
+        verifiedCustomerId: id,
+        verifiedServiceAddressId: a,
+        useSavedEmail: true,
+      }),
     )
     deps.commit.mockClear()
     expect(

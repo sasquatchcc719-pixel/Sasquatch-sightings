@@ -80,3 +80,17 @@ it('turns a missing final source into one recoverable question', () => {
     required_next_step: expect.stringContaining('How did you hear about us?'),
   })
 })
+
+it('keeps recognition separate from verification and asks for disambiguation only when needed', () => {
+  for (const pilot of [true, false]) {
+    const prompt = dispatcherInstructions([], '', pilot)
+    expect(prompt).toContain(
+      'grants no staff privileges or access to saved details',
+    )
+    expect(prompt).toContain('spell it once')
+    expect(prompt).toContain('email only to resolve that ambiguity')
+    expect(prompt).toContain(
+      'Never suggest a candidate surname, address or email',
+    )
+  }
+})

@@ -26,6 +26,9 @@ export async function commitPlannedBooking(
     callSid: string
     requestHash: string
     calendarVersion: string
+    verifiedCustomerId?: string
+    verifiedServiceAddressId?: string
+    useSavedEmail?: boolean
     expectedCallerSequence?: number | null
     coupon: string | null
     serviceSubtotal: number
@@ -60,6 +63,13 @@ export async function commitPlannedBooking(
         p_plan: {
           ...plan,
           calendar_version: phone.calendarVersion,
+          ...(phone.verifiedCustomerId || phone.verifiedServiceAddressId
+            ? {
+                verified_customer_id: phone.verifiedCustomerId,
+                verified_service_address_id: phone.verifiedServiceAddressId,
+                use_saved_email: phone.useSavedEmail === true,
+              }
+            : {}),
           expected_caller_sequence: phone.expectedCallerSequence,
           coupon_code: phone.coupon,
           service_subtotal: phone.serviceSubtotal,

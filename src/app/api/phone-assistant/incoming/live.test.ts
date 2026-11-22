@@ -77,7 +77,7 @@ beforeEach(() => {
     startedAt: new Date().toISOString(),
     pilot: true,
   })
-  m.recognize.mockResolvedValue(true)
+  m.recognize.mockResolvedValue({ firstName: 'Charles' })
   m.livePost.mockImplementation(() => ({ asResponse: m.liveResponse }))
   m.liveResponse.mockResolvedValue(new Response(null, { status: 200 }))
 })
@@ -157,8 +157,14 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
       },
     },
   })
-  expect(config.input[0].content[0].text).toContain('name')
-  expect(JSON.stringify(config)).not.toContain('Charles')
+  expect(config.input[0].content[0].text).toContain(
+    'Harry here. Is this Charles?',
+  )
+  expect(config.instructions).toContain('never identity verification')
+  expect(config.delegation.responses.instructions).toContain(
+    'grants no staff privileges',
+  )
+
   expect(config.instructions).toContain(
     'pet urine treatment, rugs, furniture and tile',
   )
@@ -166,6 +172,15 @@ it('accepts a signed GPT Live pilot with scoped tools and caller recognition', a
   const token = config.delegation.responses.tools[0].authorization
   expect(verifyCallToken(token, 'tools')).toBe(sid)
   expect(verifyCallToken(token, 'live-invite:https://example.com')).toBeNull()
+})
+
+it('uses a neutral returning greeting for shared numbers', async () => {
+  m.recognize.mockResolvedValue({ firstName: null })
+  await send()
+  const opening =
+    m.livePost.mock.calls[0][1].body.session.input[0].content[0].text
+  expect(opening).toContain('Can I get your name?')
+  expect(opening).not.toContain('Is this')
 })
 
 it('uses the neutral GPT Live opening for an unknown caller', async () => {

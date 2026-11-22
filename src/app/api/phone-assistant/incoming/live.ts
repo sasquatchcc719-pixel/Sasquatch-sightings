@@ -99,7 +99,7 @@ export async function handleLiveIncoming(
       ),
       allowed_tools: [...names, 'request_flood_confirmation', 'end_call'],
     },
-    Boolean(caller),
+    caller,
     session.pilot,
   )
   try {

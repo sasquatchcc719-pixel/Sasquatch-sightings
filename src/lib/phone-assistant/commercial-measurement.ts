@@ -31,6 +31,11 @@ type MeasurementInput = {
   jobDescription: string
   leadSource?: string
   leadDetail?: string
+  savedContact?: {
+    customerId: string
+    addressId: string
+    useSavedEmail: boolean
+  }
   expectedCallerSequence?: number | null
   isCurrent?: () => Promise<boolean>
 }
@@ -74,6 +79,13 @@ export async function bookPhoneMeasurement(input: MeasurementInput) {
     time,
     description: input.jobDescription.trim(),
     source,
+    ...(input.savedContact && {
+      saved_contact: {
+        customer_id: input.savedContact.customerId,
+        address_id: input.savedContact.addressId,
+        use_saved_email: input.savedContact.useSavedEmail,
+      },
+    }),
   }
   const hash = createHash('sha256').update(JSON.stringify(plan)).digest('hex')
   const failure = {
