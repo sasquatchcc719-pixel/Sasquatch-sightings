@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { handleLiveIncoming } from './live'
 import { after } from 'next/server'
 import WebSocket from 'ws'
 import {
@@ -17,8 +18,8 @@ import { queueBaseUrl } from '@/lib/twilio/appointment-queue'
 
 export const maxDuration = 30
 
-// Audio flows directly between Twilio and OpenAI. This short side connection
-// asks the model to greet first and can close as soon as speech starts.
+// Realtime compatibility only. New GPT Live calls get their opening in the
+// accepted Live session and never open this greeting socket.
 async function greet(providerId: string) {
   await new Promise<void>((resolve) => {
     const socket = new WebSocket(
@@ -70,20 +71,30 @@ export async function POST(request: Request) {
   } catch {
     return new Response('Invalid signature', { status: 403 })
   }
+  if ((event as { type: string }).type === 'live.transport.incoming')
+    return handleLiveIncoming(event, request.url, client)
+  // Predeployment Realtime invites expire within two minutes. A new Live
+  // invite can never authorize this legacy handler or a second decision.
   if (event.type !== 'realtime.call.incoming')
     return new Response(null, { status: 204 })
+  if (!event.data) return new Response(null, { status: 204 })
   const { call_id: providerId, sip_headers: headers } = event.data
-  const invite =
-    headers.find((h) => h.name.toLowerCase() === 'x-sightings-invite')?.value ??
-    ''
+  if (
+    !Array.isArray(headers) ||
+    headers.some((h) => h.name.toLowerCase() === 'x-sightings-live-invite')
+  )
+    return new Response(null, { status: 204 })
+  const invites = headers.filter(
+    (h) => h.name.toLowerCase() === 'x-sightings-invite',
+  )
+  const invite = invites.length === 1 ? invites[0].value : ''
   if (!invite) return new Response(null, { status: 204 })
   const callSid = verifyCallToken(invite, 'invite')
-  const [session, coaching] = callSid
-    ? await Promise.all([
-        getVoiceSessionDetails(callSid),
-        coachingInstructions(createAdminClient()),
-      ])
-    : [null, '']
+  if (!callSid) return new Response(null, { status: 204 })
+  const [session, coaching] = await Promise.all([
+    getVoiceSessionDetails(callSid),
+    coachingInstructions(createAdminClient()),
+  ])
   if (
     !session ||
     session.status !== 'active' ||

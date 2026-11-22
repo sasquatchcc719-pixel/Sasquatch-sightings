@@ -17,6 +17,9 @@ vi.mock('@/lib/mcp/missed-call-email-bridge', () => ({
 vi.mock('@/lib/phone-assistant/summary-email', () => ({
   deliverPendingVoiceSummaries: vi.fn().mockResolvedValue(undefined),
 }))
+vi.mock('@/lib/ops/phone-booking-email', () => ({
+  deliverPhoneBookingEmails: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('@/lib/phone-assistant/review-calls', () => ({
   reviewPendingCalls: vi.fn().mockResolvedValue(undefined),
 }))

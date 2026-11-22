@@ -5,6 +5,7 @@ import {
 } from '@/lib/mcp/inbound-events'
 import { deliverPendingMissedCallEmails } from '@/lib/mcp/missed-call-email-bridge'
 import { deliverPendingVoiceSummaries } from '@/lib/phone-assistant/summary-email'
+import { deliverPhoneBookingEmails } from '@/lib/ops/phone-booking-email'
 import { reviewPendingCalls } from '@/lib/phone-assistant/review-calls'
 import { createAdminClient } from '@/supabase/server'
 
@@ -20,17 +21,23 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient()
-    const [nativeEvents, missedCallEmails, voiceSummaries, callReviews] =
-      await Promise.allSettled([
-        (async () => {
-          const enqueued = await enqueuePersistedInboundEvents(supabase)
-          const delivered = await deliverPendingMcpEvents({ supabase })
-          return { enqueued, delivered }
-        })(),
-        deliverPendingMissedCallEmails({ db: supabase }),
-        deliverPendingVoiceSummaries(supabase),
-        reviewPendingCalls(supabase),
-      ])
+    const [
+      nativeEvents,
+      missedCallEmails,
+      voiceSummaries,
+      callReviews,
+      bookingEmails,
+    ] = await Promise.allSettled([
+      (async () => {
+        const enqueued = await enqueuePersistedInboundEvents(supabase)
+        const delivered = await deliverPendingMcpEvents({ supabase })
+        return { enqueued, delivered }
+      })(),
+      deliverPendingMissedCallEmails({ db: supabase }),
+      deliverPendingVoiceSummaries(supabase),
+      reviewPendingCalls(supabase),
+      deliverPhoneBookingEmails(supabase),
+    ])
     if (nativeEvents.status === 'rejected')
       console.error(
         '[mcp-events] native delivery worker failed:',
@@ -53,7 +60,13 @@ export async function GET(request: NextRequest) {
           ? callReviews.reason.name
           : 'lookup',
       )
+    if (bookingEmails.status === 'rejected')
+      console.error(
+        '[phone-assistant] booking email worker failed:',
+        bookingEmails.reason,
+      )
     if (
+      bookingEmails.status === 'rejected' ||
       callReviews.status === 'rejected' ||
       voiceSummaries.status === 'rejected' ||
       nativeEvents.status === 'rejected' ||

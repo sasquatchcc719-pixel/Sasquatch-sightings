@@ -5,7 +5,17 @@ import { after, NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createAdminClient } from '@/supabase/server'
 import { GET as previewPromo } from '@/app/api/public/promo-preview/route'
-import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
+import { bookPhoneMeasurement } from './commercial-measurement'
+import {
+  callerLookupSchema,
+  lookupPhoneCaller,
+  verifiedCallerLocation,
+} from './caller'
+import { catalogServiceCodes } from './dispatcher-instructions'
+import {
+  loadBookableCatalog,
+  type BookableCatalogRow,
+} from '@/lib/ops/bookable-catalog'
 import { MINIMUM_JOB_TOTAL } from '@/lib/ops/booking-pricing'
 import {
   createAiStyleBooking,
@@ -33,6 +43,8 @@ type Context = {
   callerPhone: string
   preview: boolean
   googleLsa?: boolean
+  isCurrent?: () => Promise<boolean>
+  expectedCallerSequence?: number | null
 }
 type DB = ReturnType<typeof createAdminClient>
 class CallerInputError extends Error {}
@@ -130,9 +142,21 @@ const bookingSchema = appointmentSchema.extend({
     ),
   customer_confirmed: z.boolean(),
 })
-const liveBookingSchema = bookingSchema.extend({
+const contactSchema = bookingSchema.extend({
+  customer_ref: z.uuid().optional(),
+  service_address_ref: z.uuid().optional(),
+  use_saved_email: z
+    .boolean()
+    .optional()
+    .describe(
+      'True only with explicit permission after a verified caller lookup.',
+    ),
+  email: z.email().toLowerCase().refine(isDeliverableCustomerEmail).optional(),
+  lead_source: sourceInput.optional(),
+  lead_detail: textField.optional(),
+})
+const liveBookingSchema = contactSchema.extend({
   visit_type: z.literal('residential_service'),
-  email: z.email().toLowerCase().refine(isDeliverableCustomerEmail),
   service: serviceSchema,
   confirmed_total: z
     .number()
@@ -141,9 +165,17 @@ const liveBookingSchema = bookingSchema.extend({
   email_confirmed: z
     .literal(true)
     .describe(
-      'The caller confirmed the complete email spelling, including domain.',
+      'The caller confirmed the complete email spelling, including domain, or explicitly authorized reuse of the verified email on file.',
     ),
 })
+const measurementSchema = contactSchema
+  .omit({ accepted_minimum_charge: true, service: true })
+  .extend({
+    visit_type: z.literal('commercial_measurement'),
+    email_confirmed: z.literal(true),
+    business_name: textField,
+    job_description: z.string().trim().min(1).max(1000),
+  })
 const changeSchema = z.object({
   confirmation: z.string().regex(/^(SC|EST)-[0-9a-f]{8}$/i),
   last_name: textField,
@@ -153,6 +185,12 @@ const changeSchema = z.object({
 })
 
 export const phoneTools = [
+  {
+    name: 'phone_caller_lookup',
+    description:
+      'Verify the actual incoming number, caller-supplied full name and street (including unit) before reusing a saved service ZIP. Never guess names or locations.',
+    inputSchema: callerLookupSchema,
+  },
   {
     name: 'phone_catalog',
     description:
@@ -186,7 +224,7 @@ export const phoneTools = [
     name: 'phone_preview_booking',
     description:
       'Revalidate a selected upcoming visit and simulate it for the owner test. This tool never creates a real appointment or invoice.',
-    inputSchema: bookingSchema,
+    inputSchema: contactSchema,
   },
   {
     name: 'phone_preview_change',
@@ -202,16 +240,57 @@ const liveBookingTool = {
     'Save a live residential appointment and its invoice after the caller accepts the exact job, price and time. Only a booked receipt with a confirmation number means success. A quote, availability, caller agreement, missing details or an error does not reserve anything.',
   inputSchema: liveBookingSchema,
 }
-export function phoneToolsForCall(preview: boolean) {
-  return preview
+const measurementTool = {
+  name: 'phone_book_measurement',
+  description:
+    'Book a commercial measuring visit only after the caller confirms their business, address and exact slot. No residential quote, price or invoice. Only a booked receipt confirms the measurement.',
+  inputSchema: measurementSchema,
+}
+
+export function phoneToolsForCall(
+  preview: boolean,
+  catalog: BookableCatalogRow[] = [],
+) {
+  const tools = preview
     ? phoneTools
     : [
         ...phoneTools.filter((t) => !t.name.startsWith('phone_preview_')),
         liveBookingTool,
+        measurementTool,
       ]
+  const codes = catalogServiceCodes(catalog)
+  if (!codes.size) return tools
+  const serviceId = z.union([
+    z.enum(Array.from(codes.keys())).overwrite((code) => codes.get(code)!),
+    z.uuid(),
+  ])
+  const service = serviceSchema.extend({
+    line_items: z
+      .array(
+        serviceSchema.shape.line_items.element.extend({
+          service_id: serviceId,
+        }),
+      )
+      .min(1)
+      .max(24),
+  })
+  const schemas: Record<string, z.ZodType> = {
+    phone_quote: service,
+    phone_openings: appointmentSchema
+      .extend({ service: service.optional(), ...searchDates })
+      .refine(oneSearchMode, searchModeError),
+    phone_preview_booking: contactSchema.extend({
+      service: service.optional(),
+    }),
+    phone_book_service: liveBookingSchema.extend({ service }),
+  }
+  return tools.map((t) => ({
+    ...t,
+    inputSchema: schemas[t.name] ?? t.inputSchema,
+  }))
 }
-
-// The opening response has its own instruction override in the Realtime session.
+// Only already-issued Realtime invitations use this greeting and instruction set.
+// All new calls get their voice and backend instructions from live-session.ts.
 export const phoneDelivery =
   "Speak in everyday American English, like you're talking to one person on the phone. Use a relaxed pace and an easy, matter-of-fact tone. Let statements settle at the end. Use contractions and give the caller room to answer."
 
@@ -475,6 +554,49 @@ async function searchOpenings(
   }
 }
 
+// Bind saved details again at write time, even if a model supplies another
+// customer's reference. No CRM email is returned to the model.
+async function resolveContact<
+  T extends z.infer<typeof contactSchema> | z.infer<typeof measurementSchema>,
+>(input: T, ctx: Context, db: DB) {
+  if (
+    !input.customer_ref &&
+    !input.service_address_ref &&
+    !input.use_saved_email
+  ) {
+    if (!input.email)
+      throw new CallerInputError(
+        'Ask for the email and confirm the spelling, or take an office message.',
+      )
+    return { ...input, email: input.email, verifiedCustomer: false }
+  }
+  const saved = await verifiedCallerLocation(ctx.callerPhone, input, db)
+  if (
+    !saved ||
+    saved.customer.id !== input.customer_ref ||
+    saved.address.id !== input.service_address_ref
+  )
+    throw new CallerInputError(
+      'The saved contact or location could not be verified. Use caller-supplied details or take an office message.',
+    )
+  const email = input.use_saved_email ? saved.customer.email : input.email
+  if (!isDeliverableCustomerEmail(email) || !z.email().safeParse(email).success)
+    throw new CallerInputError(
+      'Ask for a verified email address or take an office message.',
+    )
+  return {
+    ...input,
+    first_name: saved.customer.first_name,
+    last_name: saved.customer.last_name,
+    street: saved.address.street_1,
+    unit: saved.address.street_2 ?? undefined,
+    city: saved.address.city,
+    zip_code: saved.address.zip_code,
+    email,
+    verifiedCustomer: true,
+  }
+}
+
 async function checkOrBook(
   input: z.infer<typeof bookingSchema>,
   ctx: Context,
@@ -485,6 +607,13 @@ async function checkOrBook(
     throw new CallerInputError(
       'Read back the exact visit and get confirmation first.',
     )
+  const customer = {
+    first_name: input.first_name,
+    last_name: input.last_name,
+    email: input.email,
+    phone: ctx.callerPhone,
+  }
+  let calendarVersion = ''
   let requestHash: string | undefined
   if (live) {
     if (ctx.preview)
@@ -492,14 +621,20 @@ async function checkOrBook(
         'Private test calls can only simulate bookings.',
       )
     requestHash = createHash('sha256')
-      .update(JSON.stringify(input))
+      .update(
+        JSON.stringify({
+          ...bookingSchema.parse(input),
+          confirmed_total: live.confirmed_total,
+          email_confirmed: live.email_confirmed,
+        }),
+      )
       .digest('hex')
     // A retry after a lost response must recover the receipt before rechecking
     // availability: the newly committed appointment now occupies its own slot.
     const saved = await db
       .from('ops_appointments')
       .select(
-        'id,status,appointment_date,start_time,quoted_total,phone_assistant_request_hash',
+        'id,status,parked_at,appointment_date,start_time,quoted_total,phone_assistant_request_hash',
       )
       .eq('phone_assistant_call_sid', ctx.callSid)
       .maybeSingle()
@@ -508,7 +643,8 @@ async function checkOrBook(
       const row = saved.data
       if (
         row.phone_assistant_request_hash !== requestHash ||
-        row.status !== 'booked' ||
+        !['booked', 'confirmed'].includes(row.status) ||
+        row.parked_at != null ||
         row.appointment_date !== input.appointment_date ||
         row.start_time.slice(0, 5) !== input.start_time ||
         Number(row.quoted_total) !== live.confirmed_total
@@ -526,6 +662,15 @@ async function checkOrBook(
         total: Number(row.quoted_total),
       }
     }
+    const snapshot = await db.rpc('phone_booking_calendar_version', {
+      p_date: input.appointment_date,
+      p_contact: customer,
+    })
+    if (snapshot.error || typeof snapshot.data !== 'string' || !snapshot.data)
+      throw new CallerInputError(
+        'The schedule could not be verified. Offer an office callback.',
+      )
+    calendarVersion = snapshot.data
   }
   const available = await openings(input, ctx, db)
   if (!available.times.includes(input.start_time))
@@ -553,12 +698,7 @@ async function checkOrBook(
       )
     const bookingInput = {
       supabase: db,
-      customer: {
-        first_name: input.first_name,
-        last_name: input.last_name,
-        email: input.email,
-        phone: ctx.callerPhone,
-      },
+      customer,
       address: {
         street_1: input.street,
         street_2: input.unit,
@@ -600,6 +740,10 @@ async function checkOrBook(
         throw new CallerInputError(
           'The price changed. Requote and get the caller’s acceptance before booking.',
         )
+      if (ctx.isCurrent && !(await ctx.isCurrent()))
+        throw new CallerInputError(
+          'The caller interrupted or corrected the request. Confirm the latest details.',
+        )
       const result = await commitPlannedBooking(
         bookingInput,
         {
@@ -611,11 +755,13 @@ async function checkOrBook(
         {
           callSid: ctx.callSid,
           requestHash,
+          calendarVersion,
           coupon: available.quote.coupon.applied
             ? available.quote.coupon.code
             : null,
           serviceSubtotal: available.quote.service_subtotal,
           deferEffects: after,
+          expectedCallerSequence: ctx.expectedCallerSequence,
         },
       )
       if (
@@ -729,6 +875,12 @@ export async function runPhoneTool(
   try {
     const db = createAdminClient()
     switch (name) {
+      case 'phone_caller_lookup':
+        return await lookupPhoneCaller(
+          ctx.callerPhone,
+          callerLookupSchema.parse(args),
+          db,
+        )
       case 'phone_catalog': {
         const { search } = catalogSchema.parse(args)
         const catalog = await loadBookableCatalog(db)
@@ -777,15 +929,78 @@ export async function runPhoneTool(
       }
       case 'phone_openings':
         return await openings(openingsSchema.parse(args), ctx, db)
-      case 'phone_preview_booking':
-        if (!ctx.preview)
+      case 'phone_book_service':
+      case 'phone_preview_booking': {
+        const isLive = name === 'phone_book_service'
+        if (ctx.preview === isLive)
+          throw new CallerInputError('Booking mode does not match this call.')
+        const parsed = isLive
+          ? liveBookingSchema.parse(args)
+          : contactSchema.parse(args)
+        if (!parsed.customer_confirmed)
           throw new CallerInputError(
-            'Simulation is only available on private test calls.',
+            'Read back the exact visit and get confirmation first.',
           )
-        return await checkOrBook(bookingSchema.parse(args), ctx, db)
-      case 'phone_book_service': {
-        const input = liveBookingSchema.parse(args)
-        return await checkOrBook(input, ctx, db, input)
+        const resolved = await resolveContact(parsed, ctx, db)
+        const input = {
+          ...resolved,
+          service: resolved.service && {
+            ...resolved.service,
+            zip_code: resolved.verifiedCustomer
+              ? resolved.zip_code
+              : resolved.service.zip_code,
+            lead_source:
+              resolved.service.lead_source ??
+              resolved.lead_source ??
+              (resolved.verifiedCustomer ? 'repeat_customer' : undefined),
+            lead_detail: resolved.service.lead_detail ?? resolved.lead_detail,
+          },
+        }
+        return await checkOrBook(
+          input,
+          ctx,
+          db,
+          isLive ? liveBookingSchema.parse(input) : undefined,
+        )
+      }
+      case 'phone_book_measurement': {
+        if (ctx.preview)
+          throw new CallerInputError(
+            'Measurement writes are unavailable for a test call.',
+          )
+        const parsed = measurementSchema.parse(args)
+        if (!parsed.customer_confirmed)
+          throw new CallerInputError(
+            'Get confirmation of the measuring visit before saving it.',
+          )
+        const input = await resolveContact(parsed, ctx, db)
+        if (ctx.isCurrent && !(await ctx.isCurrent()))
+          throw new CallerInputError('Confirm the caller’s latest request.')
+        return await bookPhoneMeasurement({
+          db,
+          callSid: ctx.callSid,
+          callerPhone: ctx.callerPhone,
+          customer: {
+            first_name: input.first_name,
+            last_name: input.last_name,
+            email: input.email,
+          },
+          address: {
+            street_1: input.street,
+            street_2: input.unit,
+            city: input.city,
+            state: 'CO',
+            zip_code: input.zip_code,
+          },
+          appointmentDate: input.appointment_date,
+          startTime: input.start_time,
+          businessName: input.business_name,
+          jobDescription: input.job_description,
+          leadSource: input.lead_source,
+          leadDetail: input.lead_detail,
+          isCurrent: ctx.isCurrent,
+          expectedCallerSequence: ctx.expectedCallerSequence,
+        })
       }
       case 'phone_preview_change':
         return await previewChange(changeSchema.parse(args), ctx, db)
@@ -793,12 +1008,27 @@ export async function runPhoneTool(
         return { error: 'Unknown phone tool.' }
     }
   } catch (error) {
-    if (error instanceof z.ZodError)
-      return {
-        error: 'Required details are missing or invalid.',
-        fields: error.issues.map((issue) => issue.path.join('.')),
-      }
-    if (error instanceof CallerInputError) return { error: error.message }
+    if (error instanceof z.ZodError) {
+      const fields = error.issues.map((issue) => issue.path.join('.'))
+      console.warn('[Phone assistant] Invalid tool arguments', {
+        callSid: ctx.callSid,
+        tool: name,
+        fields,
+      })
+      return { error: 'Required details are missing or invalid.', fields }
+    }
+    if (error instanceof CallerInputError) {
+      console.warn('[Phone assistant] Customer request needs follow-up', {
+        callSid: ctx.callSid,
+        tool: name,
+        reason: error.message,
+      })
+      return { error: error.message }
+    }
+    console.error('[Phone assistant] Could not verify tool request', {
+      callSid: ctx.callSid,
+      tool: name,
+    })
     return { error: 'Could not verify that request. Offer to take a message.' }
   }
 }

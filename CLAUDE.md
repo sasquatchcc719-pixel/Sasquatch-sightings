@@ -16,7 +16,7 @@ pnpm test:ci      # Vitest (single run)
 pnpm test:ci src/lib/some-util.test.ts
 ```
 
-Deploy via Vercel CLI (`vercel --prod`). Apply DB migrations via Supabase CLI (`supabase db push`). Never ask Charles to run these manually.
+Release the tested change from `main` and run `pnpm release:production -- --deploy` to verify the production domain. Use preview deployments for branch testing. Apply DB migrations via Supabase CLI (`supabase db push`). Never ask Charles to run these manually.
 
 ## Architecture
 

@@ -61,15 +61,15 @@ beforeEach(() => {
   m.accept.mockResolvedValue(undefined)
 })
 afterEach(() => vi.unstubAllEnvs())
-it('checks both provider signature and private invite before accepting', async () => {
+it('checks the provider signature and ignores calls without a valid legacy invite', async () => {
   m.unwrap.mockRejectedValueOnce(Error('not signed'))
   expect((await send()).status).toBe(403)
   m.unwrap.mockResolvedValueOnce(incoming('invalid'))
   await send()
-  expect(m.reject).toHaveBeenCalledWith('rtc_1', { status_code: 403 })
+  expect(m.reject).not.toHaveBeenCalled()
   expect(m.accept).not.toHaveBeenCalled()
 })
-it('accepts an authenticated call with interruptible audio and call-scoped tools', async () => {
+it('accepts a previously issued Realtime invite with interruptible audio and call-scoped tools', async () => {
   expect((await send()).status).toBe(204)
   expect(m.bind).toHaveBeenCalledWith(sid, 'rtc_1')
   expect(m.accept).toHaveBeenCalledWith(
@@ -100,4 +100,28 @@ it('does not classify a failed connection as answered', async () => {
   m.accept.mockRejectedValueOnce(Error('provider unavailable'))
   expect((await send()).status).toBe(503)
   expect(m.mark).not.toHaveBeenCalled()
+})
+
+it('never accepts or rejects a new Live invitation via the Realtime compatibility handler', async () => {
+  const liveInvite = issueCallToken(sid, 'live-invite:https://example.com')
+  const newHeader = { name: 'X-Sightings-Live-Invite', value: liveInvite }
+  for (const headers of [
+    [newHeader],
+    [
+      newHeader,
+      { name: 'X-Sightings-Invite', value: issueCallToken(sid, 'invite') },
+    ],
+    [{ name: 'X-Sightings-Invite', value: liveInvite }],
+  ]) {
+    m.unwrap.mockResolvedValueOnce({
+      type: 'realtime.call.incoming',
+      data: { call_id: 'rtc_new', sip_headers: headers },
+    })
+    expect((await send()).status).toBe(204)
+  }
+  expect(m.get).not.toHaveBeenCalled()
+  expect(m.bind).not.toHaveBeenCalled()
+  expect(m.accept).not.toHaveBeenCalled()
+  expect(m.reject).not.toHaveBeenCalled()
+  expect(m.after).not.toHaveBeenCalled()
 })

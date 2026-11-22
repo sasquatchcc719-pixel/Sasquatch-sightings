@@ -124,6 +124,7 @@ type AppointmentWithRelations = {
   appointment_date: string
   start_time: string
   end_time: string
+  parked_at: string | null
   internal_notes: string | null
   service_concern_id?: string | null
   ops_customers: AppointmentCustomer | AppointmentCustomer[] | null
@@ -200,6 +201,7 @@ const APPOINTMENT_SELECT = `
   id,
   customer_id,
   service_address_id,
+  parked_at,
   on_my_way_at,
   gps_lat,
   gps_lng,
@@ -982,9 +984,61 @@ export async function getOnMyWaySmsRenderedBody(
   return renderTemplate(template.body_template, context)
 }
 
+/** Render the normal scheduled email only while its original booking and recipient still match. */
+export async function preparePhoneBookingEmail(
+  supabase: ReturnType<typeof createAdminClient>,
+  appointmentId: string,
+  intent: { date: string; time: string; total: number; to: string },
+) {
+  const { appointment, context, technician } = await getAppointmentContext(
+    supabase,
+    appointmentId,
+  )
+  if (!appointment || !context)
+    throw new Error('Booking email context is unavailable')
+  const customer = unwrapRelation(appointment.ops_customers)
+  if (
+    !['booked', 'confirmed'].includes(appointment.status ?? '') ||
+    appointment.parked_at ||
+    appointment.appointment_date !== intent.date ||
+    appointment.start_time.slice(0, 5) !== intent.time.slice(0, 5) ||
+    Number(appointment.quoted_total) !== intent.total ||
+    customer?.email?.trim().toLowerCase() !== intent.to ||
+    !isDeliverableCustomerEmail(intent.to) ||
+    customer.email_opt_out ||
+    appointment.internal_notes?.includes(TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER) ||
+    (customer.phone &&
+      (await isBlacklisted(customer.phone, { throwOnError: true })))
+  )
+    return null
+  const template = await supabase
+    .from('ops_communication_templates')
+    .select('is_enabled,subject_template,body_template')
+    .eq('template_key', 'job_scheduled_email')
+    .single()
+  if (template.error) throw template.error
+  if (!template.data.is_enabled) return null
+  const body = renderTemplate(template.data.body_template, context)
+  return {
+    body,
+    message: {
+      from:
+        process.env.OPS_EMAIL_FROM ||
+        'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
+      to: intent.to,
+      bcc: lifecycleEmailBcc('job_scheduled_email'),
+      subject:
+        renderTemplate(template.data.subject_template || '', context) ||
+        'Update from Sasquatch Carpet Cleaning',
+      html: buildEmailHtml(body, 'job_scheduled_email', { technician }),
+    },
+  }
+}
+
 export async function sendOpsLifecycleCommunications(params: {
   event: OpsLifecycleEvent
   appointmentId: string
+  bookingEmailQueued?: boolean
 }): Promise<{ sent: LifecycleNotificationSent[] }> {
   const sent: LifecycleNotificationSent[] = []
   const supabase = createAdminClient()
@@ -1037,6 +1091,11 @@ export async function sendOpsLifecycleCommunications(params: {
     'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
 
   for (const template of templates) {
+    if (
+      params.bookingEmailQueued &&
+      template.template_key === 'job_scheduled_email'
+    )
+      continue
     const body = renderTemplate(template.body_template, context)
     const subject = renderTemplate(template.subject_template || '', context)
 
@@ -1116,6 +1175,11 @@ export async function sendOpsLifecycleCommunications(params: {
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         html: buildEmailHtml(body, template.template_key, { technician }),
       })
+      if (emailResult.error || !emailResult.data?.id)
+        throw new Error(
+          emailResult.error?.message ||
+            'Email provider returned no delivery ID',
+        )
       sent.push({
         template_key: template.template_key,
         channel: 'email',
@@ -1201,6 +1265,7 @@ export async function processOpsCommunicationQueue(params?: {
       'id, template_key, scheduled_for, payload, appointment_id, customer_id',
     )
     .eq('status', 'pending')
+    .not('payload', 'cs', JSON.stringify({ origin: 'phone_booking' }))
     .lte('scheduled_for', nowIso)
     .order('scheduled_for', { ascending: true })
     .limit(limit)

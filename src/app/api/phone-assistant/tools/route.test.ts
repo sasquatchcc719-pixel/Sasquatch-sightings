@@ -1,14 +1,33 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
-const m = vi.hoisted(() => ({ read: vi.fn(), run: vi.fn(), update: vi.fn() }))
+vi.mock('@/supabase/server', () => ({ createAdminClient: () => ({}) }))
+vi.mock('@/lib/ops/bookable-catalog', () => ({
+  loadBookableCatalog: async () => [],
+}))
+const m = vi.hoisted(() => ({
+  read: vi.fn(),
+  run: vi.fn(),
+  update: vi.fn(),
+  latest: vi.fn(),
+  claim: vi.fn(),
+  finish: vi.fn(),
+}))
 vi.mock('@/lib/phone-assistant/records', () => ({
   getVoiceSessionDetails: m.read,
+  latestCallerTurn: m.latest,
+  claimVoiceExit: m.claim,
+  finishVoiceExit: m.finish,
 }))
 vi.mock('@/lib/phone-assistant/engine', async () => {
   const { z } = await import('zod')
   return {
     phoneToolsForCall: () => [
+      {
+        name: 'phone_book_service',
+        description: 'Save',
+        inputSchema: z.object({}),
+      },
       {
         name: 'lookup',
         description: 'Get price',
@@ -53,6 +72,8 @@ async function rpcResult(response: Response) {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  m.latest.mockResolvedValue(1)
+  m.claim.mockResolvedValue(true)
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'mock-secret')
   m.read.mockResolvedValue({
     callSid: sid,
@@ -74,7 +95,7 @@ it('lists only customer-scoped tools through the real MCP transport', async () =
       'end_call',
     ]),
   )
-  expect(data.result.tools).toHaveLength(3)
+  expect(data.result.tools).toHaveLength(4)
 })
 it('takes the caller and preview mode from the bound session', async () => {
   m.run.mockResolvedValue({ total: 300 })
@@ -86,7 +107,12 @@ it('takes the caller and preview mode from the bound session', async () => {
   expect(m.run).toHaveBeenCalledWith(
     'lookup',
     { name: 'Cleaning' },
-    { callSid: sid, callerPhone: '+15551231234', preview: true },
+    expect.objectContaining({
+      callSid: sid,
+      callerPhone: '+15551231234',
+      preview: true,
+      expectedCallerSequence: 1,
+    }),
   )
 })
 it('sends emergency requests to the pilot keypad and never accepts a transfer number', async () => {
@@ -95,6 +121,7 @@ it('sends emergency requests to the pilot keypad and never accepts a transfer nu
     arguments: {},
   })
   expect(r.status).toBe(200)
+  await rpcResult(r)
   expect(m.update).toHaveBeenCalledWith({
     twiml: expect.stringContaining('context=harry-preview&amp;flood=prompt'),
   })
@@ -116,4 +143,49 @@ it('marks tool-level business failures as MCP errors', async () => {
     arguments: { name: 'Cleaning' },
   })
   expect((await rpcResult(r)).result).toMatchObject({ isError: true })
+})
+
+it('discards a stale tool result and releases an interrupted exit before dispatch', async () => {
+  m.latest.mockResolvedValueOnce(4).mockResolvedValue(5)
+  m.run.mockResolvedValue({ total: 300 })
+  const r = await send('tools/call', {
+    name: 'lookup',
+    arguments: { name: 'Cleaning' },
+  })
+  expect((await rpcResult(r)).result.content[0].text).toContain('Obsolete')
+  m.latest.mockResolvedValueOnce(7).mockResolvedValue(8)
+  await rpcResult(await send('tools/call', { name: 'end_call', arguments: {} }))
+  expect(m.finish).toHaveBeenCalledWith(sid, false)
+  expect(m.update).not.toHaveBeenCalled()
+})
+it('deduplicates end-call and emergency transitions for public calls', async () => {
+  m.read.mockResolvedValue({
+    status: 'active',
+    providerCallId: 'live_1',
+    pilot: false,
+    callerPhone: '+15551231234',
+  })
+  m.claim.mockResolvedValueOnce(true).mockResolvedValue(false)
+  await rpcResult(await send('tools/call', { name: 'end_call', arguments: {} }))
+  await send('tools/call', {
+    name: 'request_flood_confirmation',
+    arguments: {},
+  })
+  expect(m.update).toHaveBeenCalledTimes(1)
+  expect(m.finish).toHaveBeenCalledWith(sid, true)
+})
+
+it('returns a committed booking receipt even when a later turn interrupts delivery', async () => {
+  m.latest.mockResolvedValueOnce(4).mockResolvedValue(5)
+  const receipt = {
+    status: 'booked',
+    appointment_id: 'unique-job-id',
+    confirmation_number: 'SC-01234567',
+  }
+  m.run.mockResolvedValue(receipt)
+  const result = await rpcResult(
+    await send('tools/call', { name: 'phone_book_service', arguments: {} }),
+  )
+  expect(JSON.parse(result.result.content[0].text)).toEqual(receipt)
+  expect(result.result).not.toHaveProperty('committed')
 })

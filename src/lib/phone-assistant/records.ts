@@ -151,3 +151,59 @@ export async function markVoiceAnswered(
   if (error) throw error
   return data === true
 }
+
+export async function latestCallerTurn(
+  callSid: string,
+  db = createAdminClient(),
+) {
+  const { data, error } = await db
+    .from('phone_assistant_transcript')
+    .select('sequence')
+    .eq('call_sid', callSid)
+    .eq('role', 'user')
+    .order('sequence', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return (data?.sequence ?? null) as number | null
+}
+
+// Both emergency keypad routing and hanging up end the assistant leg. Only
+// release a claim before dispatch; a provider timeout has an ambiguous outcome.
+export async function claimVoiceExit(
+  callSid: string,
+  db = createAdminClient(),
+) {
+  const key = 'leave_assistant'
+  const inserted = await db
+    .from('phone_assistant_actions')
+    .insert({ call_sid: callSid, action_key: key })
+  if (!inserted.error) return true
+  if (inserted.error.code !== '23505') throw inserted.error
+  const result = await db
+    .from('phone_assistant_actions')
+    .update({ status: 'pending', completed_at: null })
+    .eq('call_sid', callSid)
+    .eq('action_key', key)
+    .eq('status', 'failed')
+    .select('call_sid')
+    .maybeSingle()
+  if (result.error) throw result.error
+  return Boolean(result.data)
+}
+export async function finishVoiceExit(
+  callSid: string,
+  dispatched: boolean,
+  db = createAdminClient(),
+) {
+  const { error } = await db
+    .from('phone_assistant_actions')
+    .update({
+      status: dispatched ? 'succeeded' : 'failed',
+      completed_at: new Date().toISOString(),
+    })
+    .eq('call_sid', callSid)
+    .eq('action_key', 'leave_assistant')
+    .eq('status', 'pending')
+  if (error) throw error
+}

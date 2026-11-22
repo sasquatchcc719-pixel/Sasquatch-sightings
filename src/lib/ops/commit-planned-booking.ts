@@ -3,6 +3,7 @@ import type {
   CreateAiStyleBookingPreviewSuccess,
 } from './create-ai-style-booking'
 import { queueGeocodeForStoredAddress } from './forward-geocode'
+import { deliverPhoneBookingEmails } from './phone-booking-email'
 import { normalizeTown } from '@/lib/geo/towns'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
@@ -24,6 +25,8 @@ export async function commitPlannedBooking(
   phone?: {
     callSid: string
     requestHash: string
+    calendarVersion: string
+    expectedCallerSequence?: number | null
     coupon: string | null
     serviceSubtotal: number
     deferEffects: (task: () => Promise<void>) => void
@@ -51,11 +54,13 @@ export async function commitPlannedBooking(
       : 'held',
   }
   const { data, error } = phone
-    ? await supabase.rpc('create_phone_appointment', {
+    ? await supabase.rpc('save_phone_booking', {
         p_sid: phone.callSid,
         p_hash: phone.requestHash,
         p_plan: {
           ...plan,
+          calendar_version: phone.calendarVersion,
+          expected_caller_sequence: phone.expectedCallerSequence,
           coupon_code: phone.coupon,
           service_subtotal: phone.serviceSubtotal,
         },
@@ -162,6 +167,7 @@ export async function commitPlannedBooking(
         await sendOpsLifecycleCommunications({
           event: 'job_scheduled',
           appointmentId: result.appointment_id,
+          ...(phone && { bookingEmailQueued: true }),
         })
       } catch (reason) {
         warn(
@@ -243,7 +249,21 @@ export async function commitPlannedBooking(
       }
     }
   }
-  if (phone) phone.deferEffects(deliverEffects)
+  if (phone)
+    phone.deferEffects(async () => {
+      const effects = await Promise.allSettled([
+        deliverPhoneBookingEmails(supabase, result.appointment_id),
+        deliverEffects(),
+      ])
+      for (const effect of effects) {
+        if (effect.status === 'rejected')
+          console.error(
+            '[phone-booking] Post-commit delivery failed',
+            result.appointment_id,
+            effect.reason,
+          )
+      }
+    })
   else await deliverEffects()
   const confirmationNumber = `SC-${result.appointment_id.slice(0, 8).toUpperCase()}`
   return {
@@ -253,8 +273,10 @@ export async function commitPlannedBooking(
     address_id: result.address_id,
     confirmation_number: confirmationNumber,
     status: result.appointment_status,
-    appointment_date: planned.appointment_date,
-    start_time: planned.start_time,
+    appointment_date: phone
+      ? result.appointment_date
+      : planned.appointment_date,
+    start_time: phone ? result.start_time : planned.start_time,
     end_time: planned.end_time,
     subtotal: result.subtotal,
     discount_applied: result.discount_applied,

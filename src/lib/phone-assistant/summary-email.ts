@@ -38,6 +38,7 @@ type Recap = { topic: string; summary: string }
 type AppointmentReceipt = {
   id: string
   status: string
+  kind: string | null
   appointment_date: string | null
   start_time: string | null
   parked_at: string | null
@@ -73,7 +74,7 @@ export async function summarizeVoiceCall(
   if (!session.pilot) {
     const lookup = await db
       .from('ops_appointments')
-      .select('id,status,appointment_date,start_time,parked_at')
+      .select('id,kind,status,appointment_date,start_time,parked_at')
       .eq('phone_assistant_call_sid', session.callSid)
       .maybeSingle()
     if (lookup.error) throw lookup.error
@@ -113,16 +114,21 @@ export async function summarizeVoiceCall(
   if (session.pilot) {
     status = 'Private preview. Scheduling actions are simulated.'
   } else if (appointment) {
-    const ref = 'SC-' + appointment.id.slice(0, 8).toUpperCase()
+    const measurement = appointment.kind === 'estimate'
+    const label = measurement ? 'commercial measuring visit' : 'appointment'
+    const ref =
+      (measurement ? 'EST-' : 'SC-') + appointment.id.slice(0, 8).toUpperCase()
     if (
       !appointment.parked_at &&
       appointment.appointment_date &&
       appointment.start_time &&
       ['booked', 'confirmed', 'scheduled'].includes(appointment.status)
     ) {
-      topic = 'Booking verified'
+      topic = measurement ? 'Measuring visit verified' : 'Booking verified'
       status =
-        'Sightings appointment ' +
+        'Sightings ' +
+        label +
+        ' ' +
         ref +
         ' is scheduled for ' +
         appointment.appointment_date +
@@ -132,7 +138,9 @@ export async function summarizeVoiceCall(
     } else {
       topic = 'Review appointment status'
       status =
-        'Check Sightings appointment ' +
+        'Check Sightings ' +
+        label +
+        ' ' +
         ref +
         ' before confirming with the caller. Recorded status: ' +
         (appointment.parked_at

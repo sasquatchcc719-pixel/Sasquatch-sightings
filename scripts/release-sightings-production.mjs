@@ -130,8 +130,17 @@ async function smokeTest() {
   }
 }
 
-execute('git', ['fetch', 'origin', 'main'])
-const commit = execute('git', ['rev-parse', 'origin/main']).stdout.trim()
+function currentMain() {
+  execute('git', ['fetch', 'origin', 'main'])
+  return execute('git', ['rev-parse', 'origin/main']).stdout.trim()
+}
+const commit = currentMain()
+function ensureMainIsCurrent() {
+  if (currentMain() !== commit)
+    throw new Error(
+      'origin/main advanced during release. Verify the newer release before promoting.',
+    )
+}
 const subject = execute('git', [
   'show',
   '-s',
@@ -169,6 +178,7 @@ if (!status.matches) {
 }
 
 if (!status.matches) {
+  ensureMainIsCurrent()
   execute('vercel', ['whoami', '--no-color'])
   const worktree = mkdtempSync(join(tmpdir(), 'sightings-release-'))
   try {
@@ -182,7 +192,15 @@ if (!status.matches) {
     )
     const { output } = execute(
       'vercel',
-      ['deploy', '--prod', '--yes', '--no-color'],
+      [
+        'deploy',
+        '--prod',
+        '--skip-domain',
+        '--build-env',
+        'SIGHTINGS_RELEASE_SHA=' + commit,
+        '--yes',
+        '--no-color',
+      ],
       { cwd: worktree },
     )
     const deploymentUrl = output.match(
@@ -202,6 +220,12 @@ if (!status.matches) {
         `${deploymentUrl} ended as ${deployment.readyState ?? 'unknown'} for ${deployment.target ?? 'unknown'} target`,
       )
     }
+    if (!deploymentUrlsFor(commit).has(deploymentUrl))
+      throw new Error(
+        'Staged production deployment metadata does not match origin/main.',
+      )
+    ensureMainIsCurrent()
+    execute('vercel', ['promote', deploymentUrl, '--yes', '--no-color'])
     deployedByFallback = true
   } finally {
     try {
@@ -223,6 +247,7 @@ if (!status.matches) {
 }
 
 await smokeTest()
+ensureMainIsCurrent()
 console.log(
   JSON.stringify(
     {

@@ -7,10 +7,19 @@ const deps = vi.hoisted(() => ({
   catalog: vi.fn(),
   book: vi.fn(),
   commit: vi.fn(),
+  verifiedCaller: vi.fn(),
+  measurement: vi.fn(),
   slots: vi.fn(),
   staffSlots: vi.fn(),
   estimateSlots: vi.fn(),
   session: vi.fn(),
+}))
+vi.mock('./caller', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./caller')>()),
+  verifiedCallerLocation: deps.verifiedCaller,
+}))
+vi.mock('./commercial-measurement', () => ({
+  bookPhoneMeasurement: deps.measurement,
 }))
 vi.mock('@/lib/ops/commit-planned-booking', () => ({
   commitPlannedBooking: deps.commit,
@@ -73,9 +82,47 @@ beforeEach(() => {
 })
 describe('customer voice preview', () => {
   it('publishes only valid read and simulation tool schemas', () => {
-    expect(phoneTools).toHaveLength(7)
+    expect(phoneTools).toHaveLength(8)
     for (const t of phoneTools)
       expect(z.toJSONSchema(t.inputSchema).type).toBe('object')
+  })
+  it('accepts unambiguous catalog slugs in live quote, openings, and booking tools', () => {
+    const catalog = [
+      {
+        id,
+        name: 'Room',
+        category: 'Carpet',
+        base_price: 46,
+        pricing_unit: 'each',
+        slug: 'regular-room',
+      },
+    ]
+    const selected = {
+      ...service,
+      line_items: [{ service_id: 'regular-room', quantity: 3 }],
+    }
+    const registry = phoneToolsForCall(false, catalog)
+    const parse = (name: string, input: unknown) =>
+      registry.find((t) => t.name === name)!.inputSchema.parse(input)
+    expect(parse('phone_quote', selected)).toMatchObject({
+      line_items: [{ service_id: id }],
+    })
+    expect(
+      parse('phone_openings', { ...slot, service: selected }),
+    ).toMatchObject({ service: { line_items: [{ service_id: id }] } })
+    expect(
+      parse('phone_book_service', {
+        ...booking,
+        service: selected,
+        email_confirmed: true,
+        confirmed_total: 378,
+      }),
+    ).toMatchObject({ service: { line_items: [{ service_id: id }] } })
+    const duplicate = phoneToolsForCall(false, [
+      ...catalog,
+      { ...catalog[0], id: '8fa3ee90-2ef6-4a7e-af0a-e67b5758f885' },
+    ]).find((t) => t.name === 'phone_quote')!
+    expect(duplicate.inputSchema.safeParse(selected).success).toBe(false)
   })
   it('prices a normal call without an LSA fee and applies a validated coupon', async () => {
     deps.promo.mockResolvedValue(
@@ -460,6 +507,7 @@ describe('live residential phone booking', () => {
   const prior = vi.fn()
   beforeEach(() => {
     deps.db.mockReturnValue({
+      rpc: vi.fn().mockResolvedValue({ data: 'calendar-version' }),
       from: () => ({ select: () => ({ eq: () => ({ maybeSingle: prior }) }) }),
     })
     prior.mockResolvedValue({ data: null })
@@ -560,6 +608,104 @@ describe('live residential phone booking', () => {
       ),
     ).toHaveProperty('error')
     expect(deps.commit).toHaveBeenCalledTimes(1)
+  })
+  it('reuses a verified repeat contact and ZIP internally without exposing stored email', async () => {
+    const a = '31d29174-a3e6-4567-8714-d2ccd3f89108'
+    deps.verifiedCaller.mockResolvedValue({
+      customer: {
+        id,
+        first_name: agreed.first_name,
+        last_name: agreed.last_name,
+        email: 'private@example.org',
+      },
+      address: {
+        id: a,
+        zip_code: service.zip_code,
+        street_1: agreed.street,
+        street_2: null,
+        city: agreed.city,
+      },
+    })
+    const repeat = {
+      ...agreed,
+      service: { ...agreed.service, lead_source: undefined, zip_code: '11111' },
+      zip_code: '11111',
+      customer_ref: id,
+      service_address_ref: a,
+      email: undefined,
+      use_saved_email: true,
+    }
+    expect(
+      await runPhoneTool('phone_book_service', repeat, live),
+    ).toMatchObject({ status: 'booked' })
+    expect(deps.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lead_source: 'repeat_customer',
+        address: expect.objectContaining({ zip_code: service.zip_code }),
+        customer: expect.objectContaining({ email: 'private@example.org' }),
+      }),
+      expect.anything(),
+      null,
+      expect.anything(),
+    )
+    deps.commit.mockClear()
+    expect(
+      await runPhoneTool(
+        'phone_book_service',
+        { ...repeat, service_address_ref: id },
+        live,
+      ),
+    ).toHaveProperty('error')
+    expect(
+      await runPhoneTool(
+        'phone_book_service',
+        { ...repeat, use_saved_email: false },
+        live,
+      ),
+    ).toHaveProperty('error')
+    expect(deps.commit).not.toHaveBeenCalled()
+  })
+  it('discards an interrupted residential request before the transaction', async () => {
+    expect(
+      await runPhoneTool('phone_book_service', agreed, {
+        ...live,
+        isCurrent: async () => false,
+      }),
+    ).toHaveProperty('error')
+    expect(deps.commit).not.toHaveBeenCalled()
+  })
+  it('sends a public commercial measuring visit through its dedicated adapter and excludes private calls', async () => {
+    const measure = {
+      ...agreed,
+      visit_type: 'commercial_measurement',
+      business_name: 'Example Business',
+      job_description: 'Measure conference room',
+      service: undefined,
+    }
+    deps.measurement.mockResolvedValue({
+      status: 'booked',
+      appointment_id: id,
+      confirmation_number: 'EST-8FA3EE90',
+      date: agreed.appointment_date,
+      time: agreed.start_time,
+    })
+    expect(
+      await runPhoneTool('phone_book_measurement', measure, live),
+    ).toMatchObject({ status: 'booked', confirmation_number: 'EST-8FA3EE90' })
+    expect(deps.measurement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerPhone: ctx.callerPhone,
+        callSid: ctx.callSid,
+        businessName: 'Example Business',
+        appointmentDate: agreed.appointment_date,
+        startTime: agreed.start_time,
+      }),
+    )
+    expect(
+      await runPhoneTool('phone_book_measurement', measure, ctx),
+    ).toHaveProperty('error')
+    expect(deps.measurement).toHaveBeenCalledTimes(1)
+    expect(deps.commit).not.toHaveBeenCalled()
   })
   it('returns an office handoff when a conflicting customer match prevents commitment', async () => {
     deps.commit.mockRejectedValue(

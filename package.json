@@ -16,6 +16,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:production": "node scripts/check-production-source.mjs && pnpm run test:phone-release && pnpm run build",
+    "test:phone-release": "node scripts/run-phone-release-tests.mjs",
     "start": "next start",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
@@ -93,6 +95,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.17",
     "@eslint/eslintrc": "^3.3.3",
     "@tailwindcss/postcss": "^4.1.18",
     "@testing-library/dom": "^10.4.1",

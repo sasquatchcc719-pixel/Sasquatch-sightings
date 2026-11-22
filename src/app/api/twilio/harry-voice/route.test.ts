@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { verifyCallToken } from '@/lib/phone-assistant/call-token'
 import { NextRequest } from 'next/server'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({
@@ -8,6 +9,7 @@ const m = vi.hoisted(() => ({
   start: vi.fn(),
   append: vi.fn(),
   config: vi.fn(),
+  base: vi.fn(),
 }))
 vi.mock('@/lib/twilio/inbound-auth', () => ({
   validateTwilioInboundRequest: m.signed,
@@ -19,7 +21,7 @@ vi.mock('@/lib/twilio/harry-access', () => ({
   isHarryMainNumber: (n: string) => n === '+15550000001',
 }))
 vi.mock('@/lib/twilio/appointment-queue', () => ({
-  queueBaseUrl: () => 'https://example.com',
+  queueBaseUrl: m.base,
 }))
 vi.mock('@/lib/twilio/call-routing-config', () => ({
   getCallRoutingConfig: m.config,
@@ -35,7 +37,7 @@ import { POST } from './route'
 const sid = 'CA' + 'b'.repeat(32)
 const send = (step: string, fields: Record<string, string> = {}) =>
   POST(
-    new NextRequest('https://example.com/api/twilio/harry-voice?step=' + step, {
+    new NextRequest(m.base() + '/api/twilio/harry-voice?step=' + step, {
       method: 'POST',
       body: new URLSearchParams({
         From: '+15550000123',
@@ -49,13 +51,15 @@ beforeEach(() => {
   vi.resetAllMocks()
   m.signed.mockReturnValue(true)
   m.access.mockResolvedValue({ preview: true, publicEnabled: false })
+  m.base.mockReturnValue('https://example.com')
   vi.stubEnv('HARRY_VOICE_WEBHOOK_SECRET', 'test-key')
   vi.stubEnv('HARRY_VOICE_PROJECT_ID', 'proj_test')
+  vi.stubEnv('VERCEL_ENV', 'production')
 })
 afterEach(() => vi.unstubAllEnvs())
 it('starts native SIP and both-track transcription for the authorized preview', async () => {
   const result = await (await send('start&preview=1')).text()
-  expect(result).toContain('secure=true?X-Sightings-Invite=')
+  expect(result).toContain('secure=true?X-Sightings-Live-Invite=')
   expect(result).toContain('track="both_tracks"')
   expect(result).toContain('simulated')
   expect(m.start).toHaveBeenCalledWith({
@@ -113,4 +117,24 @@ it('stores final words with their speaker and sequence only', async () => {
     sequence: 2,
     content: 'Three bedrooms.',
   })
+})
+it('keeps full test disclosure before connecting GPT Live', async () => {
+  expect(await (await send('start&preview=1')).text()).toContain(
+    'Bookings and transfers are simulated.',
+  )
+})
+it('gives Live pilots a signed origin-bound invite and full disclosure before connecting audio', async () => {
+  const twiml = await (await send('start&preview=1')).text()
+  const token = twiml.match(/X-Sightings-Live-Invite=([\w.-]+)/)?.[1] ?? ''
+  expect(verifyCallToken(token, 'live-invite:https://example.com')).toBe(sid)
+  expect(verifyCallToken(token, 'invite')).toBeNull()
+  expect(twiml).toMatch(
+    /<Say>[^<]*transcribed[^<]*virtual assistant[^<]*Bookings and transfers are simulated\.<\/Say><Start>/,
+  )
+  expect(twiml).toContain('Sasquatch Carpet Cleaning after-hours directory')
+  expect(twiml).not.toMatch(/How can I help|X-Sightings-Invite=/)
+  m.base.mockReturnValue('https://sightings.sasquatchcarpet.com')
+  const production = await (await send('start&preview=1')).text()
+  expect(production).toContain('X-Sightings-Live-Invite=')
+  expect(production).not.toContain('unavailable right now')
 })

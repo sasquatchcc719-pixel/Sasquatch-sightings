@@ -98,6 +98,15 @@ describe('after-hours booking receipts', () => {
     expect(recap.summary).toContain('SC-ABCDE001')
     expect(recap.summary).toContain('2026-11-24 at 14:00 Mountain Time')
   })
+  it('reports the measuring visit with its estimate receipt', async () => {
+    const recap = await summarizeVoiceCall(
+      session,
+      receiptDb({ ...booked, kind: 'estimate', status: 'confirmed' }).db,
+    )
+    expect(recap.topic).toBe('Measuring visit verified')
+    expect(recap.summary).toContain('commercial measuring visit EST-ABCDE001')
+    expect(recap.summary).not.toContain('SC-')
+  })
   it.each([
     { ...booked, status: 'pending_approval' },
     { ...booked, parked_at: '2026-11-20T18:00:00Z' },

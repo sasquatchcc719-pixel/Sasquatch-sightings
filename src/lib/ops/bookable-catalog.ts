@@ -72,14 +72,16 @@ export type BookableCatalogRow = {
 /** Load the customer-bookable services — the same set the website widget shows. */
 export async function loadBookableCatalog(
   supabase: SupabaseClient,
+  signal?: AbortSignal,
 ): Promise<BookableCatalogRow[]> {
-  const { data } = await supabase
+  const query = supabase
     .from('service_catalog_items')
     .select('id, name, slug, base_price, pricing_unit, category')
     .in('category', PUBLIC_BOOKABLE_CATEGORIES as unknown as string[])
     .eq('is_active', true)
     .order('sort_order', { ascending: true, nullsFirst: false })
     .order('base_price')
+  const { data } = await (signal ? query.abortSignal(signal) : query)
 
   return (data ?? [])
     .filter((row) => !isExcludedFromBooking(row))

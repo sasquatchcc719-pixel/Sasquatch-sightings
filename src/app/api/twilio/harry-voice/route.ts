@@ -10,6 +10,11 @@ import {
   isHarryPreviewCall,
   isHarryMainNumber,
 } from '@/lib/twilio/harry-access'
+import {
+  liveInviteHeader,
+  liveInvitePurpose,
+  liveVoiceEnabled,
+} from '@/lib/phone-assistant/live-session'
 import { issueCallToken } from '@/lib/phone-assistant/call-token'
 import {
   appendVoiceTranscript,
@@ -99,17 +104,21 @@ export async function POST(request: NextRequest) {
     const project = process.env.HARRY_VOICE_PROJECT_ID?.trim()
     if (!project || !/^proj_[a-zA-Z0-9_-]+$/.test(project))
       throw new Error('Missing project')
-    const invite = issueCallToken(callSid, 'invite')
+    if (!liveVoiceEnabled(pilot, request.url, queueBaseUrl()))
+      throw new Error('Invalid Live callback origin')
+    const invite = issueCallToken(callSid, liveInvitePurpose(queueBaseUrl()))
     const base = queueBaseUrl() + '/api/twilio/harry-voice'
     const sip =
       'sip:' +
       project +
-      '@sip.api.openai.com;transport=tls;secure=true?X-Sightings-Invite=' +
+      '@sip.api.openai.com;transport=tls;secure=true?' +
+      liveInviteHeader +
+      '=' +
       invite
     await beginVoiceSession({ callSid, callerPhone, pilot })
     const notice = pilot
-      ? 'Private test call. Bookings and transfers are simulated. This call is transcribed.'
-      : 'This call with our virtual assistant is transcribed.'
+      ? 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. This is a transcribed test call with Harry, our virtual assistant. Bookings and transfers are simulated.'
+      : 'Thanks for calling the Sasquatch Carpet Cleaning after-hours directory. This transcribed call is handled by Harry, our virtual assistant.'
     return xml(
       '<Say>' +
         notice +
