@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({
 }))
 vi.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
+    const period = queryKey[1] === 'period'
+    const minutes = period ? 4470 : 3467
+    const grossPay = period ? 1862.52 : 1444.58
     const data: Record<string, unknown> = {
       'payroll-staff': [],
       'payroll-timesheet-entries': {
@@ -66,22 +69,22 @@ vi.mock('@tanstack/react-query', () => ({
                 workType: 'job',
                 source: 'manual',
                 breakMinutes: 0,
-                payableMinutes: 3467,
+                payableMinutes: minutes,
                 hourlyRate: 25,
-                grossPay: 1444.58,
+                grossPay,
                 workDate: '2026-10-14',
                 startedAt: '2026-10-14T14:00:00Z',
                 endedAt: '2026-10-14T15:00:00Z',
               },
             ],
-        totalPayableMinutes: state.mixedRates ? 180 : 3467,
-        totalGrossPay: state.mixedRates ? 70 : 1444.58,
+        totalPayableMinutes: state.mixedRates ? 180 : minutes,
+        totalGrossPay: state.mixedRates ? 70 : grossPay,
       },
       'payroll-clock-events': [],
       'payroll-overtime': {
         calculation: {
-          minutes: 1067,
-          premiumPay: 222.29,
+          minutes: 283,
+          premiumPay: 58.96,
           breakdown: [
             {
               key: 'david:25',
@@ -89,9 +92,10 @@ vi.mock('@tanstack/react-query', () => ({
               staffDisplayName: 'David Gonzalez',
               weekStart: '2026-11-08',
               method: 'weekly',
-              minutes: 1067,
+              baseCents: 11792,
+              minutes: 283,
               hourlyRate: 25,
-              premiumPay: 222.29,
+              premiumPay: 58.96,
             },
           ],
         },
@@ -102,13 +106,13 @@ vi.mock('@tanstack/react-query', () => ({
                   id: 'overtime',
                   staffUserId: 'david',
                   staffDisplayName: 'David Gonzalez',
-                  minutes: 1067,
-                  premiumPay: 222.29,
+                  minutes: 283,
+                  premiumPay: 58.96,
                   status: 'approved',
                 },
               ]
             : [],
-          totalPay: state.overtimeApplied ? 222.29 : 0,
+          totalPay: state.overtimeApplied ? 58.96 : 0,
           matchesCalculation: state.overtimeApplied,
         },
         hasActiveEntries: false,
@@ -295,26 +299,32 @@ describe('payroll gratuity display', () => {
       ),
     ).toBeInTheDocument()
   })
-  it('shows time over 40 hours as a separate half-rate premium in pay-period view', () => {
+  it('splits David’s period into regular hours and full time-and-a-half overtime', () => {
     render(<PayrollTimesheetsView />)
     fireEvent.click(screen.getByRole('button', { name: 'Pay period' }))
 
     const summary = screen.getByRole('region', { name: 'Payroll summary' })
+    expect(within(summary).getByText('69h 47m × $25.00/hr')).toBeInTheDocument()
     expect(
-      within(summary).getByText('17h 47m × $12.50/hr premium · over 40h/week'),
+      within(within(summary).getByText('Regular pay').parentElement!).getByText(
+        '$1,744.60',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(summary).getByText('4h 43m × $37.50/hr · over 40h/week'),
     ).toBeInTheDocument()
     expect(
       within(
         within(summary).getByText('Overtime (Colorado rules)').parentElement!,
-      ).getByText('$222.29'),
+      ).getByText('$176.88'),
     ).toBeInTheDocument()
     expect(
-      within(summary).getByRole('button', { name: 'Apply +$222.29' }),
+      within(summary).getByRole('button', { name: 'Apply +$58.96 premium' }),
     ).toBeInTheDocument()
     expect(
       within(
         within(summary).getByText('Total gross pay').parentElement!,
-      ).getByText('$1,508.80'),
+      ).getByText('$1,926.74'),
     ).toBeInTheDocument()
   })
   it('adds overtime to gross pay only after the global calculation is applied', () => {
@@ -334,12 +344,12 @@ describe('payroll gratuity display', () => {
       within(summary).getByRole('button', { name: 'Applied' }),
     ).toBeDisabled()
     expect(
-      within(summary).getByText('$222.29 applied to total'),
+      within(summary).getByText('$58.96 premium applied'),
     ).toBeInTheDocument()
     expect(
       within(
         within(summary).getByText('Total gross pay').parentElement!,
-      ).getByText('$1,731.09'),
+      ).getByText('$1,985.70'),
     ).toBeInTheDocument()
   })
   it('clearly marks the total incomplete if gratuity cannot be loaded', () => {

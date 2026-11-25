@@ -23,6 +23,7 @@ export type OvertimeBreakdown = {
   method: OvertimeMethod
   minutes: number
   hourlyRate: number
+  baseCents: number
   premiumCents: number
 }
 
@@ -60,7 +61,10 @@ export function calculatePayPeriodOvertime(
     weekStart: string
     minutes: number
     premiumCents: number
-    periodRates: Map<number, { minutes: number; premiumCents: number }>
+    periodRates: Map<
+      number,
+      { minutes: number; baseCents: number; premiumCents: number }
+    >
   }
 
   function calculateRule(method: OvertimeMethod, thresholdMinutes: number) {
@@ -107,8 +111,12 @@ export function calculatePayPeriodOvertime(
       ) {
         const rate = candidate.periodRates.get(entry.hourlyRate) || {
           minutes: 0,
+          baseCents: 0,
           premiumCents: 0,
         }
+        rate.baseCents += Math.round(
+          (overtimeMinutes * Math.round(entry.hourlyRate * 100)) / 60,
+        )
         rate.minutes += overtimeMinutes
         rate.premiumCents += premiumCents
         candidate.periodRates.set(entry.hourlyRate, rate)
@@ -155,6 +163,7 @@ export function calculatePayPeriodOvertime(
         method: selected.method,
         minutes: rate.minutes,
         hourlyRate,
+        baseCents: rate.baseCents,
         premiumCents: rate.premiumCents,
       })
     }

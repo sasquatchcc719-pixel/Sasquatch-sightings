@@ -154,6 +154,7 @@ type OvertimeSummary = {
       method: 'weekly' | 'daily' | 'consecutive'
       minutes: number
       hourlyRate: number
+      baseCents: number
       premiumPay: number
     }>
   }
@@ -631,6 +632,16 @@ export function PayrollTimesheetsView() {
   )
   const totalPayableMinutes = entriesQuery.data?.totalPayableMinutes || 0
   const totalGrossPay = entriesQuery.data?.totalGrossPay || 0
+  const overtime =
+    viewMode === 'period' ? overtimeQuery.data?.calculation : undefined
+  const overtimeBasePay =
+    (overtime?.breakdown.reduce((sum, group) => sum + group.baseCents, 0) ??
+      0) / 100
+  const calculatedPremiumPay = overtime?.premiumPay ?? 0
+  const hourlyError =
+    entriesQuery.isError || (viewMode === 'period' && overtimeQuery.isError)
+  const hourlyPending =
+    entriesQuery.isPending || (viewMode === 'period' && overtimeQuery.isPending)
   const hourlyBreakdown = useMemo(() => {
     const groups = new Map<
       string,
@@ -655,15 +666,17 @@ export function PayrollTimesheetsView() {
       group.payCents += Math.round(entry.grossPay * 100)
       groups.set(key, group)
     }
+    for (const ot of overtime?.breakdown ?? []) {
+      const group = groups.get(`${ot.staffUserId}:${ot.hourlyRate}`)
+      if (group) {
+        group.minutes -= ot.minutes
+        group.payCents -= ot.baseCents
+      }
+    }
     return [...groups.values()].sort(
       (a, b) => a.name.localeCompare(b.name) || a.rate - b.rate,
     )
-  }, [entries])
-  const overtime = overtimeQuery.data?.calculation ?? {
-    minutes: 0,
-    premiumPay: 0,
-    breakdown: [],
-  }
+  }, [entries, overtime])
   const appliedOvertimeRows = useMemo(
     () =>
       viewMode === 'period' ? (overtimeQuery.data?.applied.rows ?? []) : [],
@@ -737,6 +750,13 @@ export function PayrollTimesheetsView() {
       existing.grossPay += entry.grossPay
       totals.set(entry.staffUserId, existing)
     }
+    for (const group of overtime?.breakdown ?? []) {
+      const worker = totals.get(group.staffUserId)
+      if (worker) {
+        worker.grossPay -= group.baseCents / 100
+        worker.overtimePay += group.baseCents / 100
+      }
+    }
     for (const appliedOvertime of appliedOvertimeRows) {
       const existing = totals.get(appliedOvertime.staffUserId) || {
         name: appliedOvertime.staffDisplayName,
@@ -793,7 +813,14 @@ export function PayrollTimesheetsView() {
       totals.set(gratuity.staffUserId, existing)
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [addOnBonuses, appliedOvertimeRows, entries, premiums, gratuities])
+  }, [
+    addOnBonuses,
+    appliedOvertimeRows,
+    entries,
+    overtime,
+    premiums,
+    gratuities,
+  ])
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -1276,8 +1303,8 @@ export function PayrollTimesheetsView() {
         <dl className="divide-y divide-white/10">
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <dt className="text-slate-200">
-              Hourly pay
-              {!entriesQuery.isError && !entriesQuery.isPending && (
+              {viewMode === 'period' ? 'Regular pay' : 'Hourly pay'}
+              {!hourlyError && !hourlyPending && (
                 <div className="mt-2 space-y-1 text-base text-white">
                   {hourlyBreakdown.length === 0
                     ? 'No hours logged in this date range.'
@@ -1307,11 +1334,11 @@ export function PayrollTimesheetsView() {
               )}
             </dt>
             <dd className="shrink-0 font-mono text-lg text-white">
-              {entriesQuery.isError
+              {hourlyError
                 ? 'Unavailable'
-                : entriesQuery.isPending
+                : hourlyPending
                   ? 'Loading…'
-                  : fmtMoney(totalGrossPay)}
+                  : fmtMoney(totalGrossPay - overtimeBasePay)}
             </dd>
           </div>
           {viewMode === 'period' && (
@@ -1319,35 +1346,29 @@ export function PayrollTimesheetsView() {
               <dt className="text-slate-200">
                 Overtime (Colorado rules)
                 <div className="mt-2 space-y-1 text-base text-white">
-                  {overtime.breakdown.length === 0
-                    ? 'No overtime under the configured Colorado hour rules.'
-                    : overtime.breakdown.map((group) => (
-                        <p key={group.key}>
-                          {overtime.breakdown.length > 1 && (
-                            <span>{group.staffDisplayName}: </span>
-                          )}
-                          <span className="font-mono">
-                            {fmtMin(group.minutes)} ×{' '}
-                            {fmtMoney(group.hourlyRate * 0.5)}/hr premium
-                            {' · '}
-                            {group.method === 'weekly'
-                              ? 'over 40h/week'
-                              : group.method === 'daily'
-                                ? 'over 12h/day'
-                                : 'over 12 consecutive hours'}
-                            {overtime.breakdown.length > 1
-                              ? ` = ${fmtMoney(group.premiumPay)}`
-                              : ''}
-                          </span>
-                        </p>
-                      ))}
-                  {overtime.breakdown.length > 0 && (
-                    <p>
-                      Uses whichever calculation pays more in each workweek; the
-                      rules are not stacked. Straight-time pay is included
-                      above.
-                    </p>
-                  )}
+                  {overtime &&
+                    (overtime.breakdown.length === 0
+                      ? 'No overtime under the configured Colorado hour rules.'
+                      : overtime.breakdown.map((group) => (
+                          <p key={group.key}>
+                            {overtime.breakdown.length > 1 && (
+                              <span>{group.staffDisplayName}: </span>
+                            )}
+                            <span className="font-mono">
+                              {fmtMin(group.minutes)} ×{' '}
+                              {fmtMoney(group.hourlyRate * 1.5)}/hr
+                              {' · '}
+                              {group.method === 'weekly'
+                                ? 'over 40h/week'
+                                : group.method === 'daily'
+                                  ? 'over 12h/day'
+                                  : 'over 12 consecutive hours'}
+                              {overtime.breakdown.length > 1
+                                ? ` = ${fmtMoney(group.baseCents / 100 + group.premiumPay)}`
+                                : ''}
+                            </span>
+                          </p>
+                        )))}
                 </div>
               </dt>
               <dd className="flex shrink-0 flex-col items-end gap-2 text-right">
@@ -1356,13 +1377,13 @@ export function PayrollTimesheetsView() {
                     ? 'Unavailable'
                     : overtimeQuery.isPending
                       ? 'Loading…'
-                      : fmtMoney(overtime.premiumPay)}
+                      : fmtMoney(overtimeBasePay + calculatedPremiumPay)}
                 </span>
                 {!overtimeQuery.isError && !overtimeQuery.isPending && (
                   <>
                     {totalAppliedOvertimePay > 0 && (
                       <span className="text-xs text-emerald-300">
-                        {fmtMoney(totalAppliedOvertimePay)} applied to total
+                        {fmtMoney(totalAppliedOvertimePay)} premium applied
                       </span>
                     )}
                     <button
@@ -1370,7 +1391,7 @@ export function PayrollTimesheetsView() {
                       onClick={applyOvertime}
                       disabled={
                         isSaving ||
-                        overtime.premiumPay <= 0 ||
+                        calculatedPremiumPay <= 0 ||
                         overtimeQuery.data?.hasActiveEntries ||
                         overtimeQuery.data?.applied.matchesCalculation
                       }
@@ -1381,8 +1402,8 @@ export function PayrollTimesheetsView() {
                         : overtimeQuery.data?.applied.matchesCalculation
                           ? 'Applied'
                           : totalAppliedOvertimePay > 0
-                            ? `Update to ${fmtMoney(overtime.premiumPay)}`
-                            : `Apply +${fmtMoney(overtime.premiumPay)}`}
+                            ? `Update premium to ${fmtMoney(calculatedPremiumPay)}`
+                            : `Apply +${fmtMoney(calculatedPremiumPay)} premium`}
                     </button>
                   </>
                 )}
@@ -1441,7 +1462,12 @@ export function PayrollTimesheetsView() {
           </div>
         </dl>
         <p className="px-5 py-3 text-sm text-emerald-100/80">
-          The total includes every amount listed above.
+          {viewMode === 'period' &&
+          !summaryUnavailable &&
+          !summaryLoading &&
+          calculatedPremiumPay !== totalAppliedOvertimePay
+            ? `Gross pay includes ${fmtMoney(overtimeBasePay + totalAppliedOvertimePay)} for overtime hours. The full overtime amount above includes the calculated premium of ${fmtMoney(calculatedPremiumPay)}.`
+            : 'The total includes every amount listed above.'}
         </p>
         {gratuitiesQuery.isError && (
           <p className="px-5 pb-3 text-sm text-amber-200">
@@ -1458,8 +1484,8 @@ export function PayrollTimesheetsView() {
                 <tr>
                   {[
                     'Worker',
-                    'Hourly pay',
-                    'Overtime',
+                    viewMode === 'period' ? 'Regular pay' : 'Hourly pay',
+                    'Overtime in gross pay',
                     'Gratuity',
                     'Add-on bonus',
                     'After-hours',

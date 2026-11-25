@@ -44,6 +44,7 @@ describe('calculatePayPeriodOvertime', () => {
         staffUserId: 'David',
         minutes: 318,
         hourlyRate: 25,
+        baseCents: 13250,
         premiumCents: 6625,
         method: 'weekly',
         weekStart: '2026-11-08',
@@ -68,6 +69,22 @@ describe('calculatePayPeriodOvertime', () => {
     expect(result.breakdown[0].hourlyRate).toBe(25)
   })
 
+  it('allocates only overtime minutes at each saved rate and rounds each shift to cents', () => {
+    const result = calculatePayPeriodOvertime(
+      [
+        entry('David', 719, 20, '2026-11-08T07:00:00Z'),
+        entry('David', 2, 25, '2026-11-08T20:00:00Z'),
+        entry('David', 1, 25, '2026-11-08T21:00:00Z'),
+        entry('David', 10, 30, '2026-11-08T22:00:00Z'),
+      ],
+      '2026-11-08',
+      '2026-11-14',
+    )
+    expect(result.breakdown).toMatchObject([
+      { hourlyRate: 25, minutes: 2, baseCents: 84, premiumCents: 42 },
+      { hourlyRate: 30, minutes: 10, baseCents: 500, premiumCents: 250 },
+    ])
+  })
   it('applies the 40-hour threshold separately to each worker', () => {
     const result = calculatePayPeriodOvertime(
       [
