@@ -59,6 +59,7 @@ type EntryFormState = {
 }
 
 type EditFormState = EntryFormState & {
+  endDate: string
   workDate: string
   status: string
 }
@@ -82,6 +83,7 @@ function fmtMin(minutes: number): string {
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', {
+    timeZone: 'America/Denver',
     hour: 'numeric',
     minute: '2-digit',
   })
@@ -104,7 +106,9 @@ function fmtDate(dateKey: string): string {
 }
 
 function toIso(date: string, time: string): string {
-  return mountainLocalDateTimeToIso(date, time) ?? new Date().toISOString()
+  const timestamp = mountainLocalDateTimeToIso(date, time)
+  if (!timestamp) throw new Error('Enter a valid Mountain date and time.')
+  return timestamp
 }
 
 function fmtInputTime(iso: string): string {
@@ -839,6 +843,7 @@ export function PayrollTimesheetsView() {
     setEditForm({
       staffUserId: entry.staffUserId,
       workDate: entry.workDate,
+      endDate: mountainDateKey(entry.endedAt),
       startTime: fmtInputTime(entry.startedAt),
       endTime: fmtInputTime(entry.endedAt),
       breakMinutes: String(entry.breakMinutes),
@@ -1039,14 +1044,19 @@ export function PayrollTimesheetsView() {
   }
 
   function updateEditForm(field: keyof EditFormState, value: string) {
-    setEditForm((current) =>
-      current ? { ...current, [field]: value } : current,
-    )
+    setEditForm((current) => {
+      if (!current) return current
+      if (field === 'workDate' && current.workDate === current.endDate) {
+        return { ...current, workDate: value, endDate: value }
+      }
+      return { ...current, [field]: value }
+    })
   }
 
   async function saveEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!editingEntryId || !editForm) return
+    const entry = entries.find((row) => row.id === editingEntryId)
+    if (!entry || !editForm) return
 
     setIsSaving(true)
     setMessage(null)
@@ -1058,8 +1068,16 @@ export function PayrollTimesheetsView() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             workDate: editForm.workDate,
-            startedAt: toIso(editForm.workDate, editForm.startTime),
-            endedAt: toIso(editForm.workDate, editForm.endTime),
+            startedAt:
+              editForm.workDate === entry.workDate &&
+              editForm.startTime === fmtInputTime(entry.startedAt)
+                ? entry.startedAt
+                : toIso(editForm.workDate, editForm.startTime),
+            endedAt:
+              editForm.endDate === mountainDateKey(entry.endedAt) &&
+              editForm.endTime === fmtInputTime(entry.endedAt)
+                ? entry.endedAt
+                : toIso(editForm.endDate, editForm.endTime),
             breakMinutes: Number(editForm.breakMinutes || 0),
             hourlyRate: Number(editForm.hourlyRate),
             workType: editForm.workType,
@@ -1071,7 +1089,10 @@ export function PayrollTimesheetsView() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to save entry')
       stopEditing()
-      await entriesQuery.refetch()
+      await Promise.all([
+        entriesQuery.refetch(),
+        viewMode === 'period' && overtimeQuery.refetch(),
+      ])
       setMessage('Payroll time entry updated.')
     } catch (error) {
       setMessage(
@@ -2300,6 +2321,10 @@ export function PayrollTimesheetsView() {
                       {entry.clockState === 'complete'
                         ? fmtTime(entry.endedAt)
                         : 'Now'}
+                      {entry.clockState === 'complete' &&
+                      mountainDateKey(entry.endedAt) !== entry.workDate
+                        ? ` (${fmtDate(mountainDateKey(entry.endedAt))})`
+                        : ''}
                       {entry.breakMinutes > 0
                         ? `, ${entry.breakMinutes}m break`
                         : ''}
@@ -2451,6 +2476,19 @@ export function PayrollTimesheetsView() {
                       />
                     </label>
                     <label className="text-sm text-slate-300">
+                      End date
+                      <input
+                        type="date"
+                        required
+                        min={editForm.workDate}
+                        value={editForm.endDate}
+                        onChange={(event) =>
+                          updateEditForm('endDate', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
                       End
                       <input
                         type="time"
@@ -2530,6 +2568,14 @@ export function PayrollTimesheetsView() {
                         className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
                       />
                     </label>
+                    {message && (
+                      <p
+                        role="status"
+                        className="text-sm text-amber-200 sm:col-span-2 lg:col-span-4"
+                      >
+                        {message}
+                      </p>
+                    )}
                     <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
                       <button
                         type="submit"

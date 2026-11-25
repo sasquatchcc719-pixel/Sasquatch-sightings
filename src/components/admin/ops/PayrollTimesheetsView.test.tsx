@@ -4,6 +4,7 @@ import {
   render,
   screen,
   within,
+  waitFor,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PayrollTimesheetsView } from './PayrollTimesheetsView'
@@ -72,9 +73,9 @@ vi.mock('@tanstack/react-query', () => ({
                 payableMinutes: minutes,
                 hourlyRate: 25,
                 grossPay,
-                workDate: '2026-10-14',
-                startedAt: '2026-10-14T14:00:00Z',
-                endedAt: '2026-10-14T15:00:00Z',
+                workDate: '2026-11-16',
+                startedAt: '2026-11-16T18:27:15Z',
+                endedAt: '2026-11-17T08:05:00Z',
               },
             ],
         totalPayableMinutes: state.mixedRates ? 180 : minutes,
@@ -207,6 +208,36 @@ afterEach(() => {
   state.mixedRates = false
   state.addOnRows = false
   state.overtimeApplied = false
+})
+
+it('saves a corrected overnight clock-out on its actual Mountain end date', async () => {
+  const save = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+  vi.stubGlobal('fetch', save)
+  try {
+    render(<PayrollTimesheetsView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit entry' }))
+    const editor = within(
+      screen.getByRole('button', { name: 'Save changes' }).closest('form')!,
+    )
+    expect(editor.getByLabelText('End date')).toHaveValue('2026-11-17')
+    fireEvent.change(editor.getByLabelText('End', { exact: true }), {
+      target: { value: '00:30' },
+    })
+    fireEvent.click(editor.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(screen.getByText('Payroll time entry updated.')).toBeVisible(),
+    )
+    expect(save.mock.calls[0][0]).toBe(
+      '/api/admin/ops/payroll/timesheet-entries/shift',
+    )
+    expect(JSON.parse(save.mock.calls[0][1].body)).toMatchObject({
+      workDate: '2026-11-16',
+      startedAt: '2026-11-16T18:27:15Z',
+      endedAt: '2026-11-17T07:30:00.000Z',
+    })
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 describe('payroll gratuity display', () => {
