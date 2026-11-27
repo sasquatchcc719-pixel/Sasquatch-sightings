@@ -4,7 +4,7 @@
  * Secured by BOOKING_API_SECRET header.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import {
   isNextdoorCode,
   nextdoorServiceSubtotal,
@@ -57,6 +57,15 @@ const CORS = {
 }
 
 const MINIMUM_SAME_DAY_LEAD_MINUTES = 60
+
+function slotUnavailable(
+  message = 'That time is no longer available. Please pick another appointment time.',
+) {
+  return NextResponse.json(
+    { code: 'SLOT_UNAVAILABLE', error: message },
+    { status: 409, headers: CORS },
+  )
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -634,10 +643,7 @@ export async function POST(request: NextRequest) {
       day: '2-digit',
     }).format(now)
     if (appointmentDate < todayMT) {
-      return NextResponse.json(
-        { error: 'Please choose a future appointment date.' },
-        { status: 409, headers: CORS },
-      )
+      return slotUnavailable('Please choose a future appointment date.')
     }
 
     const currentTimeMT = new Intl.DateTimeFormat('en-GB', {
@@ -658,22 +664,11 @@ export async function POST(request: NextRequest) {
       date: appointmentDate,
       requiredMinutes: buffered,
       minStartMinutes,
-      maxResults: 8,
+      maxResults: 12,
+      requestedStartTime: requestedStart,
     })
 
-    const slotIsStillAvailable =
-      staffResult !== null &&
-      staffResult.slots.some((slot) => slot.start_time === requestedStart)
-
-    if (!slotIsStillAvailable) {
-      return NextResponse.json(
-        {
-          error:
-            'That time is no longer available. Please pick another appointment time.',
-        },
-        { status: 409, headers: CORS },
-      )
-    }
+    if (!staffResult) return slotUnavailable()
 
     if (tomorrowFillOffer) {
       tomorrowFillReservation = await reserveTomorrowFillOffer({
@@ -688,7 +683,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const assignedStaffUserId = staffResult?.staffUserId ?? null
+    const assignedStaffUserId = staffResult.staffUserId
     let technicianSchedule = 'Unassigned'
     if (assignedStaffUserId) {
       const { data: staffUser, error: staffError } = await supabase
@@ -900,100 +895,106 @@ export async function POST(request: NextRequest) {
       ),
     ])
 
-    // --- Fire comms + QB sync (non-blocking) ---
-    // Only send confirmation comms if fully booked (not pending approval)
-    if (appointmentStatus === 'booked') {
-      const [commsResult, qbResult] = await Promise.allSettled([
-        sendOpsLifecycleCommunications({
-          event: 'job_scheduled',
-          appointmentId: appointment.id,
+    // Return the booking receipt before waiting on messaging and accounting services.
+    after(async () => {
+      // Only send confirmation comms if fully booked (not pending approval)
+      if (appointmentStatus === 'booked') {
+        const [commsResult, qbResult] = await Promise.allSettled([
+          sendOpsLifecycleCommunications({
+            event: 'job_scheduled',
+            appointmentId: appointment.id,
+          }),
+          syncAppointmentToQuickBooks(appointment.id),
+        ])
+        if (commsResult.status === 'rejected')
+          console.error(
+            '[public/appointments] Comms error:',
+            commsResult.reason,
+          )
+        if (qbResult.status === 'rejected')
+          console.error('[public/appointments] QB sync error:', qbResult.reason)
+      }
+
+      // --- Notify admin (SMS + push + email) ---
+      const serviceNames = lineItems
+        .map((item) => item.name_snapshot)
+        .filter(Boolean)
+        .join(', ')
+      const statusLabel =
+        appointmentStatus === 'pending_approval' ? ' (NEEDS APPROVAL)' : ''
+      const adminHeading = `New job booked${statusLabel}!`
+      const notificationLeadSource = formatLeadSourceForNotification({
+        leadSource: normalizedLeadSource.source.lead_source,
+        leadSourceDetail: normalizedLeadSource.source.lead_source_detail,
+      })
+      const notificationBookingMethod = formatBookingMethodForNotification({
+        source: 'website',
+        bookingChannel: tomorrowFillReservation
+          ? 'tomorrow_fill_sms'
+          : isBusinessCardBooking
+            ? 'business_card'
+            : 'website',
+      })
+      const reactivationTouch = await describeReactivationTouch({
+        supabase,
+        customerId,
+        reactivationClickId: appointment.reactivation_click_id ?? null,
+      })
+      const trackedSmsTouch = tomorrowFillReservation
+        ? 'YES: booked from a tracked Tomorrow Fill text link'
+        : bookingAlertHistory.recentSmsTouch
+      const trackedOutreach = [reactivationTouch, trackedSmsTouch]
+        .filter((value): value is string => Boolean(value))
+        .join(' · ')
+      const trackedOutreachSummary =
+        trackedOutreach || 'No tracked reactivation email or promotional text'
+      const couponSummary = appliedPromoCode
+        ? discountAmount > 0
+          ? `${appliedPromoCode} (−$${discountAmount.toFixed(2)})`
+          : `${appliedPromoCode} (no discount applied)`
+        : 'None'
+      const totalDiscountAmount = discountAmount + percentageDiscountAmount
+      const adminMsg = [
+        adminHeading,
+        `${fullName} — $${total.toFixed(2)}`,
+        `Lead source: ${notificationLeadSource}`,
+        ...(reactivationTouch ? [`Reactivation: ${reactivationTouch}`] : []),
+        `Booking method: ${notificationBookingMethod}`,
+        `Technician schedule: ${technicianSchedule}`,
+        `${serviceNames}`,
+        `${street1}, ${city}, ${state} ${zipCode}`,
+        `${appointmentDate} at ${startTime.slice(0, 5)}`,
+        ...(serviceAreaCheck.travelCharge > 0
+          ? [
+              `Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee`,
+            ]
+          : []),
+      ].join('\n')
+
+      await Promise.allSettled([
+        sendAdminSMS(adminMsg, 'new_booking'),
+        sendOneSignalNotification({
+          heading: adminHeading,
+          content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
+          data: {
+            type: 'new_booking',
+            appointment_id: appointment.id,
+          },
         }),
-        syncAppointmentToQuickBooks(appointment.id),
-      ])
-      if (commsResult.status === 'rejected')
-        console.error('[public/appointments] Comms error:', commsResult.reason)
-      if (qbResult.status === 'rejected')
-        console.error('[public/appointments] QB sync error:', qbResult.reason)
-    }
-
-    // --- Notify admin (SMS + push + email) ---
-    const serviceNames = lineItems
-      .map((item) => item.name_snapshot)
-      .filter(Boolean)
-      .join(', ')
-    const statusLabel =
-      appointmentStatus === 'pending_approval' ? ' (NEEDS APPROVAL)' : ''
-    const adminHeading = `New job booked${statusLabel}!`
-    const notificationLeadSource = formatLeadSourceForNotification({
-      leadSource: normalizedLeadSource.source.lead_source,
-      leadSourceDetail: normalizedLeadSource.source.lead_source_detail,
-    })
-    const notificationBookingMethod = formatBookingMethodForNotification({
-      source: 'website',
-      bookingChannel: tomorrowFillReservation
-        ? 'tomorrow_fill_sms'
-        : isBusinessCardBooking
-          ? 'business_card'
-          : 'website',
-    })
-    const reactivationTouch = await describeReactivationTouch({
-      supabase,
-      customerId,
-      reactivationClickId: appointment.reactivation_click_id ?? null,
-    })
-    const trackedSmsTouch = tomorrowFillReservation
-      ? 'YES: booked from a tracked Tomorrow Fill text link'
-      : bookingAlertHistory.recentSmsTouch
-    const trackedOutreach = [reactivationTouch, trackedSmsTouch]
-      .filter((value): value is string => Boolean(value))
-      .join(' · ')
-    const trackedOutreachSummary =
-      trackedOutreach || 'No tracked reactivation email or promotional text'
-    const couponSummary = appliedPromoCode
-      ? discountAmount > 0
-        ? `${appliedPromoCode} (−$${discountAmount.toFixed(2)})`
-        : `${appliedPromoCode} (no discount applied)`
-      : 'None'
-    const totalDiscountAmount = discountAmount + percentageDiscountAmount
-    const adminMsg = [
-      adminHeading,
-      `${fullName} — $${total.toFixed(2)}`,
-      `Lead source: ${notificationLeadSource}`,
-      ...(reactivationTouch ? [`Reactivation: ${reactivationTouch}`] : []),
-      `Booking method: ${notificationBookingMethod}`,
-      `Technician schedule: ${technicianSchedule}`,
-      `${serviceNames}`,
-      `${street1}, ${city}, ${state} ${zipCode}`,
-      `${appointmentDate} at ${startTime.slice(0, 5)}`,
-      ...(serviceAreaCheck.travelCharge > 0
-        ? [`Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee`]
-        : []),
-    ].join('\n')
-
-    await Promise.allSettled([
-      sendAdminSMS(adminMsg, 'new_booking'),
-      sendOneSignalNotification({
-        heading: adminHeading,
-        content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
-        data: {
-          type: 'new_booking',
-          appointment_id: appointment.id,
-        },
-      }),
-      (async () => {
-        const adminEmail = process.env.ADMIN_EMAIL
-        const resendKey = process.env.RESEND_API_KEY
-        if (!adminEmail || !resendKey) return
-        const { Resend } = await import('resend')
-        const resend = new Resend(resendKey)
-        const fromEmail =
-          process.env.OPS_EMAIL_FROM ||
-          'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
-        await resend.emails.send({
-          from: fromEmail,
-          to: adminEmail,
-          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}${appliedPromoCode ? ` · ${appliedPromoCode}` : ''}${reactivationTouch?.startsWith('YES') ? ' · from reactivation email' : ''}`,
-          html: `
+        (async () => {
+          const adminEmail = process.env.ADMIN_EMAIL
+          const resendKey = process.env.RESEND_API_KEY
+          if (!adminEmail || !resendKey) return
+          const { Resend } = await import('resend')
+          const resend = new Resend(resendKey)
+          const fromEmail =
+            process.env.OPS_EMAIL_FROM ||
+            'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+          await resend.emails.send({
+            from: fromEmail,
+            to: adminEmail,
+            subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}${appliedPromoCode ? ` · ${appliedPromoCode}` : ''}${reactivationTouch?.startsWith('YES') ? ' · from reactivation email' : ''}`,
+            html: `
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
   <h2 style="color:${appointmentStatus === 'pending_approval' ? '#f59e0b' : '#16a34a'};margin:0 0 16px;">New Job Booked${statusLabel}</h2>
   ${serviceAreaCheck.travelCharge > 0 ? `<p style="color:#f59e0b;font-weight:600;margin:0 0 12px;">Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee applied</p>` : ''}
@@ -1017,9 +1018,10 @@ export async function POST(request: NextRequest) {
   </table>
   <a href="https://sightings.sasquatchcarpet.com/admin/operations" style="display:inline-block;margin-top:20px;padding:10px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">View in Sightings</a>
 </div>`,
-        })
-      })(),
-    ])
+          })
+        })(),
+      ])
+    })
 
     // --- Increment promo code redemption counter (fire-and-forget) ---
     if (promoCodeId) {
@@ -1063,6 +1065,19 @@ export async function POST(request: NextRequest) {
           releaseError,
         ),
       )
+    }
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === '23514' &&
+      'message' in error &&
+      typeof error.message === 'string' &&
+      /^Appointment overlaps (an active appointment|blocked schedule time)/.test(
+        error.message,
+      )
+    ) {
+      return slotUnavailable()
     }
     console.error('[public/appointments] Error:', error)
     return NextResponse.json(

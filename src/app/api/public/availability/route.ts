@@ -64,10 +64,8 @@ export async function GET(request: NextRequest) {
       minute: '2-digit',
       hour12: false,
     }).format(now)
-    const minStartMinutes =
-      date === todayMT
-        ? timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
-        : undefined
+    const sameDayMinStartMinutes =
+      timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
 
     const requiredMinutes = applyAppointmentBuffer(
       requiredMinutesParam > 0
@@ -87,7 +85,7 @@ export async function GET(request: NextRequest) {
             return { date: targetDate, slots: 0, is_available: false }
           }
           const targetMinStartMinutes =
-            targetDate === todayMT ? minStartMinutes : undefined
+            targetDate === todayMT ? sameDayMinStartMinutes : undefined
           const slots = await getUnionedSlots({
             supabase,
             date: targetDate,
@@ -120,7 +118,7 @@ export async function GET(request: NextRequest) {
       supabase,
       date,
       requiredMinutes,
-      minStartMinutes,
+      minStartMinutes: date === todayMT ? sameDayMinStartMinutes : undefined,
       maxResults: 12,
     })
 

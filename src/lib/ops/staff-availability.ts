@@ -17,6 +17,7 @@ export async function getStaffPrioritizedSlots(params: {
   minStartMinutes?: number
   maxResults?: number
   preferredStaffUserId?: string | null
+  requestedStartTime?: string
 }): Promise<StaffSlotResult | null> {
   const {
     supabase,
@@ -26,6 +27,7 @@ export async function getStaffPrioritizedSlots(params: {
     minStartMinutes,
     maxResults = 12,
     preferredStaffUserId,
+    requestedStartTime,
   } = params
 
   let staffToCheck: StaffUser[]
@@ -55,7 +57,11 @@ export async function getStaffPrioritizedSlots(params: {
       maxResults,
     })
 
-    if (slots.length > 0) {
+    const hasRequestedStart = requestedStartTime
+      ? slots.some((slot) => slot.start_time === requestedStartTime)
+      : slots.length > 0
+
+    if (hasRequestedStart) {
       return {
         staffUserId: staff.id,
         staffName: staff.display_name,

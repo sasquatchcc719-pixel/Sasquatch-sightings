@@ -13,6 +13,13 @@ const state = vi.hoisted(() => ({
   emailSends: [] as any[],
   promo: null as any,
   db: vi.fn(),
+  after: vi.fn(),
+  staffSlots: vi.fn(),
+  appointmentError: null as { code: string; message: string } | null,
+}))
+vi.mock('next/server', async (original) => ({
+  ...(await original<typeof import('next/server')>()),
+  after: state.after,
 }))
 vi.mock('@/supabase/server', () => ({ createAdminClient: state.db }))
 vi.mock('@/lib/blacklist', () => ({
@@ -22,10 +29,7 @@ vi.mock('@/lib/service-area', () => ({
   checkServiceArea: () => ({ allowed: true, travelCharge: state.travel }),
 }))
 vi.mock('@/lib/ops/staff-availability', () => ({
-  getStaffPrioritizedSlots: vi.fn().mockResolvedValue({
-    staffUserId: 'staff',
-    slots: [{ start_time: '10:00:00' }],
-  }),
+  getStaffPrioritizedSlots: state.staffSlots,
 }))
 vi.mock('@/lib/ops/customers', () => ({
   resolveOpsCustomer: async () => {
@@ -114,7 +118,7 @@ function db() {
               ...v,
               id: '90000000-0000-4000-8000-000000000002',
             })
-          if (table === 'ops_appointments')
+          if (table === 'ops_appointments' && !state.appointmentError)
             state.appointments.push({
               ...v,
               id: '90000000-0000-4000-8000-000000000001',
@@ -144,6 +148,9 @@ function db() {
           }
         },
         async single() {
+          if (table === 'ops_appointments' && state.appointmentError) {
+            return { data: null, error: state.appointmentError }
+          }
           return {
             data: {
               id:
@@ -219,8 +226,14 @@ beforeEach(() => {
   state.partner = null
   state.tapUpdates = []
   state.emailSends = []
+  state.appointmentError = null
   state.promo = null
   state.db.mockReturnValue(db())
+  state.after.mockClear()
+  state.staffSlots.mockReset().mockResolvedValue({
+    staffUserId: 'staff',
+    slots: [{ start_time: '10:00:00' }],
+  })
   vi.stubEnv('BOOKING_API_SECRET', 'synthetic')
   vi.stubEnv('RESEND_API_KEY', '')
 })
@@ -264,6 +277,31 @@ describe('public NEXTDOOR35 booking and stored invoice fixture', () => {
         }),
       )
   })
+  it('rechecks the requested start against the total job and returns a recoverable conflict', async () => {
+    state.staffSlots.mockResolvedValueOnce(null)
+    const r = await POST(req(400))
+    expect(state.staffSlots).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requiredMinutes: 180,
+        requestedStartTime: '10:00:00',
+      }),
+    )
+    expect(r.status).toBe(409)
+    expect(await r.json()).toMatchObject({ code: 'SLOT_UNAVAILABLE' })
+    expect(state.appointments).toHaveLength(0)
+  })
+  it('returns a recoverable conflict when a slot is taken before the appointment insert', async () => {
+    state.appointmentError = {
+      code: '23514',
+      message:
+        'Appointment overlaps an active appointment for that staff schedule. Check live availability before booking.',
+    }
+    const r = await POST(req())
+    expect(r.status).toBe(409)
+    expect(await r.json()).toMatchObject({ code: 'SLOT_UNAVAILABLE' })
+    expect(state.appointments).toHaveLength(0)
+    expect(state.invoices).toHaveLength(0)
+  })
   it('keeps travel charge in invoice totals without using it for qualification', async () => {
     state.travel = 25
     const r = await POST(req())
@@ -302,6 +340,10 @@ describe('public NEXTDOOR35 booking and stored invoice fixture', () => {
       }),
     )
     expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({ success: true })
+    expect(state.emailSends).toHaveLength(0)
+    const [sendNotifications] = state.after.mock.calls[0]
+    await sendNotifications()
     expect(state.emailSends).toHaveLength(1)
     expect(state.emailSends[0].subject).toContain('THANKS35')
     expect(state.emailSends[0].html).toContain(
