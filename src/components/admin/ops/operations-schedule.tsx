@@ -34,6 +34,7 @@ import {
 } from '@/lib/ops/utilization-metrics'
 import { UnscheduledFollowUpEditor } from './unscheduled-follow-up-editor'
 import { isWarrantyAppointment } from '@/lib/ops/warranty-appointment'
+import { getCalendarPopupPosition } from '@/lib/ops/calendar-popup-position'
 
 import type {
   Appointment,
@@ -380,6 +381,12 @@ export function OperationsSchedule() {
   >(() => DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })))
   const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
+  const blockFormRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (showBlockForm)
+      blockFormRef.current?.scrollIntoView?.({ block: 'start' })
+  }, [showBlockForm])
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [editEventForm, setEditEventForm] = useState<EditEventFormState>({
     title: '',
@@ -869,14 +876,24 @@ export function OperationsSchedule() {
   const handleCellTap = (
     dateKey: string,
     hour: number,
-    e: React.MouseEvent,
+    e: React.MouseEvent<HTMLButtonElement>,
     staffId: string | null,
   ) => {
     if (armedVisit) {
       void placeArmedVisit(dateKey, hour, staffId)
       return
     }
-    setCellMenu({ dateKey, hour, x: e.clientX, y: e.clientY, staffId })
+    const slot =
+      e.clientX === 0 && e.clientY === 0
+        ? e.currentTarget.getBoundingClientRect()
+        : null
+    setCellMenu({
+      dateKey,
+      hour,
+      x: slot ? slot.left + slot.width / 2 : e.clientX,
+      y: slot ? slot.top + slot.height / 2 : e.clientY,
+      staffId,
+    })
   }
 
   useEffect(() => {
@@ -2122,6 +2139,18 @@ export function OperationsSchedule() {
     />
   )
 
+  const cellMenuGutter = 12
+  const cellMenuPosition = cellMenu
+    ? getCalendarPopupPosition({
+        x: cellMenu.x,
+        y: cellMenu.y,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        preferredWidth: 260,
+        gutter: cellMenuGutter,
+      })
+    : null
+
   return (
     <div className="space-y-6">
       {/* Notify customer prompt — pinned to the bottom of the viewport so it
@@ -2256,44 +2285,73 @@ export function OperationsSchedule() {
         </>
       ) : null}
 
-      {cellMenu ? (
-        <>
-          <button
-            type="button"
-            aria-label="Close menu"
-            className="fixed inset-0 z-[219] cursor-default bg-transparent"
-            onClick={() => setCellMenu(null)}
-          />
-          <div
-            className="fixed z-[220]"
-            style={{
-              left: Math.min(cellMenu.x, window.innerWidth - 260),
-              top: Math.min(cellMenu.y, window.innerHeight - 210),
-            }}
-          >
-            <Card className="border-border/60 bg-card/95 flex w-56 flex-col gap-1 rounded-xl border p-2 shadow-xl backdrop-blur">
-              <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-[11px] font-medium tracking-wide uppercase">
-                {cellMenu.dateKey} · {String(cellMenu.hour).padStart(2, '0')}:00
-              </p>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-start gap-2"
-                onClick={() => {
-                  openNewJobAt(cellMenu.dateKey, cellMenu.hour)
-                  setCellMenu(null)
+      {cellMenu && cellMenuPosition
+        ? createPortal(
+            <>
+              <button
+                type="button"
+                aria-label="Close menu"
+                className="fixed inset-0 z-[219] cursor-default bg-transparent"
+                onClick={() => setCellMenu(null)}
+              />
+              <Card
+                role="group"
+                aria-label="Schedule actions"
+                className="border-border/60 bg-card/95 fixed z-[220] flex flex-col gap-1 overflow-y-auto rounded-xl border p-2 shadow-xl backdrop-blur [&>button]:shrink-0"
+                style={{
+                  left: cellMenuPosition.left,
+                  top: cellMenuPosition.top,
+                  width: cellMenuPosition.width,
+                  maxHeight:
+                    (cellMenuPosition.placeAbove
+                      ? cellMenuPosition.top
+                      : window.innerHeight - cellMenuPosition.top) -
+                    cellMenuGutter,
+                  transform: cellMenuPosition.placeAbove
+                    ? 'translateY(-100%)'
+                    : undefined,
                 }}
               >
-                <Plus className="h-3.5 w-3.5" />
-                New job at this time
-              </Button>
-              {canScheduleCommercialEstimate ? (
+                <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-[11px] font-medium tracking-wide uppercase">
+                  {cellMenu.dateKey} · {String(cellMenu.hour).padStart(2, '0')}
+                  :00
+                </p>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="justify-start gap-2 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                  className="justify-start gap-2"
                   onClick={() => {
-                    openCommercialEstimateAt(
+                    openNewJobAt(cellMenu.dateKey, cellMenu.hour)
+                    setCellMenu(null)
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New job at this time
+                </Button>
+                {canScheduleCommercialEstimate ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start gap-2 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                    onClick={() => {
+                      openCommercialEstimateAt(
+                        cellMenu.dateKey,
+                        cellMenu.hour,
+                        cellMenu.staffId,
+                      )
+                      setCellMenu(null)
+                    }}
+                  >
+                    <Ruler className="h-3.5 w-3.5" />
+                    Commercial estimate at this time
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start gap-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                  onClick={() => {
+                    openBlockAt(
                       cellMenu.dateKey,
                       cellMenu.hour,
                       cellMenu.staffId,
@@ -2301,26 +2359,14 @@ export function OperationsSchedule() {
                     setCellMenu(null)
                   }}
                 >
-                  <Ruler className="h-3.5 w-3.5" />
-                  Commercial estimate at this time
+                  <ShieldBan className="h-3.5 w-3.5" />
+                  Block time at this hour
                 </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-start gap-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-                onClick={() => {
-                  openBlockAt(cellMenu.dateKey, cellMenu.hour, cellMenu.staffId)
-                  setCellMenu(null)
-                }}
-              >
-                <ShieldBan className="h-3.5 w-3.5" />
-                Block time at this hour
-              </Button>
-            </Card>
-          </div>
-        </>
-      ) : null}
+              </Card>
+            </>,
+            document.body,
+          )
+        : null}
 
       <Card className="glass-accent-ring via-card/80 relative overflow-visible border-transparent bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 p-4 shadow-lg shadow-emerald-950/25 backdrop-blur">
         {/* Row 1: navigation on the left, actions on the right */}
@@ -2717,14 +2763,18 @@ export function OperationsSchedule() {
           />
         </div>
 
-        <BlockTimeForm
-          open={showBlockForm}
-          form={blockForm}
-          saving={saving}
-          setForm={setBlockForm}
-          onSubmit={handleBlockSubmit}
-          onCancel={() => setShowBlockForm(false)}
-        />
+        {showBlockForm ? (
+          <div ref={blockFormRef} className="scroll-mt-20">
+            <BlockTimeForm
+              open={showBlockForm}
+              form={blockForm}
+              saving={saving}
+              setForm={setBlockForm}
+              onSubmit={handleBlockSubmit}
+              onCancel={() => setShowBlockForm(false)}
+            />
+          </div>
+        ) : null}
 
         <EditEventDialog
           event={editingEvent}

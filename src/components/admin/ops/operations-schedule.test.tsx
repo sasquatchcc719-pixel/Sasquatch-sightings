@@ -100,6 +100,40 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('schedule slot actions', () => {
+  it.each([
+    { y: 220, top: '232px', transform: '' },
+    { y: 650, top: '638px', transform: 'translateY(-100%)' },
+  ])('opens next to a single tap at y=$y', async ({ y, top, transform }) => {
+    vi.stubGlobal('innerWidth', 390)
+    vi.stubGlobal('innerHeight', 844)
+    params.set('view', 'day')
+    mockSchedule(1)
+    const { container } = render(<OperationsSchedule />)
+
+    await screen.findByRole('link', { name: /Saturday Customer/ })
+    const slot = screen.getByRole('button', {
+      name: 'Create on 2026-09-12 at 15:00',
+    })
+    fireEvent.click(slot, { clientX: 350, clientY: y })
+
+    const menu = screen.getByRole('group', { name: 'Schedule actions' })
+    expect(menu.parentElement).toBe(document.body)
+    expect(container).not.toContainElement(menu)
+    expect(menu).toHaveStyle({ left: '118px', top })
+    expect(menu.style.transform).toBe(transform)
+    expect(within(menu).getByRole('button', { name: /New job/ })).toBeVisible()
+    fireEvent.click(within(menu).getByRole('button', { name: /Block time/ }))
+
+    expect(menu).not.toBeInTheDocument()
+    expect(container.querySelector('#block-start-date')).toHaveValue(
+      '2026-09-12',
+    )
+    expect(container.querySelector('#block-start-time')).toHaveValue('15:00')
+    expect(container.querySelector('#block-end-time')).toHaveValue('16:00')
+  })
+})
+
 describe('early schedule hours', () => {
   it('starts at 9 AM by default and reveals 7 AM when toggled', async () => {
     mockSchedule(1)
